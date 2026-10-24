@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install dependencies from the lockfile for reproducible builds.
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
 
 # Build the Nuxt app.
 COPY . .

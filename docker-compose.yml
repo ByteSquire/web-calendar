@@ -1,23 +1,40 @@
 # Example deployment: a single container (Nuxt 4 / Nitro) for the web calendar.
 # The SQLite file lives on a named volume so it persists across restarts.
+#
+# Every NUXT_* value below is read from the environment, or from the .env file
+# next to this file (Compose uses it for interpolation), and maps to the
+# runtimeConfig keys declared in nuxt.config.ts.
 services:
   web-calendar:
     build: .
     image: web-calendar:latest
     restart: unless-stopped
+    init: true
     ports:
       - '3000:3000'
     environment:
       # OIDC (generic; currently kanidm)
-      NUXT_OIDC_ISSUER: 'https://kanidm.example.com'
-      NUXT_OIDC_CLIENT_ID: 'web-calendar'
+      NUXT_OIDC_ISSUER: '${NUXT_OIDC_ISSUER:-}'
+      NUXT_OIDC_CLIENT_ID: '${NUXT_OIDC_CLIENT_ID:-}'
       NUXT_OIDC_CLIENT_SECRET: '${NUXT_OIDC_CLIENT_SECRET:-}'
-      NUXT_OIDC_REDIRECT_URI: 'http://localhost:3000/auth/callback'
+      NUXT_OIDC_REDIRECT_URI: '${NUXT_OIDC_REDIRECT_URI:-http://localhost:3000/auth/callback}'
       # CalDAV backend (Radicale behind OpenCloud)
-      NUXT_CALDAV_BASE_URL: 'https://opencloud.example.com/radicale'
+      NUXT_CALDAV_BASE_URL: '${NUXT_CALDAV_BASE_URL:-}'
       # Sync
-      NUXT_SYNC_INTERVAL_MIN: '5'
+      NUXT_SYNC_INTERVAL_MIN: '${NUXT_SYNC_INTERVAL_MIN:-5}'
+      # Timezone used for date handling
+      TZ: '${TZ:-UTC}'
     volumes:
       - web-calendar-data:/data # SQLite file
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 volumes:
   web-calendar-data:

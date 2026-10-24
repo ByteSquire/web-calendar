@@ -30,6 +30,10 @@ body {
   height: 100%;
 }
 
+#__nuxt {
+  height: 100%;
+}
+
 body {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   color: var(--text);

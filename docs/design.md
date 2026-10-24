@@ -46,17 +46,17 @@ Key decisions (from the requirements review):
 
 ## 3. Tech Stack
 
-| Layer          | Choice                                                                   | Notes                                               |
-| -------------- | ------------------------------------------------------------------------ | --------------------------------------------------- |
-| Framework      | **Nuxt 4** (Vue 3)                                                       | Frontend + Nitro backend in one codebase/deployable |
-| Calendar UI    | **FullCalendar v7** (Premium, AGPLv3)                                    | `@fullcalendar/vue3`; license key above             |
-| Database       | **SQLite** via `better-sqlite3`                                          | Single file; WAL mode for concurrent access         |
-| Auth           | **OIDC** via `nuxt-auth-utils` https://github.com/atinux/nuxt-auth-utils | Generic (discovery); currently kanidm               |
-| CalDAV client  | **`ts-caldav`** https://github.com/KlautNet/ts-caldav                    | Two-way sync (read + write)                         |
-| iCal parsing   | **`ical.js`**                                                            | For `.ics` sources (read-only)                      |
-| Sync scheduler | **`node-cron`**                                                          | In-process; periodic + on-demand                    |
-| Runtime        | **Node.js** (LTS)                                                        | Nitro runtime                                       |
-| Packaging      | **Docker** (single container)                                            | + `docker-compose.yml` example                      |
+| Layer          | Choice                                                                   | Notes                                                                    |
+| -------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Framework      | **Nuxt 4** (Vue 3)                                                       | Frontend + Nitro backend in one codebase/deployable                      |
+| Calendar UI    | **FullCalendar v7** (Premium, AGPLv3)                                    | `@fullcalendar/vue3` + `@fullcalendar/vue3-scheduler`; license key above |
+| Database       | **SQLite** via `better-sqlite3`                                          | Single file; WAL mode for concurrent access                              |
+| Auth           | **OIDC** via `nuxt-auth-utils` https://github.com/atinux/nuxt-auth-utils | Generic (discovery); currently kanidm                                    |
+| CalDAV client  | **`ts-caldav`** https://github.com/KlautNet/ts-caldav                    | Two-way sync (read + write)                                              |
+| iCal parsing   | **`ical.js`**                                                            | For `.ics` sources (read-only)                                           |
+| Sync scheduler | **`node-cron`**                                                          | In-process; periodic + on-demand                                         |
+| Runtime        | **Node.js** (LTS)                                                        | Nitro runtime                                                            |
+| Packaging      | **Docker** (single container)                                            | + `docker-compose.yml` example                                           |
 
 ---
 
@@ -279,14 +279,14 @@ services:
       - '3000:3000'
     environment:
       # OIDC (generic; currently kanidm)
-      OIDC_ISSUER: 'https://kanidm.example.com'
-      OIDC_CLIENT_ID: 'web-calendar'
-      OIDC_CLIENT_SECRET: '${OIDC_CLIENT_SECRET}'
-      OIDC_REDIRECT_URI: 'http://localhost:3000/auth/callback'
+      NUXT_OIDC_ISSUER: 'https://kanidm.example.com'
+      NUXT_OIDC_CLIENT_ID: 'web-calendar'
+      NUXT_OIDC_CLIENT_SECRET: '${NUXT_OIDC_CLIENT_SECRET}'
+      NUXT_OIDC_REDIRECT_URI: 'http://localhost:3000/auth/callback'
       # CalDAV backend (Radicale behind OpenCloud)
-      CALDAV_BASE_URL: 'https://opencloud.example.com/radicale'
+      NUXT_CALDAV_BASE_URL: 'https://opencloud.example.com/radicale'
       # Sync
-      SYNC_INTERVAL_MIN: '5'
+      NUXT_SYNC_INTERVAL_MIN: '5'
     volumes:
       - web-calendar-data:/data # SQLite file
 volumes:
@@ -320,7 +320,7 @@ this is the **order**):
 
 - **AGPLv3 dependency audit** — confirm every dependency is AGPLv3-compatible
   before adding it (the core stack above is; new deps must be checked).
-- **Radicale + OpenCloud integration** — verify the CalDAV client (`caldav.js`)
+- **Radicale + OpenCloud integration** — verify the CalDAV client (`ts-caldav`)
   works against Radicale behind the OpenCloud auth proxy (auth flow,
   `sync-collection` support).
 - **Split view implementation** — prototype the "one FullCalendar instance per

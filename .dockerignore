@@ -23,3 +23,14 @@ npm-debug.log*
 docs
 README.md
 docker-compose*.yml
+
+# Dev container and CI configuration
+.devcontainer
+.github
+
+# Test/build caches
+coverage
+*.tsbuildinfo
+
+# Local npm configuration (may contain registry tokens)
+.npmrc

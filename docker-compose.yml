@@ -10,8 +10,9 @@ services:
     image: web-calendar:latest
     restart: unless-stopped
     init: true
+    # Bind to loopback only — expect a reverse proxy (TLS, auth) in front.
     ports:
-      - '3000:3000'
+      - '127.0.0.1:3000:3000'
     environment:
       # OIDC (generic; currently kanidm)
       NUXT_OIDC_ISSUER: '${NUXT_OIDC_ISSUER:-}'
@@ -26,6 +27,15 @@ services:
       TZ: '${TZ:-UTC}'
     volumes:
       - web-calendar-data:/data # SQLite file
+    # Hardening
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.output/cache
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     healthcheck:
       test:
         - CMD

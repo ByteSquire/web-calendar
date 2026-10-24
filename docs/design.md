@@ -21,7 +21,7 @@ Key decisions (from the requirements review):
   minimal concurrency).
 - **Auth** — **generic OIDC** (currently **kanidm**).
 - **CalDAV backend** — **Radicale** behind **OpenCloud** as an auth proxy; the app
-  is a **CalDAV client** with **two-way sync** in the initial release.
+  is a **CalDAV client**; **two-way sync is planned for the initial release** (may slip to a follow-up).
 
 ---
 
@@ -210,7 +210,7 @@ graph TD
   changed events since the last sync; compare with the local DB by `uid` +
   `etag`; apply create/update/delete. For iCal sources, fetch the `.ics` and parse
   with `ical.js` (read-only).
-- **Write sync (two-way, in initial release)** — when a user creates/edits/deletes
+- **Write sync (two-way, planned for initial release)** — when a user creates/edits/deletes
   an event, write it to the CalDAV server (`PUT`/`DELETE`) and update the local
   `etag`/`last_modified`.
 - **Conflict resolution** — **last-write-wins** by `last-modified` (simple,

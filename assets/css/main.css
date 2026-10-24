@@ -1,0 +1,53 @@
+/* Global styles for the web calendar.
+ * Phase 1 (UI shell / mock-up) — base tokens and layout primitives.
+ * Component-specific styles are added in later steps. */
+
+:root {
+  --bg: #ffffff;
+  --bg-elevated: #f5f6f8;
+  --bg-sidebar: #1f2733;
+  --bg-sidebar-hover: #2a3340;
+  --text: #1f2733;
+  --text-muted: #6b7280;
+  --text-on-dark: #e6e9ee;
+  --border: #e2e5ea;
+  --accent: #2f6fed;
+  --accent-hover: #2559c9;
+  --danger: #d64545;
+  --radius: 8px;
+  --sidebar-width: 264px;
+  --topbar-height: 56px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}

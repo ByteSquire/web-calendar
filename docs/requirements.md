@@ -23,17 +23,18 @@ part of the initial release.
 
 ## 2. Users & Personas
 
-| Persona | Who | Primary goal |
-|---|---|---|
-| **Team member** | One of 30–50 org members | See the events from the calendars *they* want to see, optionally grouped by pre-defined views; coordinate |
-| **Team admin** | Someone who manages calendars & access | Define views; configure who can see which calendars; manage resources |
-| **Public viewer** *(planned)* | Anyone outside the org | Browse published events in a read-only view |
+| Persona                       | Who                                    | Primary goal                                                                                              |
+| ----------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Team member**               | One of 30–50 org members               | See the events from the calendars _they_ want to see, optionally grouped by pre-defined views; coordinate |
+| **Team admin**                | Someone who manages calendars & access | Define views; configure who can see which calendars; manage resources                                     |
+| **Public viewer** _(planned)_ | Anyone outside the org                 | Browse published events in a read-only view                                                               |
 
 ---
 
 ## 3. Scope
 
 ### In scope
+
 - **Views** — templates for a **group of calendars** that filter which
   calendars are shown; **both user-defined and admin-defined**
 - **Multiple view types** (day / 5-day / week / month / year / **split** /
@@ -49,10 +50,12 @@ part of the initial release.
   (carried over from GroupOffice)
 
 ### Nice to have
+
 - **Two-way CalDAV** — create/edit events that write back to the CalDAV server
   (can slip past the initial release)
 
 ### Planned (post-initial-release)
+
 - **Public / event publishing** — a dedicated public URL/view for an external
   audience to browse published events (builds on the public visibility level in
   access control)
@@ -62,6 +65,7 @@ part of the initial release.
   emerges.
 
 ### Out of scope (for now)
+
 - Full Google Calendar / Outlook feature parity
 - Native mobile apps
 - Being part of a larger groupware suite (the opposite is a goal — see C-5)
@@ -70,10 +74,12 @@ part of the initial release.
 
 ## 4. Functional Requirements
 
-### 4.1 Views *(core UX)*
+### 4.1 Views _(core UX)_
+
 A **view** is a **template for a group of calendars** — it filters **which**
-calendars are shown. It is independent of the *view type* (how they are laid
+calendars are shown. It is independent of the _view type_ (how they are laid
 out). Views appear at the **top of the sidebar**.
+
 - **FR-1** A **view** is a named **template for a group of calendars** that
   defines which calendars are **shown/hidden**.
 - **FR-2** Views can be created by **both users and admins** (user-defined and
@@ -90,9 +96,10 @@ out). Views appear at the **top of the sidebar**.
   save space.
 
 ### 4.2 Calendar sources
+
 - **FR-7** Users can **import a calendar from an iCal (`.ics`) URL or file**.
 - **FR-8** Users can **connect a CalDAV account** to sync their calendar(s).
-- **FR-9** *(nice to have)* CalDAV sync is **two-way** — users can create/edit
+- **FR-9** _(nice to have)_ CalDAV sync is **two-way** — users can create/edit
   events that write back to the CalDAV server.
 - **FR-10** The system **refreshes / re-syncs** connected sources on a schedule
   or on demand.
@@ -101,11 +108,13 @@ out). Views appear at the **top of the sidebar**.
   optional calendars — not forced categories).
 
 ### 4.3 Authentication
+
 - **FR-12** Users authenticate via **OIDC** against an existing identity provider.
 - **FR-13** The system maps an authenticated identity to a user account and their
   accessible calendars.
 
 ### 4.4 Access control
+
 - **FR-14** Access control supports **all** of these granularity levels:
   **per-user, per-team, per-role, per-calendar**, and **public / not-logged-in**
   visibility.
@@ -113,6 +122,7 @@ out). Views appear at the **top of the sidebar**.
   see what they're permitted to see.
 
 ### 4.5 Resources
+
 - **FR-16** **Resources** are first-class entities (e.g. physical locations,
   cars, or other bookable things). A resource **is its own calendar** — it can
   hold events that book it for a time range — yet it is **not owned by a single
@@ -127,12 +137,15 @@ out). Views appear at the **top of the sidebar**.
   GroupOffice).
 
 ### 4.6 Mobile usability
+
 - **FR-20** The UI is **usable on mobile devices** (a key differentiator from
   GroupOffice, which is poor on mobile).
 
 ### 4.7 UI baseline (GroupOffice)
+
 The GroupOffice calendar UI is a liked baseline. The new UI should provide, at
 minimum:
+
 - **FR-21** A **left sidebar** with, from top to bottom: **views** (each with an
   icon and a `⋯` menu), **calendars** (each with a visibility toggle),
   **resources** (each with a visibility toggle), **categories** (with an add
@@ -143,11 +156,12 @@ minimum:
 - **FR-24** A **quick-add** control to create an event.
 - **FR-25** An **overflow (`⋮`) menu** for additional options.
 
-### 4.8 Public publishing *(planned)*
-- **FR-26** *(planned)* A dedicated **public publishing** experience — a public
+### 4.8 Public publishing _(planned)_
+
+- **FR-26** _(planned)_ A dedicated **public publishing** experience — a public
   URL/view for an external audience to browse published events (builds on the
   public visibility level in FR-14).
-- **FR-27** *(planned)* The public view is **accessible without organization
+- **FR-27** _(planned)_ The public view is **accessible without organization
   authentication**.
 
 ---
@@ -193,27 +207,27 @@ minimum:
 The work is delivered in three phases (all requirements are in scope; this is
 the **order** of delivery):
 
-| Phase | Focus | Key requirements |
-|---|---|---|
-| **1 — UI shell / mock-up** | The webpage and a **mock-up of all UI** (all screens, sidebar with views at the top, view types incl. **split**) | FR-21…FR-25, FR-6, FR-20 |
-| **2 — Core calendar + auth** | Calendar features and authentication | FR-7…FR-13, FR-3…FR-5, FR-20 |
-| **3 — Organizational** | Grouping / views (templates for calendar groups), resources | FR-1…FR-2, FR-14…FR-19 |
+| Phase                        | Focus                                                                                                            | Key requirements             |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| **1 — UI shell / mock-up**   | The webpage and a **mock-up of all UI** (all screens, sidebar with views at the top, view types incl. **split**) | FR-21…FR-25, FR-6, FR-20     |
+| **2 — Core calendar + auth** | Calendar features and authentication                                                                             | FR-7…FR-13, FR-3…FR-5, FR-20 |
+| **3 — Organizational**       | Grouping / views (templates for calendar groups), resources                                                      | FR-1…FR-2, FR-14…FR-19       |
 
 ---
 
 ## 8. Decisions (formerly Open Questions)
 
-- **Q11 — CalDAV backend choice.** *Deferred.* The specific backend is not
+- **Q11 — CalDAV backend choice.** _Deferred._ The specific backend is not
   decided yet; we **assume a suiting backend has been found**. C-4 still holds —
   use an **existing CalDAV backend** (OIDC support preferred) rather than
   implementing CalDAV from scratch. The concrete choice is left to design.
-- **Q12 — Resources model.** *Resolved — hybrid.* A resource **is its own
+- **Q12 — Resources model.** _Resolved — hybrid._ A resource **is its own
   calendar** (it can hold events that book it for a time range) **and** must be
   **easily referenced by events in other calendars**. **ACL:** a resource
   calendar shows **full details only to users with access to the calendar that
   booked the event**; otherwise the booking shows as a **"blocked"** (free/busy)
   entry. (Captured in FR-16 and FR-18.)
-- **Q13 — Split view scope.** *Resolved.* **Every** calendar in the selected view
+- **Q13 — Split view scope.** _Resolved._ **Every** calendar in the selected view
   gets its **own band**; a band that is **empty for the current view** may be
   **hidden** to save space. Extending the split view to **all** view types is a
   **planned experiment** (post-initial-release), **not** a requirement. (Captured

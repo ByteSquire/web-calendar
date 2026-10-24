@@ -6,18 +6,18 @@ services:
     image: web-calendar:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
       # OIDC (generic; currently kanidm)
-      NUXT_OIDC_ISSUER: "https://kanidm.example.com"
-      NUXT_OIDC_CLIENT_ID: "web-calendar"
-      NUXT_OIDC_CLIENT_SECRET: "${NUXT_OIDC_CLIENT_SECRET:-}"
-      NUXT_OIDC_REDIRECT_URI: "http://localhost:3000/auth/callback"
+      NUXT_OIDC_ISSUER: 'https://kanidm.example.com'
+      NUXT_OIDC_CLIENT_ID: 'web-calendar'
+      NUXT_OIDC_CLIENT_SECRET: '${NUXT_OIDC_CLIENT_SECRET:-}'
+      NUXT_OIDC_REDIRECT_URI: 'http://localhost:3000/auth/callback'
       # CalDAV backend (Radicale behind OpenCloud)
-      NUXT_CALDAV_BASE_URL: "https://opencloud.example.com/radicale"
+      NUXT_CALDAV_BASE_URL: 'https://opencloud.example.com/radicale'
       # Sync
-      NUXT_SYNC_INTERVAL_MIN: "5"
+      NUXT_SYNC_INTERVAL_MIN: '5'
     volumes:
-      - web-calendar-data:/data   # SQLite file
+      - web-calendar-data:/data # SQLite file
 volumes:
   web-calendar-data:

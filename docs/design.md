@@ -46,17 +46,17 @@ Key decisions (from the requirements review):
 
 ## 3. Tech Stack
 
-| Layer | Choice | Notes |
-|---|---|---|
-| Framework | **Nuxt 4** (Vue 3) | Frontend + Nitro backend in one codebase/deployable |
-| Calendar UI | **FullCalendar v7** (Premium, AGPLv3) | `@fullcalendar/vue3`; license key above |
-| Database | **SQLite** via `better-sqlite3` | Single file; WAL mode for concurrent access |
-| Auth | **OIDC** via `nuxt-auth-utils` https://github.com/atinux/nuxt-auth-utils | Generic (discovery); currently kanidm |
-| CalDAV client | **`ts-caldav`**  https://github.com/KlautNet/ts-caldav | Two-way sync (read + write) |
-| iCal parsing | **`ical.js`** | For `.ics` sources (read-only) |
-| Sync scheduler | **`node-cron`** | In-process; periodic + on-demand |
-| Runtime | **Node.js** (LTS) | Nitro runtime |
-| Packaging | **Docker** (single container) | + `docker-compose.yml` example |
+| Layer          | Choice                                                                   | Notes                                               |
+| -------------- | ------------------------------------------------------------------------ | --------------------------------------------------- |
+| Framework      | **Nuxt 4** (Vue 3)                                                       | Frontend + Nitro backend in one codebase/deployable |
+| Calendar UI    | **FullCalendar v7** (Premium, AGPLv3)                                    | `@fullcalendar/vue3`; license key above             |
+| Database       | **SQLite** via `better-sqlite3`                                          | Single file; WAL mode for concurrent access         |
+| Auth           | **OIDC** via `nuxt-auth-utils` https://github.com/atinux/nuxt-auth-utils | Generic (discovery); currently kanidm               |
+| CalDAV client  | **`ts-caldav`** https://github.com/KlautNet/ts-caldav                    | Two-way sync (read + write)                         |
+| iCal parsing   | **`ical.js`**                                                            | For `.ics` sources (read-only)                      |
+| Sync scheduler | **`node-cron`**                                                          | In-process; periodic + on-demand                    |
+| Runtime        | **Node.js** (LTS)                                                        | Nitro runtime                                       |
+| Packaging      | **Docker** (single container)                                            | + `docker-compose.yml` example                      |
 
 ---
 
@@ -98,7 +98,7 @@ separate services the app connects to.
 SQLite (single file). The model reflects the requirements and the **Q12 decision**
 (a resource is its own calendar, ACL-gated).
 
-**Why SQLite (not no-DB)** — we need to persist *and query* users, calendars,
+**Why SQLite (not no-DB)** — we need to persist _and query_ users, calendars,
 views, resources, events, and ACLs. SQLite (a single file, WAL mode) does this
 cleanly and handles the expected concurrency (≤10) without a separate database
 server — a good fit for the single-container model. A no-DB (flat-file) approach
@@ -131,7 +131,7 @@ erDiagram
 - **views** — `id` (PK), `name`, `owner_id` (FK, nullable), `is_admin` (bool),
   `definition` (JSON: which calendars are shown/hidden + colors).
 - **resources** — `id` (PK), `calendar_id` (FK → calendars, 1:1; the resource's
-  own calendar), `name`, `type` (`room`/`car`/…). *A resource is its own calendar*
+  own calendar), `name`, `type` (`room`/`car`/…). _A resource is its own calendar_
   (Q12).
 - **events** — `id` (PK), `calendar_id` (FK), `uid` (iCal UID, unique per
   calendar), `title`, `start`, `end`, `description`, `location`, `status`,
@@ -276,19 +276,19 @@ services:
     image: web-calendar:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
       # OIDC (generic; currently kanidm)
-      OIDC_ISSUER: "https://kanidm.example.com"
-      OIDC_CLIENT_ID: "web-calendar"
-      OIDC_CLIENT_SECRET: "${OIDC_CLIENT_SECRET}"
-      OIDC_REDIRECT_URI: "http://localhost:3000/auth/callback"
+      OIDC_ISSUER: 'https://kanidm.example.com'
+      OIDC_CLIENT_ID: 'web-calendar'
+      OIDC_CLIENT_SECRET: '${OIDC_CLIENT_SECRET}'
+      OIDC_REDIRECT_URI: 'http://localhost:3000/auth/callback'
       # CalDAV backend (Radicale behind OpenCloud)
-      CALDAV_BASE_URL: "https://opencloud.example.com/radicale"
+      CALDAV_BASE_URL: 'https://opencloud.example.com/radicale'
       # Sync
-      SYNC_INTERVAL_MIN: "5"
+      SYNC_INTERVAL_MIN: '5'
     volumes:
-      - web-calendar-data:/data   # SQLite file
+      - web-calendar-data:/data # SQLite file
 volumes:
   web-calendar-data:
 ```
@@ -308,11 +308,11 @@ volumes:
 Aligned with the requirements' delivery phasing (all requirements are in scope;
 this is the **order**):
 
-| Phase | Focus | Key requirements | Design pieces |
-|---|---|---|---|
-| **1 — UI shell / mock-up** | The webpage + a mock-up of all UI (sidebar with views at top, view types incl. split) | FR-21…FR-25, FR-6, FR-20 | §9 (sidebar, view types, split view mock-up, mobile) |
-| **2 — Core calendar + auth** | Calendar features + authentication | FR-7…FR-13, FR-3…FR-5, FR-20 | §6 (OIDC), §7 (CalDAV/iCal sync, two-way), §5 (calendars/events), §4 (architecture) |
-| **3 — Organizational** | Grouping/views (templates for calendar groups), resources | FR-1…FR-2, FR-14…FR-19 | §8 (ACL), §5 (views/resources, resource ACL rule) |
+| Phase                        | Focus                                                                                 | Key requirements             | Design pieces                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------- | ---------------------------- | ----------------------------------------------------------------------------------- |
+| **1 — UI shell / mock-up**   | The webpage + a mock-up of all UI (sidebar with views at top, view types incl. split) | FR-21…FR-25, FR-6, FR-20     | §9 (sidebar, view types, split view mock-up, mobile)                                |
+| **2 — Core calendar + auth** | Calendar features + authentication                                                    | FR-7…FR-13, FR-3…FR-5, FR-20 | §6 (OIDC), §7 (CalDAV/iCal sync, two-way), §5 (calendars/events), §4 (architecture) |
+| **3 — Organizational**       | Grouping/views (templates for calendar groups), resources                             | FR-1…FR-2, FR-14…FR-19       | §8 (ACL), §5 (views/resources, resource ACL rule)                                   |
 
 ---
 
@@ -340,71 +340,80 @@ Phase 1 is the **UI shell / mock-up**: a working mock-up of **all** the UI
 **mock data** — no real backend, auth, or sync yet. It satisfies **FR-21…FR-25,
 FR-6, FR-20** (design §9).
 
-| Step | What | Requirements |
-|---|---|---|
-| 1 | Project scaffolding | — |
-| 2 | Mock data layer | — |
-| 3 | App shell / layout | FR-20 |
-| 4 | Sidebar | FR-21 |
-| 5 | Top bar | FR-22, FR-23, FR-24, FR-25 |
-| 6 | Main area — standard views | FR-22 |
-| 7 | Split view | FR-6 |
-| 8 | Mobile | FR-20 |
-| 9 | Polish / review | all of the above |
+| Step | What                       | Requirements               |
+| ---- | -------------------------- | -------------------------- |
+| 1    | Project scaffolding        | —                          |
+| 2    | Mock data layer            | —                          |
+| 3    | App shell / layout         | FR-20                      |
+| 4    | Sidebar                    | FR-21                      |
+| 5    | Top bar                    | FR-22, FR-23, FR-24, FR-25 |
+| 6    | Main area — standard views | FR-22                      |
+| 7    | Split view                 | FR-6                       |
+| 8    | Mobile                     | FR-20                      |
+| 9    | Polish / review            | all of the above           |
 
 **Step 1 — Project scaffolding**
+
 - Initialize a **Nuxt 4** project; add **FullCalendar v7** (`@fullcalendar/vue3`
-  + the Premium packages) wired with the AGPLv3 license key (§2).
+  - the Premium packages) wired with the AGPLv3 license key (§2).
 - Add the **Docker** container + `docker-compose.yml` (§10) and a dev workflow
   (`npm run dev`).
-- *Acceptance:* `npm run dev` serves the app; `docker compose up` builds and runs
+- _Acceptance:_ `npm run dev` serves the app; `docker compose up` builds and runs
   the container.
 
 **Step 2 — Mock data layer**
+
 - A single mock-data module that provides **views, calendars, resources,
   categories, filters, and events** — enough to populate every UI section and to
   exercise the split view (incl. some **empty** calendars to test band-hiding).
-- *Acceptance:* the module exports the mock data; the UI can import it.
+- _Acceptance:_ the module exports the mock data; the UI can import it.
 
 **Step 3 — App shell / layout**
+
 - The overall layout: **left sidebar + top bar + main area**, responsive (sidebar
   collapses on mobile).
-- *Acceptance:* the three regions render and resize correctly.
+- _Acceptance:_ the three regions render and resize correctly.
 
 **Step 4 — Sidebar (FR-21)**
+
 - Sections top → bottom: **views** (icon + `⋯` menu), **calendars** (visibility
   toggle), **resources** (visibility toggle), **categories** (add control),
   **filters** (add control + chooser) — all from mock data.
-- *Acceptance:* every section renders with mock data; toggles/menus are
+- _Acceptance:_ every section renders with mock data; toggles/menus are
   interactive.
 
 **Step 5 — Top bar (FR-22, FR-23, FR-24, FR-25)**
+
 - **View-type switcher** (day, 5-day, week, month, year, split, list), **date
   navigation** (prev / today / next), **quick-add**, **overflow (`⋮`) menu**.
-- *Acceptance:* switching view type and navigating dates updates the main area;
+- _Acceptance:_ switching view type and navigating dates updates the main area;
   quick-add and overflow open their UI.
 
 **Step 6 — Main area, standard views (FR-22)**
+
 - Integrate **FullCalendar** to render **day, 5-day, week, month, year, list**
   with mock events.
-- *Acceptance:* each standard view renders with mock events; switching between
+- _Acceptance:_ each standard view renders with mock events; switching between
   them works.
 
 **Step 7 — Split view (FR-6)**
+
 - **One FullCalendar instance per calendar**, stacked vertically, with
   **synchronized date navigation**; **hide bands that are empty** for the current
   view.
-- *Acceptance:* every calendar in the selected view gets its own band; empty
+- _Acceptance:_ every calendar in the selected view gets its own band; empty
   bands are hidden; navigation is synchronized across bands.
 
 **Step 8 — Mobile (FR-20)**
+
 - Responsive layout (sidebar collapses); the split view stacks bands vertically
   (the natural mobile layout).
-- *Acceptance:* the UI is usable on a mobile viewport.
+- _Acceptance:_ the UI is usable on a mobile viewport.
 
 **Step 9 — Polish / review**
+
 - Review the mock-up against **FR-21…FR-25, FR-6, FR-20**; polish styling/spacing.
-- *Acceptance:* the mock-up matches the requirements and looks production-ready.
+- _Acceptance:_ the mock-up matches the requirements and looks production-ready.
 
 **Definition of done (Phase 1)** — a single Docker container runs a Nuxt 4 app
 that shows the full sidebar (views/calendars/resources/categories/filters), the

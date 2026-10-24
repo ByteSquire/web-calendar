@@ -11,7 +11,7 @@ services:
       # OIDC (generic; currently kanidm)
       NUXT_OIDC_ISSUER: "https://kanidm.example.com"
       NUXT_OIDC_CLIENT_ID: "web-calendar"
-      NUXT_OIDC_CLIENT_SECRET: "${NUXT_OIDC_CLIENT_SECRET}"
+      NUXT_OIDC_CLIENT_SECRET: "${NUXT_OIDC_CLIENT_SECRET:-}"
       NUXT_OIDC_REDIRECT_URI: "http://localhost:3000/auth/callback"
       # CalDAV backend (Radicale behind OpenCloud)
       NUXT_CALDAV_BASE_URL: "https://opencloud.example.com/radicale"

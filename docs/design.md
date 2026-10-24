@@ -15,7 +15,7 @@ Key decisions (from the requirements review):
 
 - **License** — **AGPLv3** (frontend + backend fully AGPLv3-compliant), which lets
   us use **FullCalendar Premium** under its AGPLv3 license.
-- **Stack** — **Nuxt 3** (Vue 3 frontend + Nitro backend) in a **single Docker
+- **Stack** — **Nuxt 4** (Vue 3 frontend + Nitro backend) in a **single Docker
   container**.
 - **Database** — **SQLite** (single file; fits the single-container model and the
   minimal concurrency).
@@ -48,7 +48,7 @@ Key decisions (from the requirements review):
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Framework | **Nuxt 3** (Vue 3) | Frontend + Nitro backend in one codebase/deployable |
+| Framework | **Nuxt 4** (Vue 3) | Frontend + Nitro backend in one codebase/deployable |
 | Calendar UI | **FullCalendar v7** (Premium, AGPLv3) | `@fullcalendar/vue3`; license key above |
 | Database | **SQLite** via `better-sqlite3` | Single file; WAL mode for concurrent access |
 | Auth | **OIDC** via `nuxt-auth-utils` https://github.com/atinux/nuxt-auth-utils | Generic (discovery); currently kanidm |
@@ -62,14 +62,14 @@ Key decisions (from the requirements review):
 
 ## 4. Architecture
 
-A single Nuxt 3 process serves both the **frontend** (SSR/SPA) and the **backend**
+A single Nuxt 4 process serves both the **frontend** (SSR/SPA) and the **backend**
 (Nitro server routes). It talks to three external systems: the OIDC provider
 (kanidm), the CalDAV backend (Radicale via OpenCloud), and a local SQLite file.
 
 ```mermaid
 graph TD
     Browser[Browser / Mobile] -->|HTTPS| Nuxt
-    Nuxt[Nuxt 3 App<br/>Nitro server + Vue frontend]
+    Nuxt[Nuxt 4 App<br/>Nitro server + Vue frontend]
     Nuxt -->|SQLite, WAL| DB[(SQLite file<br/>Docker volume)]
     Nuxt -->|OIDC discovery + auth code| Kanidm[kanidm<br/>OIDC provider]
     Nuxt -->|CalDAV client| OpenCloud[OpenCloud<br/>auth proxy]
@@ -266,7 +266,7 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
 
 ## 10. Deployment
 
-A **single Docker container** (Nuxt 3 / Nitro) + a **`docker-compose.yml`**
+A **single Docker container** (Nuxt 4 / Nitro) + a **`docker-compose.yml`**
 example. The SQLite file lives on a mounted volume so it persists across restarts.
 
 ```yaml
@@ -353,7 +353,7 @@ FR-6, FR-20** (design §9).
 | 9 | Polish / review | all of the above |
 
 **Step 1 — Project scaffolding**
-- Initialize a **Nuxt 3** project; add **FullCalendar v7** (`@fullcalendar/vue3`
+- Initialize a **Nuxt 4** project; add **FullCalendar v7** (`@fullcalendar/vue3`
   + the Premium packages) wired with the AGPLv3 license key (§2).
 - Add the **Docker** container + `docker-compose.yml` (§10) and a dev workflow
   (`npm run dev`).
@@ -406,7 +406,7 @@ FR-6, FR-20** (design §9).
 - Review the mock-up against **FR-21…FR-25, FR-6, FR-20**; polish styling/spacing.
 - *Acceptance:* the mock-up matches the requirements and looks production-ready.
 
-**Definition of done (Phase 1)** — a single Docker container runs a Nuxt 3 app
+**Definition of done (Phase 1)** — a single Docker container runs a Nuxt 4 app
 that shows the full sidebar (views/calendars/resources/categories/filters), the
 top bar (view-type switcher, date nav, quick-add, overflow), every standard view
 plus the split view (with empty-band hiding), all from mock data, and is usable

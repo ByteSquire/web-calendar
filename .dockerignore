@@ -1,0 +1,25 @@
+# Keep the build context small and avoid leaking host state into the image.
+
+# Version control
+.git
+.gitignore
+
+# Dependencies, caches and local build output
+node_modules
+.npm-cache
+.nuxt
+.output
+.data
+
+# Local environment / secrets
+.env
+.env.*
+
+# Logs
+*.log
+npm-debug.log*
+
+# Repository metadata and docs (not needed to build the app)
+docs
+README.md
+docker-compose*.yml

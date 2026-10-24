@@ -1,0 +1,26 @@
+{
+  "name": "Web Calendar",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "remoteUser": "node",
+  "workspaceFolder": "/workspaces/web-calendar",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/web-calendar,type=bind",
+  "mounts": [
+    "source=web-calendar-node-modules,target=/workspaces/web-calendar/node_modules,type=volume"
+  ],
+  "postCreateCommand": "npm ci",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Web Calendar (Nuxt)",
+      "onAutoForward": "notify"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["Vue.volar"]
+    }
+  }
+}

@@ -1,4 +1,4 @@
-# Example deployment: a single container (Nuxt 3 / Nitro) for the web calendar.
+# Example deployment: a single container (Nuxt 4 / Nitro) for the web calendar.
 # The SQLite file lives on a named volume so it persists across restarts.
 services:
   web-calendar:

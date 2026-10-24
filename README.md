@@ -45,16 +45,18 @@ container terminal.
 Run these in the Dev Container terminal:
 
 ```sh
-npm run build
+npm run build   # nuxt build (production output)
+npm run check   # vp check: format + lint + type-aware typecheck
+npm run lint    # vp lint
+npm run fmt     # vp fmt (writes changes)
 npm audit
 ```
 
-There are no lint/typecheck/test scripts yet. Once they are added, run them the
-same way:
-
-```sh
-npm run <script>
-```
+Quality tooling runs on **Vite+** (`vite-plus` 1.4.0, the `vp` CLI bundling
+Oxfmt, Oxlint and Vitest). Nuxt still owns `npm run dev` and `npm run build`;
+`vp dev`/`vp build` are deliberately not used because they bypass Nuxt. The
+root `vite.config.ts` contains only the Vite+ `fmt` and `lint` blocks, and is
+ignored by Nuxt itself.
 
 ### Known issues / security status (as of 2026-10-24)
 
@@ -68,13 +70,21 @@ npm run <script>
   and only available via the opt-in `future.compatibilityVersion: 5` flag from
   Nuxt 4.2+ — not recommended for this project yet. When Nuxt 5 reaches stable,
   upgrade and re-run `npm audit`.
+- `npm run dev` prints
+  `WARN [NUXT_B5004] External configuration files are not supported: vite.config.ts`.
+  Nuxt 4.6.2 ignores that file — it exists only for the Vite+ toolchain. Nuxt's
+  documentation states that a `vite.config` importing from `vite-plus` should
+  not trigger this warning, but that exemption is not yet in 4.6.2. It is
+  harmless: build, dev server and checks all pass.
 
 ### Dependency versions (as of 2026-10-24)
 
-- Nuxt `^4.6.2`, Vue `^3.5.44`, vue-router `^5.4.0`
+- Nuxt `^4.6.2`, Vue `^3.5.44`, vue-router `^5.4.0`, Node `>=24.11.0`
 - FullCalendar `^7.1.3` (`@fullcalendar/core`, `@fullcalendar/vue3`) + `temporal-polyfill`
   (`^7` moved plugins into the framework packages; standalone `@fullcalendar/*`
   plugin packages are v6-only).
+- Vite+ `1.4.0` (`vite-plus`, dev dependency; pins `vite` to
+  `@voidzero-dev/vite-plus-core@1.4.0` via `overrides`).
 
 ### Production
 
@@ -89,3 +99,7 @@ the SQLite volume (`/data`) is prepared for later phases.
 
 Copy `.env.example` to `.env` next to `docker-compose.yml` for local
 configuration, or export the `NUXT_*` variables before running Compose.
+
+## License
+
+AGPL-3.0-only. See [`LICENSE`](LICENSE).

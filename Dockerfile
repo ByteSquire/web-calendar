@@ -15,7 +15,8 @@ FROM node:24-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-COPY --from=build /app/node_modules ./node_modules
+# The Nitro output is self-contained; dev dependencies (including the Vite+
+# toolchain) never reach the runtime image.
 COPY --from=build /app/.output ./.output
 
 # Persist the SQLite database on a mounted volume.

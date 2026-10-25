@@ -13,7 +13,7 @@
     "check": "vp check",
     "lint": "vp lint",
     "fmt": "vp fmt",
-    "test": "vitest run"
+    "test": "vp test"
   },
   "dependencies": {
     "@fullcalendar/core": "^7.1.3",

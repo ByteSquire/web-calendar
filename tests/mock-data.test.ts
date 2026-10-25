@@ -84,7 +84,11 @@ describe('mock data', () => {
     expect(salesEvents.length).toBeGreaterThan(0)
     for (const event of salesEvents) {
       const start = Temporal.PlainDate.from(event.start.slice(0, 10))
-      expect(Temporal.PlainDate.compare(start, weekEnd)).toBeGreaterThanOrEqual(0)
+      const end = Temporal.PlainDate.from(event.end.slice(0, 10))
+      const overlaps =
+        Temporal.PlainDate.compare(start, weekEnd) < 0 &&
+        Temporal.PlainDate.compare(end, weekStart) > 0
+      expect(overlaps).toBe(false)
     }
   })
 

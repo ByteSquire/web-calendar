@@ -64,9 +64,9 @@ ignored by Nuxt itself.
 
 `app/data/mock.ts` provides the views, calendars, resources, categories, filters
 and events used by the UI mock-up. Domain types live in
-`shared/types/calendar.ts`. `createMockData(anchor)` is deterministic; pass a
-server-provided anchor so SSR and client renders match. The exported `mockData`
-uses the current week for local development.
+`shared/types/calendar.ts`. `createMockData(anchor)` is deterministic; in
+components, call `useMockData()`, which anchors the data once per request so SSR
+and client renders match.
 
 ### Known issues / security status (as of 2026-10-24)
 

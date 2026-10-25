@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { Temporal } from 'temporal-polyfill'
-import { createMockData, mockData } from '../app/data/mock'
+import { createMockData } from '../app/data/mock'
+
+const anchor = Temporal.PlainDate.from('2026-10-26')
+const mockData = createMockData(anchor)
 
 const calendarIds = new Set(mockData.calendars.map((calendar) => calendar.id))
 const categoryIds = new Set(mockData.categories.map((category) => category.id))
@@ -19,6 +22,11 @@ describe('mock data', () => {
     expectUniqueIds(mockData.categories)
     expectUniqueIds(mockData.filters)
     expectUniqueIds(mockData.events)
+  })
+
+  it('keeps uids unique per calendar', () => {
+    const keys = mockData.events.map((event) => `${event.calendarId}:${event.uid}`)
+    expect(new Set(keys).size).toBe(keys.length)
   })
 
   it('references existing calendars, categories and resources', () => {
@@ -66,6 +74,18 @@ describe('mock data', () => {
     expect(empty.map((calendar) => calendar.id)).toEqual(
       expect.arrayContaining(['cal-office', 'cal-marketing']),
     )
+  })
+
+  it('leaves Sales empty for the anchor week', () => {
+    const weekStart = anchor.subtract({ days: anchor.dayOfWeek - 1 })
+    const weekEnd = weekStart.add({ days: 7 })
+    const salesEvents = mockData.events.filter((event) => event.calendarId === 'cal-sales')
+
+    expect(salesEvents.length).toBeGreaterThan(0)
+    for (const event of salesEvents) {
+      const start = Temporal.PlainDate.from(event.start.slice(0, 10))
+      expect(Temporal.PlainDate.compare(start, weekEnd)).toBeGreaterThanOrEqual(0)
+    }
   })
 
   it('marks blocked bookings with hidden details', () => {
@@ -125,11 +145,21 @@ describe('mock data', () => {
   })
 
   it('is deterministic for a fixed anchor date', () => {
-    const anchor = Temporal.PlainDate.from('2026-10-26')
     const first = createMockData(anchor)
     const second = createMockData(anchor)
 
     expect(first).toEqual(second)
     expect(first.events.some((event) => event.start.startsWith(anchor.toString()))).toBe(true)
+  })
+
+  it('returns isolated copies', () => {
+    const first = createMockData(anchor)
+    const calendar = first.calendars.find((item) => item.id === 'cal-personal')
+    if (!calendar) throw new Error('missing cal-personal')
+
+    calendar.name = 'Changed'
+
+    const second = createMockData(anchor)
+    expect(second.calendars.find((item) => item.id === 'cal-personal')?.name).toBe('Personal')
   })
 })

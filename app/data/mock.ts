@@ -23,6 +23,7 @@ export interface MockData {
 
 const currentUser: CalendarUser = {
   id: 'user-1',
+  oidcSub: 'mock-sub-1',
   name: 'Alex Doe',
   email: 'alex@example.com',
 }
@@ -386,5 +387,3 @@ export function createMockData(today: Temporal.PlainDate = Temporal.Now.plainDat
     events,
   })
 }
-
-export const mockData = createMockData()

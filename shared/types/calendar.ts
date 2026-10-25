@@ -10,8 +10,11 @@ export type ViewIcon = 'calendar' | 'users' | 'layers' | 'shield' | 'star'
 
 export interface CalendarUser {
   id: string
+  /** OIDC subject; stable user key (design §5). */
+  oidcSub?: string
   name: string
   email: string
+  lastLoginAt?: string
 }
 
 export interface Calendar {
@@ -57,7 +60,7 @@ export interface CalendarView {
   id: string
   name: string
   icon: ViewIcon
-  /** Calendars in scope for this view. */
+  /** Parsed `views.definition`: calendars in scope. */
   calendarIds: string[]
   isAdmin: boolean
   ownerId?: string
@@ -84,4 +87,8 @@ export interface CalendarEvent {
   bookedByCalendarId?: string
   /** Details hidden by ACL; render as free/busy (FR-18). */
   isBlocked?: boolean
+  /** CalDAV ETag for sync (design §5/§7). */
+  etag?: string
+  /** Last modification time from the source (ISO 8601). */
+  lastModified?: string
 }

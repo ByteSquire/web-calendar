@@ -68,6 +68,28 @@ and events used by the UI mock-up. Domain types live in
 components, call `useMockData()`, which anchors the data once per request so SSR
 and client renders match.
 
+### FullCalendar, mobile and editing notes (Phase 1)
+
+- **Mount client-only.** FullCalendar renders empty during SSR; wrap it in
+  `<ClientOnly>` to avoid hydration mismatches. Import `skeleton.css` plus a
+  theme stylesheet, or the calendar is unstyled.
+- **Interaction plugin.** `editable` and `selectable` default to `false`.
+  Drag/resize and selection require `@fullcalendar/vue3/interaction`. Phase 1
+  keeps them off and is **read-only plus quick-add**; drag/resize editing is
+  deferred to Phase 2, where it must be backed by the real API.
+- **Touch.** v7 uses pointer events with long-press (`longPressDelay`, default
+  1000 ms; `eventLongPressDelay` / `selectLongPressDelay` override it).
+  Long-press is not discoverable, so provide explicit buttons: tap an event to
+  open the event details/edit sheet, and keep quick-add visible.
+- **Sizing.** v7 resizes via `ResizeObserver`; `handleWindowResize` no longer
+  exists. Use `height`/`contentHeight`, `aspectRatio`, `expandRows`,
+  `dayMaxEvents`/`dayMaxEventRows`, `dayNarrowWidth`, `eventMinWidth`,
+  `eventMinHeight`, `eventShortHeight`, `slotMinWidth` and per-view `views`
+  overrides.
+- **Mobile target.** Verify at 360×640 portrait and 640×360 landscape: no horizontal
+  page scroll, tap targets ≥ 44 px, no hover-only actions, split view readable.
+  Full details are in `docs/design.md` §9 and §13.
+
 ### Known issues / security status (as of 2026-10-24)
 
 - `npm audit` reports **7 high-severity vulnerabilities**, all in the
@@ -94,9 +116,12 @@ and client renders match.
 
 - Nuxt `^4.6.2`, Vue `^3.5.44`, vue-router `^5.4.0`, Node `^24.15.0`
   (Nuxt 4.6.2 requires `^22.22.3 || ^24.15.0 || >=26.0.0`)
-- FullCalendar `^7.1.3` (`@fullcalendar/core`, `@fullcalendar/vue3`) + `temporal-polyfill`
-  (`^7` moved plugins into the framework packages; standalone `@fullcalendar/*`
-  plugin packages are v6-only).
+- FullCalendar `^7.1.3` (`@fullcalendar/vue3` only) + `temporal-polyfill`.
+  v7 moved the plugins into the framework package: import them from subpaths
+  such as `@fullcalendar/vue3/daygrid`, `@fullcalendar/vue3/timegrid`,
+  `@fullcalendar/vue3/list`, `@fullcalendar/vue3/interaction`,
+  `@fullcalendar/vue3/multimonth`. `@fullcalendar/core` is a v7 stub and is **not** a direct
+  dependency; standalone `@fullcalendar/*` plugin packages are v6-only.
 - Vite+ `1.4.0` (`vite-plus`, dev dependency; pins `vite` to
   `@voidzero-dev/vite-plus-core@1.4.0` via `overrides`).
 

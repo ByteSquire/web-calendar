@@ -46,17 +46,17 @@ Key decisions (from the requirements review):
 
 ## 3. Tech Stack
 
-| Layer          | Choice                                                                   | Notes                                                                    |
-| -------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| Framework      | **Nuxt 4** (Vue 3)                                                       | Frontend + Nitro backend in one codebase/deployable                      |
-| Calendar UI    | **FullCalendar v7** (Premium, AGPLv3)                                    | `@fullcalendar/vue3` + `@fullcalendar/vue3-scheduler`; license key above |
-| Database       | **SQLite** via `better-sqlite3`                                          | Single file; WAL mode for concurrent access                              |
-| Auth           | **OIDC** via `nuxt-auth-utils` https://github.com/atinux/nuxt-auth-utils | Generic (discovery); currently kanidm                                    |
-| CalDAV client  | **`ts-caldav`** https://github.com/KlautNet/ts-caldav                    | Two-way sync (read + write)                                              |
-| iCal parsing   | **`ical.js`**                                                            | For `.ics` sources (read-only)                                           |
-| Sync scheduler | **`node-cron`**                                                          | In-process; periodic + on-demand                                         |
-| Runtime        | **Node.js** (LTS)                                                        | Nitro runtime                                                            |
-| Packaging      | **Docker** (single container)                                            | + `docker-compose.yml` example                                           |
+| Layer          | Choice                                                                   | Notes                                                                                      |
+| -------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Framework      | **Nuxt 4** (Vue 3)                                                       | Frontend + Nitro backend in one codebase/deployable                                        |
+| Calendar UI    | **FullCalendar v7** (Premium, AGPLv3)                                    | `@fullcalendar/vue3` (subpath plugins) + `@fullcalendar/vue3-scheduler`; license key above |
+| Database       | **SQLite** via `better-sqlite3`                                          | Single file; WAL mode for concurrent access                                                |
+| Auth           | **OIDC** via `nuxt-auth-utils` https://github.com/atinux/nuxt-auth-utils | Generic (discovery); currently kanidm                                                      |
+| CalDAV client  | **`ts-caldav`** https://github.com/KlautNet/ts-caldav                    | Two-way sync (read + write)                                                                |
+| iCal parsing   | **`ical.js`**                                                            | For `.ics` sources (read-only)                                                             |
+| Sync scheduler | **`node-cron`**                                                          | In-process; periodic + on-demand                                                           |
+| Runtime        | **Node.js** (LTS)                                                        | Nitro runtime                                                                              |
+| Packaging      | **Docker** (single container)                                            | + `docker-compose.yml` example                                                             |
 
 ---
 
@@ -251,8 +251,8 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
 - **View-type switcher** (FR-22): **day, 5-day, week, month, year, split, list**.
 - **Date navigation** (FR-23): previous / **today** / next.
 - **Quick-add** (FR-24) and **overflow (`⋮`) menu** (FR-25).
-- **FullCalendar** (`@fullcalendar/vue3`, v7 Premium) renders the day/week/month/
-  list views.
+- **FullCalendar v7** (`@fullcalendar/vue3`, plugins via subpath imports) renders
+  the day/week/month/list views.
 - **Split view (FR-6)** — **every** calendar in the selected view gets its **own
   horizontal band** (stacked, no overlap). Implementation: **one FullCalendar
   instance per calendar**, stacked vertically, with **synchronized date
@@ -261,6 +261,40 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   (post-initial-release), not a requirement.
 - **Mobile** — responsive layout; the sidebar collapses; the split view stacks
   bands vertically (already the natural mobile layout).
+- **Editability (Phase 1)** — the mock-up is **read-only rendering plus
+  quick-add**; clicking/tapping an event opens the event details/edit sheet.
+  Drag/resize editing is **not** a Phase 1 acceptance criterion and is deferred
+  to Phase 2 (FR-9, two-way sync), where it must be backed by a real store.
+  Quick-add (FR-24) is the Phase 1 creation path.
+
+### FullCalendar v7 integration notes
+
+- **Imports** — v7 moved the plugins into the framework package. Import from
+  subpaths: `@fullcalendar/vue3/daygrid`, `@fullcalendar/vue3/timegrid`,
+  `@fullcalendar/vue3/list`, `@fullcalendar/vue3/interaction`,
+  `@fullcalendar/vue3/multimonth`, … `@fullcalendar/core` is a v7 types stub;
+  do **not** depend on it directly. `temporal-polyfill` is required.
+- **SSR** — FullCalendar renders **empty on the server**. Mount it inside
+  `<ClientOnly>` (or a client-only wrapper) to avoid hydration mismatches.
+- **CSS** — import `skeleton.css` **and** one theme stylesheet (for example
+  `@fullcalendar/vue3/themes/classic/theme.css`); without the theme the calendar
+  is unstyled.
+- **Interaction** — `editable` and `selectable` default to **`false`**. Dragging,
+  resizing and selection require the **`interaction`** plugin; date clicks and
+  selections are registered by the same plugin.
+- **Touch** — v7 uses `PointerDragging`. Long-press starts drag/selection:
+  `longPressDelay` defaults to **1000 ms**; `eventLongPressDelay` and
+  `selectLongPressDelay` override it per interaction. Long-press is **not
+  discoverable**, so every touch flow needs a visible alternative.
+- **Sizing** — v7 resizes automatically via `ResizeObserver`;
+  `handleWindowResize` no longer exists. Use `height`/`contentHeight`,
+  `aspectRatio`, `expandRows`, `dayMaxEvents`/`dayMaxEventRows`, `dayNarrowWidth`,
+  `eventMinWidth`, `eventMinHeight`, `eventShortHeight`, `slotMinWidth`, and
+  per-view `views` overrides instead of viewport media queries inside the
+  calendar.
+- **Mobile** — drag/resize on touch is error-prone. Provide **explicit edit
+  affordances** (tap event → sheet with Edit/Delete; quick-add button) and keep
+  tap targets ≥ 44 px. Never make long-press the only path to an action.
 
 ---
 
@@ -325,7 +359,25 @@ this is the **order**):
   `sync-collection` support).
 - **Split view implementation** — prototype the "one FullCalendar instance per
   calendar + synchronized navigation + hide empty bands" approach; confirm it
-  stays readable at 10–20 calendars (NFR-1).
+  stays readable at 10–20 calendars (NFR-1) and measure scroll cost with one
+  instance per calendar.
+- **Touch interaction gap** — long-press is the only built-in touch gesture for
+  drag/selection and is not discoverable. Every action needs a visible,
+  keyboard-reachable alternative; verify at 360×640 portrait and 640×360
+  landscape.
+- **FullCalendar SSR/hydration** — the calendar renders empty server-side.
+  Mounting it without a client-only wrapper causes hydration mismatches.
+- **FullCalendar licensing** — Premium views (resources/timeline) need the
+  FullCalendar Premium license. §2 records the intended **AGPLv3** key, but the
+  key is not wired into the app yet and no Premium view is used in Phase 1. Wire
+  it before adding resource/timeline views.
+- **Editing scope** — Phase 1 is read-only + quick-add. Enabling `editable`
+  without a real store would fake persistence; drag/resize stays off until
+  Phase 2 wires the API.
+- **Dependency audit** — 7 high-severity findings remain in the
+  Nuxt/Nitro chain (`node-forge` via `listhen`); no patched version exists yet.
+  Do not run `npm audit fix --force` (it downgrades Nuxt). Re-check on every
+  upstream release.
 - **Two-way sync conflicts** — last-write-wins is the starting point; revisit if
   real-world conflicts need a smarter strategy.
 - **SQLite under concurrency** — WAL mode handles the expected load (≤10
@@ -354,8 +406,8 @@ FR-6, FR-20** (design §9).
 
 **Step 1 — Project scaffolding**
 
-- Initialize a **Nuxt 4** project; add **FullCalendar v7** (`@fullcalendar/vue3`
-  - the Premium packages) wired with the AGPLv3 license key (§2).
+- Initialize a **Nuxt 4** project; add **FullCalendar v7** (`@fullcalendar/vue3`;
+  Premium packages only once a license key is available, §2).
 - Add the **Docker** container + `docker-compose.yml` (§10) and a dev workflow
   (`npm run dev`).
 - _Acceptance:_ `npm run dev` serves the app; `docker compose up` builds and runs
@@ -370,9 +422,16 @@ FR-6, FR-20** (design §9).
 
 **Step 3 — App shell / layout**
 
-- The overall layout: **left sidebar + top bar + main area**, responsive (sidebar
-  collapses on mobile).
-- _Acceptance:_ the three regions render and resize correctly.
+- The overall layout: **left sidebar + top bar + main area**, responsive.
+- Sidebar: fixed on desktop, **off-canvas drawer** (with a visible toggle and
+  backdrop) below 768 px. Top bar wraps or scrolls horizontally instead of
+  clipping. The main area fills the remaining viewport height so the calendar
+  scrolls internally rather than the page.
+- Keep the viewport meta tag (`width=device-width, initial-scale=1`) and use
+  CSS breakpoints; do not branch layout on user-agent.
+- _Acceptance:_ the three regions render; **no horizontal page scroll** at
+  360×640, 640×360 (landscape), 768×1024 and 1280×800; the sidebar toggle is
+  reachable and closes the drawer; content is not clipped at 200 % zoom.
 
 **Step 4 — Sidebar (FR-21)**
 
@@ -386,37 +445,80 @@ FR-6, FR-20** (design §9).
 
 - **View-type switcher** (day, 5-day, week, month, year, split, list), **date
   navigation** (prev / today / next), **quick-add**, **overflow (`⋮`) menu**.
+- Quick-add opens a form (title, calendar, start/end) and appends the event to
+  the **in-memory mock store**, so the new event appears in the current view.
+- The switcher exposes the current view (`aria-pressed` or a tablist); the
+  overflow menu closes on Escape/outside click and returns focus to its trigger.
+- On mobile, keep all controls reachable: the switcher scrolls horizontally and
+  every control has a **≥ 44 px** tap target. Quick-add must be a visible button
+  or FAB, never a long-press or hover action.
 - _Acceptance:_ switching view type and navigating dates updates the main area;
-  quick-add and overflow open their UI.
+  quick-add adds a visible event; overflow opens and closes by keyboard; all
+  controls are keyboard-operable (touch-only verification is Step 8).
 
 **Step 6 — Main area, standard views (FR-22)**
 
-- Integrate **FullCalendar** to render **day, 5-day, week, month, year, list**
-  with mock events.
-- _Acceptance:_ each standard view renders with mock events; switching between
-  them works.
+- Integrate **FullCalendar v7** inside `<ClientOnly>`; register the `daygrid`,
+  `timegrid`, `list` and `interaction` plugins via their
+  `@fullcalendar/vue3/*` subpaths; import `skeleton.css` plus a theme stylesheet.
+- Set `editable: false` and `selectable: false` in Phase 1. Event click/tap
+  opens the event details/edit sheet; date click may open quick-add.
+- Use the sizing options from §9 (`height`/`contentHeight`, `dayMaxEvents`,
+  `dayNarrowWidth`, `eventMinHeight`, per-view overrides) so month and time-grid
+  views stay legible on narrow screens.
+- _Acceptance:_ day, 5-day, week, month, year and list render mock events;
+  switching views preserves the selected date; **no hydration warnings or
+  console errors**; event click opens the sheet; nothing is editable by
+  accident (no drag/resize handlers registered while `editable` is off).
 
 **Step 7 — Split view (FR-6)**
 
 - **One FullCalendar instance per calendar**, stacked vertically, with
   **synchronized date navigation**; **hide bands that are empty** for the current
   view.
-- _Acceptance:_ every calendar in the selected view gets its own band; empty
-  bands are hidden; navigation is synchronized across bands.
+- Give each band a **sticky calendar label** (name + colour) so bands stay
+  identifiable while scrolling; share one date/view state and push it to every
+  instance instead of letting each band navigate independently.
+- Keep the per-instance options consistent (`height`, `dayMaxEvents`, view
+  overrides); avoid a nested page scroll.
+- _Acceptance:_ every non-empty calendar in the selected view gets its own band;
+  empty bands are hidden; prev/today/next and view switches stay synchronized
+  across bands; 9 calendars remain scrollable without layout breakage on desktop
+  and mobile.
 
 **Step 8 — Mobile (FR-20)**
 
-- Responsive layout (sidebar collapses); the split view stacks bands vertically
-  (the natural mobile layout).
-- _Acceptance:_ the UI is usable on a mobile viewport.
+- Responsive layout (sidebar drawer, top bar from Step 5); the split view stacks
+  bands vertically (the natural mobile layout).
+- Touch model: **tap** opens the event sheet; **long-press** is only a
+  supplementary shortcut (default 1000 ms), never the only path. Provide visible
+  Edit/Delete actions in the sheet, and keep drag/resize disabled until Phase 2.
+- Tune FullCalendar for narrow widths (`dayMaxEvents`, `dayNarrowWidth`,
+  `eventMinWidth`, `eventMinHeight`, `eventShortHeight`, `slotMinWidth`,
+  `aspectRatio`) and verify both portrait and landscape.
+- _Acceptance:_ on 360×640 and 640×360 touch viewports, every user-facing Phase 1
+  task is doable **with touch only**: switch views, navigate dates, open the
+  sidebar, quick-add an event, open an event sheet. No horizontal page scroll,
+  no hover-only action, tap targets ≥ 44 px, and the split view remains readable.
 
 **Step 9 — Polish / review**
 
-- Review the mock-up against **FR-21…FR-25, FR-6, FR-20**; polish styling/spacing.
-- _Acceptance:_ the mock-up matches the requirements and looks production-ready.
+- Review the mock-up against **FR-21…FR-25, FR-6, FR-20**; polish styling and
+  spacing. Check keyboard reachability, focus visibility, colour contrast,
+  `aria` labels, and reduced-motion preferences.
+- Re-check the §9 integration notes: subpath imports only, no direct
+  `@fullcalendar/core`, client-only mount, theme CSS, no hydration warnings.
+- Record any new findings in this document and the README.
+- _Acceptance:_ the mock-up matches the requirements; `npm run check`,
+  `npm test` and `npm run build` pass in the Dev Container; the responsive
+  matrix (360×640, 640×360, 768×1024, 1280×800) and keyboard/touch paths are
+  verified;
+  `npm audit` output is unchanged or explained.
 
 **Definition of done (Phase 1)** — a single Docker container runs a Nuxt 4 app
 that shows the full sidebar (views/calendars/resources/categories/filters), the
 top bar (view-type switcher, date nav, quick-add, overflow), every standard view
-plus the split view (with empty-band hiding), all from mock data, and is usable
-on a mobile viewport.
+plus the split view (with empty-band hiding), all from mock data. Quick-add
+creates an in-memory event, events open the event details/edit sheet, and every
+user-facing Phase 1 task is usable with touch only on 360×640 portrait and
+640×360 landscape viewports.

@@ -1,0 +1,21 @@
+{
+  "_comment": "Captured from the spike-s1 test stack (Kanidm 1.11.2, throwaway keys) with ./spike.sh token alice. Expired by now; the test pins the clock.",
+  "issuer": "https://idm.localhost:8443/oauth2/openid/web-calendar",
+  "clientId": "web-calendar",
+  "iat": 1793267648,
+  "accessToken": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZkYzE3MzA0NDM1NiIsInR5cCI6ImF0K2p3dCJ9.eyJpc3MiOiJodHRwczovL2lkbS5sb2NhbGhvc3Q6ODQ0My9vYXV0aDIvb3BlbmlkL3dlYi1jYWxlbmRhciIsInN1YiI6IjE4OWM2YTI0LWY5Y2ItNDM3Yi04ZjU4LWI1Y2M4ZDdmOTA5ZSIsImF1ZCI6IndlYi1jYWxlbmRhciIsImV4cCI6MTc5MzI2ODU0OCwibmJmIjoxNzkzMjY3NjQ4LCJpYXQiOjE3OTMyNjc2NDgsImp0aSI6ImM3NjE0NTJjLTZhNTUtNDIxNS04NmQ0LTEwYjg1OWI3OWIwYSIsImNsaWVudF9pZCI6IndlYi1jYWxlbmRhciIsImF1dGhfdGltZSI6MTc5MzI2NzY0OCwic2NvcGUiOiJjYWxkYXYgZW1haWwgZ3JvdXBzIG9wZW5pZCBwcm9maWxlIiwic2Vzc2lvbl9pZCI6ImM3NjE0NTJjLTZhNTUtNDIxNS04NmQ0LTEwYjg1OWI3OWIwYSIsInBhcmVudF9zZXNzaW9uX2lkIjoiZDk1NzZkYTUtNmFlMy00N2RkLTllYjEtNmI3YmUwMGZjYWU4In0.jsGrJEyIwrgITmLfsJWbw-2BYKI78pCsObNl2XvtwwceRokZ92QSR0Thq4LQGjDFXs6rw9RPyNxux8AlTtz-4Q",
+  "idToken": "eyJhbGciOiJFUzI1NiIsImtpZCI6ImZkYzE3MzA0NDM1NiJ9.eyJpc3MiOiJodHRwczovL2lkbS5sb2NhbGhvc3Q6ODQ0My9vYXV0aDIvb3BlbmlkL3dlYi1jYWxlbmRhciIsInN1YiI6IjE4OWM2YTI0LWY5Y2ItNDM3Yi04ZjU4LWI1Y2M4ZDdmOTA5ZSIsImF1ZCI6IndlYi1jYWxlbmRhciIsImV4cCI6MTc5MzI2ODU0OCwibmJmIjoxNzkzMjY3NjQ4LCJpYXQiOjE3OTMyNjc2NDgsImF1dGhfdGltZSI6MTc5MzI2NzY0OCwiYXpwIjoid2ViLWNhbGVuZGFyIiwianRpIjoiYzc2MTQ1MmMtNmE1NS00MjE1LTg2ZDQtMTBiODU5Yjc5YjBhIiwic2NvcGVzIjpbImNhbGRhdiIsImVtYWlsIiwiZ3JvdXBzIiwib3BlbmlkIiwicHJvZmlsZSJdLCJuYW1lIjoiQWxpY2UgRXhhbXBsZSIsInByZWZlcnJlZF91c2VybmFtZSI6ImFsaWNlIiwiZW1haWwiOiJhbGljZUBleGFtcGxlLnRlc3QiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwidXBkYXRlZF9hdCI6MTc5MzI2NzY0OCwiZ3JvdXBzIjpbIjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAzNSIsImlkbV9hbGxfcGVyc29uc0BpZG0ubG9jYWxob3N0IiwiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDM2IiwiaWRtX2FsbF9hY2NvdW50c0BpZG0ubG9jYWxob3N0IiwiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDQ4IiwiaWRtX3Blb3BsZV9zZWxmX25hbWVfd3JpdGVAaWRtLmxvY2FsaG9zdCIsIjMzMTVjMTVlLTRmZjctNDU5YS05N2RlLWQxNzYyNzlkNDE1NCIsIndlYl9jYWxlbmRhcl91c2Vyc0BpZG0ubG9jYWxob3N0IiwiYTEyZmVjNmItYjZkOC00OTczLThiNmYtNDJkZDY2OWY5YWNhIiwiY2FsZW5kYXJfYWRtaW5zQGlkbS5sb2NhbGhvc3QiXX0.CYbRGwYIRGtmJTvhfNlg0LppMeQZQrPc37U8W_3acYJNecQFahE0dKLZq5S-JjB9WhVuZwhrOBP6euMvn3dyEQ",
+  "jwks": {
+    "keys": [
+      {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "pi7BdoWNfmvh0sfwhEO7DuFNDYW7BbxKCsTkuKjqg80",
+        "y": "JMQth0wQV81tREC7EUMSB09PFvYrKl0hMnS2f2m46Sw",
+        "alg": "ES256",
+        "use": "sig",
+        "kid": "fdc173044356"
+      }
+    ]
+  }
+}

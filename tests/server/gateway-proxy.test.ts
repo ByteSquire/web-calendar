@@ -1,0 +1,567 @@
+// @vitest-environment node
+import { describe, expect, it, vi } from 'vitest'
+import { AuthError } from '../../server/utils/auth/errors'
+import {
+  createGateway,
+  type GatewayOptions,
+  type GatewayRequest,
+} from '../../server/utils/gateway/gateway'
+
+const SUB = '189c6a24-f9cb-437b-8f58-b5cc8d7f909e'
+const MAX = 1000
+
+interface Seen {
+  url: string
+  method: string
+  headers: Headers
+  body: Uint8Array
+  init: RequestInit
+}
+
+function stream(...chunks: (string | Uint8Array)[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder()
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(typeof chunk === 'string' ? encoder.encode(chunk) : chunk)
+      }
+      controller.close()
+    },
+  })
+}
+
+async function drain(body: unknown): Promise<Uint8Array> {
+  if (body === undefined || body === null) return new Uint8Array()
+  if (body instanceof Uint8Array) return body
+  return new Uint8Array(await new Response(body as ReadableStream).arrayBuffer())
+}
+
+function setup(
+  respond: (seen: Seen) => Response | Promise<Response> = () => new Response('ok'),
+  options: Partial<GatewayOptions> = {},
+) {
+  const seen: Seen[] = []
+  const fetchStub = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+    const entry: Seen = {
+      url: String(url),
+      method: init?.method ?? 'GET',
+      headers: new Headers(init?.headers),
+      body: await drain(init?.body),
+      init: init ?? {},
+    }
+    seen.push(entry)
+    return respond(entry)
+  })
+  const authenticate = vi.fn(async (headers: Headers) => {
+    if (headers.get('authorization') !== 'Bearer good') {
+      throw new AuthError('no-credentials', {
+        challenges: ['Basic realm="Web Calendar", charset="UTF-8"', 'Bearer realm="Web Calendar"'],
+      })
+    }
+    return { sub: SUB }
+  })
+  const log = vi.fn()
+  const handle = createGateway({
+    upstream: 'http://radicale:5232',
+    maxBodyBytes: MAX,
+    authenticate,
+    fetch: fetchStub as unknown as typeof fetch,
+    log,
+    ...options,
+  })
+  const call = (
+    method: string,
+    target: string,
+    init: {
+      headers?: Record<string, string>
+      body?: GatewayRequest['body']
+      authorized?: boolean
+    } = {},
+  ) =>
+    handle({
+      method,
+      target,
+      headers: new Headers({
+        ...(init.authorized === false ? {} : { authorization: 'Bearer good' }),
+        ...init.headers,
+      }),
+      body: init.body ?? null,
+    })
+  return { call, seen, fetchStub, authenticate, log }
+}
+
+describe('gateway: authentication', () => {
+  it('answers 401 with both challenges and never reaches Radicale', async () => {
+    const { call, fetchStub } = setup()
+    const response = await call('PROPFIND', '/caldav/', { authorized: false })
+    expect(response.status).toBe(401)
+    const challenge = response.headers.get('www-authenticate')!
+    expect(challenge).toContain('Basic realm="Web Calendar"')
+    expect(challenge).toContain('Bearer realm="Web Calendar"')
+    expect(fetchStub).not.toHaveBeenCalled()
+  })
+
+  it('answers 503 with Retry-After when the signing keys cannot be fetched', async () => {
+    const { call, fetchStub } = setup(undefined, {
+      authenticate: async () => {
+        throw new AuthError('keys-unavailable')
+      },
+    })
+    const response = await call('GET', '/caldav/')
+    expect(response.status).toBe(503)
+    expect(response.headers.get('retry-after')).toBe('5')
+    expect(response.headers.has('www-authenticate')).toBe(false)
+    expect(fetchStub).not.toHaveBeenCalled()
+  })
+
+  it('answers 500, not 401 or a pass-through, when authentication breaks', async () => {
+    const { call, fetchStub, log } = setup(undefined, {
+      authenticate: async () => {
+        throw new Error('database is locked')
+      },
+    })
+    expect((await call('GET', '/caldav/')).status).toBe(500)
+    expect(fetchStub).not.toHaveBeenCalled()
+    expect(log).toHaveBeenCalled()
+  })
+
+  it('logs the reason of a failure and nothing from the request, but not a missing credential', async () => {
+    const rejected = setup(undefined, {
+      authenticate: async () => {
+        throw new AuthError('expired')
+      },
+    })
+    await rejected.call('GET', '/caldav/', { headers: { authorization: 'Bearer secret-token' } })
+    expect(rejected.log).toHaveBeenCalledTimes(1)
+    expect(rejected.log.mock.calls.flat().join(' ')).toContain('expired')
+    expect(rejected.log.mock.calls.flat().join(' ')).not.toContain('secret-token')
+
+    const anonymous = setup()
+    await anonymous.call('GET', '/caldav/', { authorized: false })
+    expect(anonymous.log).not.toHaveBeenCalled()
+  })
+})
+
+describe('gateway: header hygiene', () => {
+  it('sends the authenticated identity whatever the client claims', async () => {
+    const { call, seen } = setup()
+    await call('PROPFIND', '/caldav/alice/', {
+      headers: {
+        'x-remote-user': 'bob',
+        'x-script-name': '/evil',
+        'x-forwarded-user': 'bob',
+        'x-forwarded-for': '1.2.3.4',
+        'x-forwarded-host': 'evil.example',
+        forwarded: 'for=1.2.3.4',
+        'x-remote-addr': '1.2.3.4',
+        cookie: 'session=abc',
+        depth: '0',
+      },
+    })
+    expect(seen).toHaveLength(1)
+    expect(Object.fromEntries(seen[0]!.headers)).toEqual({
+      'accept-encoding': 'identity',
+      depth: '0',
+      'x-remote-user': SUB,
+      'x-script-name': '/caldav',
+    })
+    // The user's own token is not passed on either.
+    expect(seen[0]!.headers.has('authorization')).toBe(false)
+  })
+
+  it('does not follow redirects and does not send a signal-less request into the void', async () => {
+    const { call, seen } = setup()
+    await call('GET', '/caldav/')
+    expect(seen[0]!.init.redirect).toBe('manual')
+  })
+})
+
+describe('gateway: methods and paths', () => {
+  it.each(['POST', 'PATCH', 'TRACE', 'CONNECT', 'LOCK', 'propfind'])(
+    'answers 405 to %s, with the allowed methods, before anything else',
+    async (method) => {
+      const { call, fetchStub, authenticate } = setup()
+      const response = await call(method, '/caldav/alice/')
+      expect(response.status).toBe(405)
+      expect(response.headers.get('allow')).toContain('PROPFIND')
+      expect(authenticate).not.toHaveBeenCalled()
+      expect(fetchStub).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    'OPTIONS',
+    'GET',
+    'HEAD',
+    'PUT',
+    'DELETE',
+    'PROPFIND',
+    'PROPPATCH',
+    'REPORT',
+    'MKCOL',
+    'MKCALENDAR',
+  ])('forwards %s under /caldav/', async (method) => {
+    const { call, seen } = setup()
+    const response = await call(method, '/caldav/alice/def-calendar/')
+    expect(response.status).toBe(200)
+    expect(seen[0]!.method).toBe(method)
+    expect(seen[0]!.url).toBe('http://radicale:5232/alice/def-calendar/')
+  })
+
+  it.each([
+    ['/caldav/../admin', 400],
+    ['/caldav/alice/%2e%2e/bob/', 400],
+    ['/caldav//alice/', 400],
+    ['/caldav/a%2Fb', 400],
+    ['http://evil.example/caldav/alice/', 400],
+    ['//evil.example/x', 400],
+    ['/other/alice/', 404],
+    ['/caldav/.sharing/v1/map/create', 404],
+  ])('refuses %j with %i and never reaches Radicale', async (target, status) => {
+    const { call, fetchStub } = setup()
+    expect((await call('PROPFIND', target)).status).toBe(status)
+    expect(fetchStub).not.toHaveBeenCalled()
+  })
+
+  it('checks authentication before it looks at the path', async () => {
+    const { call } = setup()
+    expect((await call('GET', '/caldav/../x', { authorized: false })).status).toBe(401)
+  })
+
+  it('sends only the normalised path upstream and drops the query', async () => {
+    const { call, seen } = setup()
+    await call('GET', '/caldav/alice/a%20b/%C3%A4.ics?evil=1')
+    expect(seen[0]!.url).toBe('http://radicale:5232/alice/a%20b/%C3%A4.ics')
+  })
+
+  it('builds the URL from the configured upstream only', async () => {
+    const { call, seen } = setup(undefined, { upstream: 'http://radicale:5232/' })
+    await call('GET', '/caldav')
+    expect(seen[0]!.url).toBe('http://radicale:5232/')
+  })
+})
+
+describe('gateway: COPY and MOVE', () => {
+  it('rewrites an absolute Destination to a path under /caldav/', async () => {
+    const { call, seen } = setup()
+    await call('MOVE', '/caldav/alice/a/e1.ics', {
+      headers: {
+        destination: 'https://calendar.example.org/caldav/alice/b/e1%20x.ics',
+        overwrite: 'F',
+      },
+    })
+    expect(seen[0]!.headers.get('destination')).toBe('/caldav/alice/b/e1%20x.ics')
+    expect(seen[0]!.headers.get('overwrite')).toBe('F')
+    expect(seen[0]!.url).toBe('http://radicale:5232/alice/a/e1.ics')
+  })
+
+  it('refuses a Destination outside /caldav/ with 403', async () => {
+    const { call, fetchStub } = setup()
+    for (const destination of [
+      '/api/config',
+      'https://calendar.example.org/',
+      '/caldav/.sharing/x',
+    ]) {
+      const response = await call('COPY', '/caldav/alice/a/e1.ics', { headers: { destination } })
+      expect(response.status).toBe(403)
+    }
+    expect(fetchStub).not.toHaveBeenCalled()
+  })
+
+  it('refuses a malformed or missing Destination with 400', async () => {
+    const { call, fetchStub } = setup()
+    for (const destination of ['/caldav/../x', 'https://u@h/caldav/x', '/caldav/x?y=1']) {
+      expect(
+        (await call('MOVE', '/caldav/alice/a/e1.ics', { headers: { destination } })).status,
+      ).toBe(400)
+    }
+    expect((await call('MOVE', '/caldav/alice/a/e1.ics')).status).toBe(400)
+    expect(fetchStub).not.toHaveBeenCalled()
+  })
+
+  it('ignores a Destination on other methods', async () => {
+    const { call, seen } = setup()
+    await call('GET', '/caldav/alice/', { headers: { destination: 'https://evil.example/x' } })
+    expect(seen[0]!.headers.has('destination')).toBe(false)
+  })
+})
+
+describe('gateway: request bodies', () => {
+  const REPORT_XML =
+    '<?xml version="1.0"?><C:calendar-query xmlns:C="urn:ietf:params:xml:ns:caldav"/>'
+
+  it('sends the body of PROPFIND and REPORT with its Content-Length', async () => {
+    const { call, seen } = setup()
+    const length = String(new TextEncoder().encode(REPORT_XML).length)
+    await call('REPORT', '/caldav/alice/def-calendar/', {
+      headers: { 'content-type': 'application/xml', 'content-length': length },
+      body: stream(REPORT_XML.slice(0, 20), REPORT_XML.slice(20)),
+    })
+    expect(new TextDecoder().decode(seen[0]!.body)).toBe(REPORT_XML)
+    expect(seen[0]!.headers.get('content-length')).toBe(length)
+    expect(seen[0]!.headers.get('content-type')).toBe('application/xml')
+    expect(seen[0]!.init.body).toBeInstanceOf(ReadableStream)
+    expect((seen[0]!.init as { duplex?: string }).duplex).toBe('half')
+  })
+
+  it('reads a body of unknown length itself and sends its length, because Radicale ignores chunked bodies', async () => {
+    const { call, seen } = setup()
+    await call('PUT', '/caldav/alice/def-calendar/e1.ics', {
+      headers: { 'transfer-encoding': 'chunked', 'content-type': 'text/calendar' },
+      body: stream('BEGIN:VCALENDAR\r\n', 'END:VCALENDAR\r\n'),
+    })
+    expect(new TextDecoder().decode(seen[0]!.body)).toBe('BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n')
+    expect(seen[0]!.headers.get('content-length')).toBe('32')
+    expect(seen[0]!.headers.has('transfer-encoding')).toBe(false)
+  })
+
+  it('answers 413 for a declared length over the limit without reading the body', async () => {
+    const { call, fetchStub } = setup()
+    const body = stream('x')
+    const response = await call('PUT', '/caldav/alice/c/e.ics', {
+      headers: { 'content-length': String(MAX + 1) },
+      body,
+    })
+    expect(response.status).toBe(413)
+    expect(fetchStub).not.toHaveBeenCalled()
+  })
+
+  it('answers 413 for a chunked body over the limit', async () => {
+    const { call, fetchStub } = setup()
+    const response = await call('PUT', '/caldav/alice/c/e.ics', {
+      headers: { 'transfer-encoding': 'chunked' },
+      body: stream('x'.repeat(600), 'x'.repeat(600)),
+    })
+    expect(response.status).toBe(413)
+    expect(fetchStub).not.toHaveBeenCalled()
+  })
+
+  it('answers 413 when a body is longer than it declared and was streamed upstream', async () => {
+    const { call } = setup(async (seen) => {
+      // The fake reads the stream the way fetch would.
+      await drain(seen.init.body)
+      return new Response('ok')
+    })
+    const response = await call('PUT', '/caldav/alice/c/e.ics', {
+      headers: { 'content-length': '10' },
+      body: stream('x'.repeat(600), 'x'.repeat(600)),
+    })
+    expect(response.status).toBe(413)
+  })
+
+  it('accepts a body of exactly the limit', async () => {
+    const { call, seen } = setup()
+    const response = await call('PUT', '/caldav/alice/c/e.ics', {
+      headers: { 'content-length': String(MAX) },
+      body: stream('x'.repeat(MAX)),
+    })
+    expect(response.status).toBe(200)
+    expect(seen[0]!.body.byteLength).toBe(MAX)
+  })
+
+  it.each(['abc', '-1', '1.5', '1e3', '0x10', '', '99999999999999999999'])(
+    'refuses the Content-Length %j',
+    async (value) => {
+      const { call, fetchStub } = setup()
+      const response = await call('PUT', '/caldav/alice/c/e.ics', {
+        headers: { 'content-length': value },
+        body: stream('x'),
+      })
+      expect([400, 413]).toContain(response.status)
+      expect(fetchStub).not.toHaveBeenCalled()
+    },
+  )
+
+  it('sends no body for GET and HEAD, even if the client sent one', async () => {
+    const { call, seen } = setup()
+    await call('GET', '/caldav/alice/', { headers: { 'content-length': '3' }, body: stream('abc') })
+    await call('HEAD', '/caldav/alice/', {
+      headers: { 'content-length': '3' },
+      body: stream('abc'),
+    })
+    for (const entry of seen) {
+      expect(entry.body.byteLength).toBe(0)
+      expect(entry.headers.has('content-length')).toBe(false)
+    }
+  })
+})
+
+describe('gateway: responses', () => {
+  it('passes status, body and the useful headers through', async () => {
+    const { call } = setup(
+      () =>
+        new Response('<multistatus/>', {
+          status: 207,
+          statusText: 'Multi-Status',
+          headers: {
+            'content-type': 'text/xml; charset=utf-8',
+            dav: '1, 2, calendar-access',
+            etag: '"x"',
+          },
+        }),
+    )
+    const response = await call('PROPFIND', '/caldav/alice/')
+    expect(response.status).toBe(207)
+    expect(await response.text()).toBe('<multistatus/>')
+    expect(response.headers.get('dav')).toBe('1, 2, calendar-access')
+    expect(response.headers.get('etag')).toBe('"x"')
+    expect(response.headers.get('content-type')).toBe('text/xml; charset=utf-8')
+  })
+
+  it('drops cookies, hop-by-hop headers and the server banner from Radicale’s answer', async () => {
+    const { call } = setup(() => {
+      const headers = new Headers({
+        server: 'WSGIServer CPython/3.15.1',
+        connection: 'close',
+        'keep-alive': 'timeout=5',
+        'access-control-allow-origin': '*',
+      })
+      headers.append('set-cookie', 'a=1')
+      return new Response('x', { headers })
+    })
+    const response = await call('GET', '/caldav/alice/')
+    expect(response.headers.getSetCookie()).toEqual([])
+    for (const name of ['server', 'connection', 'keep-alive', 'access-control-allow-origin']) {
+      expect(response.headers.has(name)).toBe(false)
+    }
+  })
+
+  it('passes a redirect from Radicale on as it is', async () => {
+    const { call } = setup(
+      () => new Response(null, { status: 301, headers: { location: '/caldav/' } }),
+    )
+    const response = await call('GET', '/caldav')
+    expect(response.status).toBe(301)
+    expect(response.headers.get('location')).toBe('/caldav/')
+  })
+
+  it('sends no body for HEAD and for 204 and 304', async () => {
+    const { call } = setup((seen) =>
+      seen.method === 'HEAD'
+        ? new Response(null, {
+            headers: { 'content-length': '1234', 'content-type': 'text/calendar' },
+          })
+        : new Response(null, { status: 204 }),
+    )
+    const head = await call('HEAD', '/caldav/alice/c/e.ics')
+    expect(head.status).toBe(200)
+    expect(head.headers.get('content-length')).toBe('1234')
+    expect(await head.text()).toBe('')
+    expect((await call('DELETE', '/caldav/alice/c/e.ics')).status).toBe(204)
+  })
+
+  it('turns a 401 from Radicale into a 502: it is the gateway’s fault, not the client’s', async () => {
+    const { call, log } = setup(
+      () =>
+        new Response('no', {
+          status: 401,
+          headers: { 'www-authenticate': 'Basic realm="Radicale"' },
+        }),
+    )
+    const response = await call('GET', '/caldav/alice/')
+    expect(response.status).toBe(502)
+    expect(response.headers.has('www-authenticate')).toBe(false)
+    expect(log).toHaveBeenCalled()
+  })
+
+  it('answers 502 when Radicale cannot be reached', async () => {
+    const { call, log } = setup(() => {
+      throw new TypeError('fetch failed')
+    })
+    const response = await call('GET', '/caldav/alice/')
+    expect(response.status).toBe(502)
+    expect(await response.text()).not.toContain('fetch failed')
+    expect(log).toHaveBeenCalled()
+  })
+
+  it('answers 403 and 404 from Radicale as they are', async () => {
+    const { call } = setup(
+      (seen) => new Response('x', { status: seen.method === 'GET' ? 404 : 403 }),
+    )
+    expect((await call('GET', '/caldav/alice/missing.ics')).status).toBe(404)
+    expect((await call('PROPFIND', '/caldav/bob/')).status).toBe(403)
+  })
+})
+
+describe('gateway: CORS', () => {
+  const ORIGIN = 'https://app.example.org'
+  const preflight = {
+    origin: ORIGIN,
+    'access-control-request-method': 'PROPFIND',
+    'access-control-request-headers': 'authorization,depth',
+  }
+
+  it('adds no CORS headers at all by default, not even to a 401', async () => {
+    const { call } = setup()
+    for (const response of [
+      await call('PROPFIND', '/caldav/', { authorized: false, headers: { origin: ORIGIN } }),
+      await call('PROPFIND', '/caldav/', { headers: { origin: ORIGIN } }),
+      await call('OPTIONS', '/caldav/', { authorized: false, headers: preflight }),
+    ]) {
+      expect(response.headers.has('access-control-allow-origin')).toBe(false)
+      expect(response.headers.has('vary')).toBe(false)
+    }
+  })
+
+  it('answers a preflight from an allowed origin without authentication', async () => {
+    const { call, authenticate, fetchStub } = setup(undefined, { corsOrigins: [ORIGIN] })
+    const response = await call('OPTIONS', '/caldav/', { authorized: false, headers: preflight })
+    expect(response.status).toBe(204)
+    expect(response.headers.get('access-control-allow-origin')).toBe(ORIGIN)
+    expect(response.headers.get('access-control-allow-methods')).toContain('PROPFIND')
+    expect(response.headers.get('access-control-allow-headers')).toContain('authorization')
+    expect(response.headers.get('vary')).toBe('Origin')
+    expect(authenticate).not.toHaveBeenCalled()
+    expect(fetchStub).not.toHaveBeenCalled()
+  })
+
+  it('puts the same CORS headers on a 401, so the browser sees the status', async () => {
+    const { call } = setup(undefined, { corsOrigins: [ORIGIN] })
+    const response = await call('PROPFIND', '/caldav/', {
+      authorized: false,
+      headers: { origin: ORIGIN },
+    })
+    expect(response.status).toBe(401)
+    expect(response.headers.get('access-control-allow-origin')).toBe(ORIGIN)
+    expect(response.headers.get('access-control-expose-headers')).toContain('WWW-Authenticate')
+    expect(response.headers.get('www-authenticate')).toContain('Bearer')
+  })
+
+  it('adds them to proxied answers and to gateway errors', async () => {
+    const { call } = setup(undefined, { corsOrigins: [ORIGIN] })
+    const ok = await call('PROPFIND', '/caldav/alice/', { headers: { origin: ORIGIN } })
+    expect(ok.headers.get('access-control-allow-origin')).toBe(ORIGIN)
+    expect(ok.headers.get('access-control-expose-headers')).toContain('ETag')
+    for (const [method, target, status] of [
+      ['POST', '/caldav/alice/', 405],
+      ['GET', '/caldav/../x', 400],
+    ] as const) {
+      const response = await call(method, target, { headers: { origin: ORIGIN } })
+      expect(response.status).toBe(status)
+      expect(response.headers.get('access-control-allow-origin')).toBe(ORIGIN)
+    }
+  })
+
+  it('does not answer a preflight from another origin; it gets the plain 401', async () => {
+    const { call } = setup(undefined, { corsOrigins: [ORIGIN] })
+    const response = await call('OPTIONS', '/caldav/', {
+      authorized: false,
+      headers: { ...preflight, origin: 'https://evil.example' },
+    })
+    expect(response.status).toBe(401)
+    expect(response.headers.has('access-control-allow-origin')).toBe(false)
+    expect(response.headers.get('vary')).toBe('Origin')
+  })
+
+  it('treats OPTIONS without a preflight header as the normal authenticated request', async () => {
+    const { call, seen } = setup(undefined, { corsOrigins: [ORIGIN] })
+    const unauthenticated = await call('OPTIONS', '/caldav/', {
+      authorized: false,
+      headers: { origin: ORIGIN },
+    })
+    expect(unauthenticated.status).toBe(401)
+    const response = await call('OPTIONS', '/caldav/')
+    expect(response.status).toBe(200)
+    expect(seen).toHaveLength(1)
+  })
+})

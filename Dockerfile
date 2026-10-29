@@ -15,8 +15,7 @@ FROM node:24.15-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-# The Nitro output is self-contained; dev dependencies (including the Vite+
-# toolchain) never reach the runtime image.
+# The Nitro output is self-contained; dev dependencies never reach the runtime image.
 COPY --from=build /app/.output ./.output
 COPY --from=build /app/server/validate-config.mjs ./server/validate-config.mjs
 

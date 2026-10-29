@@ -1,7 +1,8 @@
 # Web Calendar — Requirements
 
-> Status: **Draft v1.2** — for review and iteration.
-> The open questions in §8 have been resolved; see the recorded decisions there.
+> Status: **Draft v1.3** — for review and iteration.
+> Q11–Q13 were resolved in v1.2. Q14–Q16 (access control, data freshness, recurrence and
+> time zone) were recorded on 2026-10-29; Q14 still depends on a spike. See §8.
 
 ---
 
@@ -23,11 +24,11 @@ part of the initial release.
 
 ## 2. Users & Personas
 
-| Persona                       | Who                                    | Primary goal                                                                                              |
-| ----------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Team member**               | One of 30–50 org members               | See the events from the calendars _they_ want to see, optionally grouped by pre-defined views; coordinate |
-| **Team admin**                | Someone who manages calendars & access | Define views; configure who can see which calendars; manage resources                                     |
-| **Public viewer** _(planned)_ | Anyone outside the org                 | Browse published events in a read-only view                                                               |
+| Persona                       | Who                                   | Primary goal                                                                                              |
+| ----------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Team member**               | One of 30–50 org members              | See the events from the calendars _they_ want to see, optionally grouped by pre-defined views; coordinate |
+| **Team admin**                | Someone who manages views & resources | Define admin views; manage resources (sharing is managed in the CalDAV backend, not in this app)          |
+| **Public viewer** _(planned)_ | Anyone outside the org                | Browse published events in a read-only view                                                               |
 
 ---
 
@@ -39,10 +40,14 @@ part of the initial release.
   calendars are shown; **both user-defined and admin-defined**
 - **Multiple view types** (day / 5-day / week / month / year / **split** /
   list) to keep busy days readable
-- Calendar sources via **iCal** and **CalDAV**
+- Calendar sources via **iCal** and **CalDAV** — CalDAV calendars are discovered
+  through the user's OIDC login; iCal URLs are fetched by the app
 - **OIDC** authentication
-- **Access control** at every granularity (per-user, per-team, per-role,
-  per-calendar, and public / not-logged-in)
+- **Access control** enforced by the **CalDAV backend** through the user's OIDC
+  login (per-user, per-team, per-role and per-calendar sharing is whatever the
+  backend supports); public / not-logged-in access is limited to the planned
+  public view
+- **Recurring events** and a single, configured **organization time zone**
 - **Resources** — bookable entities (rooms, cars, …) not owned by a single
   calendar, that events can block
 - **Mobile-friendly** UI
@@ -67,6 +72,8 @@ part of the initial release.
 ### Out of scope (for now)
 
 - Full Google Calendar / Outlook feature parity
+- Managing sharing and permissions **inside this app** (done in the CalDAV backend)
+- Per-user or multiple time zones
 - Native mobile apps
 - Being part of a larger groupware suite (the opposite is a goal — see C-5)
 
@@ -98,11 +105,13 @@ out). Views appear at the **top of the sidebar**.
 ### 4.2 Calendar sources
 
 - **FR-7** Users can **import a calendar from an iCal (`.ics`) URL or file**.
-- **FR-8** Users can **connect a CalDAV account** to sync their calendar(s).
+- **FR-8** Users see the **CalDAV calendars they have access to** on the configured
+  backend. Calendars are discovered through the user's OIDC login; there is no
+  separate account setup _(assumes Q14 holds; fallback in design §8)_.
 - **FR-9** _(nice to have)_ CalDAV sync is **two-way** — users can create/edit
   events that write back to the CalDAV server.
-- **FR-10** The system **refreshes / re-syncs** connected sources on a schedule
-  or on demand.
+- **FR-10** Calendar data is **fetched live** for the visible date range and cached
+  only briefly; users can **refresh on demand**. There is no background sync.
 - **FR-11** Calendars are **user-defined and flexible** — the system does **not
   force special calendar types** (e.g. holidays and birthdays are ordinary,
   optional calendars — not forced categories).
@@ -110,16 +119,21 @@ out). Views appear at the **top of the sidebar**.
 ### 4.3 Authentication
 
 - **FR-12** Users authenticate via **OIDC** against an existing identity provider.
-- **FR-13** The system maps an authenticated identity to a user account and their
-  accessible calendars.
+- **FR-13** The system maps an authenticated identity to an app user (for views,
+  categories, filters and preferences) and to the calendars the CalDAV backend
+  lets that user access.
 
 ### 4.4 Access control
 
-- **FR-14** Access control supports **all** of these granularity levels:
-  **per-user, per-team, per-role, per-calendar**, and **public / not-logged-in**
-  visibility.
-- **FR-15** The system **enforces** the configured access control so users only
-  see what they're permitted to see.
+- **FR-14** Access control is **delegated to the CalDAV backend** and covers
+  whatever granularity it supports (**per-user, per-team, per-role,
+  per-calendar**). The app stores no calendar permissions of its own, and admins
+  manage sharing in the backend, not here. **Public / not-logged-in** visibility
+  exists only through the planned public view (FR-26/27), which publishes an
+  explicit list of calendars.
+- **FR-15** The system **never shows** a calendar or event the signed-in user
+  cannot access on the backend. Views that reference inaccessible calendars omit
+  them.
 
 ### 4.5 Resources
 
@@ -156,7 +170,14 @@ minimum:
 - **FR-24** A **quick-add** control to create an event.
 - **FR-25** An **overflow (`⋮`) menu** for additional options.
 
-### 4.8 Public publishing _(planned)_
+### 4.8 Events
+
+- **FR-28** **Recurring events** (repeat rules, exceptions, cancelled instances)
+  display correctly in every view type.
+- **FR-29** All times are shown in one configured **organization time zone**
+  (`TZ`). Per-user time zones are out of scope.
+
+### 4.9 Public publishing _(planned)_
 
 - **FR-26** _(planned)_ A dedicated **public publishing** experience — a public
   URL/view for an external audience to browse published events (builds on the
@@ -173,10 +194,13 @@ minimum:
   **Split view** (each calendar in its own band) is the primary mechanism for
   this. Performance is a secondary concern.
 - **NFR-2 (Security)** OIDC authentication; strict per-user / per-team isolation
-  of calendar data; no cross-tenant data leakage.
+  of calendar data, enforced by the CalDAV backend because the app calls it as the
+  signed-in user; no cross-tenant data leakage.
 - **NFR-3 (Accessibility)** The web UI meets **WCAG 2.1 AA**.
 - **NFR-4 (Reliability)** Defined availability target and graceful degradation
-  when an external source (iCal/CalDAV) is unreachable.
+  when an external source (iCal/CalDAV) is unreachable: that calendar shows an
+  error with a retry while the others keep working. The app keeps no long-lived
+  copy of calendar data, so nothing older than the short cache is shown.
 - **NFR-5 (Standards compliance)** iCalendar (**RFC 5545**), CalDAV
   (**RFC 4791**), and OpenID Connect.
 - **NFR-6 (Portability)** Because sources are iCal/CalDAV, user data is not
@@ -195,10 +219,15 @@ minimum:
   authentication workflow.
 - **C-5** Must be **standalone** — not part of a larger groupware suite (a key
   differentiator from GroupOffice).
+- **C-6** The **CalDAV backend is the source of truth** for calendars, events and
+  sharing. The app stores only app-level data: views, categories, filters, iCal
+  subscriptions, resource metadata and preferences.
 - **A-1** An existing OIDC identity provider is available.
 - **A-2** Team members already have calendars in iCal/CalDAV form to connect.
 - **A-3** **GroupOffice** is the current tool being replaced; its features and
   left sidebar are a liked baseline to study.
+- **A-4** The CalDAV side (OpenCloud/Radicale) accepts the signed-in user's OIDC
+  token. **Unverified** — see Q14.
 
 ---
 
@@ -207,11 +236,11 @@ minimum:
 The work is delivered in three phases (all requirements are in scope; this is
 the **order** of delivery):
 
-| Phase                        | Focus                                                                                                            | Key requirements             |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| **1 — UI shell / mock-up**   | The webpage and a **mock-up of all UI** (all screens, sidebar with views at the top, view types incl. **split**) | FR-21…FR-25, FR-6, FR-20     |
-| **2 — Core calendar + auth** | Calendar features and authentication                                                                             | FR-7…FR-13, FR-3…FR-5, FR-20 |
-| **3 — Organizational**       | Grouping / views (templates for calendar groups), resources                                                      | FR-1…FR-2, FR-14…FR-19       |
+| Phase                        | Focus                                                                                                            | Key requirements                           |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| **1 — UI shell / mock-up**   | The webpage and a **mock-up of all UI** (all screens, sidebar with views at the top, view types incl. **split**) | FR-21…FR-25, FR-6, FR-20                   |
+| **2 — Core calendar + auth** | Calendar features and authentication (OIDC pass-through to CalDAV, recurring events)                             | FR-7…FR-15, FR-3…FR-5, FR-20, FR-28, FR-29 |
+| **3 — Organizational**       | Grouping / views (templates for calendar groups), resources                                                      | FR-1…FR-2, FR-16…FR-19                     |
 
 ---
 
@@ -232,3 +261,18 @@ the **order** of delivery):
   **hidden** to save space. Extending the split view to **all** view types is a
   **planned experiment** (post-initial-release), **not** a requirement. (Captured
   in FR-6 and the Planned section.)
+- **Q14 — Access control source.** _Resolved in principle; verification pending._
+  Access control is **delegated to the CalDAV backend**: the app calls it as the
+  signed-in user with their OIDC token and shows only what that user can already
+  see, like Thunderbird or DAVx5. Admins manage sharing in Radicale/OpenCloud, not
+  in this app. (Captured in FR-8, FR-13…FR-15, C-6, A-4.) **Pending spike S1**
+  (design §12): whether OpenCloud/Radicale accepts the user's token. **Fallback**
+  if it does not: a service account plus an app-side ACL, as in design v1.0.
+- **Q15 — Data freshness.** _Resolved._ Calendar data is fetched **live** for the
+  visible range with a short cache. No background sync, so no stored credentials
+  or offline tokens. (Captured in FR-10 and NFR-4.)
+- **Q16 — Recurrence and time zones.** _Resolved._ Recurring events are common;
+  the organization uses **one time zone**. (Captured in FR-28 and FR-29.)
+- **Open — Public view credentials.** How the planned public view reads published
+  calendars without a logged-in user (likely a service credential limited to an
+  explicit published list) is decided when that feature is scheduled.

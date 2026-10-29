@@ -46,19 +46,22 @@ After changing dependencies, run `npm ci` again in the container terminal.
 Run these in the Dev Container terminal:
 
 ```sh
-npm run build   # nuxt build (production output)
-npm run check   # vp check: format + lint + type-aware typecheck
-npm test        # vp test: Vitest suite
-npm run lint    # vp lint
-npm run fmt     # vp fmt (writes changes)
+npm run build      # nuxt build (production output)
+npm run check      # fmt:check + lint + typecheck
+npm test           # vitest run: Vitest suite
+npm run lint       # eslint . (lint:fix applies autofixes)
+npm run fmt        # prettier --write .
+npm run typecheck  # nuxt typecheck
 npm audit
 ```
 
-Quality tooling runs on **Vite+** (`vite-plus` 1.4.0, the `vp` CLI bundling
-Oxfmt, Oxlint and Vitest). Nuxt still owns `npm run dev` and `npm run build`;
-`vp dev`/`vp build` are deliberately not used because they bypass Nuxt. The
-root `vite.config.ts` contains only the Vite+ `fmt` and `lint` blocks, and is
-ignored by Nuxt itself.
+Linting is ESLint through `@nuxt/eslint` (flat config in `eslint.config.mjs`).
+Formatting is Prettier (`.prettierrc`: single quotes, no semicolons, 100 columns), and
+`eslint-config-prettier` keeps the two from conflicting. Type checking is
+`nuxt typecheck`, which needs `typescript` and `vue-tsc`; TypeScript is kept on 5.9
+because `vue-tsc` support for TypeScript 7 is unverified. The code was last formatted
+by Oxfmt (from the removed Vite+ toolchain), so the first `npm run fmt` may produce
+small diffs.
 
 ### Mock data (Phase 1)
 
@@ -71,8 +74,9 @@ and client renders match.
 ### FullCalendar, mobile and editing notes (Phase 1)
 
 - **Mount client-only.** FullCalendar renders empty during SSR; wrap it in
-  `<ClientOnly>` to avoid hydration mismatches. Import `skeleton.css` plus a
-  theme stylesheet, or the calendar is unstyled.
+  `<ClientOnly>` to avoid hydration mismatches. This stops mattering for app routes
+  once the app is an SPA (planned, design §9); it still applies to any SSR route.
+  Import `skeleton.css` plus a theme stylesheet, or the calendar is unstyled.
 - **Interaction plugin.** `editable` and `selectable` default to `false`.
   Drag/resize and selection require `@fullcalendar/vue3/interaction`. Phase 1
   keeps them off and is **read-only plus quick-add**; drag/resize editing is
@@ -105,12 +109,14 @@ and client renders match.
   and only available via the opt-in `future.compatibilityVersion: 5` flag from
   Nuxt 4.2+ — not recommended for this project yet. When Nuxt 5 reaches stable,
   upgrade and re-run `npm audit`.
-- `npm run dev` prints
-  `WARN [NUXT_B5004] External configuration files are not supported: vite.config.ts`.
-  Nuxt 4.6.2 ignores that file — it exists only for the Vite+ toolchain. Nuxt's
-  documentation states that a `vite.config` importing from `vite-plus` should
-  not trigger this warning, but that exemption is not yet in 4.6.2. It is
-  harmless: build, dev server and checks all pass.
+- The container refuses to start without OIDC and CalDAV settings
+  (`server/validate-config.mjs`), even though Phase 1 uses mock data. Copy
+  `.env.example` to `.env` (placeholder values are fine) before `docker compose up`.
+- Design decisions of 2026-10-29 are recorded in `docs/design.md` (v1.1) but not yet
+  applied to the code or config: the app becomes an SPA (`ssr: false`), access control
+  moves to the CalDAV backend, calendars are fetched live instead of synced
+  (`NUXT_SYNC_INTERVAL_MIN` becomes obsolete), and Nuxt UI is under trial. Open spikes
+  S1–S4 are listed in design §12.
 
 ### Dependency versions (as of 2026-10-24)
 
@@ -122,8 +128,6 @@ and client renders match.
   `@fullcalendar/vue3/list`, `@fullcalendar/vue3/interaction`,
   `@fullcalendar/vue3/multimonth`. `@fullcalendar/core` is a v7 stub and is **not** a direct
   dependency; standalone `@fullcalendar/*` plugin packages are v6-only.
-- Vite+ `1.4.0` (`vite-plus`, dev dependency; pins `vite` to
-  `@voidzero-dev/vite-plus-core@1.4.0` via `overrides`).
 
 ### Production
 

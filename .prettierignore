@@ -1,0 +1,8 @@
+.nuxt
+.output
+.data
+.npm-cache
+.claude
+node_modules
+coverage
+package-lock.json

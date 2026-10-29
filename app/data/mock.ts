@@ -183,7 +183,7 @@ function makeEvent(input: Omit<CalendarEvent, 'uid'>): CalendarEvent {
 
 /**
  * Build the mock dataset around the week containing `today`.
- * Pass a server-provided anchor so SSR and client renders match.
+ * Tests pass a fixed anchor to get a deterministic dataset.
  */
 export function createMockData(today: Temporal.PlainDate = Temporal.Now.plainDateISO()): MockData {
   const monday = today.subtract({ days: today.dayOfWeek - 1 })

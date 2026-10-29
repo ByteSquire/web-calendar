@@ -1,214 +1,242 @@
+@import 'tailwindcss';
+@import '@nuxt/ui';
+/* FullCalendar v7: skeleton, the classic theme and its palette (light, plus the dark variables
+ * under [data-color-scheme=dark]). FullCalendar's CSS is unlayered and wins over Tailwind's. */
+@import '@fullcalendar/vue3/skeleton.css';
+@import '@fullcalendar/vue3/themes/classic/theme.css';
+@import '@fullcalendar/vue3/themes/classic/palette.css';
+
 /* Global styles for the web calendar.
- * Phase 1 (UI shell / mock-up) — base tokens and layout primitives.
- * Component-specific styles are added in later steps. */
+ * Everything is layered, so Tailwind utilities and Nuxt UI components can override it:
+ * unlayered rules would beat both. The tokens below follow Nuxt UI's colour-mode variables. */
 
-:root {
-  --bg: #ffffff;
-  --bg-elevated: #f5f6f8;
-  --bg-sidebar: #1f2733;
-  --bg-sidebar-hover: #2a3340;
-  --text: #1f2733;
-  --text-muted: #6b7280;
-  --text-on-dark: #e6e9ee;
-  --border: #e2e5ea;
-  --accent: #2f6fed;
-  --accent-hover: #2559c9;
-  --danger: #d64545;
-  --radius: 8px;
-  --sidebar-width: 264px;
-  --topbar-height: 56px;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-}
-
-#__nuxt {
-  height: 100%;
-}
-
-body {
-  font-family:
-    system-ui,
-    -apple-system,
-    'Segoe UI',
-    Roboto,
-    Helvetica,
-    Arial,
-    sans-serif;
-  color: var(--text);
-  background: var(--bg);
-  font-size: 14px;
-  line-height: 1.4;
-}
-
-button {
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  border: none;
-  background: none;
-}
-
-a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-/* ---- App shell / layout primitives (Phase 1 Step 3) ---- */
-
-.app-shell {
-  display: grid;
-  grid-template-rows: var(--topbar-height) 1fr;
-  grid-template-columns: var(--sidebar-width) 1fr;
-  height: 100vh;
-  height: 100dvh;
-  overflow: hidden; /* page never scrolls; regions scroll internally */
-}
-
-/* Top bar spans the full width (row 1). */
-.top-bar {
-  grid-column: 1 / -1;
-  grid-row: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: var(--topbar-height);
-  padding: 0 12px;
-  background: var(--bg-elevated);
-  border-bottom: 1px solid var(--border);
-  overflow-x: auto; /* scroll horizontally instead of clipping */
-}
-
-.top-bar-title {
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-/* Sidebar: fixed column on desktop (row 2, col 1). */
-.sidebar {
-  grid-column: 1;
-  grid-row: 2;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-sidebar);
-  color: var(--text-on-dark);
-  overflow: hidden auto; /* clip horizontally, scroll vertically */
-}
-
-/* Main area fills the remaining space and scrolls internally. */
-.main-area {
-  grid-column: 2;
-  grid-row: 2;
-  min-height: 0;
-  overflow: auto;
-  background: var(--bg);
-}
-
-/* Icon buttons (hamburger, close) with comfortable tap targets. */
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  min-width: 44px;
-  min-height: 44px;
-  border-radius: var(--radius);
-  color: inherit;
-}
-
-.icon-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
-
-.icon-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-/* Hamburger icon */
-.hamburger {
-  display: inline-flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.hamburger span {
-  width: 18px;
-  height: 2px;
-  background: currentColor;
-  border-radius: 1px;
-}
-
-/* Backdrop for the mobile drawer (hidden on desktop). */
-.sidebar-backdrop {
-  display: none;
-}
-
-/* Desktop: toggle can collapse the sidebar column. */
-@media (min-width: 768px) {
-  .app-shell:not(.sidebar-open) {
-    grid-template-columns: 0 1fr;
+@layer base {
+  /* White text on Nuxt UI's default primary (blue 500) is 3.7:1, below WCAG AA; shade 600 is 5.2:1.
+   * The dark scheme keeps the lighter shade, which carries dark text. */
+  :root:not(.dark) {
+    --ui-primary: var(--ui-color-primary-600);
   }
 
-  .app-shell:not(.sidebar-open) .sidebar {
-    display: none;
+  :root {
+    --bg: var(--ui-bg);
+    --bg-elevated: var(--ui-bg-muted);
+    --bg-sidebar: var(--ui-bg-muted);
+    --text: var(--ui-text);
+    --text-muted: var(--ui-text-muted);
+    --border: var(--ui-border);
+    --accent: var(--ui-primary);
+    --danger: var(--ui-error);
+    --radius: 8px;
+    --sidebar-width: 17rem;
+    --topbar-height: 56px;
+  }
+
+  html,
+  body,
+  #__nuxt {
+    height: 100%;
+  }
+
+  body {
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      Roboto,
+      Helvetica,
+      Arial,
+      sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    font-size: 14px;
+    line-height: 1.4;
+  }
+
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  a {
+    color: var(--accent);
+    text-decoration: none;
   }
 }
 
-/* Mobile (<768px): sidebar becomes an off-canvas drawer. */
-@media (max-width: 767px) {
+/* App shell: top bar over a sidebar column and the main area.
+ * Each region is `position: relative` so absolutely positioned children (sr-only labels, for
+ * example) are clipped with it instead of stretching the page. */
+@layer components {
   .app-shell {
-    grid-template-columns: 1fr;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden; /* the page never scrolls; regions scroll internally */
   }
 
+  /* Top bar spans the full width (row 1). Below 1024 px it has two rows: the sidebar toggle, title
+   * and the quick-add / overflow buttons on top, and the date navigation with the view switcher
+   * below, which scrolls sideways on its own. From 1024 px everything shares one row. */
   .top-bar {
     position: relative;
-    z-index: 20;
+    grid-column: 1 / -1;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'nav title actions'
+      'strip strip strip';
+    align-items: center;
+    column-gap: 8px;
+    padding: 0 12px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
   }
 
+  .top-bar-nav {
+    grid-area: nav;
+  }
+
+  .top-bar-title {
+    grid-area: title;
+    min-height: var(--topbar-height);
+    display: flex;
+    align-items: center;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .top-bar-actions {
+    grid-area: actions;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* Scrolls horizontally instead of wrapping or clipping. */
+  .top-bar-strip {
+    grid-area: strip;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 8px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  @media (min-width: 1024px) {
+    .top-bar {
+      grid-template-columns: auto auto minmax(0, 1fr) auto;
+      grid-template-areas: 'nav title strip actions';
+      height: var(--topbar-height);
+    }
+
+    .top-bar-title {
+      min-height: 0;
+    }
+
+    .top-bar-strip {
+      padding-bottom: 0;
+    }
+  }
+
+  /* Sidebar column (row 2, col 1). Below 768 px the same content lives in a slideover. */
   .sidebar {
-    position: fixed; /* escapes the shell's overflow clipping */
-    top: var(--topbar-height);
-    left: 0;
-    bottom: 0;
-    width: min(var(--sidebar-width), 85vw);
-    transform: translateX(-102%);
-    transition: transform 0.2s ease;
-    z-index: 40;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
-  }
-
-  .sidebar.is-open {
-    transform: translateX(0);
-  }
-
-  .main-area {
+    position: relative;
     grid-column: 1;
+    grid-row: 2;
+    min-width: 0;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    overflow: hidden auto; /* clip horizontally, scroll vertically */
   }
 
-  .sidebar-backdrop {
-    display: block;
-    position: fixed;
-    top: var(--topbar-height); /* keep the toggle reachable */
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(15, 23, 42, 0.45);
-    z-index: 30;
+  /* Main area fills the remaining space and scrolls internally. */
+  .main-area {
+    position: relative;
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    background: var(--bg);
+  }
+
+  /* Desktop: the sidebar can be collapsed. */
+  @media (min-width: 768px) {
+    .app-shell:not(.sidebar-open) {
+      grid-template-columns: 0 minmax(0, 1fr);
+    }
+
+    .app-shell:not(.sidebar-open) .sidebar {
+      display: none;
+    }
+  }
+
+  /* Mobile (< 768 px): a single column. */
+  @media (max-width: 767px) {
+    .app-shell {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .main-area {
+      grid-column: 1;
+    }
   }
 }
 
-/* Respect reduced-motion preferences. */
+/* FullCalendar.
+ * Unlayered on purpose: FullCalendar's own rules are unlayered and the rules below have to beat
+ * them at equal specificity (they come later). Only FullCalendar's variables and the app's
+ * `app-evt-*` classes (utils/fullcalendar.ts) are touched. */
+
+/* The stock palette is re-pointed at the Nuxt UI tokens, so the calendar follows the app's
+ * neutral and primary colours in both schemes. The dark block repeats the selector because the
+ * palette sets its dark variables on the calendar element itself, which beats `:root`. Calendar
+ * text uses the toned and muted text tokens, which keep 4.5:1 on the page background. */
+:root,
+[data-color-scheme='dark'] {
+  --fc-classic-background: var(--ui-bg);
+  --fc-classic-foreground: var(--ui-text-highlighted);
+  --fc-classic-muted-foreground: var(--ui-text-toned);
+  --fc-classic-faint-foreground: var(--ui-text-muted);
+  --fc-classic-border: var(--ui-border);
+  --fc-classic-strong-border: var(--ui-border-accented);
+  --fc-classic-primary: var(--ui-primary);
+  --fc-classic-today: color-mix(in oklab, var(--ui-primary) 10%, transparent);
+}
+
+/* Tentative entries get a dashed edge in the text colour of their fill (the fill itself is a tint
+ * chosen in code); blocked ("Busy") entries are hatched in the text colour. */
+.app-evt.app-evt-tentative {
+  border-style: dashed;
+  border-color: var(--fc-event-contrast-color);
+}
+
+.app-evt.app-evt-blocked {
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--fc-event-contrast-color) 16%, transparent) 0 5px,
+    transparent 5px 10px
+  );
+}
+
+/* No motion inside the calendar for people who ask for less. */
 @media (prefers-reduced-motion: reduce) {
-  .sidebar {
-    transition: none;
+  .calendar-main *,
+  .calendar-main *::before,
+  .calendar-main *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
+}
+
+/* The container takes focus when an entry it had focused is gone (event sheet closes); no ring. */
+.calendar-main:focus {
+  outline: none;
 }

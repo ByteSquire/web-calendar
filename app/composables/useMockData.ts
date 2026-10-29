@@ -1,8 +1,7 @@
 import { Temporal } from 'temporal-polyfill'
 import { createMockData } from '~/data/mock'
 
-/** Anchor mock data once per request so SSR and hydration agree. */
+/** Mock data around the current week. Phase 2 replaces this with API calls. */
 export function useMockData() {
-  const anchor = useState('mock-anchor', () => Temporal.Now.plainDateISO().toString())
-  return createMockData(Temporal.PlainDate.from(anchor.value))
+  return createMockData(Temporal.Now.plainDateISO())
 }

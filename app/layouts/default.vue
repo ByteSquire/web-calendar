@@ -1,65 +1,53 @@
 <template>
   <div class="app-shell" :class="{ 'sidebar-open': sidebarOpen }">
-    <!-- Top bar spans the full width; controls scroll horizontally if crowded. -->
-    <header class="top-bar">
-      <button
-        type="button"
-        class="icon-btn"
-        aria-controls="app-sidebar"
-        :aria-expanded="sidebarOpen ? 'true' : 'false'"
-        :aria-label="sidebarOpen ? 'Close sidebar' : 'Open sidebar'"
-        @click="toggleSidebar"
-      >
-        <span class="hamburger" aria-hidden="true"><span></span><span></span><span></span></span>
-      </button>
+    <TopBar />
 
-      <div class="top-bar-title">Web Calendar</div>
-
-      <!-- Step 5: view switcher, date nav, quick-add, overflow menu -->
-    </header>
-
-    <!-- Backdrop dims the page behind the mobile drawer and closes it on tap. -->
-    <div v-if="sidebarOpen" class="sidebar-backdrop" @click="closeSidebar"></div>
-
-    <!-- Sidebar: fixed column on desktop; off-canvas drawer below 768px. -->
-    <aside id="app-sidebar" class="sidebar" :class="{ 'is-open': sidebarOpen }">
-      <button
-        type="button"
-        class="icon-btn sidebar-close"
-        aria-label="Close sidebar"
-        @click="closeSidebar"
-      >
-        <span aria-hidden="true">&times;</span>
-      </button>
-
-      <!-- Step 4: views, calendars, resources, categories, filters -->
+    <!-- Desktop: fixed column. Below 768 px the same content opens in a slideover. -->
+    <aside v-if="isDesktop" id="app-sidebar" class="sidebar" aria-label="Views and calendars">
+      <SidebarContent />
     </aside>
+    <USlideover
+      v-else
+      v-model:open="sidebarOpen"
+      side="left"
+      title="Views and calendars"
+      description="Choose views, calendars, resources, categories and filters"
+      :ui="{ content: 'w-80 max-w-[85vw]', description: 'sr-only' }"
+      :content="{ onCloseAutoFocus: restoreFocus }"
+    >
+      <template #body>
+        <SidebarContent />
+      </template>
+    </USlideover>
 
     <!-- Main area fills the remaining height; page content scrolls internally. -->
     <main class="main-area">
       <slot />
     </main>
+
+    <EventSheet />
+    <QuickAddModal />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+const { sidebarOpen } = useCalendarState()
+const isDesktop = useIsDesktop()
 
-// Client-side drawer state. Starts closed (safe for mobile SSR); opened by default on desktop.
-const sidebarOpen = ref(false)
-
-function toggleSidebar() {
-  sidebarOpen.value = !sidebarOpen.value
-}
-
-function closeSidebar() {
-  sidebarOpen.value = false
-}
-
-onMounted(() => {
-  // Open the sidebar by default on desktop; keep it closed (drawer) on mobile.
-  if (window.matchMedia('(min-width: 768px)').matches) {
-    sidebarOpen.value = true
-  }
+// Open by default on desktop, closed (slideover) on mobile, also after resizing across 768 px.
+watch(isDesktop, (desktop) => {
+  sidebarOpen.value = desktop
 })
+
+// The slideover has no trigger element, so Reka UI cannot return focus to the toggle by itself
+// (same as QuickAddModal): remember what had focus when it opened.
+let opener: HTMLElement | null = null
+watch(sidebarOpen, (open) => {
+  if (open && !isDesktop.value) opener = document.activeElement as HTMLElement | null
+})
+
+function restoreFocus(event: Event) {
+  event.preventDefault()
+  if (opener?.isConnected) opener.focus()
+}
 </script>

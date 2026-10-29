@@ -1,0 +1,22 @@
+# Static rights for Radicale, bind-mounted read-only at /etc/radicale/rights.
+# Radicale loads it once at startup, so it must not change per share. Sharing between users and groups
+# goes through the [sharing] database instead (see config and design §8). After editing this file,
+# run `docker compose restart radicale`.
+# The first matching section wins.
+
+# Everyone may list the root.
+[root]
+user: .+
+collection:
+permissions: R
+
+# Each user owns their own home and the calendars under it.
+[principal]
+user: .+
+collection: {user}
+permissions: RW
+
+[calendars]
+user: .+
+collection: {user}/[^/]+
+permissions: rw

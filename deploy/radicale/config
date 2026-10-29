@@ -1,0 +1,51 @@
+# Radicale configuration for the web calendar (mounted read-only at /etc/radicale/config).
+# Radicale reads this file and the rights file only at startup: after editing either, run
+# `docker compose restart radicale`.
+#
+# Radicale trusts the X-Remote-User header, so it must never be reachable except through the app's
+# CalDAV gateway: the compose file publishes no port for it.
+
+[server]
+hosts = 0.0.0.0:5232
+
+[auth]
+# The gateway authenticates the user and sends X-Remote-User.
+type = http_x_remote_user
+
+[rights]
+# Static, owner-only rules (see rights). Not edited per share.
+type = from_file
+file = /etc/radicale/rights
+
+[group]
+# Group membership, one line per group: `readers: user1 user2`. The app writes this file from Kanidm's
+# group membership. Radicale re-reads it on every request, so changes apply without a restart.
+type = htgroup
+htgroup_filename = /etc/radicale/groups/htgroup
+
+[sharing]
+# Shares a calendar into another user's (or a group's) home, through POST /.sharing/v1/map/<action>.
+# Shares live in this database and take effect immediately.
+type = csv
+database_path = /var/lib/radicale/sharing.csv
+collection_by_map = true
+permit_create_map = true
+
+[storage]
+filesystem_folder = /var/lib/radicale/collections
+# Created for a user on first access.
+predefined_collections = {
+    "def-calendar": {
+       "C:supported-calendar-component-set": "VEVENT,VJOURNAL,VTODO",
+       "D:displayname": "Personal Calendar",
+       "tag": "VCALENDAR"
+    }
+  }
+
+# No [headers] section: the SPA is served from the app's origin, so Radicale sends no CORS headers.
+
+[web]
+type = none
+
+[logging]
+level = info

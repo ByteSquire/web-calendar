@@ -19,9 +19,10 @@ node_modules
 *.log
 npm-debug.log*
 
-# Repository metadata and docs (not needed to build the app)
+# Repository metadata, docs and deployment files (not needed to build the app)
 docs
 dev
+deploy
 README.md
 docker-compose*.yml
 

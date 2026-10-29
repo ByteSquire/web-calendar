@@ -1,32 +1,50 @@
-# Example deployment: a single container (Nuxt 4 / Nitro) for the web calendar.
-# The SQLite file lives on a named volume so it persists across restarts.
+# Example deployment: the web calendar (Nuxt 4 / Nitro, SPA plus CalDAV gateway) and Radicale, its
+# CalDAV store. Kanidm is an existing external service (docs/kanidm-setup.md).
 #
-# Every NUXT_* value below is read from the environment, or from the .env file
-# next to this file (Compose uses it for interpolation), and maps to the
-# runtimeConfig keys declared in nuxt.config.ts.
+# Every NUXT_* value below is read from the environment, or from the .env file next to this file
+# (Compose uses it for interpolation), and maps to a runtimeConfig key in nuxt.config.ts. The defaults
+# written here repeat the ones in nuxt.config.ts: an empty value in .env falls back to them.
+# Named volumes hold the two things to back up: the app's SQLite file (web-calendar-data) and
+# Radicale's calendars (radicale-data).
+#
+# Radicale's rules: the static rights file is bind-mounted from deploy/radicale/rights, read-only. The
+# group file lives in the radicale-groups volume: the app creates it empty at startup (see the
+# Dockerfile) and, from Phase 3, rewrites it; Radicale mounts the volume read-only and starts after
+# the app is healthy, so the file exists by then.
+
+x-radicale-image: &radicale-image ghcr.io/kozea/radicale:3.9.0 # the project's own image
+
 services:
   web-calendar:
     build: .
     image: web-calendar:latest
     restart: unless-stopped
     init: true
-    # Bind to loopback only — expect a reverse proxy (TLS, auth) in front.
+    # Bind to loopback only: expect a reverse proxy (TLS) in front.
     ports:
       - '127.0.0.1:3000:3000'
     environment:
-      # OIDC (generic; currently kanidm)
+      # OIDC (generic; currently Kanidm). The issuer ends with the app's own public client.
       NUXT_OIDC_ISSUER: '${NUXT_OIDC_ISSUER:-}'
-      NUXT_OIDC_CLIENT_ID: '${NUXT_OIDC_CLIENT_ID:-}'
-      NUXT_OIDC_CLIENT_SECRET: '${NUXT_OIDC_CLIENT_SECRET:-}'
-      NUXT_OIDC_REDIRECT_URI: '${NUXT_OIDC_REDIRECT_URI:-http://localhost:3000/auth/callback}'
-      # CalDAV backend (Radicale behind OpenCloud)
-      NUXT_CALDAV_BASE_URL: '${NUXT_CALDAV_BASE_URL:-}'
-      # Sync
-      NUXT_SYNC_INTERVAL_MIN: '${NUXT_SYNC_INTERVAL_MIN:-5}'
-      # Timezone used for date handling
-      TZ: '${TZ:-UTC}'
+      NUXT_OIDC_CLIENT_ID: '${NUXT_OIDC_CLIENT_ID:-web-calendar}'
+      # Further clients whose JWTs the gateway accepts (comma-separated); empty means the client above.
+      NUXT_OIDC_ALLOWED_CLIENTS: '${NUXT_OIDC_ALLOWED_CLIENTS:-}'
+      # Key for hashing app tokens. Generate one, for example with `openssl rand -base64 48`.
+      NUXT_TOKEN_HASH_KEY: '${NUXT_TOKEN_HASH_KEY:-}'
+      # Kanidm membership for Radicale's group file: read-only API token (kanidm-setup.md section 3).
+      NUXT_GROUP_SYNC_TOKEN: '${NUXT_GROUP_SYNC_TOKEN:-}'
+      NUXT_GROUP_SYNC_INTERVAL_SEC: '${NUXT_GROUP_SYNC_INTERVAL_SEC:-60}'
+      # CalDAV gateway
+      NUXT_GATEWAY_CORS_ORIGINS: '${NUXT_GATEWAY_CORS_ORIGINS:-}'
+      NUXT_GATEWAY_MAX_BODY_BYTES: '${NUXT_GATEWAY_MAX_BODY_BYTES:-10485760}'
+      # Fixed by this file: the SQLite volume and the internal Radicale service.
+      NUXT_DB_PATH: /data/web-calendar.db
+      NUXT_RADICALE_URL: http://radicale:5232
+      # The organization time zone
+      TZ: '${TZ:-Europe/Berlin}'
     volumes:
       - web-calendar-data:/data # SQLite file
+      - radicale-groups:/groups # Radicale's group file, written by the app (uid 1000, the node user)
     # Hardening
     read_only: true
     tmpfs:
@@ -46,5 +64,39 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+      # Probe often while starting: Radicale waits for this service to be healthy.
+      start_interval: 2s
+
+  radicale:
+    image: *radicale-image
+    restart: unless-stopped
+    # No published port: Radicale trusts X-Remote-User, so only the app (on the Compose network) may
+    # reach it. Do not add `ports:` here.
+    # Radicale refuses to start without its group file, which the app creates when it starts.
+    depends_on:
+      web-calendar:
+        condition: service_healthy
+    volumes:
+      - radicale-data:/var/lib/radicale # calendars and the sharing database
+      - radicale-groups:/etc/radicale/groups:ro # group file, written by the app
+      - ./deploy/radicale/rights:/etc/radicale/rights:ro
+      - ./deploy/radicale/config:/etc/radicale/config:ro
+    # Hardening (the image already runs as the unprivileged user radicale, uid 1000)
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD', 'nc', '-z', '127.0.0.1', '5232']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
 volumes:
   web-calendar-data:
+  radicale-data:
+  radicale-groups:

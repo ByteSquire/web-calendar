@@ -109,22 +109,24 @@ and client renders match.
   and only available via the opt-in `future.compatibilityVersion: 5` flag from
   Nuxt 4.2+ — not recommended for this project yet. When Nuxt 5 reaches stable,
   upgrade and re-run `npm audit`.
-- The container refuses to start without OIDC and CalDAV settings
-  (`server/validate-config.mjs`), even though Phase 1 uses mock data. Copy
-  `.env.example` to `.env` (placeholder values are fine) before `docker compose up`.
-- Design decisions of 2026-10-29 are recorded in `docs/design.md` (v1.2) but not yet
-  applied to the code or config: the app becomes an SPA (`ssr: false`), bundles Radicale
-  and acts as the authenticated CalDAV gateway (token introspection, app tokens), reads
-  calendars live instead of syncing (`NUXT_SYNC_INTERVAL_MIN` becomes obsolete), and
-  uses Nuxt UI (trial S3 passed, not yet installed). Spike S1 is done; the open spikes
-  S2 and S4–S8 are listed in design §12. A test stack for the spikes is in
-  `dev/spike-s1`.
+- The container refuses to start without `NUXT_OIDC_ISSUER`, `NUXT_TOKEN_HASH_KEY` and
+  `NUXT_RADICALE_URL` (`server/validate-config.mjs`), even though Phase 1 uses mock
+  data. See [Environment](#environment).
+- The design of 2026-10-29 is recorded in `docs/design.md` (v1.3). The deployment files
+  (`docker-compose.yml`, `deploy/`, `.env.example`, `server/validate-config.mjs`) follow
+  it. Built so far: the UI mock-up (sidebar, top bar, every view type incl. the split
+  view, quick-add, event sheet; all from mock data), the SQLite layer with app tokens, and
+  the token verifier and CalDAV gateway (`/caldav/`, `/api/config`). Not built yet: the
+  browser login, the calendar API and the real CalDAV client (design §11, Phase 2). Spikes
+  S1, S2, S3, S5, S6 and S9 are done; S4, S7 and S8 are open (design §12). A test stack
+  for the spikes is in `dev/spike-s1`.
 
 ### Dependency versions (as of 2026-10-24)
 
 - Nuxt `^4.6.2`, Vue `^3.5.44`, vue-router `^5.4.0`, Node `^24.15.0`
   (Nuxt 4.6.2 requires `^22.22.3 || ^24.15.0 || >=26.0.0`)
-- FullCalendar `^7.1.3` (`@fullcalendar/vue3` only) + `temporal-polyfill`.
+- FullCalendar `7.1.3` (`@fullcalendar/vue3` and `@fullcalendar/vue3-scheduler`, same
+  version, AGPLv3 licence key; see design §2) + `temporal-polyfill`.
   v7 moved the plugins into the framework package: import them from subpaths
   such as `@fullcalendar/vue3/daygrid`, `@fullcalendar/vue3/timegrid`,
   `@fullcalendar/vue3/list`, `@fullcalendar/vue3/interaction`,
@@ -133,23 +135,84 @@ and client renders match.
 
 ### Production
 
-```sh
-docker compose up --build
-```
+`docker-compose.yml` runs two services (design §10); Kanidm is an existing external service.
 
-Open <http://localhost:3000>. The app runs as the unprivileged `node` user;
-the SQLite volume (`/data`) is prepared for later phases.
+- `web-calendar` is the app (Nuxt 4 / Nitro). It listens on `127.0.0.1:3000`, so put a
+  reverse proxy with TLS in front. It runs as the unprivileged `node` user on a read-only
+  file system, and keeps its SQLite file at `/data/web-calendar.db` on the
+  `web-calendar-data` volume.
+- `radicale` is the CalDAV store (`ghcr.io/kozea/radicale:3.9.0`). It has **no published
+  port**: it trusts the `X-Remote-User` header, so only the app may reach it on the
+  Compose network. Its configuration is [`deploy/radicale/config`](deploy/radicale/config)
+  and its static, owner-only rules are [`deploy/radicale/rights`](deploy/radicale/rights),
+  bind-mounted read-only. Calendars live on the `radicale-data` volume.
+- Radicale's group file is in the `radicale-groups` volume. Radicale refuses to start
+  without it, so the app creates an empty one at `/groups/htgroup` when it starts, and
+  Radicale starts only after the app is healthy. Radicale mounts the volume read-only; the
+  app's group sync will rewrite the file (Phase 3).
+
+Set up:
+
+1. Create the groups and the OAuth2 client in Kanidm: [`docs/kanidm-setup.md`](docs/kanidm-setup.md).
+2. Copy `.env.example` to `.env`, set `NUXT_OIDC_ISSUER`, and generate the token key:
+   `openssl rand -base64 48`.
+3. Start the stack:
+
+   ```sh
+   docker compose up --build
+   ```
+
+Open <http://localhost:3000>. To change `deploy/radicale/rights` or `deploy/radicale/config`,
+edit the file, then run `docker compose restart radicale`: Radicale reads both only at
+startup.
+
+Back up the two volumes `web-calendar-data` and `radicale-data`.
 
 ### Environment
 
-Copy `.env.example` to `.env` next to `docker-compose.yml` (or export the
-variables). Compose reads `.env` for interpolation and passes every `NUXT_*`
-value into the container; `nuxt.config.ts` declares the matching
-`runtimeConfig` keys, so `useRuntimeConfig()` sees them at runtime. `TZ`
-controls date handling (defaults to `UTC`).
+Copy `.env.example` to `.env` next to `docker-compose.yml` (or export the variables).
+Compose reads `.env` for interpolation and passes the values into the container;
+`nuxt.config.ts` declares the matching `runtimeConfig` keys, so `useRuntimeConfig()` sees
+them at runtime. `server/validate-config.mjs` checks the required ones when the container
+starts and exits with a message if they are wrong. The defaults in the table repeat those
+in `nuxt.config.ts`; an empty value in `.env` falls back to them.
+
+| Variable                       | Required | Default                  | Meaning                                                                                                                  |
+| ------------------------------ | -------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `NUXT_OIDC_ISSUER`             | yes      |                          | Issuer of the app's own Kanidm client: an https URL that ends with the client id, such as `…/oauth2/openid/web-calendar` |
+| `NUXT_TOKEN_HASH_KEY`          | yes      |                          | Key for hashing app tokens, at least 32 characters                                                                       |
+| `NUXT_RADICALE_URL`            | yes      | `http://radicale:5232`   | Internal URL of Radicale; set by the compose file                                                                        |
+| `NUXT_OIDC_CLIENT_ID`          | no       | `web-calendar`           | The app's own public client; the issuer must end with it                                                                 |
+| `NUXT_OIDC_ALLOWED_CLIENTS`    | no       | empty (the client above) | Further Kanidm clients whose tokens the CalDAV gateway accepts, comma-separated                                          |
+| `NUXT_GROUP_SYNC_TOKEN`        | no       |                          | Read-only Kanidm API token for the group sync (arrives in Phase 3; the container warns and starts without it)            |
+| `NUXT_GROUP_SYNC_INTERVAL_SEC` | no       | `60`                     | Seconds between group syncs; a removed member keeps access for up to this long                                           |
+| `NUXT_GATEWAY_CORS_ORIGINS`    | no       | empty (no CORS)          | Origins of external browser apps that may call `/caldav/`, comma-separated                                               |
+| `NUXT_GATEWAY_MAX_BODY_BYTES`  | no       | `10485760`               | Largest request body the gateway forwards                                                                                |
+| `NUXT_DB_PATH`                 | fixed    | `/data/web-calendar.db`  | SQLite file; set by the compose file                                                                                     |
+| `TZ`                           | no       | `Europe/Berlin`          | Organization time zone                                                                                                   |
 
 Production builds must run on the Docker host — the Dev Container does not
 include a Docker CLI.
+
+### Test stack (Kanidm and Radicale)
+
+`dev/spike-s1` runs a throwaway Kanidm and a Radicale set up like the production one, to
+develop and test the app against real services. It uses self-signed certificates, known
+ports and throwaway passwords, and it is not part of the app.
+
+```sh
+cd dev/spike-s1
+./spike.sh up          # creates test certificates, starts Kanidm and Radicale
+./spike.sh bootstrap   # Kanidm users, groups and OAuth2 clients
+./spike.sh token alice # a real access token for the test user alice
+./spike.sh down        # stop; `./spike.sh reset` also deletes the data
+```
+
+Kanidm is then at `https://idm.localhost:8443` (issuer
+`https://idm.localhost:8443/oauth2/openid/web-calendar`) and Radicale at
+`http://127.0.0.1:5232`, published on the loopback interface only for development. See
+[`dev/spike-s1/README.md`](dev/spike-s1/README.md) for the accounts, all commands and what
+each spike tested.
 
 ## License
 

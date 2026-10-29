@@ -115,8 +115,8 @@ and client renders match.
 - Design decisions of 2026-10-29 are recorded in `docs/design.md` (v1.1) but not yet
   applied to the code or config: the app becomes an SPA (`ssr: false`), access control
   moves to the CalDAV backend, calendars are fetched live instead of synced
-  (`NUXT_SYNC_INTERVAL_MIN` becomes obsolete), and Nuxt UI is under trial. Open spikes
-  S1–S4 are listed in design §12.
+  (`NUXT_SYNC_INTERVAL_MIN` becomes obsolete), and Nuxt UI is adopted (trial S3 passed)
+  but not yet installed. Open spikes S1, S2 and S4 are listed in design §12.
 
 ### Dependency versions (as of 2026-10-24)
 

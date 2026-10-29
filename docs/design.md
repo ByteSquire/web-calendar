@@ -32,8 +32,9 @@ Key decisions (from the requirements review and the 2026-10-29 interview):
   writes (planned for the initial release, may slip) go straight through to it.
   Whether OpenCloud/Radicale accepts the user's token is **unverified** (spike S1);
   the fallback is in §8.
-- **UI components** — **Nuxt UI v4** (MIT; Reka UI + Tailwind CSS v4) for the drawer,
-  menus and dialogs, **pending trial S3**.
+- **UI components** — **Nuxt UI v4** (MIT; Reka UI + Tailwind CSS v4) for the slideover,
+  menus and dialogs. **Adopted** after trial S3 (2026-10-29), with the conditions in §9
+  and §12. Not yet installed in the repo.
 - **Events** — recurring events are common; the organization uses **one time
   zone**.
 
@@ -52,7 +53,8 @@ Key decisions (from the requirements review and the 2026-10-29 interview):
   compatible with GPLv3 and permissive licenses (MIT, BSD, Apache-2.0). We must
   **audit any new dependency** for AGPLv3 compatibility before adding it (see §12).
   That includes the transitive dependencies of Nuxt UI (about 60 direct
-  dependencies); the license check is part of trial S3.
+  dependencies). Trial S3 checked them: see §12 for the result and the one open
+  license gap (`vaul-vue`).
 - The app is currently run **internally** by the org, so the AGPLv3 network-use
   copyleft is not yet a distribution concern — but we keep the project
   AGPLv3-compliant so the FullCalendar Premium license is valid and so we can
@@ -65,7 +67,7 @@ Key decisions (from the requirements review and the 2026-10-29 interview):
 | Layer         | Choice                                                                   | Notes                                                                                                                                 |
 | ------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Framework     | **Nuxt 4** (Vue 3)                                                       | Nitro backend and Vue SPA in one codebase/deployable; `ssr: false` for the app, SSR only per route if the public view needs it        |
-| UI components | **Nuxt UI v4** (Reka UI, Tailwind CSS v4) — _pending trial S3_           | Drawer/slideover, dropdown menu, modal, date inputs; keyboard and screen-reader behavior for NFR-3. MIT                               |
+| UI components | **Nuxt UI v4** (Reka UI, Tailwind CSS v4) — _adopted, trial S3_          | Slideover, dropdown menu, modal, date inputs; keyboard and screen-reader behavior for NFR-3. MIT. Skip `UDrawer` (§9, §12)            |
 | Calendar UI   | **FullCalendar v7** (Premium, AGPLv3)                                    | `@fullcalendar/vue3` (subpath plugins); Premium resource views for the split view are under evaluation (S2); package name and key TBC |
 | Database      | **SQLite** via `better-sqlite3`                                          | App-level data and sessions only; WAL mode; migration approach TBD                                                                    |
 | Auth          | **OIDC** via `nuxt-auth-utils` https://github.com/atinux/nuxt-auth-utils | _To be verified:_ needs generic discovery, PKCE and access to the user's tokens; otherwise use a dedicated OIDC client library        |
@@ -317,10 +319,22 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
 - **SPA** — the logged-in app runs with `ssr: false`: no hydration mismatches, and
   no server/browser difference in what "today" is. FullCalendar needs no
   `<ClientOnly>` on SPA routes.
-- **Components (NFR-3)** — Nuxt UI (pending trial S3) supplies the drawer,
-  dropdown menus, modal/slideover for the event sheet and quick-add, and date
-  inputs, including focus trapping, Escape handling and ARIA. The fallback is
-  Reka UI (headless) with the existing CSS tokens.
+- **Components (NFR-3)** — **Nuxt UI v4** (adopted, trial S3) supplies the
+  slideover (mobile sidebar drawer), dropdown menus (`⋯`, `⋮`), the modal for
+  quick-add and the event sheet, and date inputs. The trial confirmed focus moving
+  into an opened dialog, `aria-labelledby`/`aria-describedby`, page scroll lock,
+  Escape to close, focus returning to the trigger, and menu roles with arrow-key
+  navigation. Conditions:
+  - Wrap the app's global element rules (`button`, `a`, …) in `@layer base`. They
+    are unlayered, so they override Nuxt UI's layered styles and leave its buttons
+    unstyled.
+  - Do **not** use `UDrawer`: it depends on `vaul-vue`, which is unmaintained and
+    ships no license metadata (§12). Use `USlideover` and `UModal`.
+  - Defaults are 32 px high (buttons, menu items, close buttons), below the 44 px
+    tap-target rule. Override the sizes before Step 8; not yet tested.
+  - Wrap the app in `<UApp>` and import Tailwind and Nuxt UI in the main CSS file.
+
+  Fallback if a blocker appears: Reka UI (headless) with the existing CSS tokens.
 - **FullCalendar v7** (`@fullcalendar/vue3`, plugins via subpath imports) renders
   the day/week/month/list views.
 - **Split view (FR-6)** — **every** calendar in the selected view gets its **own
@@ -352,8 +366,8 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   there, mount it inside `<ClientOnly>` to avoid hydration mismatches.
 - **CSS** — import `skeleton.css` **and** one theme stylesheet (for example
   `@fullcalendar/vue3/themes/classic/theme.css`); without the theme the calendar
-  is unstyled. If Tailwind is adopted (S3), check its base styles against this
-  theme.
+  is unstyled. With Tailwind v4 (S3), FullCalendar rendered correctly: its CSS is
+  unlayered, so it wins over Tailwind's layered base styles.
 - **Interaction** — `editable` and `selectable` default to **`false`**. Dragging,
   resizing and selection require the **`interaction`** plugin; date clicks and
   selections are registered by the same plugin.
@@ -423,7 +437,7 @@ this is the **order**):
 
 | Phase                        | Focus                                                                                 | Key requirements                           | Design pieces                                                                                                                  |
 | ---------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
-| **1 — UI shell / mock-up**   | The webpage + a mock-up of all UI (sidebar with views at top, view types incl. split) | FR-21…FR-25, FR-6, FR-20                   | §9 (sidebar, view types, split view mock-up, mobile); trials S2 and S3                                                         |
+| **1 — UI shell / mock-up**   | The webpage + a mock-up of all UI (sidebar with views at top, view types incl. split) | FR-21…FR-25, FR-6, FR-20                   | §9 (sidebar, view types, split view mock-up, mobile); trial S2                                                                 |
 | **2 — Core calendar + auth** | Calendar features + authentication                                                    | FR-7…FR-15, FR-3…FR-5, FR-20, FR-28, FR-29 | §6 (OIDC, server-side sessions), §7 (live CalDAV/iCal reads, writes, recurrence), §8 (delegated access), §5 (app data); S1, S4 |
 | **3 — Organizational**       | Grouping/views (templates for calendar groups), resources                             | FR-1…FR-2, FR-16…FR-19                     | §5 (views, resources, resource model), §8 (resource rule)                                                                      |
 
@@ -446,12 +460,34 @@ this is the **order**):
   prototype resource views with calendars as rows at 10–20 calendars. Check
   readability at 360×640 and 640×360, empty-band hiding and sticky labels.
   _Fallback:_ one instance per calendar (§9).
-- **S3 — Nuxt UI trial (before Step 4).** In the Dev Container, install `@nuxt/ui`
-  v4 and Tailwind CSS v4. Check: the build with `@tailwindcss/vite`; Tailwind's
-  base styles against the FullCalendar theme;
-  bundle size; `npm audit`; the AGPL-compatibility of its dependency tree; Drawer
-  and DropdownMenu behavior with keyboard and touch. _Outcome:_ adopt or reject;
-  _fallback:_ Reka UI with the existing CSS.
+- **S3 — Nuxt UI trial. Done 2026-10-29: adopt.** Run in a throwaway copy inside the
+  Dev Container (the repo was not changed): `@nuxt/ui` 4.12.0 and Tailwind CSS v4 on
+  the current Nuxt 4.6 / FullCalendar 7.1 project, with a page using a slideover,
+  drawer, modal, dropdown menu and a FullCalendar month grid.
+  - _Works:_ `nuxt build`; `npm run check` (Prettier, ESLint 10, `nuxt typecheck`);
+    FullCalendar renders correctly next to Tailwind; keyboard and focus behavior of
+    the slideover and dropdown menu (§9); icons are served by the app itself
+    (`/api/_nuxt_icon`), with no request to `api.iconify.design` observed.
+  - _Size_ (client, raw / gzip): the current app is 195 kB / 70 kB JS and 7 kB / 2 kB
+    CSS. Adding a FullCalendar month page gives 432 kB / 141 kB JS and 23 kB / 6 kB
+    CSS. Adding Nuxt UI with four overlay components gives 822 kB / 258 kB JS and
+    223 kB / 32 kB CSS.
+  - _Dependencies:_ 195 packages added (176 MIT, 12 MPL-2.0 `lightningcss` binaries
+    that are build-time only, 5 Apache-2.0, 1 CC0, 1 without license metadata). The
+    server runtime in `.output` has 42 packages: MIT, Apache-2.0 and BSD, plus
+    `vaul-vue`. MPL-2.0 is compatible with AGPLv3 through its secondary-license
+    clause.
+  - _Audit:_ 7 low and 1 high before, 8 low and 1 high after, in the same
+    Nuxt/Nitro chain.
+  - _Install scripts:_ npm 11 asks for `allowScripts` entries for a second `esbuild`
+    (0.27.7) and `vue-demi`.
+  - _Not tested:_ touch behavior, screen readers, colour contrast, `UDrawer`
+    swiping, and the 44 px tap-target overrides.
+  - _Open license gap:_ `vaul-vue` 0.4.1 (pulled in by `UDrawer`) has no `license`
+    field and no license file in its npm package. Its GitHub repository (unovue)
+    states MIT and says the package is no longer maintained, recommending Reka UI's
+    Drawer. Treat it as unverified until the AGPL audit in §2 is signed off, and
+    avoid `UDrawer`.
 - **S4 — CalDAV server capabilities (with S1).** Does Radicale support `expand` in
   `calendar-query`? Does its `time-range` filter handle recurring events
   correctly? Is `free-busy-query` available (useful for resources)?
@@ -515,8 +551,8 @@ Phase 1 is the **UI shell / mock-up**: a working mock-up of **all** the UI
 **mock data** — no real backend, auth, or CalDAV calls yet. It satisfies
 **FR-21…FR-25, FR-6, FR-20** (design §9).
 
-Run trial **S3** (Nuxt UI) before Step 4 and trial **S2** (Premium split view)
-before Step 7; their outcomes change those steps.
+Trial **S3** (Nuxt UI) is done and adopted (§12); run trial **S2** (Premium split
+view) before Step 7, because its outcome changes that step.
 
 | Step | What                       | Requirements               |
 | ---- | -------------------------- | -------------------------- |
@@ -566,7 +602,10 @@ before Step 7; their outcomes change those steps.
 - Sections top → bottom: **views** (icon + `⋯` menu), **calendars** (visibility
   toggle), **resources** (visibility toggle), **categories** (add control),
   **filters** (add control + chooser) — all from mock data.
-- Build the drawer and menus with Nuxt UI if trial S3 adopts it.
+- Build the drawer and menus with Nuxt UI (adopted; conditions in §9): install
+  `@nuxt/ui` and Tailwind, wrap the app in `<UApp>`, and move the global element
+  rules into `@layer base`. Replace the hand-rolled mobile drawer from Step 3 with
+  `USlideover`.
 - _Acceptance:_ every section renders with mock data; toggles/menus are
   interactive.
 

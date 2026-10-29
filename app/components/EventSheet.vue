@@ -11,7 +11,7 @@
     :title="shown?.title"
     :description="whenText"
     :transition="!reducedMotion"
-    :content="{ onCloseAutoFocus: restoreFocus }"
+    :content="{ onOpenAutoFocus: markScrollers, onCloseAutoFocus: restoreFocus }"
     :ui="{ content: isDesktop ? '' : 'max-h-[85dvh] rounded-t-xl', body: 'overscroll-contain' }"
     @update:open="onOpenChange"
   >
@@ -106,6 +106,7 @@
 import { resourceIconName } from '~/utils/calendar-icons'
 import { buildEventDetails, type EventDetails } from '~/utils/event-display'
 import { pickFocusTarget } from '~/utils/focus'
+import { makeScrollersFocusable } from '~/utils/scroll-a11y'
 import { CALENDAR_TIME_ZONE } from '~/utils/fullcalendar'
 
 const { selectedEvent, selectedEventId, selectEvent, calendarById, categoryById, resourceById } =
@@ -167,6 +168,12 @@ function restoreFocus(event: Event) {
   event.preventDefault()
   pickFocusTarget(opener, document.querySelector<HTMLElement>('[data-calendar-main]'))?.focus()
   opener = null
+}
+
+// The body scrolls when the details are taller than a phone sheet: give it a tab stop.
+function markScrollers(event: Event) {
+  const content = event.target
+  if (content instanceof HTMLElement) requestAnimationFrame(() => makeScrollersFocusable(content))
 }
 
 function onOpenChange(open: boolean) {

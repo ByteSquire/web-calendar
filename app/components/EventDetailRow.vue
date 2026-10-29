@@ -1,11 +1,15 @@
-<!-- One labelled row of the event sheet: an icon, a small label and the content (default slot). -->
+<!--
+  One labelled row of the event sheet: an icon and a small label (the term) and the content (the
+  description, default slot). The term and the description are direct children of the row, which is
+  a group of the surrounding description list.
+-->
 <template>
-  <div class="flex gap-3">
-    <UIcon :name="icon" class="mt-0.5 size-5 shrink-0 text-muted" aria-hidden="true" />
-    <div class="min-w-0 flex-1">
-      <dt class="text-xs font-medium tracking-wide text-muted uppercase">{{ label }}</dt>
-      <dd class="mt-0.5 text-default break-words"><slot /></dd>
-    </div>
+  <div>
+    <dt class="flex items-center gap-3 text-xs font-medium tracking-wide text-muted uppercase">
+      <UIcon :name="icon" class="size-5 shrink-0" aria-hidden="true" />
+      {{ label }}
+    </dt>
+    <dd class="mt-1 ps-8 text-default break-words"><slot /></dd>
   </div>
 </template>
 

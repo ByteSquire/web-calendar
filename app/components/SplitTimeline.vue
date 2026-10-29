@@ -11,7 +11,11 @@
   vertical scrolling, which also makes the date header sticky against it.
 -->
 <template>
-  <div class="split-timeline" :style="{ '--split-label-width': `${labelWidth}px` }">
+  <div
+    ref="rootElement"
+    class="split-timeline"
+    :style="{ '--split-label-width': `${labelWidth}px` }"
+  >
     <FullCalendar ref="calendar" :options="options">
       <template #resourceCellContent="{ resource }">
         <span class="split-label" :title="resource.title">
@@ -65,6 +69,9 @@ const initialView = splitViewName(props.span)
 const initialDate = props.date
 
 const calendar = ref<InstanceType<typeof FullCalendar> | null>(null)
+const rootElement = ref<HTMLElement | null>(null)
+// The timeline scrolls sideways on narrow screens: give that scroller a tab stop.
+useKeyboardScrollers(rootElement)
 
 // Window width picks the sizing. A resize inside one tier changes nothing (see splitLayoutFor).
 const width = ref(typeof window === 'undefined' ? 1024 : window.innerWidth)

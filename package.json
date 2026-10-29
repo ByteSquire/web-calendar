@@ -10,12 +10,14 @@
     "build": "nuxt build",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "check": "npm run fmt:check && npm run lint && npm run typecheck",
+    "check": "npm run fmt:check && npm run lint && npm run typecheck && npm run typecheck:e2e",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "fmt": "prettier --write .",
     "fmt:check": "prettier --check .",
     "typecheck": "nuxt typecheck",
+    "typecheck:e2e": "tsc -p e2e",
+    "test:e2e": "nuxt build && playwright test",
     "test": "vitest run"
   },
   "dependencies": {
@@ -32,8 +34,10 @@
     "vue-router": "^5.4.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
     "@nuxt/eslint": "^1.17.0",
     "@nuxt/test-utils": "^4.3.4",
+    "@playwright/test": "^1.64.1",
     "@types/better-sqlite3": "^9.6.0",
     "@vue/test-utils": "^2.5.1",
     "eslint": "^10.13.0",

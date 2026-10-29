@@ -27,3 +27,8 @@ docker-compose.override.yml
 .DS_Store
 .idea/
 .vscode/
+
+# Playwright
+playwright-report/
+test-results/
+blob-report/

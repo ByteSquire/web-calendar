@@ -103,6 +103,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => resizeObserver?.disconnect())
 
+// Narrow screens pan the day columns sideways: give that scroller a tab stop.
+useKeyboardScrollers(rootElement)
+
 // The year overview is too dense for text: entries show as dots and bars.
 const dotsOnly = computed(() => viewType.value === 'year')
 

@@ -3,6 +3,7 @@
 .data
 .npm-cache
 .claude
+dev/spike-s1/.local
 node_modules
 coverage
 package-lock.json

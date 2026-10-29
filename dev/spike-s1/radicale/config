@@ -1,0 +1,46 @@
+# Radicale configuration for the test stack (mounted at /etc/radicale/config).
+# Radicale reads this file and the rights file only at startup: after editing, run
+# `docker compose -p spike-s1 restart radicale`.
+
+[server]
+hosts = 0.0.0.0:5232
+
+[auth]
+# The app's gateway authenticates the user and sends X-Remote-User.
+type = http_x_remote_user
+
+[rights]
+# Static rules, see radicale/rights. Not edited per share.
+type = from_file
+file = /etc/radicale/rules/rights
+
+[group]
+# Group membership, one line per group: `readers: user1 user2`. Re-read on every request, so the app
+# can change membership without a restart.
+type = htgroup
+htgroup_filename = /etc/radicale/rules/groups
+
+[sharing]
+# Shares a calendar into another user's (or a group's) home, through POST /.sharing/v1/map/<action>.
+# Shares live in this database and take effect immediately.
+type = csv
+database_path = /var/lib/radicale/sharing.csv
+collection_by_map = true
+permit_create_map = true
+
+[storage]
+filesystem_folder = /var/lib/radicale/collections
+# Created for a user on first access.
+predefined_collections = {
+    "def-calendar": {
+       "C:supported-calendar-component-set": "VEVENT,VJOURNAL,VTODO",
+       "D:displayname": "Personal Calendar",
+       "tag": "VCALENDAR"
+    }
+  }
+
+[web]
+type = none
+
+[logging]
+level = info

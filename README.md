@@ -112,11 +112,13 @@ and client renders match.
 - The container refuses to start without OIDC and CalDAV settings
   (`server/validate-config.mjs`), even though Phase 1 uses mock data. Copy
   `.env.example` to `.env` (placeholder values are fine) before `docker compose up`.
-- Design decisions of 2026-10-29 are recorded in `docs/design.md` (v1.1) but not yet
-  applied to the code or config: the app becomes an SPA (`ssr: false`), access control
-  moves to the CalDAV backend, calendars are fetched live instead of synced
-  (`NUXT_SYNC_INTERVAL_MIN` becomes obsolete), and Nuxt UI is adopted (trial S3 passed)
-  but not yet installed. Open spikes S1, S2 and S4 are listed in design §12.
+- Design decisions of 2026-10-29 are recorded in `docs/design.md` (v1.2) but not yet
+  applied to the code or config: the app becomes an SPA (`ssr: false`), bundles Radicale
+  and acts as the authenticated CalDAV gateway (token introspection, app tokens), reads
+  calendars live instead of syncing (`NUXT_SYNC_INTERVAL_MIN` becomes obsolete), and
+  uses Nuxt UI (trial S3 passed, not yet installed). Spike S1 is done; the open spikes
+  S2 and S4–S8 are listed in design §12. A test stack for the spikes is in
+  `dev/spike-s1`.
 
 ### Dependency versions (as of 2026-10-24)
 

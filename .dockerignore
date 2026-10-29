@@ -21,6 +21,7 @@ npm-debug.log*
 
 # Repository metadata and docs (not needed to build the app)
 docs
+dev
 README.md
 docker-compose*.yml
 

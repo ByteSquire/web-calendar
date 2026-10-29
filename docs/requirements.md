@@ -1,8 +1,9 @@
 # Web Calendar — Requirements
 
-> Status: **Draft v1.3** — for review and iteration.
-> Q11–Q13 were resolved in v1.2. Q14–Q16 (access control, data freshness, recurrence and
-> time zone) were recorded on 2026-10-29; Q14 still depends on a spike. See §8.
+> Status: **Draft v1.4** — for review and iteration.
+> Q11–Q13 were resolved in v1.2. Q14–Q18 (access control, data freshness, recurrence and
+> time zone, third-party access, authentication model) were recorded on 2026-10-29 after
+> spike S1; v1.4 supersedes v1.3's "access control delegated to an external backend". See §8.
 
 ---
 
@@ -27,7 +28,7 @@ part of the initial release.
 | Persona                       | Who                                   | Primary goal                                                                                              |
 | ----------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | **Team member**               | One of 30–50 org members              | See the events from the calendars _they_ want to see, optionally grouped by pre-defined views; coordinate |
-| **Team admin**                | Someone who manages views & resources | Define admin views; manage resources (sharing is managed in the CalDAV backend, not in this app)          |
+| **Team admin**                | Someone who manages views & resources | Define admin views; manage resources and who may access which calendar                                    |
 | **Public viewer** _(planned)_ | Anyone outside the org                | Browse published events in a read-only view                                                               |
 
 ---
@@ -40,13 +41,15 @@ part of the initial release.
   calendars are shown; **both user-defined and admin-defined**
 - **Multiple view types** (day / 5-day / week / month / year / **split** /
   list) to keep busy days readable
-- Calendar sources via **iCal** and **CalDAV** — CalDAV calendars are discovered
-  through the user's OIDC login; iCal URLs are fetched by the app
+- A **built-in CalDAV calendar service** (Radicale, part of the app's stack) and
+  **external CalDAV accounts** the user adds (any CalDAV URL, with OIDC, basic or
+  no authentication), plus **iCal** URL subscriptions
+- **CalDAV access for third-party clients** (Thunderbird, phones) to the built-in
+  calendars, with the same access rules
 - **OIDC** authentication
-- **Access control** enforced by the **CalDAV backend** through the user's OIDC
-  login (per-user, per-team, per-role and per-calendar sharing is whatever the
-  backend supports); public / not-logged-in access is limited to the planned
-  public view
+- **Access control** at every granularity (per-user, per-team, per-role,
+  per-calendar), administered in the app and **enforced by the CalDAV backend**;
+  public / not-logged-in access is limited to the planned public view
 - **Recurring events** and a single, configured **organization time zone**
 - **Resources** — bookable entities (rooms, cars, …) not owned by a single
   calendar, that events can block
@@ -72,7 +75,6 @@ part of the initial release.
 ### Out of scope (for now)
 
 - Full Google Calendar / Outlook feature parity
-- Managing sharing and permissions **inside this app** (done in the CalDAV backend)
 - Per-user or multiple time zones
 - Native mobile apps
 - Being part of a larger groupware suite (the opposite is a goal — see C-5)
@@ -105,9 +107,10 @@ out). Views appear at the **top of the sidebar**.
 ### 4.2 Calendar sources
 
 - **FR-7** Users can **import a calendar from an iCal (`.ics`) URL or file**.
-- **FR-8** Users see the **CalDAV calendars they have access to** on the configured
-  backend. Calendars are discovered through the user's OIDC login; there is no
-  separate account setup _(assumes Q14 holds; fallback in design §8)_.
+- **FR-8** Users see the calendars of the **built-in calendar service** they have
+  access to without any account setup, and can **add external CalDAV accounts**
+  (a CalDAV URL plus an authentication mode: OIDC, basic or none). Credentials and
+  tokens for external accounts stay in the user's browser.
 - **FR-9** _(nice to have)_ CalDAV sync is **two-way** — users can create/edit
   events that write back to the CalDAV server.
 - **FR-10** Calendar data is **fetched live** for the visible date range and cached
@@ -120,20 +123,21 @@ out). Views appear at the **top of the sidebar**.
 
 - **FR-12** Users authenticate via **OIDC** against an existing identity provider.
 - **FR-13** The system maps an authenticated identity to an app user (for views,
-  categories, filters and preferences) and to the calendars the CalDAV backend
-  lets that user access.
+  categories, filters, preferences and access rules). The app holds **no
+  long-lived user tokens on the server**: it checks the token sent with each
+  request and stores none.
 
 ### 4.4 Access control
 
-- **FR-14** Access control is **delegated to the CalDAV backend** and covers
-  whatever granularity it supports (**per-user, per-team, per-role,
-  per-calendar**). The app stores no calendar permissions of its own, and admins
-  manage sharing in the backend, not here. **Public / not-logged-in** visibility
-  exists only through the planned public view (FR-26/27), which publishes an
-  explicit list of calendars.
-- **FR-15** The system **never shows** a calendar or event the signed-in user
-  cannot access on the backend. Views that reference inaccessible calendars omit
-  them.
+- **FR-14** Access control supports **all** of these granularity levels:
+  **per-user, per-team, per-role, per-calendar**, and **public / not-logged-in**
+  visibility. Admins manage who may access which calendar **in the app**; the app
+  turns those rules into the CalDAV backend's own access rules.
+- **FR-15** The **CalDAV backend enforces** the rules, for every client (the web
+  app and third-party clients alike), so users only see what they're permitted to
+  see. Views that reference inaccessible calendars omit them.
+- **Public / not-logged-in** visibility exists only through the planned public
+  view (FR-26/27), which publishes an explicit list of calendars.
 
 ### 4.5 Resources
 
@@ -175,9 +179,19 @@ minimum:
 - **FR-28** **Recurring events** (repeat rules, exceptions, cancelled instances)
   display correctly in every view type.
 - **FR-29** All times are shown in one configured **organization time zone**
-  (`TZ`). Per-user time zones are out of scope.
+  (`TZ`, set to `Europe/Berlin`). Per-user time zones are out of scope.
 
-### 4.9 Public publishing _(planned)_
+### 4.9 Third-party CalDAV access
+
+- **FR-30** The built-in calendars are reachable by **standard CalDAV clients**
+  (Thunderbird, phone apps) at a **CalDAV URL on the app's own host**, with
+  discovery through `/.well-known/caldav`. Clients that support OIDC may use it;
+  others sign in with a username and an **app token**.
+- **FR-31** Users **create, list and revoke app tokens** in the app. A token is
+  shown once, **expires after one year**, is limited to **10 per user**, and is
+  stored only in hashed form.
+
+### 4.10 Public publishing _(planned)_
 
 - **FR-26** _(planned)_ A dedicated **public publishing** experience — a public
   URL/view for an external audience to browse published events (builds on the
@@ -194,13 +208,19 @@ minimum:
   **Split view** (each calendar in its own band) is the primary mechanism for
   this. Performance is a secondary concern.
 - **NFR-2 (Security)** OIDC authentication; strict per-user / per-team isolation
-  of calendar data, enforced by the CalDAV backend because the app calls it as the
-  signed-in user; no cross-tenant data leakage.
+  of calendar data, enforced by the CalDAV backend; no cross-tenant data leakage.
+  The CalDAV backend is reachable **only** through the app's authenticating
+  endpoint. Bearer tokens are **verified locally** against the identity provider's
+  published signing keys, restricted to an allow-list of clients and a required
+  scope, and never stored. A revoked bearer token works until it expires (up to 15
+  minutes); app tokens are hashed, expire and are revoked immediately. In the
+  browser, tokens live in memory or session storage only, under a strict
+  content-security policy.
 - **NFR-3 (Accessibility)** The web UI meets **WCAG 2.1 AA**.
 - **NFR-4 (Reliability)** Defined availability target and graceful degradation
   when an external source (iCal/CalDAV) is unreachable: that calendar shows an
-  error with a retry while the others keep working. The app keeps no long-lived
-  copy of calendar data, so nothing older than the short cache is shown.
+  error with a retry while the others keep working. **No stale data is served**:
+  the app keeps no copy of calendar data beyond 30 s in the browser's memory.
 - **NFR-5 (Standards compliance)** iCalendar (**RFC 5545**), CalDAV
   (**RFC 4791**), and OpenID Connect.
 - **NFR-6 (Portability)** Because sources are iCal/CalDAV, user data is not
@@ -213,21 +233,24 @@ minimum:
 - **C-1** Must integrate with **iCal**, **CalDAV**, and **OIDC**.
 - **C-2** **Must be self-hosted.**
 - **C-3** Technology stack is **free to choose**.
-- **C-4** Should use an **existing CalDAV backend** (e.g. Radicale) rather than
-  implementing CalDAV from scratch — the app acts as a **CalDAV client**. A
-  backend that **supports OIDC** is preferable, as it simplifies the
-  authentication workflow.
+- **C-4** Should use an **existing CalDAV backend** (Radicale, bundled in the
+  app's stack) rather than implementing CalDAV from scratch. The app acts as a
+  **CalDAV client** and as the **authenticating gateway** in front of the backend,
+  because no available backend verifies Kanidm tokens from arbitrary clients
+  (spike S1).
 - **C-5** Must be **standalone** — not part of a larger groupware suite (a key
   differentiator from GroupOffice).
-- **C-6** The **CalDAV backend is the source of truth** for calendars, events and
-  sharing. The app stores only app-level data: views, categories, filters, iCal
-  subscriptions, resource metadata and preferences.
+- **C-6** The **CalDAV backend is the source of truth** for calendars and events.
+  The app is the source of truth for **who may access which calendar** and stores
+  app-level data: views, categories, filters, iCal subscriptions, resource
+  metadata, access rules, app tokens and preferences. It keeps no copy of events.
 - **A-1** An existing OIDC identity provider is available.
 - **A-2** Team members already have calendars in iCal/CalDAV form to connect.
 - **A-3** **GroupOffice** is the current tool being replaced; its features and
   left sidebar are a liked baseline to study.
-- **A-4** The CalDAV side (OpenCloud/Radicale) accepts the signed-in user's OIDC
-  token. **Unverified** — see Q14.
+- **A-4** The identity provider (Kanidm) publishes each OAuth2 client's signing keys
+  and accepts a custom scope, so the app's server can verify tokens from an
+  allow-list of its clients locally. **Verified** in spikes S1 and S6.
 
 ---
 
@@ -236,11 +259,11 @@ minimum:
 The work is delivered in three phases (all requirements are in scope; this is
 the **order** of delivery):
 
-| Phase                        | Focus                                                                                                            | Key requirements                           |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| **1 — UI shell / mock-up**   | The webpage and a **mock-up of all UI** (all screens, sidebar with views at the top, view types incl. **split**) | FR-21…FR-25, FR-6, FR-20                   |
-| **2 — Core calendar + auth** | Calendar features and authentication (OIDC pass-through to CalDAV, recurring events)                             | FR-7…FR-15, FR-3…FR-5, FR-20, FR-28, FR-29 |
-| **3 — Organizational**       | Grouping / views (templates for calendar groups), resources                                                      | FR-1…FR-2, FR-16…FR-19                     |
+| Phase                        | Focus                                                                                                            | Key requirements                                         |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| **1 — UI shell / mock-up**   | The webpage and a **mock-up of all UI** (all screens, sidebar with views at the top, view types incl. **split**) | FR-21…FR-25, FR-6, FR-20                                 |
+| **2 — Core calendar + auth** | Calendar features, authentication, the CalDAV gateway (owner-only access), recurring events                      | FR-7…FR-13, FR-30, FR-31, FR-3…FR-5, FR-20, FR-28, FR-29 |
+| **3 — Organizational**       | Grouping / views (templates for calendar groups), resources                                                      | FR-1…FR-2, FR-14…FR-19                                   |
 
 ---
 
@@ -261,18 +284,37 @@ the **order** of delivery):
   **hidden** to save space. Extending the split view to **all** view types is a
   **planned experiment** (post-initial-release), **not** a requirement. (Captured
   in FR-6 and the Planned section.)
-- **Q14 — Access control source.** _Resolved in principle; verification pending._
-  Access control is **delegated to the CalDAV backend**: the app calls it as the
-  signed-in user with their OIDC token and shows only what that user can already
-  see, like Thunderbird or DAVx5. Admins manage sharing in Radicale/OpenCloud, not
-  in this app. (Captured in FR-8, FR-13…FR-15, C-6, A-4.) **Pending spike S1**
-  (design §12): whether OpenCloud/Radicale accepts the user's token. **Fallback**
-  if it does not: a service account plus an app-side ACL, as in design v1.0.
+- **Q14 — Access control source.** _Resolved (revised after spike S1)._ v1.3
+  delegated access control to an external backend (OpenCloud/Radicale) called with
+  the user's own token. S1 showed that OpenCloud accepts tokens from one Kanidm
+  client only, and Radicale itself has no groups or sharing UI. Now: admins manage
+  access **in the app**, the app maintains the CalDAV backend's shares and group
+  files, and **the backend enforces them** for all clients. (Captured in FR-14,
+  FR-15, C-6.) Radicale's mechanics were verified in spike S5: its rights file is
+  static, while group files and sharing take effect immediately.
 - **Q15 — Data freshness.** _Resolved._ Calendar data is fetched **live** for the
-  visible range with a short cache. No background sync, so no stored credentials
-  or offline tokens. (Captured in FR-10 and NFR-4.)
+  visible range, with a 30 s in-memory cache in the browser and no stale fallback.
+  No background sync, so no stored credentials or offline tokens. (Captured in
+  FR-10 and NFR-4.)
 - **Q16 — Recurrence and time zones.** _Resolved._ Recurring events are common;
   the organization uses **one time zone**. (Captured in FR-28 and FR-29.)
+- **Q17 — Third-party CalDAV clients.** _Resolved._ Thunderbird and phones must
+  be able to use the built-in calendars with the same access rules. This rules out
+  keeping all calendars under one service account with app-side filtering.
+  (Captured in FR-30 and FR-31.)
+- **Q18 — Authentication model.** _Resolved._ The app has its own Kanidm client
+  for logging in; tokens stay in the browser; the app's server **verifies each token
+  locally against an allow-list of clients** and stores none. Third-party
+  clients use **app tokens**. External CalDAV accounts authenticate from the
+  browser, per account. A shared client with OpenCloud is not needed. (Captured in
+  FR-8, FR-12, FR-13, FR-30, FR-31, NFR-2, A-4.)
+- **Q19 — Operating defaults.** _Resolved 2026-10-29._ Organization time zone
+  `Europe/Berlin`. Editing a recurring event **asks every time** (this instance,
+  this and following, or the whole series, with "this instance" preselected). App
+  tokens last **1 year**, at most **10 per user**. An outage shows an **error**, never
+  stale data. Group membership for Radicale is synced from Kanidm every **60 s**
+  (a service account with a read-only API token: design §12, S9). Real-client tests: Thunderbird,
+  DAVx5 (Android) and iOS/macOS Calendar.
 - **Open — Public view credentials.** How the planned public view reads published
   calendars without a logged-in user (likely a service credential limited to an
   explicit published list) is decided when that feature is scheduled.

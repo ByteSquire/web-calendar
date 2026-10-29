@@ -1,0 +1,3 @@
+# Generated: certificates, passwords, rules files and CLI sessions.
+.local/
+__pycache__/

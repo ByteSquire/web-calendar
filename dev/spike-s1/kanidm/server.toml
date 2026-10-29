@@ -1,0 +1,9 @@
+# Kanidm server configuration for the S1 test stack (mounted at /data/server.toml).
+version = '2'
+bindaddress = '0.0.0.0:8443'
+db_path = '/data/kanidm.db'
+tls_chain = '/data/chain.pem'
+tls_key = '/data/key.pem'
+domain = 'idm.localhost'
+origin = 'https://idm.localhost:8443'
+log_level = 'info'

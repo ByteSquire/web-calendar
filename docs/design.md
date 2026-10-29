@@ -1,11 +1,15 @@
 # Web Calendar — Design
 
-> Status: **Draft v1.2** — companion to `requirements.md` (Draft v1.4).
+> Status: **Draft v1.3** — companion to `requirements.md` (Draft v1.4).
 > This document turns the requirements into a concrete technical design.
 > v1.2 (2026-10-29), after spike S1: the app bundles Radicale and exposes its own authenticated
 > `/caldav/` endpoint (bearer tokens verified locally, app tokens for other clients). Access rules
 > are administered in the app and enforced by Radicale. External CalDAV servers are reached from the
-> browser. Earlier versions are in git history (v1.1: commit `f7bdfc8`; v1.0: `97a8e44` and earlier).
+> browser. Earlier versions are in git history (v1.2: commit `8b1da20`; v1.1: `f7bdfc8`; v1.0:
+> `97a8e44` and earlier).
+> v1.3 (2026-10-29), implementation started: Phase 1 steps 4–7 (sidebar, top bar, standard views,
+> split view) and the Phase 2 groundwork (SQLite layer, app tokens, token verifier, CalDAV gateway)
+> are built. Spikes S2 and S6 are done (§12); the deployment files follow this design (§10).
 
 ---
 
@@ -42,7 +46,7 @@ Key decisions (from the requirements review and the 2026-10-29 interviews):
   events in memory for 30 s. **No stale data** is ever served: an unreachable source
   shows an error.
 - **UI components** — **Nuxt UI v4** (MIT; Reka UI + Tailwind CSS v4), **adopted**
-  after trial S3, with the conditions in §9 and §12. Not yet installed in the repo.
+  after trial S3, with the conditions in §9 and §12. Installed.
 - **Events** — recurring events are common; the organization uses **one time zone**
   (`Europe/Berlin`). Editing a recurring event asks what to change (§7).
 
@@ -72,21 +76,21 @@ Key decisions (from the requirements review and the 2026-10-29 interviews):
 
 ## 3. Tech Stack
 
-| Layer                   | Choice                                      | Notes                                                                                                                                         |
-| ----------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| Framework               | **Nuxt 4** (Vue 3)                          | Nitro backend and Vue SPA in one codebase; `ssr: false` for the app, SSR only per route if the public view needs it                           |
-| UI components           | **Nuxt UI v4** (Reka UI, Tailwind CSS v4)   | Adopted after trial S3. Slideover, dropdown menu, modal, date inputs; keyboard and screen-reader behavior for NFR-3. MIT. Skip `UDrawer` (§9) |
-| Calendar UI             | **FullCalendar v7** (Premium, AGPLv3)       | `@fullcalendar/vue3` (subpath plugins); Premium resource views for the split view are under evaluation (S2); package name and key TBC         |
-| Database                | **SQLite** via `better-sqlite3`             | App-level data only; WAL mode; migrations are numbered `.sql` files applied by a small runner at startup, with hand-written types             |
-| Login (browser)         | An OIDC client library, code flow with PKCE | Candidate `oidc-client-ts` (unverified, licence to check). Tokens in memory or `sessionStorage`; renewal by silent redirect or refresh grant  |
-| Token check (server)    | A JOSE library, ES256 JWTs                  | Candidate `jose` (unverified, licence to check). Verifies against each allowed client's published keys (cached); no Kanidm call per request   |
-| CalDAV store            | **Radicale** (3.9 in the test stack)        | Bundled in compose, internal network only; `http_x_remote_user` auth; static rights file, sharing by map, `htgroup` groups                    |
-| CalDAV gateway          | A **Nitro route** (`/caldav/**`)            | Proxies any WebDAV method with streamed bodies (h3 `proxyRequest`, untested). Header hygiene is security-critical (§7)                        |
-| CalDAV client (browser) | `ts-caldav` or `tsdav`                      | _To be verified in a browser_ (custom auth header, XML parsing, bundle size)                                                                  |
-| iCal parsing            | **`ical.js`**                               | `.ics` URL subscriptions (read-only), and recurrence expansion where Radicale cannot do it                                                    |
-| Caching                 | In-process, short TTL                       | Kanidm signing keys and iCal fetches on the server; fetched events for 30 s in the SPA. No stale fallback                                     |
-| Runtime                 | **Node.js** (LTS)                           | Nitro runtime                                                                                                                                 |
-| Packaging               | **Docker Compose**                          | `web-calendar` and `radicale`; Kanidm is external                                                                                             |
+| Layer                   | Choice                                      | Notes                                                                                                                                                                           |
+| ----------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Framework               | **Nuxt 4** (Vue 3)                          | Nitro backend and Vue SPA in one codebase; `ssr: false` for the app, SSR only per route if the public view needs it                                                             |
+| UI components           | **Nuxt UI v4** (Reka UI, Tailwind CSS v4)   | Adopted after trial S3. Slideover, dropdown menu, modal, date inputs; keyboard and screen-reader behavior for NFR-3. MIT. Skip `UDrawer` (§9)                                   |
+| Calendar UI             | **FullCalendar v7** (Premium, AGPLv3)       | `@fullcalendar/vue3` plus `@fullcalendar/vue3-scheduler` for the split view and narrow day columns (both 7.1.3, subpath imports); dark mode through the palette stylesheet (§9) |
+| Database                | **SQLite** via `better-sqlite3`             | App-level data only; WAL mode; migrations are numbered `.sql` files applied by a small runner at startup, with hand-written types                                               |
+| Login (browser)         | An OIDC client library, code flow with PKCE | Candidate `oidc-client-ts` (unverified, licence to check). Tokens in memory or `sessionStorage`; renewal by silent redirect or refresh grant                                    |
+| Token check (server)    | A JOSE library, ES256 JWTs                  | Candidate `jose` (unverified, licence to check). Verifies against each allowed client's published keys (cached); no Kanidm call per request                                     |
+| CalDAV store            | **Radicale** (3.9 in the test stack)        | Bundled in compose, internal network only; `http_x_remote_user` auth; static rights file, sharing by map, `htgroup` groups                                                      |
+| CalDAV gateway          | A **Nitro route** (`/caldav/**`)            | Proxies any WebDAV method with streamed bodies (h3 `proxyRequest`, untested). Header hygiene is security-critical (§7)                                                          |
+| CalDAV client (browser) | `ts-caldav` or `tsdav`                      | _To be verified in a browser_ (custom auth header, XML parsing, bundle size)                                                                                                    |
+| iCal parsing            | **`ical.js`**                               | `.ics` URL subscriptions (read-only), and recurrence expansion where Radicale cannot do it                                                                                      |
+| Caching                 | In-process, short TTL                       | Kanidm signing keys and iCal fetches on the server; fetched events for 30 s in the SPA. No stale fallback                                                                       |
+| Runtime                 | **Node.js** (LTS)                           | Nitro runtime                                                                                                                                                                   |
+| Packaging               | **Docker Compose**                          | `web-calendar` and `radicale`; Kanidm is external                                                                                                                               |
 
 ---
 
@@ -196,6 +200,15 @@ Compared with v1.1, `sessions` is gone (no server-side tokens) and `calendars`,
 `calendar_acl` and `app_tokens` are back or new. `shared/types/calendar.ts` and the
 mock data still follow the v1.0 model (local ids, `etag`, `isBlocked`) and are
 adapted in Phase 2.
+
+**Built** (`server/db`, migration `001_init.sql`): every table above except `published_calendars`. Beyond
+the list: ids are `AUTOINCREMENT` (views refer to calendar ids in JSON, so ids are never reused);
+`users.username` is unique case-insensitively; `updated_at` is kept by triggers; `calendar_acl` has CHECKs
+tying `principal` to `principal_type`; a personal calendar needs an owner; deleting a user cascades to
+their tokens, views, preferences, filters, categories and subscriptions, but is refused while they own
+a calendar. App tokens (`wcal_` + 32 random bytes) are stored as HMAC-SHA256 and expire after a year;
+at most 10 unexpired ones per user; revoking deletes the row. Nitro does not await plugins, so the DB
+plugin exits the process when it cannot start and holds requests until the database is ready.
 
 **Resource model (Q12 — hybrid):**
 
@@ -326,6 +339,24 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
   gateway; its 401 responses carry the same CORS headers, so a browser sees the
   status instead of a network error.
 - The SPA tracks token expiry itself and renews before it lapses.
+- **As built (S6)** — `server/utils/gateway`, `server/utils/auth`, tested against the real Kanidm and
+  Radicale. Departures from the sketch above:
+  - Request headers go through an **allow-list**, not a deny-list: Radicale 3.9 switches to
+    reverse-proxy mode on `X-Forwarded-For/-Host/-Proto/-Server` and also reads `X-Remote-Addr`.
+  - Radicale reads a body only by `Content-Length` and treats a chunked body as empty, so the gateway
+    buffers bodies of unknown length (up to `maxBodyBytes`) and sends the length. h3's `proxyRequest`
+    skips bodies for `PROPFIND`/`REPORT`, so the glue calls Node's `fetch` itself (`duplex: 'half'`).
+  - Radicale gets the path without `/caldav` plus `X-Script-Name: /caldav`; `Destination` of
+    `COPY`/`MOVE` is rewritten to a path-only `/caldav/...` and a foreign host is ignored. The query
+    string is dropped, `//` is rejected, a first path segment starting with `.` (`.sharing`, `.web`) is
+    404, and a 401 from Radicale becomes 502.
+  - With a cold key cache and Kanidm unreachable the answer is **503** with `Retry-After`, not 401.
+    `aud` is always required; `client_id` must match when present.
+  - `/caldav` and `/caldav/` need their own route file (`[...path]` does not match them).
+    `requireUser(event)` for `/api/**` accepts bearer tokens only (app tokens are for CalDAV clients).
+    The gateway creates no `users` row; the API layer does that.
+  - Still open: cached keys are refreshed only when a token names an unknown `kid` (a key Kanidm
+    removes stays trusted until then or a restart), and failed Basic logins are not rate-limited.
 
 **SPA reads and writes**
 
@@ -442,6 +473,14 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   - Defaults are 32 px high (buttons, menu items, close buttons), below the 44 px
     tap-target rule. Override the sizes before Step 8; not yet tested.
   - Wrap the app in `<UApp>` and import Tailwind and Nuxt UI in the main CSS file.
+  - Nuxt UI's default primary (blue 500) is 3.7:1 against white, below WCAG AA. The light scheme
+    uses shade 600 (5.2:1) through `--ui-primary` in `main.css`; dark keeps the lighter shade.
+  - Reka UI restores focus on close only to a `DialogTrigger`. A modal or slideover driven by `:open`
+    loses focus to the page, so pass `content.onCloseAutoFocus` and focus the element that opened it
+    (done in `QuickAddModal`, `EventSheet` and the layout's sidebar slideover).
+  - The top bar has two rows below 1024 px: toggle, period title and the quick-add / `⋮` buttons on top,
+    date navigation and the view switcher below in a strip that scrolls sideways. A single row does not
+    fit at 360 px and hid the switcher.
 
   Fallback if a blocker appears: Reka UI (headless) with the existing CSS tokens.
 
@@ -449,12 +488,12 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   the day/week/month/list views.
 - **Split view (FR-6)** — **every** calendar in the selected view gets its **own
   horizontal band** (no overlap); a band that is **empty for the current view** is
-  **hidden**. Direction (decided 2026-10-29): **evaluate FullCalendar Premium
-  resource views**, with each calendar as a resource row/band (spike S2). Fallback:
-  **one FullCalendar instance per calendar**, stacked vertically, with
-  **synchronized date navigation**. Either way it must stay readable at 10–20
-  calendars (NFR-1) and on a 360 px phone; whether a resource timeline does is
-  part of S2. Extending split to **all** view types is a **planned experiment**
+  **hidden**. Built (spike S2): one **FullCalendar Premium resource timeline**
+  (`@fullcalendar/vue3-scheduler/resource-timeline`), each calendar a row with a sticky label. The
+  state (`splitBands`) decides which rows exist, so empty bands are hidden there and not by
+  FullCalendar. Fallback if a phone test rejects it: one instance per calendar, stacked, with a
+  shared date (it needs app-side empty-band hiding and has no sticky labels). Readable on a 360 px
+  phone with `slotMinWidth` 100–110 and a 100 px label column. Extending split to **all** view types is a **planned experiment**
   (post-initial-release), not a requirement.
 - **Mobile** — responsive layout; the sidebar collapses; the split view stacks
   bands vertically.
@@ -478,6 +517,11 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   `@fullcalendar/vue3/themes/classic/theme.css`); without the theme the calendar
   is unstyled. With Tailwind v4 (S3), FullCalendar rendered correctly: its CSS is
   unlayered, so it wins over Tailwind's layered base styles.
+- **Dark mode** — also import `themes/classic/palette.css` (it holds both schemes). Its dark variables
+  sit under `[data-color-scheme=dark]`: pass the `colorScheme` prop (or `options.colorScheme`) from
+  Nuxt's colour mode, or set the attribute on an ancestor. The app re-points the palette variables at
+  the Nuxt UI tokens in `main.css`. Event colours are chosen in code per scheme (text contrast ≥ 4.5).
+  Custom theming is possible through class-name props if the variables are not enough.
 - **Interaction** — `editable` and `selectable` default to **`false`**. Dragging,
   resizing and selection require the **`interaction`** plugin; date clicks and
   selections are registered by the same plugin.
@@ -491,6 +535,10 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   `eventMinWidth`, `eventMinHeight`, `eventShortHeight`, `slotMinWidth`, and
   per-view `views` overrides instead of viewport media queries inside the
   calendar.
+- **Narrow day columns** — `dayMinWidth` (columns pan sideways inside the calendar) needs the Premium
+  plugin `@fullcalendar/vue3-scheduler/scrollgrid` and the licence key; without them the page throws
+  "Must import @fullcalendar/scrollgrid". Unit tests in happy-dom do not reach this path (no
+  layout), so only a browser check caught it.
 - **Mobile** — drag/resize on touch is error-prone. Provide **explicit edit
   affordances** (tap event → sheet with Edit/Delete; quick-add button) and keep
   tap targets ≥ 44 px. Never make long-press the only path to an action.
@@ -504,7 +552,7 @@ Kanidm is an existing external service. Radicale has **no published port**: only
 app can reach it. The SQLite file and Radicale's data live on named volumes.
 
 ```yaml
-# docker-compose.yml (example)
+# docker-compose.yml (excerpt; the full file is in the repo)
 services:
   web-calendar:
     image: web-calendar:latest
@@ -512,29 +560,35 @@ services:
     ports:
       - '127.0.0.1:3000:3000'
     environment:
-      # OIDC (generic; currently kanidm)
       NUXT_OIDC_ISSUER: 'https://idm.example.com/oauth2/openid/web-calendar'
       NUXT_OIDC_CLIENT_ID: 'web-calendar' # public client used by the SPA
-      NUXT_OIDC_ALLOWED_CLIENTS: 'web-calendar' # clients whose JWTs the gateway accepts
-      # Group membership for Radicale's group file: read-only Kanidm API token (kanidm-setup.md §3)
-      NUXT_GROUP_SYNC_TOKEN: '${NUXT_GROUP_SYNC_TOKEN}'
+      NUXT_OIDC_ALLOWED_CLIENTS: '' # more clients whose JWTs the gateway accepts
+      NUXT_TOKEN_HASH_KEY: '${NUXT_TOKEN_HASH_KEY}' # openssl rand -base64 48
+      NUXT_GROUP_SYNC_TOKEN: '${NUXT_GROUP_SYNC_TOKEN}' # read-only, kanidm-setup.md §3
       NUXT_GROUP_SYNC_INTERVAL_SEC: '60'
-      # CalDAV store (internal)
-      NUXT_RADICALE_URL: 'http://radicale:5232'
+      NUXT_DB_PATH: /data/web-calendar.db
+      NUXT_RADICALE_URL: http://radicale:5232
       TZ: 'Europe/Berlin'
     volumes:
       - web-calendar-data:/data # SQLite file
-      - radicale-rules:/rules # rights and group files written by the app
+      - radicale-groups:/groups # Radicale's group file, written by the app
+    healthcheck: # probes every 2 s while starting
+      start_interval: 2s
   radicale:
     image: ghcr.io/kozea/radicale:3.9.0 # the project's own image
     restart: unless-stopped
+    depends_on:
+      web-calendar:
+        condition: service_healthy # the app creates the group file first
     volumes:
       - radicale-data:/var/lib/radicale
-      - radicale-rules:/etc/radicale/rules:ro
+      - radicale-groups:/etc/radicale/groups:ro
+      - ./deploy/radicale/rights:/etc/radicale/rights:ro # static, owner-only rules
+      - ./deploy/radicale/config:/etc/radicale/config:ro
 volumes:
   web-calendar-data:
   radicale-data:
-  radicale-rules:
+  radicale-groups:
 ```
 
 - **Config via env vars.** Secrets (the group-sync credential, the token-hashing key)
@@ -544,18 +598,24 @@ volumes:
   in [kanidm-setup.md](kanidm-setup.md).
 - **Radicale config** — `auth.type = http_x_remote_user`; `rights.type = from_file`
   with a static owner-only file; `[group] type = htgroup` and `[sharing] type = csv`
-  with `collection_by_map = true` (§8); no CORS headers (same origin). The volume
-  `radicale-rules` holds the group file the app writes.
-- **Obsolete settings** — `NUXT_SYNC_INTERVAL_MIN` belongs to the v1.0 sync worker.
-  `NUXT_CALDAV_BASE_URL` becomes the internal Radicale URL. The example in the repo
-  (`docker-compose.yml`, `.env.example`, `nuxt.config.ts`,
-  `server/validate-config.mjs`) still carries the old names; it is replaced with the
-  Phase 2 work (§12).
+  with `collection_by_map = true` (§8); no CORS headers (same origin). The rights file is bind-mounted
+  read-only, so the app can change the group file but never the static rules. Radicale refuses to start
+  without the group file: the app's start command creates it empty (`/groups/htgroup`) and Radicale
+  waits for the app to be healthy. A new named volume takes the ownership of the image directory
+  mounted on it, so the Dockerfile creates `/groups` owned by `node` and no root init step is needed.
+- **Config names** — the compose file, `.env.example`, `nuxt.config.ts` and
+  `server/validate-config.mjs` use the names above. The container refuses to start without
+  `NUXT_OIDC_ISSUER` (https, last segment = the client id), `NUXT_TOKEN_HASH_KEY` (≥ 32
+  characters) and `NUXT_RADICALE_URL`; `NUXT_GROUP_SYNC_TOKEN` only warns until group sync exists.
 - **Persistence and backup** — the SQLite file and Radicale's data are the two things
   to back up.
 - **Build** — a multi-stage Dockerfile (build the Nuxt app, then run it on a slim
-  Node image). `better-sqlite3` ships prebuilt binaries, so no native build is
-  needed in the image.
+  Node image). `better-sqlite3` ships prebuilt binaries for every platform; Nitro copies them
+  into `.output`, and the build stage fails if the addon cannot be loaded from there.
+  The build stage runs `npm ci --ignore-scripts`: the image's npm 11.12 would otherwise run
+  `node-gyp rebuild` for `better-sqlite3` (Python and a compiler needed; npm 11.19 honours its
+  `gypfile: false`). The image was built and started with Compose on 2026-10-29: both services
+  healthy, migrations applied, the group file created.
 - **Test stack** — `dev/spike-s1` runs Kanidm and Radicale (the project's own image) for
   experiments (it earlier also ran OpenCloud and oauth2-proxy, spike S1). It is not
   part of the app.
@@ -608,12 +668,21 @@ this is the **order**):
     against an allow-list of Kanidm clients (§6); OpenCloud is not in the CalDAV
     path. It can still be added as a generic external account using its own client
     `web`.
-- **S2 — FullCalendar Premium split view (before Step 7).** Confirm the v7 Premium
-  package and subpath names (v1.0 named `@fullcalendar/vue3-scheduler`; the README
-  says only `@fullcalendar/vue3` is installed), wire the AGPL license key, and
-  prototype resource views with calendars as rows at 10–20 calendars. Check
-  readability at 360×640 and 640×360, empty-band hiding and sticky labels.
-  _Fallback:_ one instance per calendar (§9).
+- **S2 — FullCalendar Premium split view. Done 2026-10-29: use the Premium resource timeline.**
+  - _Packages:_ `@fullcalendar/vue3-scheduler` 7.1.3 (peer: `@fullcalendar/vue3` 7.1.3), subpaths
+    `/resource-timeline`, `/resource-timegrid`, `/resource-daygrid`, `/timeline`, `/scrollgrid`. Its
+    `package.json` says `SEE LICENSE IN LICENSE.md`: tri-licensed (commercial, CC BY-NC-ND, AGPLv3);
+    allow-list it by hand in the licence audit. Key: `'AGPL-My-Frontend-And-Backend-Are-Open-Source'`
+    (no paid key). Option names in v7: `resourceColumnsWidth` (not `resourceAreaWidth`).
+  - _Timeline (calendars as rows):_ works; a busy day grows its row (one line per event), quiet rows
+    are 36 px; `filterResourcesWithEvents` hides empty rows (the app uses `splitBands` instead); the date
+    header is sticky and the label column is its own pane; `interaction` is not needed for display or
+    clicks. 15 non-empty rows fit one screen at 768×1024. At 360×640 it is tight: `slotMinWidth` 90–120
+    and a 100 px label column make it readable, with horizontal scroll.
+  - _Resource time grid / day grid:_ calendars as columns, not bands; unusable at 360 px.
+  - _Stacked instances (fallback):_ works, but empty-band hiding is app-side, there are no sticky labels
+    and the DOM is about 3× larger. Not needed.
+  - _Bundle:_ +29 kB gzip for the resource timeline, +33 kB with timegrid, daygrid and scrollgrid.
 - **S3 — Nuxt UI trial. Done 2026-10-29: adopt.** Run in a throwaway copy inside the
   Dev Container (the repo was not changed): `@nuxt/ui` 4.12.0 and Tailwind CSS v4 on
   the current Nuxt 4.6 / FullCalendar 7.1 project, with a page using a slideover,
@@ -654,13 +723,15 @@ this is the **order**):
   - _Still open:_ `f` as a share permission; real clients (S7); how the app reads
     group membership from Kanidm (service account, interval); behavior with many
     shares.
-- **S6 — Gateway prototype (start of Phase 2).** In Nitro: proxy `PROPFIND`/`REPORT`
-  with streamed bodies; header hygiene tests (a client-sent `X-Remote-User` must not
-  survive); local JWT verification (algorithm, `typ`, `kid` rotation, `iss`, `aud`,
-  `exp`/`nbf`, `caldav` scope, rejection of tokens from non-listed clients and of
-  ID tokens used as access tokens); behavior with Kanidm unreachable and with a cold
-  key cache. Already tested on the stack: the `caldav` scope appears in tokens, and
-  groups are in the ID token and userinfo, not in the access token.
+- **S6 — Gateway prototype. Done 2026-10-29** (`server/utils/gateway`, `server/utils/auth`; notes in
+  §7). Verified by hand against the real Kanidm and Radicale through `nuxt dev` and through the
+  production build (`.output`): `PROPFIND` with a real token gives 207; a spoofed `X-Remote-User`,
+  `X-Script-Name` or `X-Forwarded-*` changes nothing; no token, a bad token and an ID token give 401;
+  traversal gives 400; `POST` gives 405; the `.well-known` redirect, the CORS preflight and a Basic
+  app token work. Covered by the integration test (`GATEWAY_IT=1`): a full `PUT`/`GET`/`REPORT`/
+  `MOVE`/`DELETE` cycle, a chunked `PUT` and the 413 on an oversized body. Unit tests cover the
+  rejections (algorithm, `typ`, `iss`, `aud`, expiry, scope, unlisted client, `kid` rotation).
+  _Not verified:_ a real key rotation, and Kanidm unreachable with a cold cache (unit-tested only).
 - **S7 — Third-party clients.** Thunderbird, DAVx5 and iOS against `/caldav/` with
   app tokens (Basic) and via `/.well-known/caldav`; discovery of personal and shared
   calendars; OIDC-capable clients with bearer tokens.
@@ -732,15 +803,10 @@ this is the **order**):
   `npm test` running plain `vitest run`. `npm run check` and `npm test` pass in the
   Dev Container. TypeScript is held at 5.9 until `vue-tsc` support for TypeScript 7
   is verified.
-- **Startup config validation** — `server/validate-config.mjs` exits when the OIDC
-  or CalDAV variables are empty, so the Phase 1 container only starts with
-  placeholder values (copy `.env.example`). Update it for the new variable names
-  (§10) when Phase 2 starts, or relax it until then.
-- **SPA switch** — `ssr: false` is decided but not yet applied to the code; the
-  stray `ssrStreaming` flag has already been removed.
-- **Browser-level tests** — only unit tests exist; nothing checks the responsive
-  matrix (360×640, 640×360, 768×1024, 1280×800). Pick a browser test tool before
-  Step 8.
+- **Browser-level tests** — only unit tests exist (some mount components in a Nuxt test
+  environment, without layout). The responsive matrix (360×640, 640×360, 768×1024, 1280×800, light
+  and dark) was checked by hand on 2026-10-29 and found two bugs that no unit test could (§9: scroll
+  grid, top bar). Pick a browser test tool before Step 9.
 - **Database migrations** — decided: numbered `.sql` files and a small runner
   applied at startup, with hand-written TypeScript types. Revisit Drizzle if the
   types drift.
@@ -757,8 +823,13 @@ Phase 1 is the **UI shell / mock-up**: a working mock-up of **all** the UI
 **mock data** — no real backend, auth, or CalDAV calls yet. It satisfies
 **FR-21…FR-25, FR-6, FR-20** (design §9).
 
-Trial **S3** (Nuxt UI) is done and adopted (§12); run trial **S2** (Premium split
-view) before Step 7, because its outcome changes that step.
+Trials **S3** (Nuxt UI) and **S2** (Premium split view) are done and adopted (§12).
+
+**Status (2026-10-29):** Steps 1–7 are built and were checked by hand at 360×640, 640×360, 768×1024 and
+1280×800 in light and dark. Steps 8 and 9 are open: touch behaviour on a real device, the colour-contrast
+review (event colours in both schemes are tested; the rest of the UI is not), screen readers, and the
+landscape top bar (two rows take 113 of 360 px). Quick-add adds to an in-memory store; the `⋯` and `⋮`
+menu items and Edit and Delete only show a toast.
 
 | Step | What                       | Requirements               |
 | ---- | -------------------------- | -------------------------- |

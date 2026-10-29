@@ -35,7 +35,14 @@ body {
 }
 
 body {
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
   color: var(--text);
   background: var(--bg);
   font-size: 14px;
@@ -53,4 +60,155 @@ button {
 a {
   color: var(--accent);
   text-decoration: none;
+}
+
+/* ---- App shell / layout primitives (Phase 1 Step 3) ---- */
+
+.app-shell {
+  display: grid;
+  grid-template-rows: var(--topbar-height) 1fr;
+  grid-template-columns: var(--sidebar-width) 1fr;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden; /* page never scrolls; regions scroll internally */
+}
+
+/* Top bar spans the full width (row 1). */
+.top-bar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--topbar-height);
+  padding: 0 12px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto; /* scroll horizontally instead of clipping */
+}
+
+.top-bar-title {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Sidebar: fixed column on desktop (row 2, col 1). */
+.sidebar {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sidebar);
+  color: var(--text-on-dark);
+  overflow: hidden auto; /* clip horizontally, scroll vertically */
+}
+
+/* Main area fills the remaining space and scrolls internally. */
+.main-area {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg);
+}
+
+/* Icon buttons (hamburger, close) with comfortable tap targets. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: var(--radius);
+  color: inherit;
+}
+
+.icon-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Hamburger icon */
+.hamburger {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hamburger span {
+  width: 18px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+/* Backdrop for the mobile drawer (hidden on desktop). */
+.sidebar-backdrop {
+  display: none;
+}
+
+/* Desktop: toggle can collapse the sidebar column. */
+@media (min-width: 768px) {
+  .app-shell:not(.sidebar-open) {
+    grid-template-columns: 0 1fr;
+  }
+
+  .app-shell:not(.sidebar-open) .sidebar {
+    display: none;
+  }
+}
+
+/* Mobile (<768px): sidebar becomes an off-canvas drawer. */
+@media (max-width: 767px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .top-bar {
+    position: relative;
+    z-index: 20;
+  }
+
+  .sidebar {
+    position: fixed; /* escapes the shell's overflow clipping */
+    top: var(--topbar-height);
+    left: 0;
+    bottom: 0;
+    width: min(var(--sidebar-width), 85vw);
+    transform: translateX(-102%);
+    transition: transform 0.2s ease;
+    z-index: 40;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .sidebar.is-open {
+    transform: translateX(0);
+  }
+
+  .main-area {
+    grid-column: 1;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    top: var(--topbar-height); /* keep the toggle reachable */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 30;
+  }
+}
+
+/* Respect reduced-motion preferences. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
 }

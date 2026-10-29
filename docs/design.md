@@ -538,7 +538,12 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
 - **Narrow day columns** — `dayMinWidth` (columns pan sideways inside the calendar) needs the Premium
   plugin `@fullcalendar/vue3-scheduler/scrollgrid` and the licence key; without them the page throws
   "Must import @fullcalendar/scrollgrid". Unit tests in happy-dom do not reach this path (no
-  layout), so only a browser check caught it.
+  layout), so only a browser check caught it; the Playwright suite now covers it (§12).
+- **Keyboard access to scrollers** — the panning day columns and the resource timeline scroll sideways
+  on narrow screens without a tab stop (axe: `scrollable-region-focusable`). `useKeyboardScrollers`
+  gives such regions `tabindex="0"` after each render, and `EventSheet` does the same for its body. No
+  role or label is added: FullCalendar's grid markup does not allow an extra group between rows and
+  cells.
 - **Mobile** — drag/resize on touch is error-prone. Provide **explicit edit
   affordances** (tap event → sheet with Edit/Delete; quick-add button) and keep
   tap targets ≥ 44 px. Never make long-press the only path to an action.
@@ -803,10 +808,18 @@ this is the **order**):
   `npm test` running plain `vitest run`. `npm run check` and `npm test` pass in the
   Dev Container. TypeScript is held at 5.9 until `vue-tsc` support for TypeScript 7
   is verified.
-- **Browser-level tests** — only unit tests exist (some mount components in a Nuxt test
-  environment, without layout). The responsive matrix (360×640, 640×360, 768×1024, 1280×800, light
-  and dark) was checked by hand on 2026-10-29 and found two bugs that no unit test could (§9: scroll
-  grid, top bar). Pick a browser test tool before Step 9.
+- **Browser-level tests** — decided and built (2026-10-29): Playwright with Chromium and WebKit in
+  the Dev Container, tests in `e2e/` against the production build. Projects: phone portrait and
+  landscape (touch), tablet, desktop, phone and desktop in dark mode, WebKit phone. Covered: no
+  sideways page scroll and no console errors in every view, the controls by tap and keyboard,
+  focus return after dialogs, the split view's bands, and an axe scan (WCAG 2.1 A/AA) of every view,
+  the quick-add dialog and the event sheet. The suite found real problems the unit tests could not
+  (the scroll grid error was reproduced by removing the plugin; the event sheet's description list;
+  scrollers without a tab stop). Playwright (Apache-2.0) and axe-core (MPL-2.0) are dev-only. Known
+  upstream findings inside FullCalendar's markup are listed with their reasons in
+  `e2e/a11y.spec.ts`: time-grid day headers named with the long date, the year view's month titles
+  and lists, and the aria-owns rows of the pannable grid and the resource timeline. Not covered:
+  real devices, screen readers, drag and long-press (editing is off), and login (Phase 2).
 - **Database migrations** — decided: numbered `.sql` files and a small runner
   applied at startup, with hand-written TypeScript types. Revisit Drizzle if the
   types drift.

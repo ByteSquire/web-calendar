@@ -52,6 +52,7 @@ npm test           # vitest run: Vitest suite
 npm run lint       # eslint . (lint:fix applies autofixes)
 npm run fmt        # prettier --write .
 npm run typecheck  # nuxt typecheck
+npm run test:e2e   # builds the app, then runs the Playwright browser tests (e2e/)
 npm audit
 ```
 
@@ -62,6 +63,22 @@ Formatting is Prettier (`.prettierrc`: single quotes, no semicolons, 100 columns
 because `vue-tsc` support for TypeScript 7 is unverified. The code was last formatted
 by Oxfmt (from the removed Vite+ toolchain), so the first `npm run fmt` may produce
 small diffs.
+
+### Browser tests
+
+`e2e/` holds Playwright tests that run against the production build (`node .output/server/index.mjs`
+on port 3100, started by `playwright.config.ts`) in Chromium and WebKit. The projects are the
+responsive matrix: a phone in portrait and landscape (touch), a tablet, a desktop, a phone and a
+desktop in dark mode, and a WebKit phone. The tests check that no view scrolls the page sideways or
+logs errors, that the controls work by tap and keyboard, that focus returns after dialogs, the split
+view's bands, and an axe scan (WCAG 2.1 A and AA) of every view and dialog. `npm run test:e2e` builds
+first; `npx playwright test --project=phone` runs one project against the existing build, and
+`npx playwright show-report` opens the last report.
+
+The Dev Container image installs the browsers. In an older container run
+`npx playwright install-deps chromium webkit` as root, then `npx playwright install chromium webkit`.
+A few findings sit inside FullCalendar's own markup and are listed, with the reason, in
+`e2e/a11y.spec.ts`; any other violation fails the test.
 
 ### Mock data (Phase 1)
 

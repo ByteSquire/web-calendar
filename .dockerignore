@@ -30,8 +30,13 @@ docker-compose*.yml
 .devcontainer
 .github
 
-# Test/build caches
+# Test/build caches and the browser tests
 coverage
+e2e
+playwright.config.ts
+playwright-report
+test-results
+blob-report
 *.tsbuildinfo
 
 # Local npm configuration (may contain registry tokens)

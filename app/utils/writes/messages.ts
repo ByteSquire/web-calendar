@@ -102,6 +102,12 @@ function describeDavError(error: DavError, action: WriteAction): WriteFailure {
         {},
         error,
       )
+    // Only external accounts raise these, and they are read-only: no write reaches them.
+    case 'login-rejected':
+    case 'credential-needed':
+    case 'host-not-allowed':
+    case 'rate-limited':
+      return failure('unknown', 'Something went wrong while saving. Try again.', {}, error)
   }
 }
 

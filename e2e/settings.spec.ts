@@ -738,7 +738,8 @@ test.describe('settings: when the API is not there', () => {
       await expect(alert.getByRole('button', { name: 'Retry' })).toBeVisible()
     }
     // the page is still a page: forms, headings and the notice
-    await expect(main(page).getByRole('heading', { level: 2 })).toHaveCount(3)
+    // Four sections: the time zone one has no alert of its own when /api/me fails.
+    await expect(main(page).getByRole('heading', { level: 2 })).toHaveCount(4)
     await expect(page.getByText('Nothing is saved in demo mode')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Create token' })).toBeEnabled()
     expect(withoutRefusedRequests(errors)).toEqual([])

@@ -232,5 +232,7 @@ test('deletes the series with its changed occurrence: all events', async () => {
 })
 
 test('no script or console errors came up', () => {
-  expect(problems).toEqual([])
+  // The browser logs every non-2xx answer; the 412s are the "already there" answers of the
+  // second import, which the test expects.
+  expect(problems.filter((message) => !/status of 412/.test(message))).toEqual([])
 })

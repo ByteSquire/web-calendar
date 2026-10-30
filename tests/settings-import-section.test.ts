@@ -225,6 +225,14 @@ describe('where it is shown', () => {
     // No result and no preview before a file is chosen.
     expect(buttons()).toEqual([])
   })
+
+  it('does not mark the file field invalid before anything went wrong', async () => {
+    await mountSection()
+    // An empty message passed to the field made Nuxt UI draw it red and set aria-invalid.
+    expect(fileInput().getAttribute('aria-invalid')).not.toBe('true')
+    await chooseAndRead(fixture('import-mixed.ics'))
+    expect(fileInput().getAttribute('aria-invalid')).not.toBe('true')
+  })
 })
 
 describe('choosing a file', () => {
@@ -490,7 +498,8 @@ describe('importing', () => {
       'Nothing was imported. 8 events were not imported because the import was cancelled. ' +
         '4 events were being sent when the import was cancelled and may have been saved.',
     )
-    expect(sourcesVersion()).toBe(before)
+    // Nothing was confirmed, but four may have been saved: the calendar looks again.
+    expect(sourcesVersion()).toBe(before + 1)
     expect(button('Import again')).toBeDefined()
   })
 })

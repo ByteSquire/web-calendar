@@ -119,7 +119,12 @@ export function createExternalTrack(deps: ExternalTrackDeps): ExternalTrack {
   function failure(error: unknown, accountId: number | null): Problem {
     return {
       message: describeLoadError(error),
-      passwordFor: accountId !== null && isPasswordError(error) ? accountId : null,
+      passwordFor:
+        accountId !== null &&
+        isPasswordError(error) &&
+        accounts.some((account) => account.id === accountId && account.authMode === 'basic')
+          ? accountId
+          : null,
     }
   }
 

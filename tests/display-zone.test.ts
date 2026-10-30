@@ -127,7 +127,7 @@ describe('useDisplayZoneFollow', () => {
   describe('with live data', () => {
     beforeEach(() => configure(false))
 
-    it('leaves the events to the loader, which loads them again in the new zone', async () => {
+    it('moves the events it holds, which the loader replaces when it has loaded them again', async () => {
       await mountFollower()
       const { events } = useCalendarState()
       const event = {
@@ -145,7 +145,14 @@ describe('useDisplayZoneFollow', () => {
 
       useUserTimeZone().value = 'Australia/Sydney'
       await nextTick()
-      expect(events.value).toEqual([event])
+      // A calendar whose reload fails or is late keeps these: they must show the right time.
+      expect(events.value).toEqual([
+        {
+          ...event,
+          start: convertWallClock(event.start, BROWSER, 'Australia/Sydney'),
+          end: convertWallClock(event.end, BROWSER, 'Australia/Sydney'),
+        },
+      ])
     })
   })
 

@@ -73,6 +73,12 @@ export function describeFailure(error: unknown): ItemFailure {
         'The calendar service gave an unexpected answer. The event may have been saved: import again to check.',
         { systemic: true },
       )
+    // Only external accounts raise these, and an import writes to the built-in service.
+    case 'login-rejected':
+    case 'credential-needed':
+    case 'host-not-allowed':
+    case 'rate-limited':
+      return failed('Something went wrong while saving this event.', { systemic: true })
   }
 }
 

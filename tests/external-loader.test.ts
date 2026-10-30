@@ -130,8 +130,15 @@ function harness(setup: Setup = {}) {
 
   const data = {
     accounts: setup.accounts ?? [
-      account(1, { name: 'One' }),
-      account(2, { name: 'Two', url: 'https://cal.example.net/', color: '#112233' }),
+      // Accounts with a login: a new password can cure what the login tests report.
+      account(1, { name: 'One', authMode: 'basic', username: 'one' }),
+      account(2, {
+        name: 'Two',
+        url: 'https://cal.example.net/',
+        color: '#112233',
+        authMode: 'basic',
+        username: 'two',
+      }),
     ],
     accountsFail: null as unknown,
     prefs: setup.prefs ?? [],
@@ -622,6 +629,16 @@ describe('logins', () => {
     expect(h.errors()).toEqual({ [externalAccountKey(2)]: 'Password needed' })
     expect(h.status.passwordFor.value).toEqual({ [externalAccountKey(2)]: 2 })
     expect(h.titles()).toEqual(['Alpha meeting', 'Misc meeting', 'Work meeting'])
+  })
+
+  it('offers no password for an account without a login, whatever the server said', async () => {
+    const h = harness({
+      accounts: [account(1, { name: 'Open' })],
+      listings: { 1: new DavError('login-rejected', 'no') },
+    })
+    await h.loader.start()
+    expect(h.errors()).toEqual({ [externalAccountKey(1)]: 'Login rejected' })
+    expect(h.status.passwordFor.value).toEqual({})
   })
 
   it('offers nothing for problems a password cannot cure', async () => {

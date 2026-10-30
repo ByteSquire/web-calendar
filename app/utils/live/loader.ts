@@ -430,6 +430,13 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
     )
   }
 
+  /** Only an account with a login can be cured by entering a password again. */
+  function hasLogin(accountId: number): boolean {
+    return status.externalAccounts.value.some(
+      (account) => account.id === accountId && account.authMode === 'basic',
+    )
+  }
+
   /** Puts the outcomes into the state. Returns whether any of them was still the newest. */
   function applyOutcomes(
     outcomes: readonly CalendarOutcome[],
@@ -452,7 +459,12 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
     const loginProblems = new Map<number, string>()
     for (const result of fresh) {
       const accountId = externalAccountIdOf(result.calendarId)
-      if (result.needsPassword && accountId !== null && result.error !== null) {
+      if (
+        result.needsPassword &&
+        accountId !== null &&
+        hasLogin(accountId) &&
+        result.error !== null
+      ) {
         errors.delete(result.calendarId)
         loginProblems.set(accountId, result.error)
       } else if (result.error !== null) errors.set(result.calendarId, result.error)
@@ -595,7 +607,12 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
   }
 
   function retry(key: string): Promise<void> {
-    return isSourceKey(key) ? refresh() : loadEvents({ force: true, only: [key] })
+    if (!isSourceKey(key)) return loadEvents({ force: true, only: [key] })
+    // A problem of the built-in sources is retried without waiting for the external accounts, and
+    // a problem of an account without reloading the built-in sources.
+    return isExternalSourceKey(key)
+      ? (externalTrack?.run(true) ?? Promise.resolve())
+      : refresh({ external: false })
   }
 
   // Range, visible calendars and zones decide what to load. `visibleRange` is a new object on every

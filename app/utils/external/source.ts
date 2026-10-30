@@ -71,7 +71,11 @@ export function createExternalSource(options: ExternalSourceOptions): ExternalSo
         limiter.run(() => options.fetch(input, init), init?.signal ?? undefined),
       sealed: () => options.seals.get(account.id),
       // The proxy cannot open the seal any more: asking again is the only way on.
-      onCredentialVoid: () => options.seals.forget(account.id),
+      // Only the seal that failed: a request that waited in the queue may report a seal that has
+      // been replaced since, and the new one must stay.
+      onCredentialVoid: (used) => {
+        if (options.seals.get(account.id) === used) options.seals.forget(account.id)
+      },
     })
     // Hrefs the account's server returns are pinned to its origin by the client, as for the
     // built-in service. The server expands nothing: external servers differ in whether they

@@ -56,7 +56,7 @@
         label="Calendar file"
         name="import-file"
         :help="`An .ics file of up to ${formatBytes(MAX_FILE_BYTES)} and ${MAX_EVENTS} events.`"
-        :error="fileError"
+        :error="fileError || undefined"
         :ui="FIELD_UI"
       >
         <!-- Announced when it appears; only given while there is an error, so there is no gap. -->
@@ -313,19 +313,30 @@ async function startImport() {
   await nextTick()
   cancelButton.value?.$el.focus()
 
-  const result = await runImport(caldav.client, {
-    calendarHref: calendar.href,
-    resources: current.resources,
-    signal: run.signal,
-    onProgress: (value) => {
-      progress.done = value.done
-    },
-  })
+  let result: ImportReport
+  try {
+    result = await runImport(caldav.client, {
+      calendarHref: calendar.href,
+      resources: current.resources,
+      signal: run.signal,
+      onProgress: (value) => {
+        progress.done = value.done
+      },
+    })
+  } catch {
+    // Not a failure of one event (the run reports those): something in the run itself broke. The
+    // person can try again; the section must not stay on "Importing" for ever.
+    controller = null
+    phase.value = 'ready'
+    notice.value = 'The import could not be run. Try again.'
+    return
+  }
   controller = null
   report.value = result
   phase.value = 'done'
   notice.value = summarize(result)
-  if (result.created > 0) {
+  // Events that were interrupted or failed with an unclear answer may have been saved.
+  if (result.created + result.interrupted + result.failed > 0) {
     caldav.reader.invalidate(calendar.href)
     sourcesVersion.value++
   }

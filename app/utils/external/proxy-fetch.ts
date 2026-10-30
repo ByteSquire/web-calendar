@@ -34,7 +34,7 @@ export interface ProxyFetchOptions {
   /** The sealed credential this browser has for the account. */
   sealed: () => string | null
   /** Called when the proxy says the sealed credential is void (428), before the error is thrown. */
-  onCredentialVoid?: () => void
+  onCredentialVoid?: (usedSeal: string) => void
 }
 
 /** The origin an account's credential is bound to; throws for an address that has none. */
@@ -174,9 +174,11 @@ export function createProxyFetch(options: ProxyFetchOptions): typeof fetch {
     const headers = new Headers(init?.headers)
     headers.delete('Authorization')
     headers.delete(EXTERNAL_CREDENTIAL_HEADER)
+    let usedSeal: string | null = null
     if (account.authMode === 'basic') {
       const sealed = options.sealed()
       if (!sealed) throw new DavError('credential-needed', 'there is no password for the account')
+      usedSeal = sealed
       headers.set(EXTERNAL_CREDENTIAL_HEADER, `Sealed ${sealed}`)
     }
 
@@ -185,7 +187,8 @@ export function createProxyFetch(options: ProxyFetchOptions): typeof fetch {
     if (failure === null) return response
     // The body of an error is of no use to the caller; release the connection.
     await response.body?.cancel().catch(() => undefined)
-    if (failure.kind === 'credential-needed') options.onCredentialVoid?.()
+    if (failure.kind === 'credential-needed' && usedSeal !== null)
+      options.onCredentialVoid?.(usedSeal)
     throw failure
   }
 }

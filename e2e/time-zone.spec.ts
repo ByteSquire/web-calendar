@@ -319,7 +319,8 @@ test.describe('a time zone chosen in the settings', () => {
     expect(list!.x).toBeGreaterThanOrEqual(0)
     expect(list!.x + list!.width).toBeLessThanOrEqual(width)
     const first = await page.getByRole('option').first().boundingBox()
-    expect(first!.height).toBeGreaterThanOrEqual(44)
+    // 43.5: the same sub-pixel allowance as the other 44 px checks (a list item lays out at 43.86).
+    expect(first!.height).toBeGreaterThanOrEqual(43.5)
   })
 
   test('has no accessibility violations (WCAG 2.1 A and AA)', async ({ page }) => {

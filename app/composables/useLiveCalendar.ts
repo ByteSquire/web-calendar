@@ -6,6 +6,7 @@ import { useAuth } from '~/composables/useAuth'
 import { useAuthFetch } from '~/composables/useAuthFetch'
 import { useCalDav } from '~/composables/useCalDav'
 import { useCalendarState } from '~/composables/useCalendarState'
+import { useExternalAccess } from '~/composables/useExternalAccess'
 import { useServerConfigState } from '~/composables/useServerConfigState'
 import { fetchIcsText } from '~/utils/live/ics'
 import { createLiveLoader, type LiveLoader } from '~/utils/live/loader'
@@ -22,7 +23,8 @@ export function useCalendarSourcesVersion() {
 
 export function useLiveStatus() {
   const nuxtApp = useNuxtApp()
-  const { loading, errors, skipped, lastLoadedAt } = createLiveStatusState(useState)
+  const { loading, errors, skipped, lastLoadedAt, externalAccounts, passwordFor } =
+    createLiveStatusState(useState)
   return {
     /** A load is running. */
     loading: readonly(loading),
@@ -30,10 +32,18 @@ export function useLiveStatus() {
     errors: readonly(errors),
     /** Calendar id -> how many entries of it could not be read. */
     skipped: readonly(skipped),
+    /** The external accounts as the loader last read them. */
+    externalAccounts: readonly(externalAccounts),
+    /** The problems a new password cures: key of `errors` -> the external account's id. */
+    passwordFor: readonly(passwordFor),
     /** Epoch milliseconds of the last finished load of events. */
     lastLoadedAt: readonly(lastLoadedAt),
-    /** Reload the calendars and events, bypassing the short-lived cache (FR-10). */
-    refresh: (): Promise<void> => loaders.get(nuxtApp)?.refresh() ?? Promise.resolve(),
+    /**
+     * Reload the calendars and events, bypassing the short-lived cache (FR-10); `external: false`
+     * leaves the external accounts out.
+     */
+    refresh: (options?: { external?: boolean }): Promise<void> =>
+      loaders.get(nuxtApp)?.refresh(options) ?? Promise.resolve(),
     /** Load one failed calendar (or source) again. */
     retry: (key: string): Promise<void> => loaders.get(nuxtApp)?.retry(key) ?? Promise.resolve(),
   }
@@ -62,6 +72,7 @@ export function useLiveCalendar(): void {
     reader: caldav.reader,
     api: <T>(path: string) => api<T>(path) as Promise<T>,
     fetchIcs: (id) => fetchIcsText(auth.authFetch, id),
+    external: useExternalAccess().source,
     displayTimeZone: () => displayTimeZone.value,
     orgTimeZone: () => orgTimeZone.value,
     setUserTimeZone: (zone) => {

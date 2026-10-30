@@ -23,6 +23,14 @@ export type DavErrorKind =
   | 'bad-response'
   /** Any other 4xx (400 bad iCalendar, 405, 413, 415): the server refused this very request. */
   | 'rejected'
+  /** External account: the account's own server refused the login (the proxy's 502 with upstream 401). */
+  | 'login-rejected'
+  /** External account with a login: this browser has no usable password for it (none entered, or void). */
+  | 'credential-needed'
+  /** External account: the administrator's list of allowed hosts does not cover the account's server. */
+  | 'host-not-allowed'
+  /** External account: the proxy's per-user limit is reached; trying again shortly may work. */
+  | 'rate-limited'
 
 export class DavError extends Error {
   readonly kind: DavErrorKind

@@ -4,7 +4,7 @@ import type { CalendarEvent } from '../../../shared/types/calendar'
 import type { DavObject } from '../caldav/types'
 import { readCalendarObject } from '../ical/read'
 import type { ReadIssue, ReadOptions } from '../ical/read-types'
-import { describeLoadError, isAborted } from './errors'
+import { describeLoadError, isAborted, isPasswordError } from './errors'
 
 export interface ReadContext {
   displayTimeZone: string
@@ -15,7 +15,16 @@ export interface ReadContext {
 
 /** What fetching one calendar produced: its objects (CalDAV), its text (subscription) or a failure. */
 export type CalendarOutcome =
-  | { kind: 'caldav'; calendarId: string; objects: readonly DavObject[] }
+  | {
+      kind: 'caldav'
+      calendarId: string
+      objects: readonly DavObject[]
+      /**
+       * The reader expands the series. Off for the built-in service, whose server does it; on for
+       * external accounts, whose servers may ignore `expand`.
+       */
+      expandRecurrence?: boolean
+    }
   | { kind: 'ical'; calendarId: string; text: string }
   | { kind: 'failed'; calendarId: string; error: unknown }
 
@@ -24,6 +33,8 @@ export interface CalendarReadResult {
   events: CalendarEvent[]
   /** Short message when the calendar could not be loaded; null when it was. */
   error: string | null
+  /** The failure is one a new password for an external account may cure. */
+  needsPassword: boolean
   /** The load was cancelled; the result says nothing about the calendar. */
   aborted: boolean
   /** Parts of the data that could not be read and were left out. */
@@ -64,11 +75,23 @@ export function readCalendarEvents(
   context: ReadContext,
 ): CalendarReadResult {
   const { calendarId } = outcome
-  const base = { calendarId, events: [], error: null, aborted: false, skipped: 0, warnings: 0 }
+  const base = {
+    calendarId,
+    events: [],
+    error: null,
+    needsPassword: false,
+    aborted: false,
+    skipped: 0,
+    warnings: 0,
+  }
   if (outcome.kind === 'failed') {
     return isAborted(outcome.error)
       ? { ...base, aborted: true }
-      : { ...base, error: describeLoadError(outcome.error) }
+      : {
+          ...base,
+          error: describeLoadError(outcome.error),
+          needsPassword: isPasswordError(outcome.error),
+        }
   }
 
   const common = {
@@ -93,7 +116,7 @@ export function readCalendarEvents(
           ...common,
           href: object.url,
           ...(object.etag !== '' ? { etag: object.etag } : {}),
-          expandRecurrence: false,
+          expandRecurrence: outcome.expandRecurrence ?? false,
         },
         object.data,
       )

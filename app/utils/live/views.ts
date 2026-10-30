@@ -13,6 +13,11 @@ const isViewIcon = (value: string): value is ViewIcon =>
  * selected. The colour a view may set per calendar has no place in `CalendarView` and is not used.
  */
 export function toViews(views: readonly ApiView[]): CalendarView[] {
+  // Phase 3 (FR-8): an admin-defined shared view must not reference an external account
+  // (`ext:<account>:<url>`): admins must not steer users' external credentials. The rule belongs on
+  // the server, where views are written (`readCalendarRef` in server/utils/api/validation.ts and
+  // the admin path of server/utils/api/views.ts: refuse `ext:` refs there; in a user's own views
+  // they must name one of the user's own account ids). The browser only displays what it is given.
   return views.map((view) => ({
     id: String(view.id),
     name: view.name,

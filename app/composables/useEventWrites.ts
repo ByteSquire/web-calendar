@@ -34,7 +34,8 @@ export function useEventWrites() {
     ? {
         client: caldav.client,
         reader: caldav.reader,
-        refresh,
+        // A write reloads the built-in calendars; the external accounts' servers are not asked.
+        refresh: () => refresh({ external: false }),
         zones: () => ({
           displayTimeZone: displayTimeZone.value,
           orgTimeZone: orgTimeZone.value,

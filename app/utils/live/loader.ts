@@ -13,6 +13,8 @@
 //   request for that calendar started meanwhile, so a slow old answer never overwrites a newer one.
 // - The first calendar ("Personal") is created at most once per session, and only when the first
 //   successful listing of the collections is empty.
+// - External accounts (FR-8) have a track of their own (external.ts): the built-in calendars do not
+//   wait for them, and each account is merged in as soon as its server has answered.
 import { computed, watch } from 'vue'
 import type { Ref } from 'vue'
 import type { Calendar, CalendarUser } from '../../../shared/types/calendar'
@@ -21,6 +23,7 @@ import { DavError } from '../caldav/errors'
 import type { CalendarReader } from '../caldav/reader'
 import type { DavCalendar } from '../caldav/types'
 import type { CalendarState } from '../calendar-state'
+import type { ExternalSource } from '../external/source'
 import type {
   ApiCalendarPref,
   ApiCategory,
@@ -29,7 +32,13 @@ import type {
   ApiMe,
   ApiView,
 } from './api-types'
-import { buildCalendars, reconcileVisibleCalendars, subscriptionIdOf } from './calendars'
+import {
+  buildCalendars,
+  externalAccountIdOf,
+  isExternalRef,
+  reconcileVisibleCalendars,
+  subscriptionIdOf,
+} from './calendars'
 import {
   isAutoCategory,
   reconcileCategories,
@@ -37,8 +46,15 @@ import {
   toCategories,
   withCategoryIds,
 } from './categories'
-import { describeLoadError, isSourceKey, SOURCE_KEYS } from './errors'
+import {
+  describeLoadError,
+  externalAccountKey,
+  isExternalSourceKey,
+  isSourceKey,
+  SOURCE_KEYS,
+} from './errors'
 import { dedupeEvents, readCalendarEvents, type CalendarOutcome, type ReadContext } from './events'
+import { createExternalTrack } from './external'
 import type { Timers } from './hooks'
 import { loadRange, rangeKey } from './range'
 import type { LiveStatusState } from './status'
@@ -70,6 +86,8 @@ export interface LiveDeps {
   api: <T>(path: string) => Promise<T>
   /** The raw .ics of an iCal subscription (by its numeric id). */
   fetchIcs: (subscriptionId: string) => Promise<string>
+  /** The external CalDAV accounts (FR-8); without it the loader knows none. */
+  external?: ExternalSource
   displayTimeZone: () => string
   orgTimeZone: () => string
   /**
@@ -89,12 +107,23 @@ export interface LiveDeps {
 export interface LiveLoader {
   /** Loads the sources, then the events. Once; later calls return the same promise. */
   start: () => Promise<void>
-  /** Reload everything, bypassing the 30 s read cache (FR-10). */
-  refresh: () => Promise<void>
+  /**
+   * Reload everything, bypassing the 30 s read cache (FR-10). `external: false` leaves the
+   * external accounts alone: a write to the built-in service reloads its own calendars and must
+   * neither wait for the accounts' servers nor spend the proxy's request budget on them.
+   */
+  refresh: (options?: { external?: boolean }) => Promise<void>
   /** Load one failed calendar again, or reload the sources for a `source:*` key. */
   retry: (key: string) => Promise<void>
-  /** Load the events now (`only`: just those calendars; `force`: skip the read cache). */
-  loadEvents: (options?: { force?: boolean; only?: readonly string[] }) => Promise<void>
+  /**
+   * Load the events now (`only`: just those calendars; `force`: skip the read cache;
+   * `skipExternal`: leave the external accounts' calendars to their own track).
+   */
+  loadEvents: (options?: {
+    force?: boolean
+    only?: readonly string[]
+    skipExternal?: boolean
+  }) => Promise<void>
   /** Reload the sources; calls that overlap run one after the other. */
   loadSources: () => Promise<void>
   dispose: () => void
@@ -138,6 +167,22 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
   let tokenCounter = 0
   /** calendar id -> token of the newest request for it. */
   const latest = new Map<string, number>()
+  /** The viewer's calendar preferences as the last load of the sources read them. */
+  let preferences: ApiCalendarPref[] = []
+  const externalTrack = deps.external
+    ? createExternalTrack({
+        source: deps.external,
+        store,
+        status,
+        prefs: () => preferences,
+        setErrors,
+        loadEvents: (options) => loadEvents(options),
+        prune: () => prune(visibleLoadable()),
+        beginWork,
+        endWork,
+        disposed: () => disposed,
+      })
+    : null
 
   // ---- bookkeeping ----
 
@@ -158,6 +203,13 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
   function setErrors(next: Record<string, string>) {
     const before = status.errors.value
     status.errors.value = next
+    // A "enter the password" offer belongs to a problem; it goes with it.
+    const fixes = status.passwordFor.value
+    if (Object.keys(fixes).some((key) => !(key in next))) {
+      status.passwordFor.value = Object.fromEntries(
+        Object.entries(fixes).filter(([key]) => key in next),
+      )
+    }
     const added = Object.keys(next).filter((key) => before[key] !== next[key])
     if (added.length > 0) deps.notifyProblems?.(added)
   }
@@ -213,6 +265,7 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
       } else fail(SOURCE_KEYS.me, me)
 
       if (prefs.status === 'rejected') fail(SOURCE_KEYS.prefs, prefs)
+      else preferences = prefs.value.prefs
       if (categories.status === 'fulfilled') {
         // Auto categories already seen stay; the real ones come from the server.
         const kept = store.categories.value.filter(isAutoCategory)
@@ -245,17 +298,18 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
           subscriptions: subscriptionList ?? [],
           prefs: prefs.status === 'fulfilled' ? prefs.value.prefs : [],
           ...(me.status === 'fulfilled' ? { ownerId: String(me.value.id) } : {}),
+          // What the external accounts' servers listed last; their own track keeps that current.
+          external: externalTrack?.collections() ?? [],
         })
-        // A part that could not be listed keeps what it had.
-        const dav =
-          collectionList !== null
-            ? built.filter((c) => c.type === 'caldav')
-            : previous.filter((c) => c.type === 'caldav')
+        // A part that could not be listed keeps what it had. External calendars are `caldav`
+        // calendars too, told apart by their ref.
+        const isDav = (c: Calendar) => c.type === 'caldav' && !isExternalRef(c.id)
+        const dav = collectionList !== null ? built.filter(isDav) : previous.filter(isDav)
         const ical =
           subscriptionList !== null
             ? built.filter((c) => c.type === 'ical')
             : previous.filter((c) => c.type === 'ical')
-        const next = [...dav, ...ical]
+        const next = [...dav, ...ical, ...built.filter((c) => isExternalRef(c.id))]
         store.visibleCalendarIds.value = reconcileVisibleCalendars({
           visibleIds: store.visibleCalendarIds.value,
           previous,
@@ -264,10 +318,13 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
         store.calendars.value = next
       }
 
-      // Keep the messages of calendars that still exist; the source messages are replaced.
+      // Keep the messages of calendars that still exist; the source messages are replaced, except
+      // those of the external accounts, which their own track keeps.
       const known = new Set(store.calendars.value.map((calendar) => calendar.id))
       const calendarErrors = Object.fromEntries(
-        Object.entries(status.errors.value).filter(([key]) => !isSourceKey(key) && known.has(key)),
+        Object.entries(status.errors.value).filter(
+          ([key]) => isExternalSourceKey(key) || (!isSourceKey(key) && known.has(key)),
+        ),
       )
       setErrors({ ...calendarErrors, ...problems })
       syncCategories()
@@ -390,11 +447,31 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
 
     const errors = new Map(Object.entries(status.errors.value))
     const skipped = new Map(Object.entries(status.skipped.value))
+    const fixes = new Map(Object.entries(status.passwordFor.value))
+    // A login that fails fails in every calendar of its account: one entry for the account.
+    const loginProblems = new Map<number, string>()
     for (const result of fresh) {
-      if (result.error !== null) errors.set(result.calendarId, result.error)
-      else errors.delete(result.calendarId)
+      const accountId = externalAccountIdOf(result.calendarId)
+      if (result.needsPassword && accountId !== null && result.error !== null) {
+        errors.delete(result.calendarId)
+        loginProblems.set(accountId, result.error)
+      } else if (result.error !== null) errors.set(result.calendarId, result.error)
+      else {
+        errors.delete(result.calendarId)
+        // It can be read: the account's login works, whatever was wrong with it is over.
+        if (accountId !== null && fixes.delete(externalAccountKey(accountId))) {
+          errors.delete(externalAccountKey(accountId))
+        }
+      }
       if (result.skipped > 0) skipped.set(result.calendarId, result.skipped)
       else skipped.delete(result.calendarId)
+    }
+    for (const [accountId, message] of loginProblems) {
+      errors.set(externalAccountKey(accountId), message)
+      fixes.set(externalAccountKey(accountId), accountId)
+    }
+    if (loginProblems.size > 0 || fixes.size !== Object.keys(status.passwordFor.value).length) {
+      status.passwordFor.value = Object.fromEntries(fixes)
     }
 
     const loaded = fresh.filter((result) => result.error === null)
@@ -417,28 +494,39 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
     if (store.events.value.some((event) => !ids.has(event.calendarId))) {
       store.events.value = store.events.value.filter((event) => ids.has(event.calendarId))
     }
-    const stale = (record: Record<string, unknown>) =>
-      Object.keys(record).some((key) => !isSourceKey(key) && !ids.has(key))
+    // Source keys stay; so do those of the external accounts that still exist.
+    const kept = (key: string) =>
+      ids.has(key) ||
+      (isExternalSourceKey(key) ? externalTrack?.knowsKey(key) === true : isSourceKey(key))
+    const stale = (record: Record<string, unknown>) => Object.keys(record).some((key) => !kept(key))
     const keep = <T>(record: Record<string, T>) =>
-      Object.fromEntries(Object.entries(record).filter(([key]) => isSourceKey(key) || ids.has(key)))
+      Object.fromEntries(Object.entries(record).filter(([key]) => kept(key)))
     if (stale(status.errors.value)) status.errors.value = keep(status.errors.value)
     if (stale(status.skipped.value)) status.skipped.value = keep(status.skipped.value)
   }
 
+  /** The calendars to show events of: the visible ones that have events. */
+  function visibleLoadable(): Calendar[] {
+    const visible = new Set(store.visibleCalendarIds.value)
+    return store.calendars.value.filter(
+      (calendar) =>
+        visible.has(calendar.id) && (calendar.type === 'caldav' || calendar.type === 'ical'),
+    )
+  }
+
   async function loadEvents(
-    options: { force?: boolean; only?: readonly string[] } = {},
+    options: { force?: boolean; only?: readonly string[]; skipExternal?: boolean } = {},
   ): Promise<void> {
     cancelTimer()
     if (disposed) return
     const force = options.force ?? false
-    const visible = new Set(store.visibleCalendarIds.value)
-    const loadable = store.calendars.value.filter(
-      (calendar) =>
-        visible.has(calendar.id) && (calendar.type === 'caldav' || calendar.type === 'ical'),
-    )
+    const loadable = visibleLoadable()
     if (!options.only) prune(loadable)
     const only = options.only
-    const targets = only ? loadable.filter((calendar) => only.includes(calendar.id)) : loadable
+    const picked = only ? loadable.filter((calendar) => only.includes(calendar.id)) : loadable
+    const targets = options.skipExternal
+      ? picked.filter((calendar) => !isExternalRef(calendar.id))
+      : picked
     if (targets.length === 0) return
 
     const context: ReadContext = {
@@ -451,8 +539,17 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
       tokens.set(calendar.id, ++tokenCounter)
       latest.set(calendar.id, tokenCounter)
     }
-    const caldav = targets.filter((calendar) => calendar.type === 'caldav')
+    const caldav = targets.filter(
+      (calendar) => calendar.type === 'caldav' && !isExternalRef(calendar.id),
+    )
     const ical = targets.filter((calendar) => calendar.type === 'ical')
+    // One group per account: a slow or failing account holds back no other.
+    const external = new Map<number, Calendar[]>()
+    for (const calendar of targets) {
+      const accountId = externalAccountIdOf(calendar.id)
+      if (accountId !== null)
+        external.set(accountId, [...(external.get(accountId) ?? []), calendar])
+    }
 
     beginWork()
     try {
@@ -463,6 +560,13 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
           ? readCaldav(caldav, context.range, force).then((o) => applyOutcomes(o, context, tokens))
           : false,
         ical.length > 0 ? readIcal(ical).then((o) => applyOutcomes(o, context, tokens)) : false,
+        ...[...external].map(([accountId, calendars]) =>
+          externalTrack
+            ? externalTrack
+                .read(accountId, calendars, context.range, force)
+                .then((o) => applyOutcomes(o, context, tokens))
+            : false,
+        ),
       ])
       if (!disposed && applied.some(Boolean)) status.lastLoadedAt.value = now()
     } finally {
@@ -472,17 +576,20 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
 
   // ---- lifecycle ----
 
-  async function refresh(): Promise<void> {
+  async function refresh(options: { external?: boolean } = {}): Promise<void> {
     await loadSources()
     sourcesReady = true
-    await loadEvents({ force: true })
+    await Promise.all([
+      loadEvents({ force: true, skipExternal: true }),
+      options.external === false ? undefined : externalTrack?.run(true),
+    ])
   }
 
   function start(): Promise<void> {
     started ??= (async () => {
       await loadSources()
       sourcesReady = true
-      await loadEvents()
+      await Promise.all([loadEvents({ skipExternal: true }), externalTrack?.run(false)])
     })()
     return started
   }

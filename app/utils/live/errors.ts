@@ -25,8 +25,35 @@ export const SOURCE_LABELS: Record<SourceKey, string> = {
   'source:calendars': 'Calendar list',
 }
 
-export function isSourceKey(key: string): key is SourceKey {
-  return key in SOURCE_LABELS
+/** The list of external accounts itself could not be read. */
+export const EXTERNAL_LIST_KEY = 'source:external'
+
+/** One external account as a whole: its calendars could not be listed, or its login failed. */
+export function externalAccountKey(accountId: number): string {
+  return `${EXTERNAL_LIST_KEY}:${accountId}`
+}
+
+/** The account id of an `externalAccountKey`, or null for any other string. */
+export function externalAccountIdOfKey(key: string): number | null {
+  const match = /^source:external:([1-9][0-9]{0,14})$/.exec(key)
+  return match ? Number(match[1]) : null
+}
+
+/** Source keys of the external accounts. They are replaced by their own track of the loader. */
+export function isExternalSourceKey(key: string): boolean {
+  return key === EXTERNAL_LIST_KEY || externalAccountIdOfKey(key) !== null
+}
+
+export function isSourceKey(key: string): boolean {
+  return key in SOURCE_LABELS || isExternalSourceKey(key)
+}
+
+/** The name of a source in the problems list; `accountName` knows the external accounts. */
+export function sourceLabel(key: string, accountName: (id: number) => string | undefined): string {
+  if (key in SOURCE_LABELS) return SOURCE_LABELS[key as SourceKey]
+  const accountId = externalAccountIdOfKey(key)
+  if (accountId !== null) return accountName(accountId) ?? 'External account'
+  return key === EXTERNAL_LIST_KEY ? 'External accounts' : 'Calendar'
 }
 
 const DAV_MESSAGES: Record<DavErrorKind, string> = {
@@ -40,6 +67,10 @@ const DAV_MESSAGES: Record<DavErrorKind, string> = {
   aborted: 'Cancelled',
   'bad-response': 'Unexpected answer from the server',
   rejected: 'Request refused by the server',
+  'login-rejected': 'Login rejected',
+  'credential-needed': 'Password needed',
+  'host-not-allowed': 'Server not allowed',
+  'rate-limited': 'Too many requests',
 }
 
 /** Why the iCal proxy could not fetch a subscription (`data.reason` of its 502 answer). */
@@ -62,6 +93,14 @@ function nameOf(error: unknown): string {
 /** The login could not provide a token: the renewal failed or the user signed out elsewhere. */
 export function isAuthRequired(error: unknown): boolean {
   return nameOf(error) === 'AuthRequiredError'
+}
+
+/** A new password for the external account may cure this (none entered yet, or refused). */
+export function isPasswordError(error: unknown): boolean {
+  return (
+    error instanceof DavError &&
+    (error.kind === 'credential-needed' || error.kind === 'login-rejected')
+  )
 }
 
 /** True when the load was cancelled on purpose; that is not a problem to show. */

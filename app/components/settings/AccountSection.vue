@@ -33,7 +33,7 @@
     </div>
 
     <p>
-      Times are shown in <strong>{{ displayZone }}</strong> (your browser's zone). Organization time
+      Times are shown in <strong>{{ displayZone }}</strong> ({{ zoneSource }}). Organization time
       zone: <strong>{{ orgZone }}</strong
       >.
     </p>
@@ -53,4 +53,9 @@ const emit = defineEmits<{ retry: [] }>()
 const NOT_SET = 'Not set'
 const displayZone = useDisplayTimeZone()
 const orgZone = useOrgTimeZone()
+const userZone = useUserTimeZone()
+// What decided the display zone: the user's own choice (FR-32), else the browser.
+const zoneSource = computed(() =>
+  userZone.value === displayZone.value ? 'your setting' : "your browser's zone",
+)
 </script>

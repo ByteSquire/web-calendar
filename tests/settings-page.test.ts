@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { clearNuxtState } from '#app'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
-import { UApp } from '#components'
+import { UApp, USelectMenu } from '#components'
 import SettingsPage from '~/pages/settings.vue'
 import { useServerConfigState } from '~/composables/useServerConfigState'
 import {
@@ -67,9 +67,9 @@ describe('structure', () => {
     await mountPage()
   })
 
-  it('has one h1 and the three sections as h2, each named by its heading', () => {
+  it('has one h1 and the sections as h2, each named by its heading', () => {
     expect(headings('h1')).toEqual(['Settings'])
-    expect(headings('h2')).toEqual(['Account', 'App tokens', 'iCal subscriptions'])
+    expect(headings('h2')).toEqual(['Account', 'Time zone', 'App tokens', 'iCal subscriptions'])
     for (const section of document.querySelectorAll('section')) {
       const heading = document.getElementById(section.getAttribute('aria-labelledby')!)
       expect(heading?.tagName).toBe('H2')
@@ -105,6 +105,16 @@ describe('account', () => {
     const display = Intl.DateTimeFormat().resolvedOptions().timeZone
     expect(text.replace(/\s+/g, ' ')).toContain(
       `Times are shown in ${display} (your browser's zone). Organization time zone: Pacific/Auckland.`,
+    )
+  })
+
+  it('names the setting as the reason when the user chose a zone (FR-32)', async () => {
+    configure({ timezone: 'Pacific/Auckland' })
+    backend.me = { ...backend.me, timeZone: 'Asia/Tokyo' }
+    await mountPage()
+    const text = document.querySelector('section')!.textContent!
+    expect(text.replace(/\s+/g, ' ')).toContain(
+      'Times are shown in Asia/Tokyo (your setting). Organization time zone: Pacific/Auckland.',
     )
   })
 
@@ -147,6 +157,28 @@ describe('account', () => {
   })
 })
 
+describe('time zone', () => {
+  it('follows the account section and changes the zone that section reports', async () => {
+    configure({ timezone: 'Pacific/Auckland' })
+    await mountPage()
+    const sections = [...document.querySelectorAll('section')].map((item) =>
+      item.getAttribute('aria-labelledby'),
+    )
+    expect(sections.slice(0, 2)).toEqual(['settings-account', 'settings-time-zone'])
+
+    app.findComponent(USelectMenu).vm.$emit('update:modelValue', 'Asia/Tokyo')
+    await vi.waitFor(() =>
+      expect(document.querySelector('section')!.textContent!.replace(/\s+/g, ' ')).toContain(
+        'Times are shown in Asia/Tokyo (your setting).',
+      ),
+    )
+    expect(backend.callsTo('PUT', '/api/me/time-zone').map((call) => call.body)).toEqual([
+      { timeZone: 'Asia/Tokyo' },
+    ])
+    expect(backend.me.timeZone).toBe('Asia/Tokyo')
+  })
+})
+
 describe('demo mode', () => {
   it('says that nothing is saved', async () => {
     configure({ demo: true })
@@ -166,7 +198,7 @@ describe('when the API fails', () => {
       expect(alert.textContent).toContain('You are signed out')
       expect(alert.textContent).toContain('Retry')
     }
-    expect(headings('h2')).toEqual(['Account', 'App tokens', 'iCal subscriptions'])
+    expect(headings('h2')).toEqual(['Account', 'Time zone', 'App tokens', 'iCal subscriptions'])
     // the tokens form works as far as the client can tell
     expect(requireButton('Create token').disabled).toBe(false)
     expect(field('Label')).toBeDefined()

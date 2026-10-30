@@ -117,6 +117,14 @@ export class FakeBackend {
     const fields = (body ?? {}) as Record<string, unknown>
 
     if (method === 'GET' && path === '/api/me') return reply.json(this.me)
+    if (method === 'PUT' && path === '/api/me/time-zone') {
+      const zone = fields.timeZone
+      if (zone !== null && typeof zone !== 'string') {
+        return reply.invalid({ field: 'timeZone', message: 'must be a string or null' })
+      }
+      this.me = { ...this.me, timeZone: zone }
+      return reply.json({ timeZone: zone })
+    }
 
     if (method === 'GET' && path === '/api/app-tokens') {
       return reply.json({ tokens: this.tokens, limit: this.limit })

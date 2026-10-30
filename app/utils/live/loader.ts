@@ -72,6 +72,11 @@ export interface LiveDeps {
   fetchIcs: (subscriptionId: string) => Promise<string>
   displayTimeZone: () => string
   orgTimeZone: () => string
+  /**
+   * Called with the zone the user chose (FR-32) every time the profile is read, null for the
+   * browser's zone. The display zone follows it, and the events are then loaded in the new zone.
+   */
+  setUserTimeZone?: (zone: string | null) => void
   /** Bumped by the settings screen when sources change; see `useState('calendar-sources-version')`. */
   sourcesVersion: Ref<number>
   /** Called with the keys of problems that were not there before. */
@@ -202,8 +207,10 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
         problems[key] = describeLoadError(result.reason)
       }
 
-      if (me.status === 'fulfilled') store.currentUser.value = toUser(me.value)
-      else fail(SOURCE_KEYS.me, me)
+      if (me.status === 'fulfilled') {
+        store.currentUser.value = toUser(me.value)
+        deps.setUserTimeZone?.(me.value.timeZone)
+      } else fail(SOURCE_KEYS.me, me)
 
       if (prefs.status === 'rejected') fail(SOURCE_KEYS.prefs, prefs)
       if (categories.status === 'fulfilled') {

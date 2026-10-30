@@ -47,6 +47,8 @@ const isDesktop = useIsDesktop()
 
 // Live data for the signed-in user; does nothing in demo mode.
 useLiveCalendar()
+// Follows a change of the display zone (FR-32); live data is loaded again by the loader above.
+useDisplayZoneFollow()
 const { loading } = useLiveStatus()
 const auth = useAuth()
 const live = isLiveConfig(useServerConfigState().value)

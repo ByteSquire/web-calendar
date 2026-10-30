@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3'
+import { found } from '../utils/api/errors'
 import type { User, UserRow } from './types'
 
 export interface UserInput {
@@ -20,6 +21,7 @@ function toUser(row: UserRow): User {
     email: row.email,
     isAdmin: row.is_admin === 1,
     lastSeenAt: row.last_seen_at,
+    timeZone: row.time_zone,
   }
 }
 
@@ -66,6 +68,24 @@ export function upsertUser(db: Database, input: UserInput, now = new Date()): Us
       .get(params)!
   })
   return toUser(run.immediate())
+}
+
+/**
+ * Stores the zone the user wants to see times in (FR-32), or clears it with `null` so the browser's
+ * zone applies. The name is checked by the caller (server/utils/api/time-zone.ts). Returns the
+ * stored value.
+ */
+export function setUserTimeZone(
+  db: Database,
+  userId: number,
+  timeZone: string | null,
+): string | null {
+  const row = db
+    .prepare<[string | null, number], Pick<UserRow, 'time_zone'>>(
+      'UPDATE users SET time_zone = ? WHERE id = ? RETURNING time_zone',
+    )
+    .get(timeZone, userId)
+  return found(row).time_zone
 }
 
 export function findUserBySub(db: Database, sub: string): User | null {

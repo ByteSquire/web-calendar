@@ -32,6 +32,7 @@ function calendarApi(app: Awaited<ReturnType<typeof mountSuspended>>) {
 
 interface CalendarApi {
   view: { type: string }
+  getOption(name: string): unknown
   getDate(): Date
   formatIso(date: Date, omitTime: boolean): string
 }
@@ -54,6 +55,22 @@ afterEach(() => {
   app.unmount()
   // Only the calendar state: the colour mode lives in Nuxt state too, and the calendar needs it.
   clearNuxtState((key) => key.startsWith('cal-'))
+})
+
+describe('display zone', () => {
+  it('passes a change of the zone on to FullCalendar while it is shown (FR-32)', async () => {
+    const browser = Intl.DateTimeFormat().resolvedOptions().timeZone
+    expect(calendarApi(app).getOption('timeZone')).toBe(browser)
+
+    useUserTimeZone().value = 'Pacific/Kiritimati'
+    await vi.waitFor(() =>
+      expect(calendarApi(app).getOption('timeZone')).toBe('Pacific/Kiritimati'),
+    )
+    expect(entries().length).toBeGreaterThan(0)
+
+    useUserTimeZone().value = null
+    await vi.waitFor(() => expect(calendarApi(app).getOption('timeZone')).toBe(browser))
+  })
 })
 
 describe('standard views', () => {

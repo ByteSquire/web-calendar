@@ -40,6 +40,27 @@ describe('resolveDisplayTimeZone', () => {
     expect(resolveDisplayTimeZone('', 'Europe/Berlin')).toBe('Europe/Berlin')
     expect(resolveDisplayTimeZone('Mars/Olympus', 'Asia/Tokyo')).toBe('Asia/Tokyo')
   })
+
+  it("prefers the zone the user chose to the browser's (FR-32)", () => {
+    expect(resolveDisplayTimeZone('Europe/Berlin', 'Asia/Tokyo', 'Australia/Sydney')).toBe(
+      'Australia/Sydney',
+    )
+    expect(resolveDisplayTimeZone(undefined, 'Asia/Tokyo', ' UTC ')).toBe('UTC')
+  })
+
+  it("uses the browser's zone without a choice", () => {
+    expect(resolveDisplayTimeZone('Europe/Berlin', 'Asia/Tokyo', null)).toBe('Europe/Berlin')
+    expect(resolveDisplayTimeZone('Europe/Berlin', 'Asia/Tokyo', undefined)).toBe('Europe/Berlin')
+    expect(resolveDisplayTimeZone('Europe/Berlin', 'Asia/Tokyo', '')).toBe('Europe/Berlin')
+  })
+
+  it('skips a choice this browser does not know, down to the organization zone', () => {
+    expect(resolveDisplayTimeZone('Europe/Berlin', 'Asia/Tokyo', 'Mars/Olympus')).toBe(
+      'Europe/Berlin',
+    )
+    expect(resolveDisplayTimeZone(undefined, 'Asia/Tokyo', 'Mars/Olympus')).toBe('Asia/Tokyo')
+    expect(resolveDisplayTimeZone('Mars/Olympus', 'Asia/Tokyo', 'Mars/Olympus')).toBe('Asia/Tokyo')
+  })
 })
 
 describe('convertWallClock', () => {

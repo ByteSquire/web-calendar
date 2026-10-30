@@ -1,4 +1,4 @@
-// Row types of the tables in migrations/001_init.sql, written by hand (design §12). Columns keep
+// Row types of the tables in migrations/*.sql, written by hand (design §12). Columns keep
 // their database names; booleans are 0/1 and timestamps are ISO 8601 UTC strings.
 
 export type CalendarKind = 'personal' | 'shared' | 'resource'
@@ -25,6 +25,8 @@ export interface UserRow extends Timestamps {
    */
   is_admin: 0 | 1
   last_seen_at: string | null
+  /** An IANA zone name the user chose (FR-32); null means the browser's zone. */
+  time_zone: string | null
 }
 
 export interface AppTokenRow extends Timestamps {
@@ -113,4 +115,6 @@ export interface User {
   /** The informational copy of `is_admin`; see `UserRow.is_admin`. Not an authorization. */
   isAdmin: boolean
   lastSeenAt: string | null
+  /** The zone the user chose to see times in (FR-32); null means the browser's zone. */
+  timeZone: string | null
 }

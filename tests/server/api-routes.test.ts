@@ -356,7 +356,15 @@ describe('the admin check (requireAdmin)', () => {
     markStoredAdmin()
     userinfoAnswers(ADMIN)
     const reply = await call('alice', 'GET', '/api/admin-probe')
-    expect(reply.body.userKeys).toEqual(['email', 'id', 'lastSeenAt', 'name', 'sub', 'username'])
+    expect(reply.body.userKeys).toEqual([
+      'email',
+      'id',
+      'lastSeenAt',
+      'name',
+      'sub',
+      'timeZone',
+      'username',
+    ])
   })
 })
 

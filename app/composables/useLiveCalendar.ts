@@ -52,6 +52,7 @@ export function useLiveCalendar(): void {
   const api = useAuthFetch()
   const displayTimeZone = useDisplayTimeZone()
   const orgTimeZone = useOrgTimeZone()
+  const userTimeZone = useUserTimeZone()
   const toast = useToast()
 
   const loader = createLiveLoader({
@@ -63,6 +64,9 @@ export function useLiveCalendar(): void {
     fetchIcs: (id) => fetchIcsText(auth.authFetch, id),
     displayTimeZone: () => displayTimeZone.value,
     orgTimeZone: () => orgTimeZone.value,
+    setUserTimeZone: (zone) => {
+      userTimeZone.value = zone
+    },
     sourcesVersion: useCalendarSourcesVersion(),
     notifyProblems: (keys) => {
       // The problems list lives in the sidebar, which is closed on small screens: say so.

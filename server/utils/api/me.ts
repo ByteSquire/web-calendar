@@ -17,8 +17,8 @@ export interface Me {
    * anything from it (that is `requireAdmin`).
    */
   isAdmin: boolean
-  /** The per-user zone override (FR-32) is planned; until then the browser's zone applies. */
-  timeZone: null
+  /** The IANA zone the user chose to see times in (FR-32); null means the browser's zone. */
+  timeZone: string | null
 }
 
 export interface ResolveMeOptions {
@@ -44,7 +44,7 @@ function toMe(user: Omit<User, 'isAdmin'>, isAdmin: boolean): Me {
     name: user.name,
     email: user.email,
     isAdmin,
-    timeZone: null,
+    timeZone: user.timeZone,
   }
 }
 

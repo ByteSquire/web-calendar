@@ -358,6 +358,7 @@ describe('users', () => {
       email: 'alice@example.org',
       isAdmin: false,
       lastSeenAt: now.toISOString(),
+      timeZone: null,
     })
   })
 

@@ -124,6 +124,8 @@ function harness(setup: Setup = {}) {
   })
   const status = createLiveStatusState(state)
   const sourcesVersion = ref(0)
+  // The shared state of `useUserTimeZone()`; the display zone is this one, else the browser's.
+  const userZone = ref<string | null>(null)
   const timers = manualTimers()
 
   const data = {
@@ -208,8 +210,11 @@ function harness(setup: Setup = {}) {
     reader: { read } as unknown as Pick<CalendarReader, 'read'>,
     api: api as unknown as LiveDeps['api'],
     fetchIcs,
-    displayTimeZone: () => ZONE,
+    displayTimeZone: () => userZone.value ?? ZONE,
     orgTimeZone: () => ZONE,
+    setUserTimeZone: (zone) => {
+      userZone.value = zone
+    },
     sourcesVersion,
     notifyProblems,
     timers,
@@ -227,6 +232,7 @@ function harness(setup: Setup = {}) {
     fetchIcs,
     notifyProblems,
     sourcesVersion,
+    userZone,
     timers,
     loader,
     titles: () => store.events.value.map((e) => e.title).sort(),
@@ -332,6 +338,77 @@ describe('first load', () => {
     ])
     expect(h.store.calendars.value.map((c) => c.id)).toEqual([idA, 'ics:3'])
     expect(h.store.calendars.value[1]).toMatchObject({ type: 'ical', readOnly: true })
+  })
+})
+
+describe('the time zone of the user (FR-32)', () => {
+  const me = (timeZone: string | null): ApiMe => ({
+    id: 7,
+    sub: 'sub-7',
+    username: 'alice',
+    name: 'Alice',
+    email: 'alice@example.org',
+    isAdmin: false,
+    timeZone,
+  })
+
+  it('takes the saved zone from the profile before the first events are read', async () => {
+    const h = harness({ me: me('Australia/Sydney') })
+    await h.loader.start()
+
+    expect(h.userZone.value).toBe('Australia/Sydney')
+    // One read, in the zone of the user, and the events are wall-clock times in it (AEDT, UTC+11).
+    expect(h.read).toHaveBeenCalledTimes(1)
+    expect(h.read.mock.calls[0]![1]).toEqual(
+      loadRange(h.store.visibleRange.value, 'Australia/Sydney'),
+    )
+    expect(h.store.events.value.map((e) => e.start).sort()).toEqual([
+      '2026-10-28T20:00:00',
+      '2026-10-28T20:00:00',
+    ])
+  })
+
+  it('reports no zone when the profile has none, so the browser applies', async () => {
+    const h = harness({ me: me(null) })
+    h.userZone.value = 'Asia/Tokyo'
+    await h.loader.start()
+    expect(h.userZone.value).toBeNull()
+  })
+
+  it('leaves the zone alone when the profile cannot be loaded', async () => {
+    const h = harness({ failing: { '/api/me': new Error('boom') } })
+    h.userZone.value = 'Asia/Tokyo'
+    await h.loader.start()
+    expect(h.userZone.value).toBe('Asia/Tokyo')
+  })
+
+  it('loads the events again, in the new zone, when the zone changes', async () => {
+    const h = harness()
+    await h.loader.start()
+    expect(h.store.events.value.map((e) => e.start)).toContain('2026-10-28T10:00:00')
+    h.read.mockClear()
+
+    h.userZone.value = 'Asia/Tokyo'
+    await settle()
+    expect(h.timers.delays()).toEqual([150])
+    await h.timers.fire()
+
+    expect(h.read).toHaveBeenCalledTimes(1)
+    expect(h.read.mock.calls[0]![1]).toEqual(loadRange(h.store.visibleRange.value, 'Asia/Tokyo'))
+    expect(h.store.events.value.map((e) => e.start).sort()).toEqual([
+      '2026-10-28T18:00:00',
+      '2026-10-28T18:00:00',
+    ])
+  })
+
+  it('does not load again when a refresh brings the zone that is set already', async () => {
+    const h = harness({ me: me('Asia/Tokyo') })
+    await h.loader.start()
+    h.read.mockClear()
+    await h.loader.loadSources()
+    await settle()
+    expect(h.timers.count()).toBe(0)
+    expect(h.read).not.toHaveBeenCalled()
   })
 })
 

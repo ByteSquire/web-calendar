@@ -1,7 +1,7 @@
 // @vitest-environment node
 import type { Database } from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { findUserBySub, upsertUser } from '../../server/db/users'
+import { findUserBySub, setUserTimeZone, upsertUser } from '../../server/db/users'
 import { bearerToken, resolveMe, type ResolveMeOptions } from '../../server/utils/api/me'
 import { createUserinfoClient } from '../../server/utils/api/userinfo-client'
 import { openTestDb } from './api-fixtures'
@@ -80,6 +80,27 @@ describe('resolveMe', () => {
       isAdmin: true,
     })
     expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('returns the time zone the user chose (FR-32), also after a profile refresh', async () => {
+    setUserTimeZone(db, signedIn(ALICE_SUB).id, 'Australia/Sydney')
+    const me = await resolveMe(
+      options(async () => userinfo(ALICE_CLAIMS)),
+      signedIn(ALICE_SUB),
+      ALICE_TOKEN,
+    )
+    expect(me.timeZone).toBe('Australia/Sydney')
+    expect(findUserBySub(db, ALICE_SUB)!.timeZone).toBe('Australia/Sydney')
+  })
+
+  it('returns the chosen time zone when userinfo fails', async () => {
+    setUserTimeZone(db, signedIn(ALICE_SUB).id, 'Asia/Tokyo')
+    const me = await resolveMe(
+      options(async () => userinfo({}, 500)),
+      signedIn(ALICE_SUB),
+      ALICE_TOKEN,
+    )
+    expect(me.timeZone).toBe('Asia/Tokyo')
   })
 
   it('does not expose last_seen_at or anything else of the row', async () => {

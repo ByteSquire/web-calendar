@@ -89,6 +89,16 @@ describe('advisoriesOf', () => {
     expect(advisoriesOf(twice)).toHaveLength(1)
   })
 
+  it('keeps one entry per package when one advisory id is reported against several', () => {
+    const fork = { ...NODE_FORGE, name: 'node-forge-fork', dependency: 'node-forge-fork' }
+    const both = report(NODE_FORGE)
+    both.vulnerabilities.fork = { name: 'node-forge-fork', severity: 'high', via: [fork] }
+    expect(advisoriesOf(both).map((a) => a.name)).toEqual(['node-forge', 'node-forge-fork'])
+    // The allow-list names the package, so only the allowed one is let through.
+    const status = Object.fromEntries(evaluateAudit(both).judged.map((a) => [a.name, a.status]))
+    expect(status).toEqual({ 'node-forge': 'allowed', 'node-forge-fork': 'blocking' })
+  })
+
   it('falls back to the npm id for an advisory without a GHSA url', () => {
     const odd = report({ ...NODE_FORGE, url: 'https://example.org/other' })
     expect(advisoriesOf(odd)[0]!.id).toBe('npm:1240912')

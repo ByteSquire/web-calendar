@@ -114,7 +114,15 @@ function scanHome(home) {
   const walk = (dir, level) => {
     for (const entry of readdirSync(dir)) {
       const path = join(dir, entry)
-      const stat = lstatSync(path)
+      /** @type {import('node:fs').Stats} */
+      let stat
+      try {
+        stat = lstatSync(path)
+      } catch (error) {
+        // Radicale renames and removes files while it works: what is gone is not counted.
+        if (/** @type {NodeJS.ErrnoException} */ (error).code === 'ENOENT') continue
+        throw error
+      }
       if (stat.isDirectory()) {
         const collection = level === 0 && !entry.startsWith('.')
         if (collection) usage.collections++

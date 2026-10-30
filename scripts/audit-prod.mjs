@@ -81,10 +81,14 @@ export function advisoriesOf(report) {
       const ghsa = /\/advisories\/(GHSA-[0-9a-z-]+)\/?$/i.exec(url)?.[1]
       const id = ghsa ?? (advisory.source === undefined ? url : `npm:${String(advisory.source)}`)
       if (!id) throw new Error('an advisory in the report has neither a GHSA url nor a source id')
-      if (found.has(id)) continue
-      found.set(id, {
+      // An advisory npm reports against several packages is one entry per package: the allow-list
+      // names the package too, so one allowed package must not hide another.
+      const name = String(advisory.name ?? advisory.dependency ?? '')
+      const key = `${id}\n${name}`
+      if (found.has(key)) continue
+      found.set(key, {
         id,
-        name: String(advisory.name ?? advisory.dependency ?? ''),
+        name,
         severity: String(advisory.severity ?? ''),
         title: String(advisory.title ?? ''),
         url,

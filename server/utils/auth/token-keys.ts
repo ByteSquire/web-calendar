@@ -21,10 +21,9 @@ import type { TokenKey, TokenKeyring } from '../../db/app-tokens'
 //   2. New tokens are version 2, and every old token becomes version 2 the next time it is used.
 //   3. See what is left on version 1 (unexpired tokens per version):
 //        docker compose exec web-calendar sh -c 'cd .output/server && node -e "
-//          console.log(require(\"better-sqlite3\")(\"/data/web-calendar.db\", {readonly: true})
-//            .prepare(\"SELECT key_version, COUNT(*) AS tokens FROM app_tokens
-//                       WHERE expires_at > ? GROUP BY key_version\")
-//            .all(new Date().toISOString()))"'
+//          const db = require(\"better-sqlite3\")(\"/data/web-calendar.db\", {readonly: true})
+//          const sql = \"SELECT key_version, COUNT(*) AS tokens FROM app_tokens WHERE expires_at > ? GROUP BY key_version\"
+//          console.log(db.prepare(sql).all(new Date().toISOString()))"'
 //   4. Retire the old key by removing NUXT_TOKEN_HASH_KEY once those tokens are gone or you
 //      accept that the unused ones stop working (their owners create a new one). A token whose
 //      version is not configured is unknown; nothing else breaks.

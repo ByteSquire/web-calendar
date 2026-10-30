@@ -65,6 +65,26 @@ export default defineNuxtConfig({
        */
       allowPrivate: 'false',
     },
+    /** Outbound requests of the server for its users: iCal subscriptions and external accounts. */
+    outbound: {
+      /**
+       * Comma-separated host names the server may contact for its users, case-insensitive: exact
+       * (`cal.example.org`) or below a domain (`*.example.org`, not `example.org` itself)
+       * (NUXT_OUTBOUND_ALLOWED_HOSTS). Empty means every public host. A listed host may live in a
+       * private range; loopback, link-local and the CalDAV store's host never. The server refuses
+       * to start with a malformed list.
+       */
+      allowedHosts: '',
+    },
+    /** External CalDAV accounts (FR-8). */
+    external: {
+      /**
+       * Key that seals the passwords of accounts with a login (NUXT_EXTERNAL_SEAL_KEY): 32 random
+       * bytes, base64 or 64 hex characters (`openssl rand -base64 32`). Empty means accounts with a
+       * login are off. Changing it voids every seal: users enter their passwords again.
+       */
+      sealKey: '',
+    },
     gateway: {
       /** Comma-separated origins that may call /caldav/ from a browser (CORS); empty means none. */
       corsOrigins: '',

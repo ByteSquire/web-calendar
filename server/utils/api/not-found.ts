@@ -16,10 +16,20 @@ export function isApiPath(path: string): boolean {
   return pathname === '/api' || pathname.startsWith('/api/')
 }
 
-/** A URL no route has: a trailing slash (`/api/views/`) or an empty segment (`/api//views`). */
+/**
+ * The proxy of the external CalDAV accounts, `/api/external/<id>/...`. Its URLs carry a CalDAV path,
+ * and the path of every collection (and of the server's root) ends in a slash.
+ */
+const EXTERNAL_PROXY_PATH = /^\/api\/external\/[^/]+\//
+
+/**
+ * A URL no route has: a trailing slash (`/api/views/`) or an empty segment (`/api//views`). Only the
+ * external proxy may end in a slash; an empty segment is refused there too.
+ */
 export function isNonCanonicalApiPath(path: string): boolean {
   const pathname = requestPathname(path)
-  return pathname.endsWith('/') || pathname.includes('//')
+  if (pathname.includes('//')) return true
+  return pathname.endsWith('/') && !EXTERNAL_PROXY_PATH.test(pathname)
 }
 
 /** The same JSON shape and hardening headers Nitro's own error handler uses in production. */

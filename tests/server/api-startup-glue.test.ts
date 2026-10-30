@@ -19,6 +19,8 @@ interface TestConfig {
   tokenHashKeys?: string
   radicale: { url: string }
   icalProxy: Record<string, unknown>
+  outbound: { allowedHosts: string }
+  external: { sealKey: string }
   gateway: Record<string, unknown>
 }
 
@@ -42,6 +44,8 @@ function goodConfig(): TestConfig {
       timeoutMs: '10000',
       allowPrivate: 'false',
     },
+    outbound: { allowedHosts: '' },
+    external: { sealKey: '' },
     gateway: { corsOrigins: '', maxBodyBytes: '10485760', trustForwardedFor: 'false' },
   }
 }

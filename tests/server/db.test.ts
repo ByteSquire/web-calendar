@@ -68,6 +68,7 @@ describe('runMigrations', () => {
       'calendar_prefs',
       'calendars',
       'categories',
+      'external_accounts',
       'filters',
       'ical_subscriptions',
       'resources',

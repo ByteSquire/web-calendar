@@ -1,18 +1,25 @@
 import { lookup as dnsLookup } from 'node:dns/promises'
 import { isIP, type LookupFunction } from 'node:net'
 import { IcalFetchError } from './errors'
+import type { HostList } from './host-list'
 
-// The SSRF guard of the iCal proxy (design §4, §7). Users hand the server URLs to fetch, so the
-// server must never be talked into reaching its own network: loopback, private ranges, the cloud
-// metadata address and everything else that is not a public internet host.
+// The SSRF guard of the iCal proxy and the external-account proxy (design §4, §7). Users hand the
+// server URLs to fetch, so the server must never be talked into reaching its own network: loopback,
+// private ranges, the cloud metadata address and everything else that is not a public internet host.
 //
 // Two layers, both built on `isBlockedAddress`:
 //   1. `resolveAllowed` resolves a host and rejects it when ANY resolved address is blocked.
-//      Creating a subscription uses it for an immediate answer.
+//      Creating a subscription or an account uses it for an immediate answer.
 //   2. `createGuardedLookup` is the `lookup` option of the actual connection. The socket connects
 //      to exactly the addresses this function hands back, so a DNS answer that changes between
 //      the check and the connect (DNS rebinding) cannot help.
 // Node skips `lookup` for IP literals, so those are checked before connecting (`isBlockedHost`).
+//
+// The administrator's host list (NUXT_OUTBOUND_ALLOWED_HOSTS, host-list.ts) is part of the same
+// policy, so it is enforced at the same three places. When it is set, a host that is not on it is
+// refused, and a host that is on it may live in a private range (an internal server needs an
+// entry) but never in loopback, link-local, unspecified or multicast space. The host of the CalDAV
+// store (`refusedHosts`) is refused even if listed.
 
 export interface ResolvedAddress {
   address: string
@@ -23,8 +30,11 @@ export type Resolver = (hostname: string) => Promise<ResolvedAddress[]>
 
 export interface AddressPolicy {
   resolve: Resolver
-  isBlockedAddress: (address: string) => boolean
+  /** `hostname` is the host the address was found for, when there is one (see the host list). */
+  isBlockedAddress: (address: string, hostname?: string) => boolean
   isBlockedHostname: (hostname: string) => boolean
+  /** True when a host list is set and does not name this host. Absent: there is no list. */
+  isUnlistedHostname?: (hostname: string) => boolean
 }
 
 // Every IPv4 range that is not a public unicast address: [base, prefix length].
@@ -130,14 +140,94 @@ export function isBlockedHostname(hostname: string): boolean {
 export const systemResolver: Resolver = (hostname) =>
   dnsLookup(hostname, { all: true, verbatim: true })
 
+// What stays blocked for a host the administrator listed: [base, prefix length]. Everything else
+// that `isBlockedAddress` blocks (RFC 1918, carrier-grade NAT, unique local addresses) is allowed
+// for such a host, because that is where internal servers live.
+const HARD_BLOCKED_IPV4: readonly (readonly [string, number])[] = [
+  ['0.0.0.0', 8], // unspecified, "this network"
+  ['127.0.0.0', 8], // loopback
+  ['169.254.0.0', 16], // link-local, includes the cloud metadata address 169.254.169.254
+  ['224.0.0.0', 4], // multicast
+  ['240.0.0.0', 4], // reserved, includes the broadcast address
+]
+
+const HARD_BLOCKED_IPV4_MASKED = HARD_BLOCKED_IPV4.map(([base, prefix]) => {
+  const mask = (0xffffffff << (32 - prefix)) >>> 0
+  return { network: (ipv4ToInt(parseIPv4(base)!) & mask) >>> 0, mask }
+})
+
+/**
+ * The address check for a host on the administrator's list. IPv4: everything but the ranges above.
+ * IPv6: what `isBlockedAddress` allows, plus unique local addresses (fc00::/7); loopback,
+ * unspecified, link-local, multicast and every IPv4-mapped, -compatible, NAT64 and 6to4 form stay
+ * blocked, so a listed name cannot be pointed at `::ffff:169.254.169.254`.
+ */
+export function isBlockedForListedHost(address: string): boolean {
+  const bare = address.split('%')[0]!
+  const family = isIP(bare)
+  if (family === 4) {
+    const value = ipv4ToInt(parseIPv4(bare)!)
+    return HARD_BLOCKED_IPV4_MASKED.some(({ network, mask }) => (value & mask) >>> 0 === network)
+  }
+  if (family === 6) {
+    const groups = parseIPv6(bare)
+    if (!groups) return true
+    return (groups[0]! & 0xfe00) !== 0xfc00 && isBlockedIPv6(bare)
+  }
+  return true
+}
+
+/** One spelling per address, so that `::1` and `0:0:0:0:0:0:0:1` are the same entry of a set. */
+function canonicalAddress(address: string): string {
+  const bare = address.split('%')[0]!.toLowerCase()
+  if (isIP(bare) !== 6) return bare
+  try {
+    return new URL(`http://[${bare}]/`).hostname.replace(/^\[|\]$/g, '')
+  } catch {
+    return bare
+  }
+}
+
 export function createAddressPolicy(options: {
   allowPrivate: boolean
   resolve?: Resolver
+  /** NUXT_OUTBOUND_ALLOWED_HOSTS; null or an empty list allows every public host. */
+  allowedHosts?: HostList | null
+  /**
+   * Hosts that are never contacted, listed or not: the CalDAV store, which trusts `X-Remote-User`.
+   * Host names are compared by name, an IP address also by the address a host resolves to.
+   */
+  refusedHosts?: readonly string[]
 }): AddressPolicy {
+  const list = options.allowedHosts && options.allowedHosts.size > 0 ? options.allowedHosts : null
+  const refusedNames = new Set<string>()
+  const refusedAddresses = new Set<string>()
+  for (const host of options.refusedHosts ?? []) {
+    const name = host
+      .replace(/^\[|\]$/g, '')
+      .replace(/\.$/, '')
+      .toLowerCase()
+    if (isIP(name) !== 0) refusedAddresses.add(canonicalAddress(name))
+    else refusedNames.add(name)
+  }
+
+  // The switch for tests and local development turns the address rules and the refusals off, but
+  // not the list: that is the administrator's decision, not an SSRF rule.
   return {
     resolve: options.resolve ?? systemResolver,
-    isBlockedAddress: options.allowPrivate ? () => false : isBlockedAddress,
-    isBlockedHostname: options.allowPrivate ? () => false : isBlockedHostname,
+    isBlockedAddress: options.allowPrivate
+      ? () => false
+      : (address, hostname) => {
+          if (refusedAddresses.has(canonicalAddress(address))) return true
+          if (list && hostname !== undefined && list.matches(hostname)) {
+            return isBlockedForListedHost(address)
+          }
+          return isBlockedAddress(address)
+        },
+    isBlockedHostname: options.allowPrivate
+      ? () => false
+      : (hostname) => isBlockedHostname(hostname) || refusedNames.has(hostname),
+    isUnlistedHostname: list ? (hostname) => !list.matches(hostname) : undefined,
   }
 }
 
@@ -152,9 +242,26 @@ export function hostnameOf(url: URL): string {
     .toLowerCase()
 }
 
-/** The checks that need no DNS: IP literals (Node never calls `lookup` for them) and `localhost`. */
+/**
+ * The checks that need no DNS: the host list, IP literals (Node never calls `lookup` for them) and
+ * `localhost`.
+ */
 export function isBlockedHost(host: string, policy: AddressPolicy): boolean {
-  return isIP(host) !== 0 ? policy.isBlockedAddress(host) : policy.isBlockedHostname(host)
+  if (policy.isUnlistedHostname?.(host)) return true
+  return isIP(host) !== 0 ? policy.isBlockedAddress(host, host) : policy.isBlockedHostname(host)
+}
+
+/**
+ * The error for a host the policy refuses without DNS, or null. Its reason is `blocked`; `notListed`
+ * tells a host that is not on the administrator's list from one with a forbidden address.
+ */
+export function hostRefusal(host: string, policy: AddressPolicy): IcalFetchError | null {
+  if (policy.isUnlistedHostname?.(host)) {
+    return new IcalFetchError('blocked', 'host is not on the list of allowed hosts', {
+      notListed: true,
+    })
+  }
+  return isBlockedHost(host, policy) ? new IcalFetchError('blocked', 'blocked host') : null
 }
 
 /**
@@ -166,7 +273,8 @@ export async function resolveAllowed(
   host: string,
   policy: AddressPolicy,
 ): Promise<ResolvedAddress[]> {
-  if (isBlockedHost(host, policy)) throw new IcalFetchError('blocked', 'blocked host')
+  const refusal = hostRefusal(host, policy)
+  if (refusal) throw refusal
   const family = isIP(host)
   if (family !== 0) return [{ address: host, family }]
 
@@ -180,7 +288,7 @@ export async function resolveAllowed(
     })
   }
   if (addresses.length === 0) throw new IcalFetchError('unreachable', 'the host has no addresses')
-  if (addresses.some((entry) => policy.isBlockedAddress(entry.address))) {
+  if (addresses.some((entry) => policy.isBlockedAddress(entry.address, host))) {
     throw new IcalFetchError('blocked', 'the host resolves to a blocked address')
   }
   return addresses

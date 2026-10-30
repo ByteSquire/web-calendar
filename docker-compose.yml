@@ -56,6 +56,12 @@ services:
       # For tests only: true switches the SSRF guard off, and the server then refuses to start
       # (NODE_ENV=production in this image).
       NUXT_ICAL_PROXY_ALLOW_PRIVATE: '${NUXT_ICAL_PROXY_ALLOW_PRIVATE:-false}'
+      # Hosts the server may contact for its users (iCal subscriptions, external CalDAV accounts):
+      # comma-separated names, `*.example.org` for a domain; empty means every public host.
+      NUXT_OUTBOUND_ALLOWED_HOSTS: '${NUXT_OUTBOUND_ALLOWED_HOSTS:-}'
+      # Seals the passwords of external CalDAV accounts: 32 random bytes as base64 or hex, for
+      # example `openssl rand -base64 32`. Empty means accounts with a login are off.
+      NUXT_EXTERNAL_SEAL_KEY: '${NUXT_EXTERNAL_SEAL_KEY:-}'
       # For previews and browser tests only: true skips the login and shows mock data (logged loudly).
       NUXT_DEMO: '${NUXT_DEMO:-false}'
       # Fixed by this file: the SQLite volume and the internal Radicale service.

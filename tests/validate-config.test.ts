@@ -289,6 +289,75 @@ describe('validateEnv', () => {
     })
   })
 
+  describe('NUXT_OUTBOUND_ALLOWED_HOSTS (the hosts the server may contact)', () => {
+    const check = (value: string) => validateEnv({ ...valid, NUXT_OUTBOUND_ALLOWED_HOSTS: value })
+
+    it.each(['', '  ', 'cal.example.org', '*.example.org', 'a.example.org, *.b.example.org'])(
+      'accepts %j (an empty value is no list)',
+      (value) => {
+        expect(check(value)).toEqual({ errors: [], warnings: [] })
+      },
+    )
+
+    it('is optional', () => {
+      expect(validateEnv(valid).errors).toEqual([])
+    })
+
+    it.each([
+      '*',
+      'https://cal.example.org',
+      'cal.example.org:8443',
+      'cal.example.org/dav',
+      'cal.example.org,',
+      '*.',
+      'a*.example.org',
+      '1.2.3',
+      'bücher.example',
+    ])('refuses %j and names the variable and the entry, not a guess', (value) => {
+      const { errors } = check(value)
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('NUXT_OUTBOUND_ALLOWED_HOSTS')
+      expect(errors[0]).toContain('the entry')
+    })
+
+    it('shortens a very long entry in the message', () => {
+      expect(check(`${'x'.repeat(500)}://`).errors[0]!.length).toBeLessThan(500)
+    })
+  })
+
+  describe('NUXT_EXTERNAL_SEAL_KEY (seals the passwords of external accounts)', () => {
+    const check = (value: string) => validateEnv({ ...valid, NUXT_EXTERNAL_SEAL_KEY: value })
+    const bytes = Buffer.from(Array.from({ length: 32 }, (_, i) => i + 1))
+
+    it('is optional, and an empty value counts as unset (no warning: logins are simply off)', () => {
+      expect(validateEnv(valid)).toEqual({ errors: [], warnings: [] })
+      expect(check('')).toEqual({ errors: [], warnings: [] })
+      expect(check('   ')).toEqual({ errors: [], warnings: [] })
+    })
+
+    it.each([bytes.toString('hex'), bytes.toString('base64'), bytes.toString('base64url')])(
+      'accepts 32 bytes written as %s',
+      (value) => {
+        expect(check(value)).toEqual({ errors: [], warnings: [] })
+      },
+    )
+
+    it.each([
+      'secret',
+      'ab'.repeat(31),
+      'ab'.repeat(33),
+      Buffer.alloc(16, 7).toString('base64'),
+      Buffer.alloc(48, 7).toString('base64'),
+      '00'.repeat(32),
+      'not base64 !!!',
+    ])('refuses %j without printing it', (value) => {
+      const { errors } = check(value)
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('NUXT_EXTERNAL_SEAL_KEY must be 32 random bytes')
+      expect(errors[0]).not.toContain(value)
+    })
+  })
+
   describe('NUXT_DEMO', () => {
     it('warns loudly, and only for true', () => {
       const { errors, warnings } = validateEnv({ ...valid, NUXT_DEMO: 'true' })
@@ -392,6 +461,19 @@ describe('the examples list what the validator knows (L2)', () => {
   it.each(optional)('%s is in .env.example and in docker-compose.yml', (name) => {
     expect(envExample).toMatch(new RegExp(`^#? ?${name}=`, 'm'))
     expect(compose).toMatch(new RegExp(`^\\s+${name}: `, 'm'))
+  })
+
+  it.each(['NUXT_OUTBOUND_ALLOWED_HOSTS', 'NUXT_EXTERNAL_SEAL_KEY'])(
+    '%s (empty by default) is in .env.example and in docker-compose.yml',
+    (name) => {
+      expect(envExample).toMatch(new RegExp(`^#? ?${name}=`, 'm'))
+      expect(compose).toMatch(new RegExp(`^\\s+${name}: '\\$\\{${name}:-\\}'`, 'm'))
+    },
+  )
+
+  it('says what the host list is for, and that the seal key voids the seals when changed', () => {
+    expect(envExample).toMatch(/script[\s\S]{0,1500}# NUXT_OUTBOUND_ALLOWED_HOSTS=/i)
+    expect(envExample).toMatch(/voids[\s\S]{0,800}# NUXT_EXTERNAL_SEAL_KEY=/i)
   })
 
   it('every variable the validator checks has a default that passes', () => {

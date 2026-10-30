@@ -98,6 +98,19 @@ export interface IcalSubscriptionRow extends Timestamps {
   color: string | null
 }
 
+export interface ExternalAccountRow extends Timestamps {
+  id: number
+  user_id: number
+  name: string
+  url: string
+  /** Derived from `url` (`new URL(url).origin`); what the proxy connects to and the seal is bound to. */
+  origin: string
+  auth_mode: 'none' | 'basic'
+  /** Set exactly when `auth_mode` is `basic`. */
+  username: string | null
+  color: string | null
+}
+
 export interface ResourceRow extends Timestamps {
   id: number
   calendar_id: number

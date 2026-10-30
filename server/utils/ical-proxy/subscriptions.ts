@@ -29,8 +29,9 @@ async function requireAllowedHost(url: string, policy: AddressPolicy): Promise<v
     throw toBadRequest([
       {
         field: 'url',
-        message:
-          error.reason === 'blocked'
+        message: error.notListed
+          ? 'must name a host that the administrator allows'
+          : error.reason === 'blocked'
             ? 'must not point to a private or reserved network'
             : 'has a host name that cannot be resolved',
       },

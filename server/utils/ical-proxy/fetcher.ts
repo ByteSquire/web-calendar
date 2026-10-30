@@ -1,11 +1,10 @@
-import { request as httpRequest, type IncomingMessage } from 'node:http'
-import { request as httpsRequest } from 'node:https'
+import type { IncomingMessage } from 'node:http'
 import { IcalFetchError } from './errors'
-import { createGuardedLookup, hostnameOf, isBlockedHost, type AddressPolicy } from './ssrf'
+import { openGuardedRequest } from './guarded-request'
+import { hostnameOf, hostRefusal, type AddressPolicy } from './ssrf'
 import { sourceUrlProblem } from './source-url'
 
-// One guarded GET of an .ics file (FR-7). Node's `fetch` cannot pin the address it connects to,
-// so this uses `node:http(s)` with the guarded `lookup` of ssrf.ts. Everything is bounded: one
+// One guarded GET of an .ics file (FR-7), opened by guarded-request.ts. Everything is bounded: one
 // deadline for all hops, a size cap while streaming, at most 3 redirects, each hop checked anew.
 
 export const MAX_REDIRECTS = 3
@@ -56,20 +55,13 @@ function requestOnce(url: URL, options: FetchOptions, signal: AbortSignal): Prom
       headers['If-Modified-Since'] = options.validators.lastModified
     }
 
-    const send = url.protocol === 'https:' ? httpsRequest : httpRequest
-    const request = send({
-      // The normalised host: `new URL` has turned odd IPv4 notations into dotted quads.
-      hostname: hostnameOf(url),
-      port: url.port === '' ? undefined : Number(url.port),
-      path: `${url.pathname}${url.search}`,
+    const request = openGuardedRequest(url, {
       method: 'GET',
       headers,
-      // A fresh connection per request, never a pooled socket that skipped the guard. TLS
-      // certificates are verified (the default).
-      agent: false,
-      lookup: createGuardedLookup(options.policy, (error) => {
+      policy: options.policy,
+      onReject: (error) => {
         rejectedByGuard = error
-      }),
+      },
     })
 
     function finish(outcome: Hop | IcalFetchError): void {
@@ -177,13 +169,12 @@ export async function fetchIcal(rawUrl: string, options: FetchOptions): Promise<
 
     for (let redirects = 0; ; redirects++) {
       if (deadline.signal.aborted) throw new IcalFetchError('timeout')
-      // Every hop, the first included: scheme, credentials, then IP literals and `localhost`.
-      // Names are checked when the connection looks them up.
+      // Every hop, the first included: scheme, credentials, then the host list, IP literals and
+      // `localhost`. Names are checked again when the connection looks them up.
       const problem = sourceUrlProblem(current)
       if (problem) throw new IcalFetchError('blocked', problem)
-      if (isBlockedHost(hostnameOf(current), options.policy)) {
-        throw new IcalFetchError('blocked', 'blocked host')
-      }
+      const refusal = hostRefusal(hostnameOf(current), options.policy)
+      if (refusal) throw refusal
 
       const hop = await requestOnce(current, options, deadline.signal)
       if (hop.kind === 'ok') return hop

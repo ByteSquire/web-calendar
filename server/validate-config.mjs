@@ -2,6 +2,7 @@
 // Startup config validation (design §12). The container runs this script before the server and
 // stops with a readable message instead of failing on the first request. The checks are in the pure
 // validateEnv(), which tests/validate-config.test.ts covers.
+import { isIP } from 'node:net'
 import { pathToFileURL } from 'node:url'
 
 // Same default as runtimeConfig.oidc.clientId in nuxt.config.ts.
@@ -35,6 +36,152 @@ function isTimeZone(zone) {
 function show(/** @type {string} */ value) {
   const text = value.length > 40 ? `${value.slice(0, 40)}...` : value
   return JSON.stringify(text)
+}
+
+/**
+ * The problems with the app token hash keys: NUXT_TOKEN_HASH_KEY (key version 1) and the optional
+ * NUXT_TOKEN_HASH_KEYS (`version:key` entries separated by commas, the current key first). The same
+ * rules as `parseTokenKeyring` in server/utils/auth/token-keys.ts (this script is plain JS and runs
+ * before the server; tests/server/auth-token-keys.test.ts keeps the two equal). Key values are
+ * never echoed.
+ * @param {Record<string, string | undefined>} env
+ * @returns {string[]}
+ */
+function tokenHashKeyErrors(env) {
+  const single = env.NUXT_TOKEN_HASH_KEY ?? ''
+  const list = (env.NUXT_TOKEN_HASH_KEYS ?? '').trim()
+  /** @type {{ version: number, key: string }[]} */
+  const keys = []
+  if (list !== '') {
+    const entries = list.split(',').map((entry) => entry.trim())
+    if (entries.length > MAX_TOKEN_HASH_KEYS) {
+      return [`NUXT_TOKEN_HASH_KEYS lists more than ${MAX_TOKEN_HASH_KEYS} keys`]
+    }
+    for (const [index, entry] of entries.entries()) {
+      const colon = entry.indexOf(':')
+      const version = colon === -1 ? '' : entry.slice(0, colon).trim()
+      if (!/^[1-9][0-9]{0,8}$/.test(version)) {
+        return [
+          `NUXT_TOKEN_HASH_KEYS entry ${index + 1} must look like <version>:<key>, with a whole number from 1 as the version`,
+        ]
+      }
+      if (keys.some((known) => known.version === Number(version))) {
+        return [`NUXT_TOKEN_HASH_KEYS lists version ${version} twice`]
+      }
+      keys.push({ version: Number(version), key: entry.slice(colon + 1).trim() })
+    }
+  }
+
+  if (single.trim() !== '') {
+    const listed = keys.find((known) => known.version === 1)
+    if (listed && listed.key !== single) {
+      return [
+        'NUXT_TOKEN_HASH_KEY is key version 1, but NUXT_TOKEN_HASH_KEYS lists another key for version 1',
+      ]
+    }
+    if (!listed) keys.push({ version: 1, key: single })
+  }
+
+  if (keys.length === 0) return ['NUXT_TOKEN_HASH_KEY is required']
+  return keys.flatMap(({ version, key }) =>
+    key.trim().length >= MIN_TOKEN_HASH_KEY_LENGTH
+      ? []
+      : [
+          version === 1 && key === single
+            ? `NUXT_TOKEN_HASH_KEY must have at least ${MIN_TOKEN_HASH_KEY_LENGTH} characters`
+            : `NUXT_TOKEN_HASH_KEYS: the key of version ${version} must have at least ${MIN_TOKEN_HASH_KEY_LENGTH} characters`,
+        ],
+  )
+}
+
+const MAX_HOST_LIST_ENTRIES = 200
+
+/**
+ * The problems with a host name or the domain after `*.` in NUXT_OUTBOUND_ALLOWED_HOSTS, or null.
+ * The same grammar as `nameProblem` in server/utils/ical-proxy/host-list.ts (this script is plain
+ * JS and runs before the server; tests/server/ical-host-list.test.ts feeds one table to both).
+ * @param {string} name already trimmed and lower-cased
+ * @returns {string | null}
+ */
+function hostNameProblem(name) {
+  if (name === '') return 'is empty'
+  if (name.length > 253) return 'is too long for a host name'
+  if (/[^\x20-\x7e]/.test(name))
+    return 'must be ASCII (write an international name in its xn-- form)'
+  if (/\s/.test(name)) return 'must not contain blanks'
+  if (name.includes('://')) return 'must be a host name, not a URL'
+  if (/[:/?#@[\]\\]/.test(name)) return 'must be a bare host name (no port, path or user name)'
+  if (name.includes('*')) return 'may use * only as the first label, written *.example.org'
+  const labels = name.split('.')
+  for (const label of labels) {
+    if (label === '') return 'must not have an empty label (a leading, trailing or double dot)'
+    if (label.length > 63) return 'has a label longer than 63 characters'
+    if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label)) {
+      return 'has a label with characters other than letters, digits and -'
+    }
+  }
+  // The URL parser reads a host that ends in a number as an IPv4 address (`1.2.3` is 1.2.0.3).
+  const last = labels[labels.length - 1] ?? ''
+  if (/^(?:\d+|0x[0-9a-f]*)$/.test(last)) {
+    const quad =
+      labels.length === 4 && isIP(name) === 4 && labels.every((l) => String(Number(l)) === l)
+    if (!quad) return 'looks like an IP address but is not a dotted IPv4 address'
+  }
+  return null
+}
+
+/**
+ * @param {string} entry already trimmed and lower-cased
+ * @returns {string | null}
+ */
+function hostEntryProblem(entry) {
+  if (entry === '*') {
+    return 'must not be a bare * (leave the list empty to allow every public host)'
+  }
+  if (!entry.startsWith('*.')) return hostNameProblem(entry)
+  const name = entry.slice(2)
+  const problem = hostNameProblem(name)
+  return problem === null && isIP(name) !== 0 ? 'must not put * in front of an IP address' : problem
+}
+
+/**
+ * The problems with NUXT_OUTBOUND_ALLOWED_HOSTS, one sentence each. Empty means no list.
+ * @param {string} text
+ * @returns {string[]}
+ */
+function hostListProblems(text) {
+  const trimmed = text.trim()
+  if (trimmed === '') return []
+  const entries = trimmed.split(',').map((entry) => entry.trim().toLowerCase())
+  /** @type {string[]} */
+  const problems = []
+  if (entries.length > MAX_HOST_LIST_ENTRIES) {
+    problems.push(`has more than ${MAX_HOST_LIST_ENTRIES} entries`)
+  }
+  for (const entry of entries.slice(0, MAX_HOST_LIST_ENTRIES)) {
+    const problem = hostEntryProblem(entry)
+    if (problem !== null) {
+      const shown = entry.length > 40 ? `${entry.slice(0, 40)}...` : entry
+      problems.push(`the entry ${JSON.stringify(shown)} ${problem}`)
+    }
+  }
+  return problems
+}
+
+/**
+ * Whether NUXT_EXTERNAL_SEAL_KEY is 32 random bytes as 64 hex characters or as base64: the rules of
+ * `parseSealKey` in server/utils/external/seal.ts (tests/server/external-seal.test.ts keeps the
+ * two equal). The value is never echoed.
+ * @param {string} text
+ */
+function isSealKey(text) {
+  const value = text.trim()
+  /** @type {Buffer | null} */
+  let key = null
+  if (/^[0-9a-fA-F]{64}$/.test(value)) key = Buffer.from(value, 'hex')
+  else if (/^[A-Za-z0-9+/_-]{43}={0,1}$/.test(value)) key = Buffer.from(value, 'base64')
+  if (key === null || key.length !== 32) return false
+  return !key.every((byte) => byte === key[0])
 }
 
 /**
@@ -98,12 +245,7 @@ export function validateEnv(env) {
     }
   }
 
-  const tokenHashKey = get('NUXT_TOKEN_HASH_KEY')
-  if (!tokenHashKey) {
-    errors.push('NUXT_TOKEN_HASH_KEY is required')
-  } else if (tokenHashKey.length < MIN_TOKEN_HASH_KEY_LENGTH) {
-    errors.push(`NUXT_TOKEN_HASH_KEY must have at least ${MIN_TOKEN_HASH_KEY_LENGTH} characters`)
-  }
+  errors.push(...tokenHashKeyErrors(env))
 
   const radicaleUrl = get('NUXT_RADICALE_URL')
   if (!radicaleUrl) {
@@ -124,6 +266,22 @@ export function validateEnv(env) {
   checkInteger('NUXT_ICAL_PROXY_TIMEOUT_MS', 1)
   checkBoolean('NUXT_ICAL_PROXY_ALLOW_PRIVATE')
   checkBoolean('NUXT_DEMO')
+
+  // Empty means unset for both: Compose passes them on even when .env leaves them empty.
+  const hostProblems = hostListProblems(env.NUXT_OUTBOUND_ALLOWED_HOSTS ?? '')
+  if (hostProblems.length > 0) {
+    errors.push(
+      `NUXT_OUTBOUND_ALLOWED_HOSTS cannot be used (comma-separated host names such as ` +
+        `cal.example.org or *.example.org): ${hostProblems.join('; ')}`,
+    )
+  }
+  const sealKey = get('NUXT_EXTERNAL_SEAL_KEY')
+  if (sealKey !== '' && !isSealKey(sealKey)) {
+    errors.push(
+      'NUXT_EXTERNAL_SEAL_KEY must be 32 random bytes written as 64 hex characters or as base64 ' +
+        '(generate one with: openssl rand -base64 32)',
+    )
+  }
 
   const adminGroup = env.NUXT_OIDC_ADMIN_GROUP
   if (adminGroup !== undefined && (adminGroup.trim() === '' || adminGroup !== adminGroup.trim())) {

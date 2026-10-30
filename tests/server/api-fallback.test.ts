@@ -255,6 +255,23 @@ describe('helpers', () => {
     ['/api/me/?x=1', true],
     ['/api//me', true],
     ['/api/a//', true],
+    // The proxy of the external CalDAV accounts carries CalDAV paths, and collections end in `/`.
+    ['/api/external/1', false],
+    ['/api/external/1/', false],
+    ['/api/external/1/?depth=1', false],
+    ['/api/external/12/dav/calendars/alice/work/', false],
+    ['/api/external/12/dav/calendars/alice/work/standup.ics', false],
+    ['/api/external/1//', true],
+    ['/api/external/1//dav/', true],
+    ['/api/external/1/dav//calendars/', true],
+    ['/api/external//1/', true],
+    ['/api/external/', true],
+    ['/api/external', false],
+    ['/api/external-accounts/', true],
+    ['/api/external-accounts/1/', true],
+    ['/api/external-accounts/1/credential/', true],
+    ['/api/externals/1/', true],
+    ['/api/other/external/1/', true],
   ])('isNonCanonicalApiPath(%j) = %s', (path, expected) => {
     expect(isNonCanonicalApiPath(path)).toBe(expected)
   })

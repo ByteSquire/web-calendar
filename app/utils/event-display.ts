@@ -1,6 +1,6 @@
 // Text for one event: the "when" line, status labels, the assistive label used by calendar entries
 // and the detail model of the event sheet. Pure and without Nuxt, so it runs in plain Vitest
-// (tests/fullcalendar.test.ts). Event times are Europe/Berlin wall-clock strings (FR-29).
+// (tests/fullcalendar.test.ts). Event times are wall-clock strings in the viewer's display zone (FR-29).
 import { Temporal } from 'temporal-polyfill'
 import type {
   Calendar,
@@ -10,6 +10,7 @@ import type {
   EventStatus,
   ResourceType,
 } from '../../shared/types/calendar'
+import { convertEventTimes } from './time-zone'
 
 /** Title shown instead of the real one when the details are hidden by access rules (FR-18). */
 export const BUSY_TITLE = 'Busy'
@@ -117,6 +118,11 @@ export interface EventDetails {
   blocked: boolean
   allDay: boolean
   when: EventWhen
+  /**
+   * The same time in the organization zone, when the viewer's zone differs from it and the event
+   * has a time of day (FR-29). Null otherwise.
+   */
+  orgWhen: EventWhen | null
   status: EventStatus
   statusLabel: string
   /** Null for blocked events and unknown calendars. */
@@ -129,15 +135,26 @@ export interface EventDetails {
   categories: { id: string; name: string; color: string }[]
 }
 
+/** The viewer's display zone and the organization zone, both IANA names. */
+export interface EventZones {
+  display: string
+  org: string
+}
+
 /** What the event sheet shows. A blocked event reveals nothing but "Busy" and the time. */
 export function buildEventDetails(
   event: CalendarEvent,
   lookups: EventDetailsLookups,
+  zones?: EventZones,
 ): EventDetails {
   const base = {
     id: event.id,
     allDay: event.allDay,
     when: describeEventWhen(event),
+    orgWhen:
+      zones && !event.allDay && zones.display !== zones.org
+        ? describeEventWhen(convertEventTimes(event, zones.display, zones.org))
+        : null,
     status: event.status,
     statusLabel: STATUS_LABELS[event.status],
   }

@@ -82,6 +82,7 @@ const {
   openQuickAdd,
 } = useCalendarState()
 
+const timeZone = useDisplayTimeZone()
 const colorMode = useColorMode()
 const scheme = computed<ColorScheme>(() => (colorMode.value === 'dark' ? 'dark' : 'light'))
 
@@ -123,6 +124,7 @@ const initialDate = anchorDate.value.toString()
 
 const options = computed<CalendarOptions>(() => ({
   ...BASE_CALENDAR_OPTIONS,
+  timeZone: timeZone.value,
   ...calendarLayoutOptions(compact.value),
   plugins: PLUGINS,
   locales: [enGbLocale],
@@ -152,7 +154,7 @@ watch(
 // Calendar -> state. A click on a day number opens that day; the state is written only if the
 // date differs, so the watcher above has nothing to undo.
 function onDayNumberClick(date: Date) {
-  const target = plainDateInCalendarZone(date)
+  const target = plainDateInCalendarZone(date, timeZone.value)
   if (!target.equals(anchorDate.value)) anchorDate.value = target
   viewType.value = 'day'
 }

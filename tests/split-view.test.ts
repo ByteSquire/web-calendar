@@ -493,7 +493,13 @@ describe('SplitTimeline', () => {
   const mounted: VueWrapper[] = []
   function mountTimeline(anchor: string, span: SplitSpan, scheme: SplitColorScheme = 'light') {
     const wrapper = mount(SplitTimeline, {
-      props: { bands: bandsFor(anchor, span), date: anchor, span, scheme },
+      props: {
+        bands: bandsFor(anchor, span),
+        date: anchor,
+        span,
+        scheme,
+        timeZone: 'Europe/Berlin',
+      },
       attachTo: document.body,
     })
     mounted.push(wrapper)

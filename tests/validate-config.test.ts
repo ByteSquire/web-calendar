@@ -31,6 +31,24 @@ describe('validateEnv', () => {
     expect(errors).toEqual(['NUXT_TOKEN_HASH_KEY is required'])
   })
 
+  describe('TZ (organization time zone)', () => {
+    const check = (zone: string | undefined) => validateEnv({ ...valid, TZ: zone }).errors
+
+    it('accepts an unset value and IANA zones', () => {
+      expect(check(undefined)).toEqual([])
+      expect(check('')).toEqual([])
+      expect(check('Europe/Berlin')).toEqual([])
+      expect(check('America/New_York')).toEqual([])
+      expect(check('UTC')).toEqual([])
+    })
+
+    it('rejects anything that is not a zone', () => {
+      expect(check('Mars/Olympus')).toEqual([
+        'TZ must be an IANA time zone such as Europe/Berlin, not "Mars/Olympus"',
+      ])
+    })
+  })
+
   describe('NUXT_OIDC_ISSUER', () => {
     const check = (issuer: string, extra: Record<string, string> = {}) =>
       validateEnv({ ...valid, NUXT_OIDC_ISSUER: issuer, ...extra }).errors

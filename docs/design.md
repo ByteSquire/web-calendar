@@ -48,7 +48,7 @@ Key decisions (from the requirements review and the 2026-10-29 interviews):
 - **UI components** — **Nuxt UI v4** (MIT; Reka UI + Tailwind CSS v4), **adopted**
   after trial S3, with the conditions in §9 and §12. Installed.
 - **Events** — recurring events are common; the organization uses **one time zone**
-  (`Europe/Berlin`). Editing a recurring event asks what to change (§7).
+  (`TZ`, default `Europe/Berlin`). Editing a recurring event asks what to change (§7).
 
 ---
 
@@ -163,7 +163,8 @@ erDiagram
 **Tables** (key columns; all have `created_at`/`updated_at`):
 
 - **users** — `id` (PK), `oidc_sub` (unique), `username`, `name`, `email`,
-  `is_admin`, `last_seen_at`. Created on first use. There is no roles table: admin
+  `is_admin`, `last_seen_at`; planned: `time_zone` (an override of the browser's zone,
+  FR-32). Created on first use. There is no roles table: admin
   comes from Kanidm group membership (§6).
 - **app_tokens** — `id` (PK), `user_id` (FK), `label`, `token_hash`, `expires_at`,
   `last_used_at`. Only the hash is stored; the token is shown once (FR-31).
@@ -370,8 +371,32 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
 - **Recurrence (FR-28)** — prefer Radicale's server-side `expand` if it works
   (untested, S4); otherwise expand `RRULE`, `EXDATE` and `RECURRENCE-ID` overrides
   with `ical.js`.
-- **Time zone (FR-29)** — all times are shown in the organization time zone,
-  `Europe/Berlin` (`TZ`).
+- **Time zones (FR-29, FR-32)** — two zones, and nothing else names one.
+  - _Organization zone_: the server reads `TZ` (an IANA name, default `Europe/Berlin`; an
+    invalid value stops the container at start) and serves it in `/api/config`
+    (`useOrgTimeZone()`). It is the zone floating times are read in, the fallback display
+    zone and the "organization time" label. Later, the default zone for new events.
+  - _Display zone_: the viewer's own, the browser's `Intl` zone (`useDisplayTimeZone()`),
+    falling back to the organization zone. A per-user override needs `users.time_zone`
+    and belongs to the settings screen.
+  - _Conversion is client-side_: iCal stores UTC instants or `TZID` times and the
+    gateway passes them through, so the server converts nothing. The mapper turns each
+    event into wall-clock strings in the display zone (`app/utils/time-zone.ts`; an
+    ambiguous or missing local time is read as RFC 5545 §3.3.5 says), so
+    `CalendarEvent.start/end`, "today", FullCalendar's `timeZone` and quick-add all work in
+    the display zone. **All-day events are dates and do not move.** A weekly 09:00 Berlin
+    meeting follows Berlin's daylight saving, not the viewer's; for a viewer in Sydney it
+    can fall on another weekday.
+  - _Ranges_ (planned): the visible range is a range in the display zone; it is sent to
+    Radicale as UTC instants, padded by a day (Radicale matches floating times and all-day
+    events as if they were UTC, see S10).
+  - _Third-party clients_ show events in their device's zone; nothing server-side is
+    needed. Planned: the app sets `calendar-timezone` on calendars it creates as a hint for
+    floating times; Radicale stores it but does not use it (S10) and most clients ignore
+    it, so floating events from such clients stay a known limitation.
+  - _Writes_ (planned): new events carry `TZID` of the author's zone plus a `VTIMEZONE`,
+    so a recurrence follows that zone's daylight saving; an edit keeps the event's own
+    `TZID`. `ical.js` ships no time zone data: the `VTIMEZONE` source is open.
 - **Writes** — `PUT`/`DELETE` with `If-Match` ETags. On `412` (changed meanwhile)
   tell the user and reload the event. **Editing a recurring event asks what to
   change** (decided): this instance, this and following, or the whole series, with
@@ -573,7 +598,7 @@ services:
       NUXT_GROUP_SYNC_INTERVAL_SEC: '60'
       NUXT_DB_PATH: /data/web-calendar.db
       NUXT_RADICALE_URL: http://radicale:5232
-      TZ: 'Europe/Berlin'
+      TZ: '${TZ:-Europe/Berlin}' # organization time zone (FR-29)
     volumes:
       - web-calendar-data:/data # SQLite file
       - radicale-groups:/groups # Radicale's group file, written by the app
@@ -716,9 +741,30 @@ this is the **order**):
     states MIT and says the package is no longer maintained, recommending Reka UI's
     Drawer. Treat it as unverified until the AGPL audit in §2 is signed off, and
     avoid `UDrawer`.
-- **S4 — Radicale and recurrence.** Does Radicale support `expand` in
-  `calendar-query`? Does its `time-range` filter handle recurring events correctly?
-  Is `free-busy-query` available (useful for resources)? Test in the bundled stack.
+- **S4 — Radicale and recurrence. Done 2026-10-30** (`dev/spike-tscaldav`, through the
+  gateway). `expand` in `calendar-query` works and is correct: a weekly series across the
+  25 Oct daylight-saving change gives the right UTC instants, `EXDATE` and a moved
+  `RECURRENCE-ID` override are applied, `BYSETPOS` (last weekday of the month) is right,
+  all-day instances keep a date `RECURRENCE-ID`, floating and UTC events pass through.
+  Instances come back in UTC. `time-range` returns the master and its overrides.
+  `free-busy-query` works (a cancelled event counts as free). **Libraries:** `ts-caldav`
+  0.4.5 was rejected (its event model drops `BYSETPOS`, all but the first `CATEGORIES`
+  value and `ATTENDEE`/`ORGANIZER` parameters, reads floating times as UTC, and
+  `updateEvent` rewrites the whole resource and drops overrides; one unparseable
+  component fails the whole read). `tsdav` 2.5.0 works as a transport that returns raw
+  `.ics` (lossless, `If-Match` gives `412`, accepts our `fetch`); edits patch the raw
+  resource with `ical.js`.
+- **S10 — Time zones in Radicale. Done 2026-10-30.** Observed behaviour (Radicale 3.9.0,
+  `dev/spike-tscaldav/tz-probe.mjs`), not read from its source.
+  - A floating event (`DTSTART:20261104T100000`) is stored exactly as sent; it is not
+    converted to UTC.
+  - `calendar-timezone` is never set by Radicale itself. A client can set it (for example
+    in `MKCALENDAR`); Radicale stores it and returns it in `PROPFIND`.
+  - Radicale does not use it in its own arithmetic: `time-range` and `free-busy-query`
+    read the floating `10:00` as `10:00Z`, with or without the property set to
+    `Europe/Berlin`. Other uses (for example `expand`) were not tested.
+  - Consequence: the property is only a hint for clients that read it. The web client reads
+    floating times as organization time and pads its query ranges (§7).
 - **S5 — Radicale access mechanics. Done 2026-10-29.** Tested directly against
   Radicale 3.9.0 in `dev/spike-s1` with `X-Remote-User` set to Kanidm `sub` values;
   results are in the table in §8.
@@ -779,7 +825,8 @@ this is the **order**):
 - **Recurring edits** — decided: ask each time, "this instance" preselected. The
   mechanics ("this and following" splits a series with `UNTIL` and a new `UID`;
   "this instance" writes a `RECURRENCE-ID` override) need a design before Phase 2
-  writes.
+  writes. New events carry the author's `TZID` and a `VTIMEZONE` (time zone data source
+  open); edits keep the event's own `TZID` (§7).
 - **Resource booking mechanism and FR-19** — how events reference a resource, and
   how accept/decline works (CalDAV scheduling or app-side state). Phase 3.
 - **Public view credentials** — service credential and published list. Decided

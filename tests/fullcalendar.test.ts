@@ -17,7 +17,6 @@ import {
 import { pickFocusTarget } from '../app/utils/focus'
 import {
   BASE_CALENDAR_OPTIONS,
-  CALENDAR_TIME_ZONE,
   COMPACT_MAX_WIDTH,
   FULLCALENDAR_VIEW_NAMES,
   calendarLayoutOptions,
@@ -113,17 +112,17 @@ describe('view mapping', () => {
     expect(range.end.since(range.start).days).toBe(5)
   })
 
-  it('keeps editing off and the time zone fixed', () => {
+  it('keeps editing off and leaves the time zone to the setting', () => {
     expect(BASE_CALENDAR_OPTIONS).toMatchObject({
       editable: false,
       selectable: false,
       eventStartEditable: false,
       eventDurationEditable: false,
       firstDay: 1,
-      timeZone: 'Europe/Berlin',
       headerToolbar: false,
     })
-    expect(CALENDAR_TIME_ZONE).toBe('Europe/Berlin')
+    // The organization time zone is a setting (FR-29): the component adds it from useTimeZone().
+    expect(BASE_CALENDAR_OPTIONS).not.toHaveProperty('timeZone')
   })
 
   it('switches to panning day columns and fewer month columns on narrow containers', () => {
@@ -147,11 +146,20 @@ describe('view mapping', () => {
 describe('plainDateInCalendarZone', () => {
   it('reads FullCalendar dates in the organization time zone', () => {
     // Midnight in Berlin is 22:00 UTC the day before in summer (CEST) ...
-    expect(plainDateInCalendarZone(new Date('2026-07-13T22:00:00Z')).toString()).toBe('2026-07-14')
+    const berlin = (iso: string) => plainDateInCalendarZone(new Date(iso), 'Europe/Berlin')
+    expect(berlin('2026-07-13T22:00:00Z').toString()).toBe('2026-07-14')
     // ... and 23:00 UTC in winter (CET); daylight saving time ended on 25 October 2026.
-    expect(plainDateInCalendarZone(new Date('2026-10-27T23:00:00Z')).toString()).toBe('2026-10-28')
-    expect(plainDateInCalendarZone(new Date('2026-10-24T22:00:00Z')).toString()).toBe('2026-10-25')
-    expect(plainDateInCalendarZone(new Date('2026-10-28T12:00:00Z')).toString()).toBe('2026-10-28')
+    expect(berlin('2026-10-27T23:00:00Z').toString()).toBe('2026-10-28')
+    expect(berlin('2026-10-24T22:00:00Z').toString()).toBe('2026-10-25')
+    expect(berlin('2026-10-28T12:00:00Z').toString()).toBe('2026-10-28')
+  })
+
+  it('follows the zone it is given, not a built-in one', () => {
+    const instant = new Date('2026-10-29T22:30:00Z')
+    expect(plainDateInCalendarZone(instant, 'Europe/Berlin').toString()).toBe('2026-10-29')
+    expect(plainDateInCalendarZone(instant, 'Asia/Tokyo').toString()).toBe('2026-10-30')
+    expect(plainDateInCalendarZone(instant, 'America/Los_Angeles').toString()).toBe('2026-10-29')
+    expect(plainDateInCalendarZone(instant, 'UTC').toString()).toBe('2026-10-29')
   })
 })
 
@@ -464,6 +472,31 @@ describe('buildEventDetails', () => {
     })
     expect(details.categories.map((item) => item.name)).toEqual(['Meeting'])
     expect(details.resource).toBeNull()
+  })
+
+  it('adds the organization time when the viewer is in another zone', () => {
+    const { mock, lookups: maps } = lookups()
+    // The mock times are read here as Sydney time: 03:00-04:00 on Thu 29 Oct is 17:00-18:00 on
+    // Wed 28 Oct in Berlin.
+    const event = { ...mock.events.find((item) => item.id === 'evt-standup')!, allDay: false }
+    const sydney = { ...event, start: '2026-10-29T03:00:00', end: '2026-10-29T04:00:00' }
+    const zones = { display: 'Australia/Sydney', org: 'Europe/Berlin' }
+    expect(buildEventDetails(sydney, maps, zones).orgWhen).toEqual({
+      date: 'Wed, 28 Oct 2026',
+      time: '17:00 – 18:00',
+    })
+    expect(buildEventDetails(sydney, maps, zones).when.time).toBe('03:00 – 04:00')
+  })
+
+  it('has no organization time in the same zone, without zones or for all-day events', () => {
+    const { mock, lookups: maps } = lookups()
+    const timed = mock.events.find((item) => item.id === 'evt-standup')!
+    const allDay = mock.events.find((item) => item.id === 'evt-coast')!
+    const same = { display: 'Europe/Berlin', org: 'Europe/Berlin' }
+    const other = { display: 'Australia/Sydney', org: 'Europe/Berlin' }
+    expect(buildEventDetails(timed, maps, same).orgWhen).toBeNull()
+    expect(buildEventDetails(timed, maps).orgWhen).toBeNull()
+    expect(buildEventDetails(allDay, maps, other).orgWhen).toBeNull()
   })
 
   it('names the resource of a booking and the booking calendar', () => {

@@ -8,9 +8,6 @@ import type { Calendar, CalendarEvent } from '../../shared/types/calendar'
 import type { NewEventInput, SplitSpan, ViewType } from './calendar-state'
 import { BUSY_TITLE, eventAssistiveLabel } from './event-display'
 
-/** The organization time zone (FR-29); configurable in Phase 2. */
-export const CALENDAR_TIME_ZONE = 'Europe/Berlin'
-
 // ---- Views ----
 
 export const FULLCALENDAR_VIEW_NAMES = {
@@ -27,11 +24,11 @@ export function fullCalendarViewName(viewType: ViewType, splitSpan: SplitSpan = 
   return FULLCALENDAR_VIEW_NAMES[viewType === 'split' ? splitSpan : viewType]
 }
 
-/** The calendar date FullCalendar reports as a `Date` (the start of a day in the calendar zone). */
-export function plainDateInCalendarZone(
-  date: Date,
-  timeZone: string = CALENDAR_TIME_ZONE,
-): Temporal.PlainDate {
+/**
+ * The calendar date FullCalendar reports as a `Date` (the start of a day in the organization time
+ * zone, which the caller passes: `useDisplayTimeZone()`).
+ */
+export function plainDateInCalendarZone(date: Date, timeZone: string): Temporal.PlainDate {
   return Temporal.Instant.fromEpochMilliseconds(date.getTime())
     .toZonedDateTimeISO(timeZone)
     .toPlainDate()
@@ -51,7 +48,8 @@ const TIME_FORMAT = { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' } as 
 export const SCHEDULER_LICENSE_KEY = 'AGPL-My-Frontend-And-Backend-Are-Open-Source'
 
 /**
- * Options that do not change while the app runs. Editing stays off in Phase 1: `editable` and
+ * Options that do not change while the app runs, apart from `timeZone`, which the caller adds from
+ * the viewer's display zone (`useDisplayTimeZone()`, FR-29). Editing stays off in Phase 1: `editable` and
  * `selectable` are the master switches, the rest repeats them for events and drops.
  */
 export const BASE_CALENDAR_OPTIONS = {
@@ -59,7 +57,6 @@ export const BASE_CALENDAR_OPTIONS = {
   // scroll grid, which lets narrow day columns pan sideways, and the split view's resource timeline
   // check it.
   schedulerLicenseKey: SCHEDULER_LICENSE_KEY,
-  timeZone: CALENDAR_TIME_ZONE,
   locale: 'en-gb',
   firstDay: 1,
   // The top bar owns navigation and the title.
@@ -229,9 +226,10 @@ function normalizeBoundary(value: string, allDay: boolean): string {
 }
 
 /**
- * Maps a stored event to a FullCalendar input. Start and end are Europe/Berlin wall-clock strings
- * and FullCalendar reads them in its own `timeZone`. All-day ends are exclusive on both sides. An
- * end that is not after the start is left out, so FullCalendar uses its default duration.
+ * Maps a stored event to a FullCalendar input. Start and end are wall-clock strings in the
+ * viewer's display zone and FullCalendar reads them in its own `timeZone` (the same zone). All-day ends are
+ * exclusive on both sides. An end that is not after the start is left out, so FullCalendar uses its
+ * default duration.
  */
 export function toFullCalendarEvent(
   event: CalendarEvent,
@@ -270,7 +268,7 @@ export function toFullCalendarEvents(
 
 /**
  * Quick-add preset for a click on `dateStr` (FullCalendar's `dateStr`: a date, or a date-time whose
- * leading part is the Europe/Berlin wall-clock time). A date cell gives a one-day all-day event; a
+ * leading part is the wall-clock time in the display zone). A date cell gives a one-day all-day event; a
  * time slot gives a one-hour event starting there.
  */
 export function quickAddPresetForClick(

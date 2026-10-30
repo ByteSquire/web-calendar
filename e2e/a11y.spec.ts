@@ -34,6 +34,16 @@ const UPSTREAM: { rule: string; target: RegExp; why: string }[] = [
 
 // WCAG 2.1 A and AA (NFR-3), as far as an automated scan can tell.
 async function scan(page: Page) {
+  // Dialogs fade in; axe would measure the colours of a half-transparent dialog. Endless animations
+  // (spinners) are skipped, they never finish.
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => undefined)),
+    ),
+  )
   const { violations } = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()

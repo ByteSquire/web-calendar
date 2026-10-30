@@ -178,8 +178,18 @@ minimum:
 
 - **FR-28** **Recurring events** (repeat rules, exceptions, cancelled instances)
   display correctly in every view type.
-- **FR-29** All times are shown in one configured **organization time zone**
-  (`TZ`, set to `Europe/Berlin`). Per-user time zones are out of scope.
+- **FR-29** There is one configured **organization time zone**: a deployment setting
+  (`TZ`, an IANA name, default `Europe/Berlin`), never hard-coded. It is the reference:
+  floating times (no zone) are read in it, it is the fallback display zone, and the app
+  shows it as "organization time" next to the viewer's time. The web client reads it
+  from the app (`/api/config`). For CalDAV clients, calendars the app creates will carry
+  it as a `calendar-timezone` hint (planned; Radicale stores it but ignores it, and
+  most clients ignore it).
+- **FR-32** Each user sees times in **their own time zone**: the browser's, by default.
+  A timed event moves to the viewer's zone (a 09:00 Berlin meeting is 19:00 for someone
+  in Sydney, on the right day); **all-day events stay on their dates**. A per-user
+  setting that overrides the browser's zone is planned. Standard CalDAV clients convert
+  on their own, as the data carries each event's zone.
 
 ### 4.9 Third-party CalDAV access
 
@@ -259,11 +269,11 @@ minimum:
 The work is delivered in three phases (all requirements are in scope; this is
 the **order** of delivery):
 
-| Phase                        | Focus                                                                                                            | Key requirements                                         |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| **1 — UI shell / mock-up**   | The webpage and a **mock-up of all UI** (all screens, sidebar with views at the top, view types incl. **split**) | FR-21…FR-25, FR-6, FR-20                                 |
-| **2 — Core calendar + auth** | Calendar features, authentication, the CalDAV gateway (owner-only access), recurring events                      | FR-7…FR-13, FR-30, FR-31, FR-3…FR-5, FR-20, FR-28, FR-29 |
-| **3 — Organizational**       | Grouping / views (templates for calendar groups), resources                                                      | FR-1…FR-2, FR-14…FR-19                                   |
+| Phase                        | Focus                                                                                                            | Key requirements                                                |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| **1 — UI shell / mock-up**   | The webpage and a **mock-up of all UI** (all screens, sidebar with views at the top, view types incl. **split**) | FR-21…FR-25, FR-6, FR-20                                        |
+| **2 — Core calendar + auth** | Calendar features, authentication, the CalDAV gateway (owner-only access), recurring events                      | FR-7…FR-13, FR-30, FR-31, FR-3…FR-5, FR-20, FR-28, FR-29, FR-32 |
+| **3 — Organizational**       | Grouping / views (templates for calendar groups), resources                                                      | FR-1…FR-2, FR-14…FR-19                                          |
 
 ---
 
@@ -297,7 +307,8 @@ the **order** of delivery):
   No background sync, so no stored credentials or offline tokens. (Captured in
   FR-10 and NFR-4.)
 - **Q16 — Recurrence and time zones.** _Resolved._ Recurring events are common;
-  the organization uses **one time zone**. (Captured in FR-28 and FR-29.)
+  the organization works in **one time zone**; users elsewhere see times in their own
+  zone (2026-10-30). (Captured in FR-28, FR-29 and FR-32.)
 - **Q17 — Third-party CalDAV clients.** _Resolved._ Thunderbird and phones must
   be able to use the built-in calendars with the same access rules. This rules out
   keeping all calendars under one service account with app-side filtering.
@@ -309,7 +320,7 @@ the **order** of delivery):
   browser, per account. A shared client with OpenCloud is not needed. (Captured in
   FR-8, FR-12, FR-13, FR-30, FR-31, NFR-2, A-4.)
 - **Q19 — Operating defaults.** _Resolved 2026-10-29._ Organization time zone
-  `Europe/Berlin`. Editing a recurring event **asks every time** (this instance,
+  `Europe/Berlin` by default, set with `TZ`; viewers see their own zone (FR-32). Editing a recurring event **asks every time** (this instance,
   this and following, or the whole series, with "this instance" preselected). App
   tokens last **1 year**, at most **10 per user**. An outage shows an **error**, never
   stale data. Group membership for Radicale is synced from Kanidm every **60 s**

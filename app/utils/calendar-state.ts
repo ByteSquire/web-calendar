@@ -110,7 +110,7 @@ export function rangeKindOf(viewType: ViewType, splitSpan: SplitSpan): RangeKind
   }
 }
 
-/** The dates a period shows around `anchor`. Weeks start on Monday (Europe/Berlin). */
+/** The dates a period shows around `anchor`. Weeks start on Monday. */
 export function visibleRangeFor(kind: RangeKind, anchor: Temporal.PlainDate): DateRange {
   switch (kind) {
     case 'day':

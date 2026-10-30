@@ -17,8 +17,18 @@ function parseUrl(value) {
   }
 }
 
+/** @param {string} zone */
+function isTimeZone(zone) {
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: zone })
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
- * Checks the NUXT_* variables the server cannot run without. Secret values are never echoed.
+ * Checks the NUXT_* variables the server cannot run without, and `TZ`. Secret values are never echoed.
  * @param {Record<string, string | undefined>} env
  * @returns {{ errors: string[], warnings: string[] }}
  */
@@ -70,6 +80,12 @@ export function validateEnv(env) {
     if (!url || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
       errors.push('NUXT_RADICALE_URL must be an http or https URL')
     }
+  }
+
+  // The organization time zone (FR-29); unset means Europe/Berlin (shared/utils/time-zone.ts).
+  const timeZone = get('TZ')
+  if (timeZone && !isTimeZone(timeZone)) {
+    errors.push(`TZ must be an IANA time zone such as Europe/Berlin, not "${timeZone}"`)
   }
 
   if (!get('NUXT_GROUP_SYNC_TOKEN')) {

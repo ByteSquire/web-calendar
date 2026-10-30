@@ -16,7 +16,7 @@
  *   5day 5 days, week and list 7 days, month 1 month, year 1 year (the day is clamped, so
  *   31 Jan + 1 month = 28 Feb), split like its underlying span.
  * - `visibleRange: Ref<{ start, end }>`: PlainDates, `end` exclusive. day: the anchor; 5day:
- *   the anchor and the next 4 days; week and list: Monday to Monday (Europe/Berlin, FullCalendar
+ *   the anchor and the next 4 days; week and list: Monday to Monday (FullCalendar
  *   `firstDay: 1`; list is FullCalendar `listWeek`); month: 1st to the 1st of the next month (the
  *   grid also shows days of the adjacent months; FullCalendar fetches those itself); year:
  *   Jan 1 to Jan 1; split: the range of `splitSpan`.
@@ -85,9 +85,11 @@ import { createCalendarState, type CalendarState } from '~/utils/calendar-state'
 import { matchesDesktop } from '~/utils/viewport'
 
 export function useCalendarState(): CalendarState {
+  const timeZone = useDisplayTimeZone()
   return createCalendarState(useState, {
     seed: useMockData,
-    today: () => Temporal.Now.plainDateISO(),
+    // "Today" is the date in the viewer's display zone (FR-29).
+    today: () => Temporal.Now.plainDateISO(timeZone.value),
     sidebarOpen: matchesDesktop,
   })
 }

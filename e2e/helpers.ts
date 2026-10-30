@@ -10,8 +10,8 @@ export interface OpenedApp {
   errors: string[]
 }
 
-/** Open the app with a fixed clock; resolves when the calendar area is there. */
-export async function openApp(page: Page): Promise<OpenedApp> {
+/** Open the app with a fixed clock (`now`, default `TODAY`); resolves when the calendar area is there. */
+export async function openApp(page: Page, now: Date = TODAY): Promise<OpenedApp> {
   const errors: string[] = []
   // WebKit reports "ResizeObserver loop completed with undelivered notifications" when
   // FullCalendar lays out inside its own observer callback. The spec defines it as non-fatal.
@@ -22,7 +22,7 @@ export async function openApp(page: Page): Promise<OpenedApp> {
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text())
   })
-  await page.clock.setFixedTime(TODAY)
+  await page.clock.setFixedTime(now)
   await page.goto('/')
   await expect(page.locator('[data-calendar-main]')).toBeVisible()
   return { errors }

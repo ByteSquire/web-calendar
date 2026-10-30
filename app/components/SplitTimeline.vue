@@ -60,6 +60,8 @@ const props = defineProps<{
   date: string
   span: SplitSpan
   scheme: SplitColorScheme
+  /** The zone the events are in and the timeline shows (FR-29), an IANA name. */
+  timeZone: string
 }>()
 
 const emit = defineEmits<{ select: [eventId: string] }>()
@@ -103,7 +105,7 @@ const options = computed<CalendarOptions>(() => ({
   plugins,
   schedulerLicenseKey: SCHEDULER_LICENSE_KEY,
   // Same time zone, locale and 24-hour times as the standard views.
-  timeZone: BASE_CALENDAR_OPTIONS.timeZone,
+  timeZone: props.timeZone,
   locales: [enGbLocale],
   locale: BASE_CALENDAR_OPTIONS.locale,
   eventTimeFormat: BASE_CALENDAR_OPTIONS.eventTimeFormat,

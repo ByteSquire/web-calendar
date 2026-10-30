@@ -25,6 +25,7 @@
       :date="anchorDate.toString()"
       :span="splitSpan"
       :scheme="scheme"
+      :time-zone="timeZone"
       @select="selectEvent"
     />
     <div
@@ -46,6 +47,7 @@ import { SPLIT_SPANS, VIEW_TYPE_LABELS } from '~/utils/calendar-state'
 import { splitColorScheme } from '~/utils/split-view'
 
 const { anchorDate, rangeLabel, selectEvent, splitBands, splitSpan } = useCalendarState()
+const timeZone = useDisplayTimeZone()
 const colorMode = useColorMode()
 const scheme = computed(() => splitColorScheme(colorMode.value))
 </script>

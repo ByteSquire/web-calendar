@@ -21,7 +21,11 @@
           <p>{{ shown.when.date }}</p>
           <p>
             {{ shown.when.time }}
-            <span v-if="!shown.allDay" class="text-muted">({{ CALENDAR_TIME_ZONE }})</span>
+            <span v-if="!shown.allDay" class="text-muted">({{ timeZone }})</span>
+          </p>
+          <p v-if="shown.orgWhen" class="text-muted text-sm">
+            Organization time ({{ orgTimeZone }}): {{ shown.orgWhen.date }},
+            {{ shown.orgWhen.time }}
           </p>
         </EventDetailRow>
 
@@ -107,20 +111,25 @@ import { resourceIconName } from '~/utils/calendar-icons'
 import { buildEventDetails, type EventDetails } from '~/utils/event-display'
 import { pickFocusTarget } from '~/utils/focus'
 import { makeScrollersFocusable } from '~/utils/scroll-a11y'
-import { CALENDAR_TIME_ZONE } from '~/utils/fullcalendar'
 
 const { selectedEvent, selectedEventId, selectEvent, calendarById, categoryById, resourceById } =
   useCalendarState()
+const timeZone = useDisplayTimeZone()
+const orgTimeZone = useOrgTimeZone()
 const isDesktop = useIsDesktop()
 const toast = useToast()
 
 const details = computed(() =>
   selectedEvent.value
-    ? buildEventDetails(selectedEvent.value, {
-        calendarById: calendarById.value,
-        categoryById: categoryById.value,
-        resourceById: resourceById.value,
-      })
+    ? buildEventDetails(
+        selectedEvent.value,
+        {
+          calendarById: calendarById.value,
+          categoryById: categoryById.value,
+          resourceById: resourceById.value,
+        },
+        { display: timeZone.value, org: orgTimeZone.value },
+      )
     : null,
 )
 

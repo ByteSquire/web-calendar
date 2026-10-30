@@ -1,5 +1,6 @@
 import { AuthError } from '../auth/errors'
 import { BodyTooLargeError, limitStream, readLimited } from './body'
+import { rememberChallengeLines } from './challenges'
 import { allowedOrigin, applyCors, isPreflight, preflightResponse } from './cors'
 import {
   ALLOWED_METHODS,
@@ -18,6 +19,13 @@ export interface GatewayRequest {
   body: ReadableStream<Uint8Array> | null
   /** Aborted when the client goes away. */
   signal?: AbortSignal
+  /** The address the request came from, for the login throttle; null or absent when unknown. */
+  clientAddress?: string | null
+}
+
+/** What `authenticate` is told about the request besides its headers. */
+export interface AuthenticateContext {
+  clientAddress: string | null
 }
 
 export interface GatewayOptions {
@@ -28,7 +36,7 @@ export interface GatewayOptions {
   /** Largest request body forwarded, in bytes. */
   maxBodyBytes: number
   /** Resolves the caller or throws `AuthError`. */
-  authenticate(headers: Headers): Promise<{ sub: string }>
+  authenticate(headers: Headers, context: AuthenticateContext): Promise<{ sub: string }>
   fetch?: typeof globalThis.fetch
   log?: (message: string, cause?: unknown) => void
 }
@@ -60,13 +68,21 @@ export function createGateway(
   const log = options.log ?? (() => undefined)
 
   function authFailure(error: AuthError): Response {
-    // Every client's first request has no credentials, by design; that is not worth a log line.
-    if (error.reason !== 'no-credentials') log(`authentication failed: ${error.reason}`)
+    // Every client's first request has no credentials, by design; that is not worth a log line. A
+    // throttled client would log on every request; the throttle reports when it starts blocking.
+    if (error.reason !== 'no-credentials' && error.reason !== 'throttled') {
+      log(`authentication failed: ${error.reason}`)
+    }
     if (error.status === 503) {
       return text(503, 'Service Unavailable', { 'retry-after': '5' })
     }
+    if (error.status === 429) {
+      return text(429, 'Too Many Requests', { 'retry-after': String(error.retryAfterSec ?? 1) })
+    }
     const response = text(401, 'Unauthorized')
     for (const challenge of error.challenges) response.headers.append('www-authenticate', challenge)
+    // `Headers` joins them; the Nitro glue sends them as separate lines.
+    rememberChallengeLines(response, error.challenges)
     return response
   }
 
@@ -87,7 +103,9 @@ export function createGateway(
 
     let identity: { sub: string }
     try {
-      identity = await options.authenticate(headers)
+      identity = await options.authenticate(headers, {
+        clientAddress: request.clientAddress ?? null,
+      })
     } catch (error) {
       if (error instanceof AuthError) return authFailure(error)
       throw error
@@ -184,7 +202,7 @@ export function createGateway(
       log('gateway error', error)
       response = text(500, 'Internal Server Error')
     }
-    // With CORS off there are no CORS headers on any response, the 401 included.
+    // With CORS off there are no CORS headers on any response, the 401 and 429 included.
     if (corsOrigins.length > 0) applyCors(response.headers, origin)
     return response
   }

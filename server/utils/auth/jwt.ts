@@ -36,6 +36,15 @@ export interface TokenVerifierOptions {
    * most 5 s). A token with an unknown `kid` cannot make us fetch more often than this.
    */
   keyCooldownSec?: number
+  /**
+   * Longest time the cached keys of a client are used before they are fetched again, in seconds
+   * (default 3600). A key the provider has removed stops being trusted once a fetch no longer lists
+   * it. The fetch runs in the background: the request that finds the cache stale is still verified
+   * with the cached keys, and a failed fetch keeps them.
+   */
+  keyMaxAgeSec?: number
+  /** Reports a failed key fetch, once per run of failures. Never receives a token or a key. */
+  log?: (message: string) => void
   /** Milliseconds since the epoch. */
   now?: () => number
 }
@@ -70,10 +79,17 @@ export function createJwksFetcher(
 
 interface KeyState {
   keys: Map<string, CryptoKey>
+  /** When the key set was last fetched successfully; null while the cache has never been filled. */
+  fetchedAt: number | null
+  /** When the last fetch, successful or not, finished. */
   lastAttempt: number | null
-  lastFailed: boolean
+  /** How many fetches failed in a row (0 after a success). */
+  failures: number
   pending: Promise<void> | null
 }
+
+/** First delay before a scheduled refresh is retried; it doubles with every failure. */
+const REFRESH_BACKOFF_START_MS = 30_000
 
 function normalizeTyp(value: string): string {
   const lower = value.toLowerCase()
@@ -127,8 +143,10 @@ function claimFailure(error: unknown): AuthError {
 
 /**
  * Verifies Kanidm access tokens locally (design §6): no introspection, no call to the provider per
- * request. Keys are cached per client and fetched again, at most once per cooldown, when a token
- * names a `kid` we do not have.
+ * request. Keys are cached per client and fetched again in two cases: when a token names a `kid` we
+ * do not have (at most once per cooldown), and when the cache is older than `keyMaxAgeSec` (in the
+ * background, with a growing delay between failed tries). Either way a successful fetch replaces
+ * the whole set and a failed one changes nothing.
  */
 export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifier {
   const { clients, requiredScope } = options
@@ -138,20 +156,44 @@ export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifie
   const cooldownMs = (options.keyCooldownSec ?? 30) * 1000
   // After a failed fetch the provider may be back within seconds, so try again sooner.
   const failureCooldownMs = Math.min(cooldownMs, 5000)
+  const maxAgeSec = options.keyMaxAgeSec ?? 3600
+  if (!Number.isFinite(maxAgeSec) || maxAgeSec <= 0) {
+    throw new TypeError('keyMaxAgeSec must be a positive number')
+  }
+  const maxAgeMs = maxAgeSec * 1000
   const now = options.now ?? Date.now
+  const log = (message: string) => {
+    try {
+      options.log?.(message)
+    } catch {
+      // A broken logger must not break a fetch that nobody awaits.
+    }
+  }
   const resolveKeys = options.keyResolver ?? createJwksFetcher()
   const byIssuer = new Map(clients.map((client) => [client.issuer, client]))
   const states = new Map<string, KeyState>()
 
-  // One fetch at a time per client; concurrent requests wait for it.
+  // One fetch at a time per client; concurrent requests wait for it. It never rejects.
   function refresh(client: AllowedClient, state: KeyState): Promise<void> {
     const attempt = async () => {
       try {
-        state.keys = await importKeys(await resolveKeys(client))
-        state.lastFailed = false
-      } catch {
+        const keys = await importKeys(await resolveKeys(client))
+        // A key set without one usable key is a broken answer, not the provider's decision to trust
+        // nothing; taking it over would turn every bearer request into a 401.
+        if (keys.size === 0) throw new Error('the key set holds no usable signing key')
+        state.keys = keys
+        state.fetchedAt = now()
+        state.failures = 0
+      } catch (error) {
         // Keep the keys we have: an outage must not take down tokens we can already verify.
-        state.lastFailed = true
+        if (state.failures === 0) {
+          const reason = error instanceof Error ? error.message : String(error)
+          log(
+            `fetching the signing keys of "${client.clientId}" failed (${reason}); ` +
+              `${state.keys.size > 0 ? `keeping the ${state.keys.size} cached` : 'none cached'}, will retry`,
+          )
+        }
+        state.failures += 1
       } finally {
         state.lastAttempt = now()
       }
@@ -163,26 +205,45 @@ export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifie
     return pending
   }
 
+  // 30 s after the first failure, then 60 s, 120 s, ... but never longer than the max age itself.
+  function backoffMs(failures: number): number {
+    return Math.min(REFRESH_BACKOFF_START_MS * 2 ** Math.min(failures - 1, 30), maxAgeMs)
+  }
+
+  // Stale-while-revalidate: the request that notices an old cache starts the fetch and does not wait
+  // for it. Without a timer the schedule is only checked when a request arrives, which is enough:
+  // with no requests there is nothing to verify.
+  function refreshIfStale(client: AllowedClient, state: KeyState): void {
+    if (state.pending || state.fetchedAt === null) return
+    const current = now()
+    if (current - state.fetchedAt < maxAgeMs) return
+    if (state.failures > 0 && current - (state.lastAttempt ?? 0) < backoffMs(state.failures)) return
+    void refresh(client, state)
+  }
+
   async function keyFor(client: AllowedClient, kid: string): Promise<CryptoKey> {
     let state = states.get(client.clientId)
     if (!state) {
-      state = { keys: new Map(), lastAttempt: null, lastFailed: false, pending: null }
+      state = { keys: new Map(), fetchedAt: null, lastAttempt: null, failures: 0, pending: null }
       states.set(client.clientId, state)
     }
     const cached = state.keys.get(kid)
+    refreshIfStale(client, state)
     if (cached) return cached
+    // The kid is unknown: that may be a rotation, or a forged header. Fetch (rate limited), or wait
+    // for the fetch that is already running.
     if (state.pending) {
       await state.pending
     } else if (
       state.lastAttempt === null ||
-      now() - state.lastAttempt >= (state.lastFailed ? failureCooldownMs : cooldownMs)
+      now() - state.lastAttempt >= (state.failures > 0 ? failureCooldownMs : cooldownMs)
     ) {
       await refresh(client, state)
     }
     const key = state.keys.get(kid)
     if (key) return key
     // After a failed fetch we cannot tell a rotated key from a forged `kid`; ask the caller to retry.
-    throw new AuthError(state.lastFailed ? 'keys-unavailable' : 'unknown-kid')
+    throw new AuthError(state.failures > 0 ? 'keys-unavailable' : 'unknown-kid')
   }
 
   return {

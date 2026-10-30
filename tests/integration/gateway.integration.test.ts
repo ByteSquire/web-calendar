@@ -225,7 +225,9 @@ describe.skipIf(!enabled)('CalDAV gateway against Kanidm and Radicale', () => {
         expect(reply.status).toBe(207)
         expect(principal(reply.body)).toBe(home)
         expect((await raw('PROPFIND', home, basic('alice', `${aliceAppToken}x`))).status).toBe(401)
-        expect((await raw('PROPFIND', home, basic('bob', aliceAppToken))).status).toBe(401)
+        // A name used once per run: the gateway throttles repeated failures per user and address.
+        const stranger = `nobody-${Date.now()}`
+        expect((await raw('PROPFIND', home, basic(stranger, aliceAppToken))).status).toBe(401)
       },
     )
   })

@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { authenticateRequest, type AuthDeps } from '../../server/utils/auth/authenticate'
 import { AuthError } from '../../server/utils/auth/errors'
+import { createBasicThrottle } from '../../server/utils/auth/throttle'
 
 const SUB = '189c6a24-f9cb-437b-8f58-b5cc8d7f909e'
 
@@ -182,4 +183,217 @@ describe('authenticateRequest', () => {
       expect((await failure(token.call(basic('alice:x')))).reason).toBe('invalid-sub')
     },
   )
+})
+
+describe('authenticateRequest: throttle of failed Basic logins', () => {
+  const ADDRESS = '203.0.113.9'
+  const NOW = 1_800_000_000_000
+
+  function throttled(options: { address?: string | null } = {}) {
+    const address = 'address' in options ? options.address : ADDRESS
+    const clock = { ms: NOW }
+    const basicThrottle = createBasicThrottle({ now: () => clock.ms })
+    const base = setup({ basicThrottle, clientAddress: address })
+    const as = (clientAddress: string | null) =>
+      setup({ basicThrottle, clientAddress, verifyAppToken: base.verifyAppToken })
+    let names = 0
+    const wrong = (user = 'alice') => base.call(basic(`${user}:wrong`))
+    const right = () => base.call(basic('alice:wcal_secret:with:colons'))
+    /** A failed login of a user name nobody used before. */
+    const sprayed = () => wrong(`sprayed-${names++}`)
+    return { ...base, clock, basicThrottle, wrong, right, sprayed, as }
+  }
+
+  it('checks the credentials first, every time', async () => {
+    const { wrong, verifyAppToken } = throttled()
+    for (let i = 0; i < 8; i++) await failure(wrong())
+    expect(verifyAppToken).toHaveBeenCalledTimes(8)
+  })
+
+  it('answers 401 for the first failures of a user name and 429 with Retry-After from the fifth', async () => {
+    const { wrong } = throttled()
+    for (let i = 0; i < 4; i++) {
+      const error = await failure(wrong())
+      expect([error.status, error.reason]).toEqual([401, 'invalid-app-token'])
+    }
+    for (let i = 0; i < 3; i++) {
+      const error = await failure(wrong())
+      expect(error.reason).toBe('throttled')
+      expect(error.status).toBe(429)
+      expect(error.retryAfterSec).toBe(600)
+      // No challenge and no verdict: the client is asked to wait, not to log in again.
+      expect(error.challenges).toEqual([])
+      expect(error.message).not.toContain('wrong')
+    }
+  })
+
+  it('counts down Retry-After for a client that keeps failing', async () => {
+    const { wrong, clock } = throttled()
+    for (let i = 0; i < 5; i++) await failure(wrong())
+    clock.ms += 100_000
+    expect((await failure(wrong())).retryAfterSec).toBe(500)
+  })
+
+  it('accepts a correct login while the (address, user name) key is blocked, and ends the block', async () => {
+    const { wrong, right, verifyAppToken } = throttled()
+    for (let i = 0; i < 6; i++) expect((await failure(wrong())).status).toBe(i < 4 ? 401 : 429)
+    await expect(right()).resolves.toEqual({ sub: SUB, via: 'app-token' })
+    expect(verifyAppToken).toHaveBeenCalledTimes(7)
+    // The counter started over: four more failures are plain 401s again.
+    for (let i = 0; i < 4; i++) expect((await failure(wrong())).status).toBe(401)
+    expect((await failure(wrong())).status).toBe(429)
+  })
+
+  it('accepts a correct login while the address is rate limited', async () => {
+    const { sprayed, right, basicThrottle } = throttled()
+    for (let i = 0; i < 30; i++) expect((await failure(sprayed())).status).toBe(401)
+    for (let i = 0; i < 20; i++) expect((await failure(sprayed())).status).toBe(429)
+    await expect(right()).resolves.toEqual({ sub: SUB, via: 'app-token' })
+    await expect(right()).resolves.toEqual({ sub: SUB, via: 'app-token' })
+    expect(basicThrottle.size().addresses).toBe(1)
+  })
+
+  it('accepts a correct login while the address AND the user name are blocked', async () => {
+    const { sprayed, wrong, right } = throttled()
+    for (let i = 0; i < 40; i++) await failure(sprayed())
+    for (let i = 0; i < 10; i++) await failure(wrong())
+    expect((await failure(wrong())).status).toBe(429)
+    await expect(right()).resolves.toMatchObject({ via: 'app-token' })
+  })
+
+  it('behind a proxy (every request from one address) 100 failed logins do not stop the correct ones', async () => {
+    const { sprayed, wrong, right } = throttled({ address: '127.0.0.1' })
+    for (let i = 0; i < 100; i++) {
+      await failure(sprayed())
+      if (i % 10 === 0) await expect(right()).resolves.toMatchObject({ via: 'app-token' })
+    }
+    // Including the failures that name the very user the stranger attacks.
+    for (let i = 0; i < 100; i++) await failure(wrong())
+    for (let i = 0; i < 3; i++) await expect(right()).resolves.toMatchObject({ via: 'app-token' })
+  })
+
+  it('rate limits the failures of one address and lets it recover with the clock', async () => {
+    const { sprayed, clock } = throttled()
+    for (let i = 0; i < 30; i++) expect((await failure(sprayed())).status).toBe(401)
+    const slowed = await failure(sprayed())
+    expect([slowed.status, slowed.retryAfterSec]).toEqual([429, 1])
+    clock.ms += 100
+    expect((await failure(sprayed())).status).toBe(401)
+    expect((await failure(sprayed())).status).toBe(429)
+    clock.ms += 3000
+    for (let i = 0; i < 30; i++) expect((await failure(sprayed())).status).toBe(401)
+  })
+
+  it('does not count what is not a failed check of an app token', async () => {
+    const { call, right, verifyAppToken, basicThrottle } = throttled()
+    for (let i = 0; i < 50; i++) {
+      expect((await failure(call())).reason).toBe('no-credentials')
+      expect((await failure(call('Bearer expired.jwt.token'))).reason).toBe('expired')
+      expect((await failure(call('Digest abc'))).reason).toBe('unsupported-scheme')
+      expect((await failure(call('Basic %%%'))).reason).toBe('malformed')
+      expect((await failure(call(basic('alice:')))).reason).toBe('malformed')
+      expect((await failure(call(basic('no-colon')))).reason).toBe('malformed')
+    }
+    expect(verifyAppToken).not.toHaveBeenCalled()
+    expect(basicThrottle.size()).toEqual({ users: 0, addresses: 0 })
+    await expect(right()).resolves.toMatchObject({ via: 'app-token' })
+  })
+
+  it('does not count a check that broke (the database is down)', async () => {
+    const boom = new Error('database is locked')
+    const clock = { ms: NOW }
+    const basicThrottle = createBasicThrottle({ now: () => clock.ms })
+    const dbDown = setup({
+      basicThrottle,
+      clientAddress: ADDRESS,
+      verifyAppToken: () => {
+        throw boom
+      },
+    })
+    for (let i = 0; i < 50; i++) await expect(dbDown.call(basic('alice:x'))).rejects.toBe(boom)
+    expect(basicThrottle.size()).toEqual({ users: 0, addresses: 0 })
+  })
+
+  it('never touches bearer tokens, however the address is doing', async () => {
+    const { call, sprayed, verify } = throttled()
+    for (let i = 0; i < 50; i++) await failure(sprayed())
+    await expect(call('Bearer good.jwt.token')).resolves.toEqual({ sub: SUB, via: 'bearer' })
+    // A bad bearer token is a 401 like before, not a 429.
+    expect((await failure(call('Bearer expired.jwt.token'))).status).toBe(401)
+    expect(verify).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps clients apart: another address, and another user name, are counted on their own', async () => {
+    const { wrong, as } = throttled()
+    for (let i = 0; i < 5; i++) await failure(wrong())
+    expect((await failure(wrong())).status).toBe(429)
+    expect((await failure(wrong('bob'))).status).toBe(401)
+    const other = as('198.51.100.7')
+    expect((await failure(other.call(basic('alice:wrong')))).status).toBe(401)
+  })
+
+  it.each([null, undefined])(
+    'counts clients with an unknown address (%s) together',
+    async (address) => {
+      const { sprayed } = throttled({ address })
+      for (let i = 0; i < 30; i++) expect((await failure(sprayed())).status).toBe(401)
+      expect((await failure(sprayed())).status).toBe(429)
+    },
+  )
+
+  it('answers the same way for a user name that exists and one that does not', async () => {
+    const { wrong } = throttled()
+    for (let i = 0; i < 5; i++) await failure(wrong('alice'))
+    for (let i = 0; i < 5; i++) await failure(wrong('no-such-user'))
+    const real = await failure(wrong('alice'))
+    const absent = await failure(wrong('no-such-user'))
+    expect([real.status, real.retryAfterSec]).toEqual([absent.status, absent.retryAfterSec])
+  })
+
+  it('leaves the 401 of a client without a throttle as it was', async () => {
+    const { call } = setup()
+    for (let i = 0; i < 50; i++)
+      expect((await failure(call(basic('alice:wrong')))).status).toBe(401)
+  })
+})
+
+describe('authenticateRequest: challenges', () => {
+  it('offers Basic first, without a charset parameter, and Bearer second', async () => {
+    const { call } = setup()
+    const error = await failure(call())
+    expect(error.challenges).toEqual(['Basic realm="Web Calendar"', 'Bearer realm="Web Calendar"'])
+    const expired = await failure(call('Bearer expired.jwt.token'))
+    expect(expired.challenges).toEqual([
+      'Basic realm="Web Calendar"',
+      'Bearer realm="Web Calendar", error="invalid_token"',
+    ])
+  })
+})
+
+describe('AuthError', () => {
+  it.each([
+    ['throttled', 429],
+    ['keys-unavailable', 503],
+    ['expired', 401],
+    ['invalid-app-token', 401],
+    ['no-credentials', 401],
+  ] as const)('maps %s to HTTP %i', (reason, status) => {
+    expect(new AuthError(reason).status).toBe(status)
+  })
+
+  it.each([
+    [undefined, 1],
+    [0, 1],
+    [0.2, 1],
+    [1, 1],
+    [59.01, 60],
+    [600, 600],
+  ])('rounds a Retry-After of %s up to %s whole seconds, at least 1', (given, expected) => {
+    expect(new AuthError('throttled', { retryAfterSec: given }).retryAfterSec).toBe(expected)
+  })
+
+  it('has a Retry-After only when it is a 429', () => {
+    expect(new AuthError('expired', { retryAfterSec: 30 }).retryAfterSec).toBeNull()
+    expect(new AuthError('keys-unavailable').retryAfterSec).toBeNull()
+  })
 })

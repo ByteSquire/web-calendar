@@ -7,6 +7,7 @@ export interface UserInput {
   username?: string
   name?: string
   email?: string
+  /** Stored as an informational note only, never as authorization; see `UserRow.is_admin`. */
   isAdmin?: boolean
 }
 

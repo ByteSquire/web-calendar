@@ -34,9 +34,27 @@ services:
       # Kanidm membership for Radicale's group file: read-only API token (kanidm-setup.md section 3).
       NUXT_GROUP_SYNC_TOKEN: '${NUXT_GROUP_SYNC_TOKEN:-}'
       NUXT_GROUP_SYNC_INTERVAL_SEC: '${NUXT_GROUP_SYNC_INTERVAL_SEC:-60}'
+      # Kanidm group whose members are admins (short name or SPN); must not be empty.
+      NUXT_OIDC_ADMIN_GROUP: '${NUXT_OIDC_ADMIN_GROUP:-calendar_admins}'
+      # Seconds the cached Kanidm signing keys are used before they are fetched again.
+      NUXT_OIDC_KEY_MAX_AGE_SEC: '${NUXT_OIDC_KEY_MAX_AGE_SEC:-3600}'
       # CalDAV gateway
       NUXT_GATEWAY_CORS_ORIGINS: '${NUXT_GATEWAY_CORS_ORIGINS:-}'
       NUXT_GATEWAY_MAX_BODY_BYTES: '${NUXT_GATEWAY_MAX_BODY_BYTES:-10485760}'
+      # true: the client address of the failed-login throttle is the last entry of X-Forwarded-For
+      # (the address the reverse proxy in front of this service appended), not the socket's. Set it
+      # only when that proxy is the one way to reach this service and writes the header; otherwise a
+      # client names any address and escapes the throttle. false: every client shares the proxy's.
+      NUXT_GATEWAY_TRUST_FORWARDED_FOR: '${NUXT_GATEWAY_TRUST_FORWARDED_FOR:-false}'
+      # iCal proxy (.ics subscriptions): cache seconds, largest file in bytes, fetch timeout in ms.
+      NUXT_ICAL_PROXY_CACHE_TTL_SEC: '${NUXT_ICAL_PROXY_CACHE_TTL_SEC:-300}'
+      NUXT_ICAL_PROXY_MAX_BYTES: '${NUXT_ICAL_PROXY_MAX_BYTES:-5242880}'
+      NUXT_ICAL_PROXY_TIMEOUT_MS: '${NUXT_ICAL_PROXY_TIMEOUT_MS:-10000}'
+      # For tests only: true switches the SSRF guard off, and the server then refuses to start
+      # (NODE_ENV=production in this image).
+      NUXT_ICAL_PROXY_ALLOW_PRIVATE: '${NUXT_ICAL_PROXY_ALLOW_PRIVATE:-false}'
+      # For previews and browser tests only: true skips the login and shows mock data (logged loudly).
+      NUXT_DEMO: '${NUXT_DEMO:-false}'
       # Fixed by this file: the SQLite volume and the internal Radicale service.
       NUXT_DB_PATH: /data/web-calendar.db
       NUXT_RADICALE_URL: http://radicale:5232
@@ -54,12 +72,15 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+    # Healthy means the server is up AND its token verifier and CalDAV gateway are wired: the public
+    # config answers 200, and /caldav/ without credentials answers 401 (a bad configuration would
+    # answer 500 there, or the process would not be running at all).
     healthcheck:
       test:
         - CMD
         - node
         - -e
-        - "fetch('http://127.0.0.1:3000/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+        - "Promise.all([fetch('http://127.0.0.1:3000/api/config'), fetch('http://127.0.0.1:3000/caldav/')]).then(([config, caldav]) => process.exit(config.status === 200 && caldav.status === 401 ? 0 : 1)).catch(() => process.exit(1))"
       interval: 30s
       timeout: 5s
       retries: 3

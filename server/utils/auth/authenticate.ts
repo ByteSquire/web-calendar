@@ -1,10 +1,13 @@
 import { AuthError, type AuthFailureReason } from './errors'
 import { isValidSubject } from './subject'
 import type { TokenVerifier } from './jwt'
+import type { BasicThrottle } from './throttle'
 
 export const AUTH_REALM = 'Web Calendar'
 
-const BASIC_CHALLENGE = `Basic realm="${AUTH_REALM}", charset="UTF-8"`
+// No `charset` parameter: some clients mis-parse a challenge list that has one, and user names (Kanidm
+// short names) and app tokens (base64url) are ASCII anyway. The two challenges go out as two lines.
+const BASIC_CHALLENGE = `Basic realm="${AUTH_REALM}"`
 const BEARER_CHALLENGE = `Bearer realm="${AUTH_REALM}"`
 const MAX_HEADER_LENGTH = 8192
 
@@ -19,6 +22,14 @@ export interface AuthDeps {
     username: string,
     token: string,
   ): { sub: string } | null | Promise<{ sub: string } | null>
+  /**
+   * Counts failed Basic logins per client and turns the 401 of a client that fails too often into a
+   * 429. The credentials are always checked first and a correct login is never refused or slowed;
+   * a missing header, malformed credentials and bearer tokens do not count.
+   */
+  basicThrottle?: BasicThrottle
+  /** Where the request came from, for `basicThrottle`; null when unknown (those clients share one counter). */
+  clientAddress?: string | null
 }
 
 export interface Identity {
@@ -57,7 +68,8 @@ function parseBasic(credentials: string): { username: string; token: string } | 
 /**
  * Resolves the caller of a request (design §6): `Authorization: Bearer` is an OIDC access token
  * verified locally, `Authorization: Basic` is a user name with an app token. Anything else, and every
- * failure, is an `AuthError` that carries the `WWW-Authenticate` challenges for a 401.
+ * failure, is an `AuthError` that carries the `WWW-Authenticate` challenges for a 401 (or, for a
+ * client whose Basic logins fail too often, the `Retry-After` of a 429).
  */
 export async function authenticateRequest(headers: Headers, deps: AuthDeps): Promise<Identity> {
   const header = headers.get('authorization')
@@ -88,8 +100,18 @@ export async function authenticateRequest(headers: Headers, deps: AuthDeps): Pro
       if (!deps.verifyAppToken) throw fail(deps, 'unsupported-scheme')
       const parsed = parseBasic(credentials!)
       if (!parsed) throw fail(deps, 'malformed')
+      const { basicThrottle: throttle, clientAddress } = deps
+      // Always check first: the lookup is cheap, and a correct login must succeed whatever other
+      // clients behind the same address (a reverse proxy) have been doing. If the check itself
+      // breaks (the database is down) that is not the client's failure: it propagates uncounted.
       const owner = await deps.verifyAppToken(parsed.username, parsed.token)
-      if (!owner) throw fail(deps, 'invalid-app-token')
+      if (!owner) {
+        const wait = throttle?.recordFailure(clientAddress, parsed.username) ?? null
+        // Too many failures: tell the client to slow down, without a verdict on this credential.
+        if (wait !== null) throw new AuthError('throttled', { retryAfterSec: wait })
+        throw fail(deps, 'invalid-app-token')
+      }
+      throttle?.recordSuccess(clientAddress, parsed.username)
       if (!isValidSubject(owner.sub)) throw fail(deps, 'invalid-sub')
       return { sub: owner.sub, via: 'app-token' }
     }

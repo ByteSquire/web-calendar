@@ -1,6 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
+import { authenticateRequest } from '../../server/utils/auth/authenticate'
 import { AuthError } from '../../server/utils/auth/errors'
+import { createBasicThrottle } from '../../server/utils/auth/throttle'
+import { challengeLines } from '../../server/utils/gateway/challenges'
 import {
   createGateway,
   type GatewayOptions,
@@ -55,7 +58,7 @@ function setup(
   const authenticate = vi.fn(async (headers: Headers) => {
     if (headers.get('authorization') !== 'Bearer good') {
       throw new AuthError('no-credentials', {
-        challenges: ['Basic realm="Web Calendar", charset="UTF-8"', 'Bearer realm="Web Calendar"'],
+        challenges: ['Basic realm="Web Calendar"', 'Bearer realm="Web Calendar"'],
       })
     }
     return { sub: SUB }
@@ -98,6 +101,11 @@ describe('gateway: authentication', () => {
     const challenge = response.headers.get('www-authenticate')!
     expect(challenge).toContain('Basic realm="Web Calendar"')
     expect(challenge).toContain('Bearer realm="Web Calendar"')
+    // A web `Headers` joins them; the glue sends them as two lines (see gateway-challenges.test.ts).
+    expect(challengeLines(response)).toEqual([
+      'Basic realm="Web Calendar"',
+      'Bearer realm="Web Calendar"',
+    ])
     expect(fetchStub).not.toHaveBeenCalled()
   })
 
@@ -563,5 +571,180 @@ describe('gateway: CORS', () => {
     const response = await call('OPTIONS', '/caldav/')
     expect(response.status).toBe(200)
     expect(seen).toHaveLength(1)
+  })
+})
+
+describe('gateway: clients that fail Basic logins too often', () => {
+  const ORIGIN = 'https://app.example.org'
+  const ADDRESS = '203.0.113.9'
+  const basic = (credentials: string) => `Basic ${Buffer.from(credentials).toString('base64')}`
+
+  /** The gateway wired as in production: the real authentication with a real throttle in front of the app token check. */
+  function wired(options: Partial<GatewayOptions> = {}) {
+    const clock = { ms: 1_800_000_000_000 }
+    const basicThrottle = createBasicThrottle({ now: () => clock.ms })
+    const verifyAppToken = vi.fn((username: string, token: string) =>
+      username === 'alice' && token === 'wcal_good' ? { sub: SUB } : null,
+    )
+    const authenticate = vi.fn((headers: Headers, context: { clientAddress: string | null }) =>
+      authenticateRequest(headers, {
+        verifier: {
+          verify: async (token) => {
+            if (token !== 'good') throw new AuthError('expired')
+            return { sub: SUB, clientId: 'web-calendar', scopes: ['caldav'], exp: 1 }
+          },
+        },
+        verifyAppToken,
+        basicThrottle,
+        clientAddress: context.clientAddress,
+      }),
+    )
+    const fetchStub = vi.fn(async () => new Response('ok'))
+    const log = vi.fn()
+    const handle = createGateway({
+      upstream: 'http://radicale:5232',
+      maxBodyBytes: MAX,
+      authenticate,
+      fetch: fetchStub as unknown as typeof fetch,
+      log,
+      ...options,
+    })
+    const call = (
+      authorization: string | undefined,
+      extra: { clientAddress?: string | null; origin?: string } = {},
+    ) =>
+      handle({
+        method: 'PROPFIND',
+        target: '/caldav/',
+        headers: new Headers({
+          ...(authorization === undefined ? {} : { authorization }),
+          ...(extra.origin === undefined ? {} : { origin: extra.origin }),
+        }),
+        body: null,
+        clientAddress: 'clientAddress' in extra ? extra.clientAddress : ADDRESS,
+      })
+    return { call, clock, authenticate, verifyAppToken, fetchStub, log }
+  }
+
+  it('tells authenticate where the request came from, and null when it does not know', async () => {
+    const { call, authenticate } = wired()
+    await call('Bearer good')
+    await call('Bearer good', { clientAddress: null })
+    await call('Bearer good', { clientAddress: undefined })
+    expect(authenticate.mock.calls.map(([, context]) => context)).toEqual([
+      { clientAddress: ADDRESS },
+      { clientAddress: null },
+      { clientAddress: null },
+    ])
+  })
+
+  /** Five failed logins of alice from `ADDRESS`; the fifth is the first one answered with 429. */
+  async function fiveFailures(
+    call: ReturnType<typeof wired>['call'],
+    extra: { origin?: string } = {},
+  ) {
+    const statuses: number[] = []
+    for (let i = 0; i < 5; i++) statuses.push((await call(basic('alice:wrong'), extra)).status)
+    return statuses
+  }
+
+  it('answers 429 with Retry-After, no challenge and no detail to a failing login of a client that fails too often', async () => {
+    const { call, fetchStub, verifyAppToken } = wired()
+    expect(await fiveFailures(call)).toEqual([401, 401, 401, 401, 429])
+    const response = await call(basic('alice:wrong-again'))
+    expect(response.status).toBe(429)
+    expect(response.headers.get('retry-after')).toBe('600')
+    expect(response.headers.has('www-authenticate')).toBe(false)
+    expect(challengeLines(response)).toEqual([])
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(await response.text()).toBe('Too Many Requests')
+    expect(fetchStub).not.toHaveBeenCalled()
+    // Every login was checked; the 429 says nothing about the credential.
+    expect(verifyAppToken).toHaveBeenCalledTimes(6)
+  })
+
+  it('still lets a correct login through to Radicale while the client is throttled', async () => {
+    const { call, fetchStub } = wired()
+    await fiveFailures(call)
+    expect((await call(basic('alice:wrong'))).status).toBe(429)
+    const response = await call(basic('alice:wcal_good'))
+    expect(response.status).toBe(200)
+    expect(fetchStub).toHaveBeenCalledTimes(1)
+    // And it ended the block: the next failure is a plain 401 again.
+    expect((await call(basic('alice:wrong'))).status).toBe(401)
+  })
+
+  it('stays reachable for a correct login when every request comes from one proxy address', async () => {
+    const { call } = wired()
+    for (let i = 0; i < 100; i++)
+      await call(basic(`stranger${i}:wrong`), { clientAddress: '127.0.0.1' })
+    for (let i = 0; i < 100; i++) await call(basic('alice:wrong'), { clientAddress: '127.0.0.1' })
+    expect((await call(basic('alice:wcal_good'), { clientAddress: '127.0.0.1' })).status).toBe(200)
+  })
+
+  it('lets the failures of the client be answered with 401 again when Retry-After has passed', async () => {
+    const { call, clock } = wired()
+    await fiveFailures(call)
+    clock.ms += 599_000
+    const waiting = await call(basic('alice:wrong'))
+    expect(waiting.status).toBe(429)
+    expect(waiting.headers.get('retry-after')).toBe('1')
+    clock.ms += 601_000
+    expect((await call(basic('alice:wrong'))).status).toBe(401)
+  })
+
+  it('does not slow down bearer tokens or other clients', async () => {
+    const { call } = wired()
+    await fiveFailures(call)
+    expect((await call('Bearer good')).status).toBe(200)
+    expect((await call(basic('alice:wrong'), { clientAddress: '198.51.100.7' })).status).toBe(401)
+    expect((await call(undefined)).status).toBe(401)
+  })
+
+  it('gives a 401 the two challenges as separate lines, Basic first', async () => {
+    const { call } = wired()
+    const response = await call(undefined)
+    expect(response.status).toBe(401)
+    expect(challengeLines(response)).toEqual([
+      'Basic realm="Web Calendar"',
+      'Bearer realm="Web Calendar"',
+    ])
+  })
+
+  it('puts the same CORS headers on the 429 as on a 401, and exposes Retry-After', async () => {
+    const { call } = wired({ corsOrigins: [ORIGIN] })
+    const unauthorized = await call(undefined, { origin: ORIGIN })
+    expect(unauthorized.status).toBe(401)
+    await fiveFailures(call, { origin: ORIGIN })
+    const response = await call(basic('alice:wrong'), { origin: ORIGIN })
+    expect(response.status).toBe(429)
+    expect(response.headers.get('access-control-allow-origin')).toBe(ORIGIN)
+    expect(response.headers.get('access-control-expose-headers')).toContain('Retry-After')
+    expect(response.headers.get('vary')).toBe('Origin')
+    expect(response.headers.get('access-control-allow-origin')).toBe(
+      unauthorized.headers.get('access-control-allow-origin'),
+    )
+    // From an origin that is not allowed it gets the Vary header only, like the 401.
+    const other = await call(basic('alice:wrong'), { origin: 'https://evil.example' })
+    expect(other.status).toBe(429)
+    expect(other.headers.has('access-control-allow-origin')).toBe(false)
+  })
+
+  it('has no CORS headers when CORS is off', async () => {
+    const { call } = wired()
+    await fiveFailures(call, { origin: ORIGIN })
+    const response = await call(basic('alice:wrong'), { origin: ORIGIN })
+    expect(response.status).toBe(429)
+    expect(response.headers.has('access-control-allow-origin')).toBe(false)
+    expect(response.headers.has('vary')).toBe(false)
+  })
+
+  it('logs each failed login that is answered with 401 and nothing for the 429s that follow', async () => {
+    const { call, log } = wired()
+    await fiveFailures(call)
+    expect(log).toHaveBeenCalledTimes(4)
+    for (let i = 0; i < 20; i++) await call(basic('alice:secret-guess'))
+    expect(log).toHaveBeenCalledTimes(4)
+    expect(log.mock.calls.flat().join(' ')).not.toContain('secret-guess')
   })
 })

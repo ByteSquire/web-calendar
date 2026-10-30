@@ -463,11 +463,12 @@ describe('createTokenVerifier: provider unreachable', () => {
     const { verifier, resolver, clock } = setup({ 'web-calendar': () => (up ? [key] : null) })
     await verifier.verify(await mintAccessToken(key))
     up = false
+    // An hour later the cache is stale: one background fetch fails, and the request is unaffected.
     clock.ms += 3_600_000
     await expect(
       verifier.verify(await mintAccessToken(key, { claims: { exp: NOW + 7200 } })),
     ).resolves.toBeDefined()
-    expect(resolver).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(resolver).toHaveBeenCalledTimes(2))
     // An unknown kid during the outage is a 503 and the cached keys stay in place.
     expect(await reasonOf(verifier, await mintAccessToken(key2))).toBe('keys-unavailable')
     await expect(

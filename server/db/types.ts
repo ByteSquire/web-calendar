@@ -18,6 +18,11 @@ export interface UserRow extends Timestamps {
   username: string | null
   name: string | null
   email: string | null
+  /**
+   * INFORMATIONAL ONLY: whether the last userinfo answer that carried a `groups` claim named the
+   * admin group. It goes stale (a removed admin keeps 1 until the next `/api/me`) and must never
+   * decide anything. The only admin check is `requireAdmin` (server/utils/api/handler.ts).
+   */
   is_admin: 0 | 1
   last_seen_at: string | null
 }
@@ -105,6 +110,7 @@ export interface User {
   username: string | null
   name: string | null
   email: string | null
+  /** The informational copy of `is_admin`; see `UserRow.is_admin`. Not an authorization. */
   isAdmin: boolean
   lastSeenAt: string | null
 }

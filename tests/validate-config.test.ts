@@ -1,8 +1,10 @@
 // @vitest-environment node
 import { execFileSync, spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { validateEnv } from '../server/validate-config.mjs'
+import { ALLOW_PRIVATE_ACK_VARIABLE } from '../server/utils/ical-proxy/config'
 
 const script = fileURLToPath(new URL('../server/validate-config.mjs', import.meta.url))
 
@@ -119,6 +121,185 @@ describe('validateEnv', () => {
     })
   })
 
+  describe('optional numbers', () => {
+    const check = (name: string, value: string | undefined) =>
+      validateEnv({ ...valid, ...(value === undefined ? {} : { [name]: value }) }).errors
+
+    it.each([
+      ['NUXT_OIDC_KEY_MAX_AGE_SEC', 1],
+      ['NUXT_GATEWAY_MAX_BODY_BYTES', 1],
+      ['NUXT_ICAL_PROXY_CACHE_TTL_SEC', 0],
+      ['NUXT_ICAL_PROXY_MAX_BYTES', 1],
+      ['NUXT_ICAL_PROXY_TIMEOUT_MS', 1],
+    ])('%s: unset, the minimum and a normal value pass', (name, min) => {
+      expect(check(name, undefined)).toEqual([])
+      expect(check(name, String(min))).toEqual([])
+      expect(check(name, '3600')).toEqual([])
+      expect(check(name, '10485760')).toEqual([])
+    })
+
+    it.each([
+      ['NUXT_OIDC_KEY_MAX_AGE_SEC', 1, '0'],
+      ['NUXT_GATEWAY_MAX_BODY_BYTES', 1, '0'],
+      ['NUXT_ICAL_PROXY_CACHE_TTL_SEC', 0, '-1'],
+      ['NUXT_ICAL_PROXY_MAX_BYTES', 1, '0'],
+      ['NUXT_ICAL_PROXY_TIMEOUT_MS', 1, '0'],
+    ])(
+      '%s: below the minimum of %i (%s) is an error that names the variable',
+      (name, min, value) => {
+        expect(check(name, value)).toEqual([
+          `${name} must be a whole number of at least ${min}, not "${value}"`,
+        ])
+      },
+    )
+
+    it.each([
+      '',
+      ' ',
+      '1.5',
+      '1e3',
+      '0x10',
+      '10 ',
+      ' 10',
+      '+5',
+      '-5',
+      'ten',
+      'NaN',
+      'Infinity',
+      '9007199254740993',
+      '1'.repeat(40),
+    ])('rejects %j for every number', (value) => {
+      for (const name of [
+        'NUXT_OIDC_KEY_MAX_AGE_SEC',
+        'NUXT_GATEWAY_MAX_BODY_BYTES',
+        'NUXT_ICAL_PROXY_CACHE_TTL_SEC',
+        'NUXT_ICAL_PROXY_MAX_BYTES',
+        'NUXT_ICAL_PROXY_TIMEOUT_MS',
+      ]) {
+        expect(check(name, value)).toHaveLength(1)
+        expect(check(name, value)[0]).toContain(name)
+      }
+    })
+
+    it('shortens a very long value in the message', () => {
+      expect(check('NUXT_OIDC_KEY_MAX_AGE_SEC', 'x'.repeat(500))[0]!.length).toBeLessThan(120)
+    })
+  })
+
+  describe('optional booleans (only the exact text counts)', () => {
+    const names = ['NUXT_GATEWAY_TRUST_FORWARDED_FOR', 'NUXT_ICAL_PROXY_ALLOW_PRIVATE', 'NUXT_DEMO']
+    const check = (name: string, value: string) => validateEnv({ ...valid, [name]: value }).errors
+
+    it.each(names)('%s accepts true and false', (name) => {
+      expect(check(name, 'false')).toEqual([])
+      if (name !== 'NUXT_ICAL_PROXY_ALLOW_PRIVATE') expect(check(name, 'true')).toEqual([])
+      expect(validateEnv(valid).errors).toEqual([])
+    })
+
+    it.each([
+      '',
+      ' ',
+      'True',
+      'TRUE',
+      'FALSE',
+      'yes',
+      'no',
+      '1',
+      '0',
+      'on',
+      'true ',
+      ' false',
+      'null',
+    ])('rejects %j, which the server would read as "off" without a word', (value) => {
+      for (const name of names) {
+        expect(check(name, value)).toEqual([
+          `${name} must be exactly "true" or "false", not ${JSON.stringify(value)}`,
+        ])
+      }
+    })
+  })
+
+  describe('NUXT_OIDC_ADMIN_GROUP', () => {
+    const check = (value: string) => validateEnv({ ...valid, NUXT_OIDC_ADMIN_GROUP: value }).errors
+
+    it('accepts a group name or an SPN, and an unset value', () => {
+      expect(check('calendar_admins')).toEqual([])
+      expect(check('calendar_admins@idm.example.org')).toEqual([])
+      expect(validateEnv(valid).errors).toEqual([])
+    })
+
+    it.each(['', '   ', ' calendar_admins', 'calendar_admins '])('rejects %j', (value) => {
+      const errors = check(value)
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('NUXT_OIDC_ADMIN_GROUP')
+    })
+  })
+
+  describe('NUXT_ICAL_PROXY_ALLOW_PRIVATE in production (L3)', () => {
+    const run = (env: Record<string, string>) => validateEnv({ ...valid, ...env })
+
+    it('is an error, and names the second switch', () => {
+      const { errors } = run({ NUXT_ICAL_PROXY_ALLOW_PRIVATE: 'true', NODE_ENV: 'production' })
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('NUXT_ICAL_PROXY_ALLOW_PRIVATE=true')
+      expect(errors[0]).toContain('NODE_ENV=production')
+      expect(errors[0]).toContain(ALLOW_PRIVATE_ACK_VARIABLE)
+    })
+
+    it('stays an error when the second switch is anything but exactly true', () => {
+      for (const value of ['', 'false', 'TRUE', 'yes', '1', ' true']) {
+        const { errors } = run({
+          NUXT_ICAL_PROXY_ALLOW_PRIVATE: 'true',
+          NODE_ENV: 'production',
+          [ALLOW_PRIVATE_ACK_VARIABLE]: value,
+        })
+        expect(errors).toHaveLength(1)
+      }
+    })
+
+    it('is a loud warning, not an error, with the second switch', () => {
+      const { errors, warnings } = run({
+        NUXT_ICAL_PROXY_ALLOW_PRIVATE: 'true',
+        NODE_ENV: 'production',
+        [ALLOW_PRIVATE_ACK_VARIABLE]: 'true',
+      })
+      expect(errors).toEqual([])
+      expect(warnings.join('\n')).toContain('IN PRODUCTION')
+    })
+
+    it('is a warning outside production, where tests and development run', () => {
+      for (const NODE_ENV of ['development', 'test', '']) {
+        const { errors, warnings } = run({ NUXT_ICAL_PROXY_ALLOW_PRIVATE: 'true', NODE_ENV })
+        expect(errors).toEqual([])
+        expect(warnings.join('\n')).toContain('SSRF guard')
+      }
+      const unset = run({ NUXT_ICAL_PROXY_ALLOW_PRIVATE: 'true' })
+      expect(unset.errors).toEqual([])
+    })
+
+    it('is quiet when the guard is on', () => {
+      expect(run({ NUXT_ICAL_PROXY_ALLOW_PRIVATE: 'false', NODE_ENV: 'production' })).toEqual({
+        errors: [],
+        warnings: [],
+      })
+      expect(run({ NODE_ENV: 'production', [ALLOW_PRIVATE_ACK_VARIABLE]: 'true' })).toEqual({
+        errors: [],
+        warnings: [],
+      })
+    })
+  })
+
+  describe('NUXT_DEMO', () => {
+    it('warns loudly, and only for true', () => {
+      const { errors, warnings } = validateEnv({ ...valid, NUXT_DEMO: 'true' })
+      expect(errors).toEqual([])
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('DEMO MODE')
+      expect(warnings[0]).toContain('skips the login')
+      expect(validateEnv({ ...valid, NUXT_DEMO: 'false' })).toEqual({ errors: [], warnings: [] })
+    })
+  })
+
   it('warns, but does not fail, when the group sync token is missing', () => {
     const { errors, warnings } = validateEnv({ ...valid, NUXT_GROUP_SYNC_TOKEN: '' })
     expect(errors).toEqual([])
@@ -149,6 +330,34 @@ describe('validate-config.mjs as a script', () => {
     expect(result.stderr).toContain('NUXT_GROUP_SYNC_TOKEN')
   })
 
+  it('prints the problems of a bad optional variable and exits 1', () => {
+    const result = run({
+      ...valid,
+      NUXT_GATEWAY_TRUST_FORWARDED_FOR: 'yes',
+      NUXT_ICAL_PROXY_MAX_BYTES: '0',
+    })
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('NUXT_GATEWAY_TRUST_FORWARDED_FOR must be exactly')
+    expect(result.stderr).toContain('NUXT_ICAL_PROXY_MAX_BYTES must be a whole number')
+  })
+
+  it('refuses allowPrivate in production and passes it with the second switch', () => {
+    const env = { ...valid, NUXT_ICAL_PROXY_ALLOW_PRIVATE: 'true', NODE_ENV: 'production' }
+    const refused = run(env)
+    expect(refused.status).toBe(1)
+    expect(refused.stderr).toContain('SSRF guard')
+
+    const knowing = run({ ...env, [ALLOW_PRIVATE_ACK_VARIABLE]: 'true' })
+    expect(knowing.status).toBe(0)
+    expect(knowing.stderr).toContain('IN PRODUCTION')
+  })
+
+  it('prints the demo warning and still exits 0', () => {
+    const result = run({ ...valid, NUXT_DEMO: 'true' })
+    expect(result.status).toBe(0)
+    expect(result.stderr).toContain('DEMO MODE')
+  })
+
   it('has no side effects when imported', () => {
     const out = execFileSync(
       process.execPath,
@@ -160,5 +369,62 @@ describe('validate-config.mjs as a script', () => {
       { env: {}, encoding: 'utf8' },
     )
     expect(out.trim()).toBe('imported')
+  })
+})
+
+describe('the examples list what the validator knows (L2)', () => {
+  const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
+  const envExample = read('../.env.example')
+  const compose = read('../docker-compose.yml')
+
+  const optional = [
+    'NUXT_OIDC_ADMIN_GROUP',
+    'NUXT_OIDC_KEY_MAX_AGE_SEC',
+    'NUXT_GATEWAY_MAX_BODY_BYTES',
+    'NUXT_GATEWAY_TRUST_FORWARDED_FOR',
+    'NUXT_ICAL_PROXY_CACHE_TTL_SEC',
+    'NUXT_ICAL_PROXY_MAX_BYTES',
+    'NUXT_ICAL_PROXY_TIMEOUT_MS',
+    'NUXT_ICAL_PROXY_ALLOW_PRIVATE',
+    'NUXT_DEMO',
+  ]
+
+  it.each(optional)('%s is in .env.example and in docker-compose.yml', (name) => {
+    expect(envExample).toMatch(new RegExp(`^#? ?${name}=`, 'm'))
+    expect(compose).toMatch(new RegExp(`^\\s+${name}: `, 'm'))
+  })
+
+  it('every variable the validator checks has a default that passes', () => {
+    // Compose fills an empty value with the default after `:-`; each one must be valid.
+    const defaults = [...compose.matchAll(/^\s+(NUXT_[A-Z_]+): '\$\{\1:-([^}]*)\}'/gm)].map(
+      ([, name, value]) => [name!, value!] as const,
+    )
+    const env = Object.fromEntries(defaults.filter(([, value]) => value !== ''))
+    expect(Object.keys(env)).toEqual(expect.arrayContaining(optional))
+    expect(validateEnv({ ...valid, ...env })).toEqual({ errors: [], warnings: [] })
+  })
+
+  it('never lists the second allowPrivate switch, and says allowPrivate is for tests only', () => {
+    expect(envExample).not.toContain(ALLOW_PRIVATE_ACK_VARIABLE)
+    expect(compose).not.toContain(ALLOW_PRIVATE_ACK_VARIABLE)
+    expect(envExample).toMatch(/NUXT_ICAL_PROXY_ALLOW_PRIVATE[\s\S]{0,400}tests only/i)
+  })
+
+  it('explains NUXT_GATEWAY_TRUST_FORWARDED_FOR with the proxy it depends on', () => {
+    expect(envExample).toMatch(
+      /reverse proxy[\s\S]*X-Forwarded-For|X-Forwarded-For[\s\S]*reverse proxy/i,
+    )
+    expect(compose).toMatch(/NUXT_GATEWAY_TRUST_FORWARDED_FOR/)
+  })
+
+  it('the health check exercises the verifier wiring and keeps its start_interval', () => {
+    const health = compose.slice(
+      compose.indexOf('healthcheck:'),
+      compose.indexOf('radicale:\n    image'),
+    )
+    expect(health).toContain('/api/config')
+    expect(health).toContain('/caldav/')
+    expect(health).toContain('401')
+    expect(health).toMatch(/start_interval: 2s/)
   })
 })

@@ -1,8 +1,9 @@
 <!--
-  iCal subscriptions (FR-7): read-only calendars from an .ics address. The server fetches the file
-  (browsers cannot read arbitrary addresses), so "Check" asks it to try and reports the outcome.
-  Shared subscriptions (offered to everybody) are listed read-only. Every change bumps
-  `calendar-sources-version`, which the calendar view watches to load its sources again.
+  iCal subscriptions (FR-7, the address half; the file half is ImportSection.vue): read-only
+  calendars from an .ics address. The server fetches the file (browsers cannot read arbitrary
+  addresses), so "Check" asks it to try and reports the outcome. Shared subscriptions (offered to
+  everybody) are listed read-only. Every change bumps `calendar-sources-version`, which the
+  calendar view watches to load its sources again.
 -->
 <template>
   <section aria-labelledby="settings-subscriptions" class="flex flex-col gap-4">
@@ -11,7 +12,8 @@
     </h2>
     <p>
       Show a calendar from a web address (an <code>.ics</code> file) next to your own calendars. It
-      is read-only: changes have to be made at its source.
+      is read-only: changes have to be made at its source. If you have a file instead of an address,
+      you can import its events into one of your calendars.
     </p>
 
     <div class="flex flex-col gap-3 rounded-lg border border-default p-4">

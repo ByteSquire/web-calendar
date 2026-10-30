@@ -28,6 +28,7 @@
     <SettingsTimeZoneSection :me="me.data.value" :error="me.error.value" />
     <SettingsTokensSection :username="me.data.value?.username ?? null" />
     <SettingsSubscriptionsSection />
+    <SettingsImportSection />
   </div>
 </template>
 

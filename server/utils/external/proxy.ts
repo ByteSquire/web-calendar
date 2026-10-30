@@ -87,6 +87,12 @@ export interface ProxyRequest {
   body: AsyncIterable<Uint8Array> | null
   /** Aborted when the client goes away. */
   signal?: AbortSignal
+  /**
+   * Runs `callback` once the answer has been written to the client or the connection is gone. The
+   * request's slot in the limits is held until then: the whole answer is buffered here, and a client
+   * that never reads it would otherwise cost memory without counting against them.
+   */
+  afterSent?: (callback: () => void) => void
 }
 
 export interface ExternalProxyDeps {
@@ -158,6 +164,8 @@ function secureHeaders(headers: Headers): Headers {
 function ownError(code: OwnErrorCode, extra: Record<string, string> = {}): Response {
   const headers = secureHeaders(new Headers(extra))
   headers.set('content-type', 'application/json; charset=utf-8')
+  // A body that is refused is not read to its end: the answer ends the connection.
+  if (code === 'request_too_large' || code === 'length_required') headers.set('connection', 'close')
   return new Response(JSON.stringify({ error: code }), { status: STATUS_OF[code], headers })
 }
 
@@ -231,7 +239,7 @@ async function readBody(
 
 type Hop =
   | { kind: 'response'; status: number; headers: IncomingHttpHeaders; body: Buffer }
-  | { kind: 'redirect'; location: string }
+  | { kind: 'redirect'; status: number; location: string }
 
 interface HopInit {
   method: string
@@ -293,7 +301,7 @@ function requestOnce(origin: URL, path: string, init: HopInit, signal: AbortSign
       const location = singleHeader(response.headers.location)
       if (REDIRECT_STATUSES.has(status) && location !== null) {
         response.destroy()
-        return finish({ kind: 'redirect', location })
+        return finish({ kind: 'redirect', status, location })
       }
 
       // Identity only was asked for; a compressed body would have to be size-capped after
@@ -376,6 +384,11 @@ export function createExternalProxy(deps: ExternalProxyDeps): ExternalProxy {
         signal,
       )
       if (hop.kind === 'response') return hop
+      // A 303 turns the request into a GET without a body (RFC 9110 §15.4.4). Replaying a PROPFIND
+      // or REPORT would be wrong, and nothing else here has a body to drop.
+      if (hop.status === 303 && init.method !== 'GET' && init.method !== 'HEAD') {
+        throw new UpstreamFailure('redirect_refused', '303 for a request with a body')
+      }
 
       if (hops >= maxRedirects) throw new UpstreamFailure('redirect_refused', 'too many redirects')
       let next: URL
@@ -415,12 +428,23 @@ export function createExternalProxy(deps: ExternalProxyDeps): ExternalProxy {
       headers.set('content-type', safeContentType(contentType))
     }
     const hasBody = method !== 'HEAD' && status !== 204 && status !== 205 && status !== 304
+    // The length of what is sent is the length of what was read. Only a HEAD answer repeats the
+    // size the server announced; a 205 is framed by its length, so it says 0, and a 204 or 304 has
+    // none (the account's server does not get to say how long a bodyless answer is).
     const declared = singleHeader(upstream['content-length'])
-    if (declared !== null && /^\d{1,15}$/.test(declared)) {
-      headers.set('content-length', hasBody ? String(body.length) : declared)
-    }
+    if (hasBody) headers.set('content-length', String(body.length))
+    else if (method === 'HEAD' && declared !== null && /^\d{1,15}$/.test(declared)) {
+      headers.set('content-length', declared)
+    } else if (status === 205) headers.set('content-length', '0')
     headers.set(EXTERNAL_UPSTREAM_STATUS_HEADER, String(status))
-    return new Response(hasBody ? new Uint8Array(body) : null, { status, headers })
+    // A view of the buffer, not a copy of up to 10 MiB.
+    return new Response(
+      hasBody ? new Uint8Array(body.buffer as ArrayBuffer, body.byteOffset, body.length) : null,
+      {
+        status,
+        headers,
+      },
+    )
   }
 
   return async function handle(request) {
@@ -469,6 +493,7 @@ export function createExternalProxy(deps: ExternalProxyDeps): ExternalProxy {
     if (!admission.ok) {
       return refuse('rate_limited', { 'retry-after': String(admission.retryAfterSec) })
     }
+    let heldForSend = false
     const deadline = new AbortController()
     const timer = setTimeout(() => deadline.abort(), timeoutMs)
     const onClientGone = (): void => deadline.abort()
@@ -534,6 +559,7 @@ export function createExternalProxy(deps: ExternalProxyDeps): ExternalProxy {
         deadline.signal,
       )
       const answer = proxiedAnswer(request.method, hop)
+      heldForSend = answer.body !== null
       return done(answer, hop.status === 401 ? 'upstream login failed' : undefined)
     } catch (error) {
       // The note names the failure (never the URL); a bug is reported as a plain 502.
@@ -542,7 +568,8 @@ export function createExternalProxy(deps: ExternalProxyDeps): ExternalProxy {
     } finally {
       clearTimeout(timer)
       request.signal?.removeEventListener('abort', onClientGone)
-      admission.release()
+      if (heldForSend && request.afterSent) request.afterSent(admission.release)
+      else admission.release()
     }
   }
 }

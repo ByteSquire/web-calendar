@@ -248,6 +248,28 @@ describe('reading a calendar through the proxy', () => {
     }
   })
 
+  it('answers a 205 with length 0 and a 204 without a length, whatever the server announced', async () => {
+    upstream.route('/reset', (_recorded, response) => {
+      response.writeHead(205, { 'content-length': '0' })
+      response.end()
+    })
+    const reset = await run(request({ method: 'GET', target: '/reset' }))
+    expect([
+      reset.response.status,
+      reset.response.headers.get('content-length'),
+      reset.text,
+    ]).toEqual([205, '0', ''])
+    upstream.route('/empty', (_recorded, response) => {
+      response.writeHead(204)
+      response.end()
+    })
+    const none = await run(request({ method: 'GET', target: '/empty' }))
+    expect([none.response.status, none.response.headers.has('content-length')]).toEqual([
+      204,
+      false,
+    ])
+  })
+
   it('carries a few MiB through', async () => {
     const big = 'x'.repeat(3 * 1024 * 1024)
     upstream.route('/big', (_recorded, response) => {
@@ -850,6 +872,18 @@ describe('redirects', () => {
     expect(upstream.requests).toHaveLength(4)
   })
 
+  it('refuses a 303 for a PROPFIND (it would be a GET without a body) and follows it for a GET', async () => {
+    upstream.route('/see-other', (_recorded, response) => {
+      response.writeHead(303, { location: PATHS.home })
+      response.end()
+    })
+    const refused = await errorOf(request({ method: 'PROPFIND', target: '/see-other' }))
+    expect([refused.status, refused.error]).toEqual([502, 'redirect_refused'])
+    const followed = await run(request({ method: 'GET', target: '/see-other' }))
+    expect(followed.response.headers.get('x-upstream-status')).not.toBeNull()
+    expect(upstream.requests.map((recorded) => recorded.method)).toEqual(['PROPFIND', 'GET', 'GET'])
+  })
+
   it('refuses a redirect loop', async () => {
     const { status, error } = await errorOf(request({ target: PATHS.redirectLoop }))
     expect([status, error]).toEqual([502, 'redirect_refused'])
@@ -1000,6 +1034,31 @@ describe('the account’s answers that are not ordinary', () => {
 })
 
 describe('limits', () => {
+  it('holds the slot of an answer with a body until it has been sent, and frees a bodyless one at once', async () => {
+    upstream.route('/slot', (_recorded, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' })
+      response.end('body')
+    })
+    let sent: (() => void) | undefined
+    const answer = await proxyWith()(
+      request({ method: 'GET', target: '/slot', afterSent: (callback) => (sent = callback) }),
+    )
+    expect(answer.status).toBe(200)
+    expect(limiter.size().running).toBe(1)
+    sent!()
+    expect(limiter.size().running).toBe(0)
+
+    upstream.route('/nothing', (_recorded, response) => {
+      response.writeHead(204)
+      response.end()
+    })
+    let called = false
+    await proxyWith()(
+      request({ method: 'GET', target: '/nothing', afterSent: () => (called = true) }),
+    )
+    expect([called, limiter.size().running]).toEqual([false, 0])
+  })
+
   it('refuses a response above the cap with too_large, announced or streamed, and delivers no part of it', async () => {
     const cap = 1000
     upstream.route('/announced', (_recorded, response) => {
@@ -1237,6 +1296,14 @@ describe('the request body', () => {
     expect([status, error]).toEqual([413, 'request_too_large'])
     expect(read).toBe(false)
     expect(upstream.requests).toHaveLength(0)
+  })
+
+  it('ends the connection after a 413, because the body is not read to its end', async () => {
+    const { response } = await errorOf(
+      request({ body: null, headers: { 'content-length': String(API_MAX_BODY_BYTES + 1) } }),
+    )
+    expect(response.status).toBe(413)
+    expect(response.headers.get('connection')).toBe('close')
   })
 
   it('is limited while it is read as well, whatever the headers claimed', async () => {

@@ -122,6 +122,9 @@ describe('the address check for a listed host', () => {
     '169.254.169.254',
     '169.254.0.1',
     '169.254.255.255',
+    // other clouds' metadata addresses, which the private ranges would otherwise let through
+    '100.100.100.200',
+    'fd00:ec2::254',
     'fe80::1',
     'fe80::1%eth0',
     'febf::1',

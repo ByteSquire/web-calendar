@@ -4,7 +4,7 @@ import { getDb } from '../db'
 import { getIcalPolicy, privateAddressesAllowed } from '../ical-proxy/nitro'
 import type { AccountDeps } from './accounts'
 import { createUserLimiter } from './limits'
-import { createExternalProxy, type ExternalProxy } from './proxy'
+import { createExternalProxy, REQUEST_TIMEOUT_MS, type ExternalProxy } from './proxy'
 import { createSealer, parseSealKey, type Sealer } from './seal'
 
 // Nitro glue of the external-account feature: reads the runtime config once, owns the one proxy
@@ -92,5 +92,11 @@ export function handleExternalRequest(
     headers: event.headers,
     body: hasBody ? req : null,
     signal: abort.signal,
+    afterSent(callback) {
+      if (res.destroyed || res.writableFinished) return callback()
+      res.once('close', callback)
+      // A client that stops reading must not keep the buffered answer for ever.
+      res.setTimeout(REQUEST_TIMEOUT_MS, () => res.destroy())
+    },
   })
 }

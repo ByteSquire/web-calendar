@@ -1,4 +1,4 @@
-import { createError, defineEventHandler } from 'h3'
+import { createError, defineEventHandler, setResponseHeader } from 'h3'
 import { apiBodyProblem } from '../utils/api/body-limit'
 import { isApiPath, isNonCanonicalApiPath } from '../utils/api/not-found'
 
@@ -11,5 +11,11 @@ export default defineEventHandler((event) => {
     throw createError({ statusCode: 404, statusMessage: 'Not Found' })
   }
   const problem = apiBodyProblem(event.method, event.headers)
-  if (problem) throw createError({ statusCode: problem.status, statusMessage: problem.message })
+  if (problem) {
+    // The body that is refused is not read to its end, so the answer ends the connection.
+    if (problem.status === 413 || problem.status === 411) {
+      setResponseHeader(event, 'connection', 'close')
+    }
+    throw createError({ statusCode: problem.status, statusMessage: problem.message })
+  }
 })

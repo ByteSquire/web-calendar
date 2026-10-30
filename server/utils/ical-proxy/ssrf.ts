@@ -147,6 +147,7 @@ const HARD_BLOCKED_IPV4: readonly (readonly [string, number])[] = [
   ['0.0.0.0', 8], // unspecified, "this network"
   ['127.0.0.0', 8], // loopback
   ['169.254.0.0', 16], // link-local, includes the cloud metadata address 169.254.169.254
+  ['100.100.100.200', 32], // Alibaba Cloud's metadata address, inside the carrier-grade NAT range
   ['224.0.0.0', 4], // multicast
   ['240.0.0.0', 4], // reserved, includes the broadcast address
 ]
@@ -172,6 +173,8 @@ export function isBlockedForListedHost(address: string): boolean {
   if (family === 6) {
     const groups = parseIPv6(bare)
     if (!groups) return true
+    // AWS's IPv6 metadata service sits in a unique local range, which is otherwise allowed here.
+    if (groups[0] === 0xfd00 && groups[1] === 0x0ec2) return true
     return (groups[0]! & 0xfe00) !== 0xfc00 && isBlockedIPv6(bare)
   }
   return true

@@ -1,5 +1,7 @@
 // Quick-add form: model, defaults from the preset, validation and the event it produces.
 // Pure functions without Vue or Nuxt, so they run in plain Vitest; QuickAddModal.vue renders them.
+// The form of the live calendar (description, repeat, ...) builds on this one in
+// writes/event-form.ts; the date handling below is shared by both.
 import { Temporal } from 'temporal-polyfill'
 import type { NewEventInput } from './calendar-state'
 
@@ -39,7 +41,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/
 const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/
 
-function parseDate(value: string): Temporal.PlainDate | null {
+export function parseDate(value: string): Temporal.PlainDate | null {
   if (!DATE.test(value)) return null
   try {
     const date = Temporal.PlainDate.from(value)
@@ -124,8 +126,11 @@ export function initialQuickAddForm(defaults: QuickAddDefaults): QuickAddForm {
   return { ...base, start: formatDateTime(start), end: formatDateTime(end) }
 }
 
-/** Switches between all-day and timed, converting `start` and `end` to the other input format. */
-export function setQuickAddAllDay(form: QuickAddForm, allDay: boolean): QuickAddForm {
+/**
+ * Switches between all-day and timed, converting `start` and `end` to the other input format.
+ * Generic so that a form with more fields (writes/event-form.ts) keeps them.
+ */
+export function setQuickAddAllDay<T extends QuickAddForm>(form: T, allDay: boolean): T {
   if (form.allDay === allDay) return form
   if (!allDay) {
     return {
@@ -141,7 +146,7 @@ export function setQuickAddAllDay(form: QuickAddForm, allDay: boolean): QuickAdd
 }
 
 /** Sets `start` and moves `end` by the same amount, so the duration is kept (like most calendars). */
-export function setQuickAddStart(form: QuickAddForm, start: string): QuickAddForm {
+export function setQuickAddStart<T extends QuickAddForm>(form: T, start: string): T {
   if (form.allDay) {
     const before = parseDate(form.start)
     const after = parseDate(start)

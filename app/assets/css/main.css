@@ -15,6 +15,13 @@
    * The dark scheme keeps the lighter shade, which carries dark text. */
   :root:not(.dark) {
     --ui-primary: var(--ui-color-primary-600);
+    /* The same for the status colours: with white text, error 500, success 600 and warning 600
+     * are below 4.5:1; the shades chosen here are 4.8:1 (red 600), 5.0:1 (green 700, amber 700)
+     * and 5.2:1 (blue 600). */
+    --ui-error: var(--ui-color-error-600);
+    --ui-success: var(--ui-color-success-700);
+    --ui-warning: var(--ui-color-warning-700);
+    --ui-info: var(--ui-color-info-600);
   }
 
   :root {

@@ -9,6 +9,8 @@ const phone = { viewport: { width: 360, height: 640 }, isMobile: true, hasTouch:
 
 export default defineConfig({
   testDir: 'e2e',
+  // The real-login tests have their own config (playwright.live.config.ts).
+  testIgnore: '**/live/**',
   outputDir: 'test-results',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
@@ -53,6 +55,7 @@ export default defineConfig({
     env: {
       HOST: '127.0.0.1',
       PORT: String(PORT),
+      NUXT_DEMO: 'true',
       NUXT_DB_PATH: '.data/e2e.db',
       NUXT_OIDC_ISSUER: 'https://idm.example.org/oauth2/openid/web-calendar',
       NUXT_TOKEN_HASH_KEY: 'e2e-test-key-e2e-test-key-e2e-test-key',

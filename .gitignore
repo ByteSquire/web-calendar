@@ -32,3 +32,4 @@ docker-compose.override.yml
 playwright-report/
 test-results/
 blob-report/
+test-results-live/

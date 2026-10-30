@@ -3,7 +3,8 @@
   and the overflow menu. Below 1024 px it has two rows (main.css): the toggle, title and the
   quick-add / overflow buttons stay on the first, so they are always visible at 360 px, while the
   date navigation and the view switcher share a second row that scrolls sideways on its own.
-  The root keeps the `top-bar` class the layout places and sizes.
+  The root keeps the `top-bar` class the layout places and sizes. While data loads a thin progress
+  line runs along its lower edge; it is positioned absolutely, so nothing moves when it appears.
 -->
 <template>
   <header class="top-bar">
@@ -33,9 +34,57 @@
       </UButton>
       <OverflowMenu />
     </div>
+    <!-- Indeterminate: no value attributes. -->
+    <div
+      v-if="loading"
+      class="top-bar-progress"
+      role="progressbar"
+      aria-label="Loading calendars"
+    />
   </header>
 </template>
 
 <script setup lang="ts">
+import { useLiveStatus } from '~/composables/useLiveCalendar'
+
 const { sidebarOpen, toggleSidebar, openQuickAdd, rangeLabel } = useCalendarState()
+const { loading } = useLiveStatus()
 </script>
+
+<style scoped>
+.top-bar-progress {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.top-bar-progress::after {
+  content: '';
+  display: block;
+  width: 35%;
+  height: 100%;
+  background: var(--accent);
+  animation: top-bar-progress 1.2s ease-in-out infinite;
+}
+
+@keyframes top-bar-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+/* No sweeping motion for people who ask for less: a still line says the same. */
+@media (prefers-reduced-motion: reduce) {
+  .top-bar-progress::after {
+    width: 100%;
+    animation: none;
+    opacity: 0.6;
+  }
+}
+</style>

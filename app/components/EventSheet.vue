@@ -1,8 +1,10 @@
 <!--
   Event details sheet: a bottom sheet on phones, a side panel on desktop. Open while
   `selectedEventId` is set; closing (Escape, the close button, the backdrop) clears it. Blocked
-  events show "Busy" and the time only. Edit and Delete are visible buttons and inert in Phase 1:
-  they say that editing arrives with the real calendar service.
+  events show "Busy" and the time only. On live data Edit and Delete open the dialogs of
+  EventWriteDialogs (for events the viewer may change; otherwise the buttons are disabled and the
+  reason is written next to them). In the demo they are visible buttons that say that editing
+  arrives with the real calendar service.
 -->
 <template>
   <USlideover
@@ -82,35 +84,47 @@
     </template>
 
     <template v-if="shown && !shown.blocked" #footer>
-      <div class="flex w-full gap-2 sm:justify-end">
-        <UButton
-          label="Edit"
-          icon="i-lucide-pencil"
-          color="neutral"
-          variant="outline"
-          size="lg"
-          class="flex-1 sm:flex-none"
-          @click="showNotAvailable"
-        />
-        <UButton
-          label="Delete"
-          icon="i-lucide-trash-2"
-          color="neutral"
-          variant="outline"
-          size="lg"
-          class="flex-1 text-red-700 sm:flex-none dark:text-red-400"
-          @click="showNotAvailable"
-        />
+      <div class="flex w-full flex-col gap-2">
+        <p v-if="!canWrite" id="event-write-reason" class="text-sm text-muted">
+          {{ writeReason }}
+        </p>
+        <div class="flex w-full gap-2 sm:justify-end">
+          <UButton
+            label="Edit"
+            icon="i-lucide-pencil"
+            color="neutral"
+            variant="outline"
+            size="lg"
+            class="flex-1 sm:flex-none"
+            :disabled="!canWrite"
+            :aria-describedby="canWrite ? undefined : 'event-write-reason'"
+            @click="onEdit"
+          />
+          <UButton
+            label="Delete"
+            icon="i-lucide-trash-2"
+            color="neutral"
+            variant="outline"
+            size="lg"
+            class="flex-1 text-red-700 sm:flex-none dark:text-red-400"
+            :disabled="!canWrite"
+            :aria-describedby="canWrite ? undefined : 'event-write-reason'"
+            @click="onDelete"
+          />
+        </div>
       </div>
     </template>
   </USlideover>
+  <EventWriteDialogs ref="dialogs" @done="selectEvent(null)" />
 </template>
 
 <script setup lang="ts">
+import type { CalendarEvent } from '../../shared/types/calendar'
 import { resourceIconName } from '~/utils/calendar-icons'
 import { buildEventDetails, type EventDetails } from '~/utils/event-display'
 import { pickFocusTarget } from '~/utils/focus'
 import { makeScrollersFocusable } from '~/utils/scroll-a11y'
+import { eventWriteAccess } from '~/utils/writes/rules'
 
 const { selectedEvent, selectedEventId, selectEvent, calendarById, categoryById, resourceById } =
   useCalendarState()
@@ -118,6 +132,8 @@ const timeZone = useDisplayTimeZone()
 const orgTimeZone = useOrgTimeZone()
 const isDesktop = useIsDesktop()
 const toast = useToast()
+const { live } = useEventWrites()
+const dialogs = useTemplateRef('dialogs')
 
 const details = computed(() =>
   selectedEvent.value
@@ -135,9 +151,22 @@ const details = computed(() =>
 
 // Keep showing the last event while the sheet slides out, instead of an empty panel.
 const shown = ref<EventDetails | null>(details.value)
+const lastEvent = ref<CalendarEvent | null>(selectedEvent.value)
 watch(details, (value) => {
   if (value) shown.value = value
 })
+watch(selectedEvent, (value) => {
+  if (value) lastEvent.value = value
+})
+
+// Demo: the buttons stay available and say so. Live: only for events the viewer may change.
+const access = computed(() =>
+  live.value && lastEvent.value
+    ? eventWriteAccess(lastEvent.value, calendarById.value)
+    : ({ allowed: true } as const),
+)
+const canWrite = computed(() => access.value.allowed)
+const writeReason = computed(() => (access.value.allowed ? '' : access.value.reason))
 
 const whenText = computed(() =>
   shown.value ? `${shown.value.when.date}, ${shown.value.when.time}` : undefined,
@@ -187,6 +216,16 @@ function markScrollers(event: Event) {
 
 function onOpenChange(open: boolean) {
   if (!open) selectEvent(null)
+}
+
+function onEdit() {
+  if (!live.value || !lastEvent.value) return showNotAvailable()
+  dialogs.value?.startEdit(lastEvent.value)
+}
+
+function onDelete() {
+  if (!live.value || !lastEvent.value) return showNotAvailable()
+  dialogs.value?.startDelete(lastEvent.value)
 }
 
 function showNotAvailable() {

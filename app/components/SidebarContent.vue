@@ -4,6 +4,8 @@
 -->
 <template>
   <div class="flex flex-col gap-3 p-2">
+    <SidebarProblems />
+
     <SidebarSection title="Views">
       <ul>
         <li v-for="view in views" :key="view.id">

@@ -351,3 +351,28 @@ describe('quick-add with the calendar state', () => {
     expect(store.visibleEventsInRange.value.map((e) => e.id)).not.toContain(event.id)
   })
 })
+
+describe('quick-add helpers on a form with more fields', () => {
+  // The live dialogs (writes/event-form.ts) extend the form; switching to all-day or moving the
+  // start must not drop what the extension added.
+  const extended = { ...form(), description: 'Agenda', repeat: 'weekly' as const }
+
+  it('keeps the extra fields when switching between all-day and timed', () => {
+    const allDay = setQuickAddAllDay(extended, true)
+    expect(allDay).toMatchObject({ allDay: true, description: 'Agenda', repeat: 'weekly' })
+    expect(setQuickAddAllDay(allDay, false)).toMatchObject({
+      allDay: false,
+      description: 'Agenda',
+      repeat: 'weekly',
+    })
+  })
+
+  it('keeps the extra fields when the start moves the end', () => {
+    expect(setQuickAddStart(extended, '2026-10-29T09:00')).toMatchObject({
+      start: '2026-10-29T09:00',
+      end: '2026-10-29T10:00',
+      description: 'Agenda',
+      repeat: 'weekly',
+    })
+  })
+})

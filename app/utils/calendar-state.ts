@@ -4,6 +4,7 @@
 import { computed, type Ref } from 'vue'
 import { Temporal } from 'temporal-polyfill'
 import type { MockData } from '../data/mock'
+import { isAutoCategory } from './live/categories'
 import type {
   Calendar,
   CalendarEvent,
@@ -324,7 +325,14 @@ export function createCalendarEvent(
 export function createCategory(name: string, existing: readonly Category[]): Category | null {
   const trimmed = name.trim()
   if (!trimmed) return null
-  if (existing.some((category) => category.name.toLowerCase() === trimmed.toLowerCase())) {
+  // Auto categories (names only events carry) do not count: creating the real one is how the
+  // viewer adopts such a name.
+  if (
+    existing.some(
+      (category) =>
+        !isAutoCategory(category) && category.name.toLowerCase() === trimmed.toLowerCase(),
+    )
+  ) {
     return null
   }
   return {
@@ -361,12 +369,29 @@ export function createTextFilter(
 /** Same shape as Nuxt's `useState`: one shared ref per key, created by `init` on first use. */
 export type StateFactory = <T>(key: string, init: () => T) => Ref<T>
 
+/**
+ * Side effects of the live mode (saving to the server). Without hooks the store is purely local,
+ * which is what the demo mode and the unit tests use. The hooks never throw into the store:
+ * `persist*` reject and the store rolls the change back; the others report their own failures.
+ */
+export interface CalendarStateHooks {
+  /** A calendar was switched on or off by the viewer (not by selecting a view). */
+  onCalendarVisibility?: (calendarId: string, visible: boolean) => void
+  /** Saves a new category; resolves to the stored one (the server's id). */
+  persistCategory?: (category: Category) => Promise<Category>
+  /** Saves a new filter; resolves to the stored one (the server's id). */
+  persistFilter?: (filter: CalendarFilter) => Promise<CalendarFilter>
+  /** A new category or filter could not be saved and was removed again. */
+  onPersistError?: (what: 'category' | 'filter', name: string, error: unknown) => void
+}
+
 export interface CalendarStateOptions {
   /** Initial data; called at most once per store instance, and only if no state exists yet. */
   seed: () => MockData
   today: () => Temporal.PlainDate
   /** Initial `sidebarOpen`: open on desktop, closed below the breakpoint. */
   sidebarOpen: () => boolean
+  hooks?: CalendarStateHooks
 }
 
 export function createCalendarState(state: StateFactory, options: CalendarStateOptions) {
@@ -474,6 +499,17 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
 
   function setCalendarVisible(id: string, visible: boolean) {
     visibleCalendarIds.value = withIdPresent(visibleCalendarIds.value, id, visible)
+    const onVisibility = options.hooks?.onCalendarVisibility
+    if (onVisibility) {
+      // The toggle is the viewer's saved preference: clearing a view must bring back this state,
+      // not the one from before the toggle.
+      calendars.value = calendars.value.map((calendar) =>
+        calendar.id === id && calendar.defaultVisible !== visible
+          ? { ...calendar, defaultVisible: visible }
+          : calendar,
+      )
+      onVisibility(id, visible)
+    }
   }
 
   /** A resource is shown through its own calendar. */
@@ -490,19 +526,70 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     selectedCategoryIds.value = withIdPresent(selectedCategoryIds.value, id, selected)
   }
 
-  /** Returns the new category, or null if the name is empty or already taken. */
+  /** `from` -> `to` in a list of ids (the local id gives way to the server's). */
+  function swapId(ids: Ref<string[]>, from: string, to: string) {
+    if (ids.value.includes(from)) ids.value = ids.value.map((id) => (id === from ? to : id))
+  }
+
+  /**
+   * Returns the new category, or null if the name is empty or already taken. With a backend the
+   * category appears at once under a local id; the server's id replaces it when the save is done,
+   * and a failed save removes it again.
+   */
   function addCategory(name: string): Category | null {
     const category = createCategory(name, categories.value)
-    if (category) categories.value = [...categories.value, category]
+    if (!category) return null
+    categories.value = [...categories.value, category]
+    const persist = options.hooks?.persistCategory
+    if (persist) {
+      persist(category).then(
+        (saved) => {
+          // A reload from the server meanwhile may have dropped the local copy: add the saved one.
+          if (categories.value.some((item) => item.id === category.id)) {
+            categories.value = categories.value.map((item) =>
+              item.id === category.id ? saved : item,
+            )
+          } else if (!categories.value.some((item) => item.id === saved.id)) {
+            categories.value = [...categories.value, saved]
+          }
+          swapId(selectedCategoryIds, category.id, saved.id)
+        },
+        (error: unknown) => {
+          categories.value = categories.value.filter((item) => item.id !== category.id)
+          selectedCategoryIds.value = withIdPresent(selectedCategoryIds.value, category.id, false)
+          options.hooks?.onPersistError?.('category', category.name, error)
+        },
+      )
+    }
     return category
   }
 
-  /** Adds a text filter and activates it; null if the text is empty or already taken. */
+  /**
+   * Adds a text filter and activates it; null if the text is empty or already taken. Saved like
+   * `addCategory`.
+   */
   function addFilter(text: string): CalendarFilter | null {
     const filter = createTextFilter(text, filters.value)
-    if (filter) {
-      filters.value = [...filters.value, filter]
-      setFilterActive(filter.id, true)
+    if (!filter) return null
+    filters.value = [...filters.value, filter]
+    setFilterActive(filter.id, true)
+    const persist = options.hooks?.persistFilter
+    if (persist) {
+      persist(filter).then(
+        (saved) => {
+          if (filters.value.some((item) => item.id === filter.id)) {
+            filters.value = filters.value.map((item) => (item.id === filter.id ? saved : item))
+          } else if (!filters.value.some((item) => item.id === saved.id)) {
+            filters.value = [...filters.value, saved]
+          }
+          swapId(activeFilterIds, filter.id, saved.id)
+        },
+        (error: unknown) => {
+          filters.value = filters.value.filter((item) => item.id !== filter.id)
+          activeFilterIds.value = withIdPresent(activeFilterIds.value, filter.id, false)
+          options.hooks?.onPersistError?.('filter', filter.name, error)
+        },
+      )
     }
     return filter
   }

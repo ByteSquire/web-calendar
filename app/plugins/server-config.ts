@@ -7,14 +7,24 @@ export interface ServerConfig {
   oidc: { issuer: string; clientId: string; scope: string }
   /** The organization time zone, an IANA name. */
   timezone: string
+  /** Demo mode: no login, mock data. */
+  demo: boolean
 }
 
-export default defineNuxtPlugin(async () => {
-  const config = useServerConfigState()
-  try {
-    config.value = await $fetch<ServerConfig>('/api/config')
-  } catch (error) {
-    console.error('Could not load /api/config; using defaults', error)
-    config.value = { oidc: { issuer: '', clientId: '', scope: '' }, timezone: DEFAULT_TIME_ZONE }
-  }
+// Named so that plugins that need the settings (the login) can depend on it.
+export default defineNuxtPlugin({
+  name: 'server-config',
+  async setup() {
+    const config = useServerConfigState()
+    try {
+      config.value = await $fetch<ServerConfig>('/api/config')
+    } catch (error) {
+      console.error('Could not load /api/config; using defaults', error)
+      config.value = {
+        oidc: { issuer: '', clientId: '', scope: '' },
+        timezone: DEFAULT_TIME_ZONE,
+        demo: false,
+      }
+    }
+  },
 })

@@ -26,7 +26,8 @@
  * - `splitSpan: Ref<'day'|'5day'|'week'|'month'>`: what one split band covers, default 'week'.
  *   Only the split view uses it; the split view may change it.
  *
- * Reference data (in-memory copies of the mock data; replaced by API data in Phase 2)
+ * Reference data (in-memory copies of the mock data in demo mode; in live mode they start empty and
+ * `useLiveCalendar()` fills them from the API and CalDAV, see composables/useLiveCalendar.ts)
  * - `currentUser`, `views`, `calendars`, `resources`, `categories`, `filters`, `events`: Refs of
  *   arrays. Do not mutate in place; use the actions below.
  * - `calendarById`, `categoryById`, `resourceById`: Ref<Map> for look-ups (colour, name).
@@ -52,7 +53,8 @@
  *   category selection and calendar visibility are combined with AND.
  *
  * Events
- * - `events`: the in-memory store, seeded from the mock data.
+ * - `events`: the in-memory store, seeded from the mock data (live mode: the events of the visible
+ *   calendars around the shown range, loaded by `useLiveCalendar()`).
  * - `visibleEvents`: events of visible calendars that pass filters and the category selection,
  *   in any date range. Feed these to FullCalendar; it clips to its own range. Events have
  *   `calendarId`, `allDay` (end exclusive when all-day), `status`, `isBlocked`, `categoryIds`.
@@ -75,21 +77,66 @@
  *   modal reads the preset when it opens and closes with `closeQuickAdd()`. Setting
  *   `quickAddOpen` directly is fine for closing, not for opening with a preset.
  *
+ * Live mode (signed in; see composables/useLiveCalendar.ts)
+ * - The state starts empty and `useLiveCalendar()` (called by the default layout) fills `currentUser`,
+ *   `calendars`, `views`, `categories`, `filters`, `visibleCalendarIds` and `events`. Calendar ids
+ *   are refs (`dav:<path>`, `ics:<id>`); category ids of names no category has are `auto:<name>`.
+ *   Progress and problems: `useLiveStatus()`.
+ * - `setCalendarVisible` saves the viewer's choice (`/api/calendar-prefs`, debounced; a failure
+ *   shows a toast and keeps the toggle) and updates the calendar's `defaultVisible`. Selecting a
+ *   view is not saved. `addCategory` / `addFilter` still return at once; the item carries a local
+ *   id until the server answers and is removed again (with a toast) if the save fails.
+ * - Without a sign-in provider (demo mode) none of this runs and the mock data is used.
+ *
  * Layout
  * - `sidebarOpen: Ref<boolean>`, `toggleSidebar()`. Desktop (>= 768 px): the sidebar column is
  *   shown or collapsed. Below 768 px: the slideover is open or closed. The layout resets it to
  *   "open on desktop, closed on mobile" when the viewport crosses the breakpoint.
  */
 import { Temporal } from 'temporal-polyfill'
-import { createCalendarState, type CalendarState } from '~/utils/calendar-state'
+import { useAuthFetch } from '~/composables/useAuthFetch'
+import { useServerConfigState } from '~/composables/useServerConfigState'
+import {
+  createCalendarState,
+  type CalendarState,
+  type CalendarStateHooks,
+} from '~/utils/calendar-state'
+import type { ApiRequest } from '~/utils/live/api-types'
+import { createLiveHooks } from '~/utils/live/hooks'
+import { emptySeed, isLiveConfig } from '~/utils/live/seed'
 import { matchesDesktop } from '~/utils/viewport'
+
+// One set of hooks per app: they hold the pending (debounced) preference saves.
+const liveHooks = new WeakMap<object, CalendarStateHooks>()
+
+function useLiveHooks(): CalendarStateHooks {
+  const nuxtApp = useNuxtApp()
+  let hooks = liveHooks.get(nuxtApp)
+  if (!hooks) {
+    const fetchApi = useAuthFetch() as (path: string, options?: object) => Promise<unknown>
+    const toast = useToast()
+    const api: ApiRequest = <T>(path: string, options?: object) =>
+      fetchApi(path, options) as Promise<T>
+    hooks = createLiveHooks({
+      api,
+      notify: (message) =>
+        toast.add({ title: message, icon: 'i-lucide-triangle-alert', color: 'warning' }),
+    })
+    liveHooks.set(nuxtApp, hooks)
+  }
+  return hooks
+}
 
 export function useCalendarState(): CalendarState {
   const timeZone = useDisplayTimeZone()
+  // Live mode starts empty and is filled by `useLiveCalendar()`; demo mode (and a server without a
+  // sign-in provider, which is also what component tests see) shows the mock data.
+  const live = isLiveConfig(useServerConfigState().value)
   return createCalendarState(useState, {
-    seed: useMockData,
+    seed: live ? emptySeed : useMockData,
     // "Today" is the date in the viewer's display zone (FR-29).
     today: () => Temporal.Now.plainDateISO(timeZone.value),
     sidebarOpen: matchesDesktop,
+    ...(live ? { hooks: useLiveHooks() } : {}),
   })
 }

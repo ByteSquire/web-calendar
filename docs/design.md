@@ -37,8 +37,9 @@ Key decisions (from the requirements review and the 2026-10-29 interviews):
 - **Access control** — administered **in the app** (users, groups, per calendar) and
   **enforced by Radicale** through shares and group files the app maintains, for every client. The app
   never filters events itself.
-- **External accounts** — the user can add other CalDAV servers (OIDC, basic or no
-  auth). They are called **from the browser**, with tokens kept there.
+- **External accounts** — the user can add other CalDAV servers (basic or no auth;
+  OIDC later). Credentials are kept in the browser and **never stored on the server**;
+  each request goes through a stateless pass-through proxy in the app (§6, §7).
 - **Database** — **SQLite** for **app-level data only**: calendars, access rules,
   views, categories, filters, subscriptions, app tokens and preferences. Events are
   **not** stored.
@@ -112,7 +113,7 @@ graph TD
     Nuxt -->|X-Remote-User<br/>internal network| Radicale[Radicale<br/>CalDAV store]
     Nuxt -->|share API + group file| Radicale
     Nuxt -->|GET .ics| ICS[iCal URLs]
-    Browser -.->|CalDAV, own token| Ext[External CalDAV servers]
+    Nuxt -->|CalDAV, per-request credentials<br/>from the browser, not stored| Ext[External CalDAV servers]
 ```
 
 **Components inside the app:**
@@ -127,6 +128,8 @@ graph TD
   access rules (§8).
 - **iCal proxy** — fetches `.ics` subscriptions for the browser, which cannot read
   arbitrary URLs cross-origin.
+- **External-account proxy** (planned) — forwards CalDAV requests to a user-added server
+  with the credentials the browser sends per request; stores and logs none (§6, §7).
 - **Caches** — Kanidm signing keys and iCal fetches (server); fetched events for
   30 s (SPA). Nothing is served stale.
 
@@ -193,9 +196,12 @@ erDiagram
 - **published_calendars** _(planned, FR-26/27)_ — `calendar_id`, `published_by`
   (FK), publish settings.
 
-**Not stored on the server:** external CalDAV accounts (URL, auth mode, tokens).
-They live in the user's browser. An admin can ship **preset accounts** through
-runtime config.
+**Not stored on the server:** the credentials of external CalDAV accounts (passwords,
+tokens). They live in the user's browser (in memory by default, "remember on this device"
+as an opt-in). Open: whether the non-secret part (URL, auth mode, name, colour) is kept
+in the browser too or in the database, so that views and preferences, which refer to
+`ext:<account id>:<url>`, survive a change of device. An admin can ship **preset
+accounts** through runtime config.
 
 Compared with v1.1, `sessions` is gone (no server-side tokens) and `calendars`,
 `calendar_acl` and `app_tokens` are back or new. `shared/types/calendar.ts` and the
@@ -265,10 +271,20 @@ sequenceDiagram
 token** the user created in the SPA (FR-31). The server hashes the presented token
 and looks it up. Clients that support OIDC may use a bearer token instead.
 
-**3. External CalDAV accounts (generic).** The browser calls the other server
-directly, with that account's own login (OIDC, basic or none). Tokens stay in the
-browser and never reach the app's server. This needs CORS headers on that server
-(verified for Kanidm's endpoints and for Radicale with a `[headers]` setting).
+**3. External CalDAV accounts (generic).** Decided 2026-10-30: a **stateless
+pass-through proxy**. The browser keeps the account's login (basic or none; OIDC is
+left out of the first version) and sends it with every request in a dedicated header
+(`X-Upstream-Authorization`, never `Authorization`, which carries the app's own token);
+the app's server forwards the request and returns the answer. The server stores and
+logs no credentials. Why not call the server from the browser: CORS is enforced only by
+browsers, so most CalDAV servers (which only serve native clients) do not send CORS
+headers and would be unreachable; native clients reach any server. Consequences and
+controls (details in §7 and the security review): authenticated users only; the SSRF
+guard of the iCal proxy plus an admin-approved host list (private and internal
+servers need an entry; it also stops a script injected into the page from using the
+proxy to send stolen credentials to a host of its choosing); method, header and size
+allow-lists; no redirects with credentials; per-user rate limits; the page's
+`connect-src` stays `'self'`.
 
 **Server-side token check** (SPA and bearer clients) — decided: **local JWT
 verification only**, with no introspection and no per-request call to Kanidm:
@@ -307,15 +323,40 @@ verification only**, with no introspection and no per-request call to Kanidm:
 **Token lifetime** — access tokens last 900 s. The SPA renews by a silent redirect
 (loses unsaved UI state, so the app must save state first) or by the refresh grant,
 which works with Kanidm. Keeping a refresh token in the browser raises the impact of
-an XSS bug, so it is kept in memory only.
+an XSS bug, so it is kept in memory only. **Kanidm rotates the refresh token on every
+use**; replaying an old one fails with `invalid_grant` and also kills the newest token
+(the whole chain). Two renewals at once ended the session in a test, so the SPA renews
+through one shared in-flight request. Kanidm's discovery lists no `end_session_endpoint`,
+so a logout clears the local state and shows a signed-out page (going straight back to the
+app would sign the user in again through Kanidm's own session). Logout first revokes the
+token at Kanidm's `revocation_endpoint` (RFC 7009; capped at 3 s, never blocks the sign-out,
+no token is logged). Kanidm answers `200 text/plain`, which oidc-client-ts rejects unless
+`revokeTokenAdditionalContentTypes` lists `text/plain`; revoking either token ends that login
+session, another tab's login is unaffected, and an access token that was already copied still
+passes the gateway for up to 15 minutes.
 
 **Libraries** — the browser login uses an OIDC client library (candidate
 `oidc-client-ts`, unverified, licence to check). The server verifies JWTs with a JOSE
 library (candidate `jose`, unverified, licence to check).
 
-**Security** — `state` and PKCE on the code flow; strict CSP and no third-party
-scripts in the SPA; the token-hashing key and the group-sync credential come from the
-environment; app tokens are long random strings, hashed, expiring and revocable.
+**Security** — built: `state` and PKCE on the code flow, tokens in memory only, login
+state per tab, the bearer token attached only to the app's own origin, a validated
+`returnTo`; the token-hashing key and the group-sync credential come from the
+environment; app tokens are long random strings, hashed, expiring and revocable; failed
+Basic logins are throttled (§7). Every response carries security headers
+(`server/utils/security`): a strict `Content-Security-Policy` for pages (`script-src 'self'` plus
+the SHA-256 hashes of the page's three inline scripts, computed per response in the `render:html`
+hook; no `unsafe-inline` or `unsafe-eval` for scripts; `connect-src` only the app and the
+identity provider; `frame-ancestors 'none'`; styles keep `unsafe-inline` because FullCalendar and
+Nuxt UI set style attributes), `default-src 'none'; sandbox` for everything else, `nosniff`,
+`Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `Permissions-Policy`, `no-store` on pages
+(keeps a signed-out page out of the back/forward cache). Off in development (Vite needs inline
+scripts). HSTS belongs to the reverse proxy. Icons are served by the app itself (Nuxt Icon's
+default for `ssr: false` is the public Iconify API, which is switched off). The first review
+(`docs/security-review.md`, 2026-10-30) found no Critical or High issue; its Medium
+and Low findings and the per-feature controls for Phase 3 are the backlog in §12 and the
+prerequisites in §8. `users.is_admin` is informational only: admin routes call userinfo and
+fail closed when the `groups` claim is missing (`requireAdmin`).
 
 ---
 
@@ -356,8 +397,23 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
   - `/caldav` and `/caldav/` need their own route file (`[...path]` does not match them).
     `requireUser(event)` for `/api/**` accepts bearer tokens only (app tokens are for CalDAV clients).
     The gateway creates no `users` row; the API layer does that.
-  - Still open: cached keys are refreshed only when a token names an unknown `kid` (a key Kanidm
-    removes stays trusted until then or a restart), and failed Basic logins are not rate-limited.
+  - Closed after the first review (2026-10-30):
+    - _Key refresh:_ cached keys are also refetched in the background once older than
+      `oidc.keyMaxAgeSec` (1 h), with retries at 30 s, 60 s, … if Kanidm is unreachable. A
+      successful refresh replaces the set, so a removed key stops being trusted; a failed one
+      keeps the cached keys, so an outage does not affect bearer requests.
+    - _Failed Basic logins_ are throttled in memory, and only failures are counted: every Basic
+      login is **verified first**, so a correct credential is never refused, whatever the counters
+      say, and it clears its (address, user) counter. The 5th failure within 10 minutes for the
+      same (client address, lower-cased user) is answered `429` with `Retry-After` (no verdict
+      about the credential), and so is every failure after it. Failures of one address are also
+      rate limited (token bucket, burst 30, 10 per second). Bearer requests and malformed headers
+      do not count; tables are bounded. A `401` carries two `WWW-Authenticate` lines (`Basic` first,
+      no `charset`, then `Bearer`). **Behind a reverse proxy set `gateway.trustForwardedFor`**
+      (`NUXT_GATEWAY_TRUST_FORWARDED_FOR=true`; the proxy must overwrite `X-Forwarded-For`, the
+      last hop is used); without it every client shares the proxy's address, which now only means
+      that strangers' failures share one budget (the gateway logs one warning). Not done:
+      grouping IPv6 clients by /64.
 
 **SPA reads and writes**
 
@@ -400,10 +456,31 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
 - **Writes** — `PUT`/`DELETE` with `If-Match` ETags. On `412` (changed meanwhile)
   tell the user and reload the event. **Editing a recurring event asks what to
   change** (decided): this instance, this and following, or the whole series, with
-  "this instance" preselected.
+  "this instance" preselected. As built (`app/utils/ical/write*.ts`, pure functions on the raw
+  resource text): the resource is **patched line by line**, not re-serialised, so everything the
+  user did not change stays byte for byte (`ical.js` refolds lines, moves parameters and
+  re-encodes escapes); `SEQUENCE`, `DTSTAMP` and `LAST-MODIFIED` are updated.
+  - _This instance_: an override with the same `UID` and a `RECURRENCE-ID`, or an `EXDATE`
+    for a delete. _This and following_: the original series gets `UNTIL` (and loses `COUNT`),
+    a new series with a new `UID` starts at the chosen occurrence, later overrides and
+    `EXDATE`s move to it; at the first occurrence it is the whole series. _Whole series_:
+    changes the master; moving the start shifts overrides and exclusions with it (a rule
+    that does not follow `DTSTART`, such as "last weekday", cannot be moved by whole days:
+    the UI offers "this instance").
+  - _Zones_: a new timed event gets `TZID` of the author's display zone and a `VTIMEZONE`
+    generated from Intl (event year −1 to +25, explicit observances; no dependency); an
+    edit keeps the event's own zone (UTC stays UTC, floating stays floating, read in the
+    organization zone). The occurrence id is `CalendarEvent.recurrenceId`.
 - **iCal subscriptions** — fetched by the server (conditional `GET`, cached for a
-  few minutes, read-only) because browsers cannot read arbitrary URLs.
-- **External accounts** — the SPA calls them directly, per account.
+  few minutes, read-only) because browsers cannot read arbitrary URLs. As built
+  (`server/utils/ical-proxy`): http, https and webcal only; every resolved address must be
+  public (IPv6 only `2000::/3`), checked again when the socket connects so DNS rebinding
+  does not help; at most 3 redirects, each re-checked; size and time limits while streaming;
+  no stale copy is served after an error. `NUXT_ICAL_PROXY_ALLOW_PRIVATE=true` is for tests.
+- **External accounts** (planned) — the SPA creates one CalDAV client per account whose
+  `fetch` sends the request to the app's proxy with the account's credentials in
+  `X-Upstream-Authorization`; the transport (`app/utils/caldav`) and the origin pinning of
+  hrefs work unchanged. Read-only first, writes later; errors are reported per account.
 - **Graceful degradation** (NFR-4) — a failing calendar shows an error with a retry
   and never blocks the others. **No stale data is served** (decided). Once the
   signing keys are cached, a Kanidm outage does not affect bearer requests, and app
@@ -412,6 +489,22 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
 ---
 
 ## 8. Access Control
+
+**Security prerequisites for everything below** (from the security review, in build order):
+`requireAdmin` as the only admin check; an `audit_log` table written by every admin mutation, the
+sharing writer and the group sync; the CSP and security headers; the throttle fix; startup
+validation of all security settings. Per feature, the controls that must exist before it ships:
+the **sharing writer** talks to Radicale through a separate internal client, uses `sub` UUIDs
+(never free-text names), reconciles and removes unknown shares (fail closed), records
+`applied_at`, and the gateway adds a path-level pre-check from SQLite as defence in depth;
+**group sync** prefers a read-only LDAP bind to the `idm_group_admins` token, writes the file
+atomically, never writes an empty file on error, caps the interval at 300 s and alarms on a
+`401`/`403`; **resource blocks** are written by the server (users never get write on resource
+calendars), carry no content, and booking conflicts are decided in one transaction; the
+**public view** is a dedicated endpoint behind a `_public` principal with shares for exactly the
+published calendars, a property allow-list, random slugs, rate limits and a short cache;
+**external accounts** bind credentials to their origin. Details and first tests:
+`docs/security-review.md` §5.
 
 **Administered in the app, enforced by Radicale.** The `calendar_acl` table is the
 source of truth. The app turns it into Radicale's own mechanisms, so the web app and
@@ -788,8 +881,11 @@ this is the **order**):
   calendars; OIDC-capable clients with bearer tokens.
 - **S8 — Real-browser login.** The SPA code + PKCE flow with a certificate the
   browser trusts (for example mkcert): consent, silent renewal, state preservation,
-  CORS to an external account, and whether `ts-caldav` or `tsdav` work in the
-  browser.
+  CORS to an external account. _Done 2026-10-30:_ `tsdav` (with `xml-js`) works in Chromium
+  and WebKit through the gateway (PROPFIND, REPORT, MKCALENDAR, a `412`, abort, a bad token);
+  the app uses only its low-level `davRequest` (the high-level calls add requests, follow
+  `.well-known` redirects a browser cannot see and hide error statuses), about 29 kB gzip.
+  _Still open:_ consent, silent renewal and CORS to an external account in a real browser.
 - **S9 — Reading group membership from Kanidm. Done 2026-10-29.** A fresh service
   account cannot read groups: `GET /v1/group/<name>` returned `null`, also in
   `idm_service_desk`. Kanidm 1.11.2 has no CLI or API for custom access profiles and
@@ -822,11 +918,8 @@ this is the **order**):
 - **Live-fetch latency** — 10–20 requests per view change, and no local copy when
   Radicale is down (decided: an error, no stale data). Measure with the 30 s
   in-browser cache.
-- **Recurring edits** — decided: ask each time, "this instance" preselected. The
-  mechanics ("this and following" splits a series with `UNTIL` and a new `UID`;
-  "this instance" writes a `RECURRENCE-ID` override) need a design before Phase 2
-  writes. New events carry the author's `TZID` and a `VTIMEZONE` (time zone data source
-  open); edits keep the event's own `TZID` (§7).
+- **Recurring edits** — decided and built: ask each time, "this instance" preselected;
+  the mechanics and the `VTIMEZONE` source (generated from Intl) are in §7.
 - **Resource booking mechanism and FR-19** — how events reference a resource, and
   how accept/decline works (CalDAV scheduling or app-side state). Phase 3.
 - **Public view credentials** — service credential and published list. Decided
@@ -867,6 +960,12 @@ this is the **order**):
   `e2e/a11y.spec.ts`: time-grid day headers named with the long date, the year view's month titles
   and lists, and the aria-owns rows of the pannable grid and the resource timeline. Not covered:
   real devices, screen readers, drag and long-press (editing is off), and login (Phase 2).
+- **Security review backlog (2026-10-30, `docs/security-review.md`)** — fixed the same day:
+  M1 to M2 and L1 to L6, L9 (status table at the top of the review). Open: a key id on
+  app-token hashes so the hashing key can be rotated (L7); a storage quota or monitor for
+  Radicale (L8); grouping IPv6 clients by /64 in the login throttle; the dependency audit on
+  each Nuxt release; running the gateway tests against the production build in CI. Before
+  Phase 3: an audit log and the controls listed at the start of §8.
 - **Database migrations** — decided: numbered `.sql` files and a small runner
   applied at startup, with hand-written TypeScript types. Revisit Drizzle if the
   types drift.

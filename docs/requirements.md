@@ -109,8 +109,13 @@ out). Views appear at the **top of the sidebar**.
 - **FR-7** Users can **import a calendar from an iCal (`.ics`) URL or file**.
 - **FR-8** Users see the calendars of the **built-in calendar service** they have
   access to without any account setup, and can **add external CalDAV accounts**
-  (a CalDAV URL plus an authentication mode: OIDC, basic or none). Credentials and
-  tokens for external accounts stay in the user's browser.
+  (a CalDAV URL plus an authentication mode: basic or none; OIDC later). Credentials
+  and tokens for external accounts are kept in the user's browser and are **never
+  stored on the server**. Browsers cannot call arbitrary CalDAV servers (CORS), so
+  the app's server forwards each request without keeping anything (decided
+  2026-10-30; design §6, §7). The credentials of an account are sent only to that
+  account's origin, and administrators cannot reference external accounts in shared
+  views.
 - **FR-9** _(nice to have)_ CalDAV sync is **two-way** — users can create/edit
   events that write back to the CalDAV server.
 - **FR-10** Calendar data is **fetched live** for the visible date range and cached
@@ -199,7 +204,9 @@ minimum:
   others sign in with a username and an **app token**.
 - **FR-31** Users **create, list and revoke app tokens** in the app. A token is
   shown once, **expires after one year**, is limited to **10 per user**, and is
-  stored only in hashed form.
+  stored only in hashed form. Tokens can be revoked individually and all at once, the
+  list shows the last use, and the hashing key can be rotated without invalidating
+  existing tokens.
 
 ### 4.10 Public publishing _(planned)_
 
@@ -207,7 +214,10 @@ minimum:
   URL/view for an external audience to browse published events (builds on the
   public visibility level in FR-14).
 - **FR-27** _(planned)_ The public view is **accessible without organization
-  authentication**.
+  authentication**. Published calendars are served through a dedicated unauthenticated
+  endpoint with a property allow-list (never descriptions, attendees or attachments),
+  random non-enumerable addresses, rate limiting and a short cache; publishing is an
+  audited admin action.
 
 ---
 
@@ -224,17 +234,32 @@ minimum:
   published signing keys, restricted to an allow-list of clients and a required
   scope, and never stored. A revoked bearer token works until it expires (up to 15
   minutes); app tokens are hashed, expire and are revoked immediately. In the
-  browser, tokens live in memory or session storage only, under a strict
-  content-security policy.
+  browser, tokens live in memory only. Every response of the app carries a
+  `Content-Security-Policy` (`script-src 'self'`, `frame-ancestors 'none'`,
+  `object-src 'none'`, `base-uri 'none'`), `X-Content-Type-Options: nosniff` and
+  `Referrer-Policy: no-referrer`, verified by an automated browser test of every
+  view. Authentication failures are rate-limited per client and per user name, and a
+  correct credential is never refused because of someone else's failures.
+  Administrative rights are decided per request from the identity provider's group
+  membership, never from a stored copy; administrative actions and every change to
+  access rules are written to an audit log with actor, time and target. The CalDAV
+  backend's identity header is set by at most three named components (the gateway, the
+  sharing writer, the public endpoint), each with its own tests, and the backend is
+  reachable from nothing else. _(Security review 2026-10-30, `docs/security-review.md`.)_
 - **NFR-3 (Accessibility)** The web UI meets **WCAG 2.1 AA**.
 - **NFR-4 (Reliability)** Defined availability target and graceful degradation
   when an external source (iCal/CalDAV) is unreachable: that calendar shows an
   error with a retry while the others keep working. **No stale data is served**:
-  the app keeps no copy of calendar data beyond 30 s in the browser's memory.
+  the app keeps no copy of calendar data beyond 30 s in the browser's memory. (The
+  planned public view, FR-26/27, may serve data up to 60 s old: the one exception.)
 - **NFR-5 (Standards compliance)** iCalendar (**RFC 5545**), CalDAV
   (**RFC 4791**), and OpenID Connect.
 - **NFR-6 (Portability)** Because sources are iCal/CalDAV, user data is not
   locked into a proprietary format.
+- **NFR-7 (Operability and secure defaults)** The server refuses to start with an
+  invalid or missing security setting; a settings error is never discovered at the first
+  request. All security settings are listed in `.env.example` with their defaults, and
+  the container's health check exercises the token verifier.
 
 ---
 
@@ -316,8 +341,8 @@ the **order** of delivery):
 - **Q18 — Authentication model.** _Resolved._ The app has its own Kanidm client
   for logging in; tokens stay in the browser; the app's server **verifies each token
   locally against an allow-list of clients** and stores none. Third-party
-  clients use **app tokens**. External CalDAV accounts authenticate from the
-  browser, per account. A shared client with OpenCloud is not needed. (Captured in
+  clients use **app tokens**. External CalDAV accounts authenticate per account with
+  credentials kept in the browser and passed through the app's server per request. A shared client with OpenCloud is not needed. (Captured in
   FR-8, FR-12, FR-13, FR-30, FR-31, NFR-2, A-4.)
 - **Q19 — Operating defaults.** _Resolved 2026-10-29._ Organization time zone
   `Europe/Berlin` by default, set with `TZ`; viewers see their own zone (FR-32). Editing a recurring event **asks every time** (this instance,

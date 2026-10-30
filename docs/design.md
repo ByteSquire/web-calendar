@@ -280,7 +280,7 @@ records the version of the hash key that made it (`app_tokens.key_version`). The
 entry is current; a login with an older version re-hashes the token to the current one. To rotate:
 generate a key (`openssl rand -base64 48`), set `NUXT_TOKEN_HASH_KEYS=2:<new key>` and keep
 `NUXT_TOKEN_HASH_KEY`, restart, let tokens move as they are used, check what is left on version 1
-(`SELECT key_version, COUNT(*) FROM app_tokens WHERE expires_at > ? GROUP BY key_version`), then
+(`SELECT key_version, COUNT(*) FROM app_tokens WHERE expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now') GROUP BY key_version`), then
 remove the old key. A token whose version is no longer configured is unknown. The next rotation
 is `3:<newer>,2:<new>`; to go back, list the old key first again rather than deleting entries.
 
@@ -524,7 +524,7 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
   PROPFIND, REPORT, GET, HEAD and OPTIONS only (read-only), forwards `Accept`, `Content-Type` and
   `Depth` plus a fixed `User-Agent`, returns a header allow-list (no `Set-Cookie`, no
   `WWW-Authenticate`) with `X-Upstream-Status`, follows at most 3 redirects within the origin, and
-  buffers at most 10 MiB under a 20 s deadline; limits are 8 requests in flight per user, 32 in
+  buffers at most 10 MiB under a 20 s deadline and holds the request's slot until the answer has been sent (a 20 s write timeout), refuses a 303 for a PROPFIND or REPORT; limits are 8 requests in flight per user, 32 in
   total, and a bucket of 60 with 20 per second. An upstream `401` is answered as `502
 upstream_login_failed`, so a `401` always means the app's token is bad. Own failures are
   `{ error }`: `invalid_path`, `invalid_request`, `method_not_allowed`, `host_not_allowed`,
@@ -1030,7 +1030,18 @@ this is the **order**):
   Radicale container would get through; worst-case memory of the proxy is about 32 × 10 MiB; an
   internal server with a private CA needs `NODE_EXTRA_CA_CERTS`; a rejected `ext:` ref in admin
   views must be added with the admin views (Phase 3, `readCalendarRef` and the admin path of
-  `server/utils/api/views.ts`); external calendars are read-only for now.
+  `server/utils/api/views.ts`); external calendars are read-only for now. Found by review and left
+  open: a seal has no per-account version, so after a user name or origin is changed and then
+  changed back, the first seal opens again (add `credential_version` to the account and to the
+  seal's associated data); the host list has no port, so a listed internal host is reachable on every
+  port with GET, PROPFIND and REPORT (allow `host:port` entries, or default private hosts to 80 and
+  443); the gateway authenticates before it checks a declared body length, so an unauthenticated
+  request with a huge declared length is drained before the `401`.
+  The browser half has no cap on calendars per account, objects per calendar or events per
+  calendar, so a huge external calendar can freeze the tab, and it paces nothing against the
+  proxy's 60-burst, 20-per-second bucket (a `429` shows as "Too many requests" and is not
+  retried); an import that is left or fails to decode a non-UTF-8 file says nothing; a "Check
+  connection" that started before an edit can overwrite the cleared status.
 - **Database migrations** — decided: numbered `.sql` files and a small runner
   applied at startup, with hand-written TypeScript types. Revisit Drizzle if the
   types drift.

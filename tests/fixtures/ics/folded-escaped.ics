@@ -1,0 +1,15 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//web-calendar fixtures//EN
+BEGIN:VEVENT
+UID:folded-escaped
+DTSTAMP:20261001T000000Z
+SUMMARY:A very long title that the producing client folded in the middle of a wor
+ d and again after a space so the join must be exact
+DTSTART:20261110T100000Z
+DTEND:20261110T110000Z
+LOCATION:Room 1\, Floor 2\; Building \\ North
+DESCRIPTION:Line one\nLine two\, with comma\nUmlauts: äöü ß and an emoji 📅 that sp
+ lits mid-sequence
+END:VEVENT
+END:VCALENDAR

@@ -19,7 +19,10 @@
     "typecheck:e2e": "tsc -p e2e",
     "test:e2e": "nuxt build && playwright test",
     "test": "vitest run",
-    "test:e2e:live": "playwright test -c playwright.live.config.ts"
+    "test:e2e:live": "playwright test -c playwright.live.config.ts",
+    "test:gateway:prod": "node scripts/test-gateway-prod.mjs",
+    "audit:prod": "node scripts/audit-prod.mjs",
+    "radicale:usage": "node scripts/radicale-usage.mjs"
   },
   "dependencies": {
     "@fullcalendar/vue3": "7.1.3",

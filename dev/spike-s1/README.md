@@ -146,3 +146,7 @@ Measured on the earlier stack with OpenCloud and oauth2-proxy; the details are i
   step itself.
 - `kanidm/server` and `kanidm/tools` use `latest`. Override with `KANIDM_IMAGE` and
   `KANIDM_TOOLS_IMAGE` to pin them.
+- `tests/integration/key-rotation.integration.test.ts` (`KEY_ROTATION_IT=1`, `NODE_EXTRA_CA_CERTS` set to
+  `.local/certs/ca.crt`) rotates and revokes the signing keys of a throwaway OAuth2 client, `wcal-keytest`,
+  on every run; the five `./spike.sh kanidm …` commands that create it are at the top of the test file.
+  Never rotate `web-calendar`'s keys in a shared stack: it signs out every token.

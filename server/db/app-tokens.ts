@@ -41,15 +41,45 @@ export interface VerifiedAppToken {
   userId: number
 }
 
+/** A key that hashes app tokens, with the id stored in `app_tokens.key_version` of its tokens. */
+export interface TokenKey {
+  version: number
+  key: string
+}
+
+/**
+ * The configured hash keys (L7): new tokens are hashed with `current`, and `keys` lists every key a
+ * stored token may have been hashed with, `current` included. Built from the environment by
+ * `parseTokenKeyring` in server/utils/auth/token-keys.ts.
+ */
+export interface TokenKeyring {
+  current: TokenKey
+  keys: readonly TokenKey[]
+}
+
+/** What the token functions take: a keyring, or one key, which is key version 1. */
+export type TokenHashKeys = string | TokenKeyring
+
+function toKeyring(hashKeys: TokenHashKeys): TokenKeyring {
+  if (typeof hashKeys !== 'string') return hashKeys
+  const only = { version: 1, key: hashKeys }
+  return { current: only, keys: [only] }
+}
+
+// The hash is the same for every key version: HMAC-SHA256 of the token, in hex. The version lives
+// in its own column, so tokens hashed before the column existed (version 1) still match.
 function hashToken(hashKey: string, token: string): string {
   if (!hashKey) throw new Error('The app token hash key is not configured')
   return createHmac('sha256', hashKey).update(token).digest('hex')
 }
 
-/** Creates a token that expires after one year. A user at the limit gets an `AppTokenError`. */
+/**
+ * Creates a token that expires after one year, hashed with the current key. A user at the limit
+ * gets an `AppTokenError`.
+ */
 export function createAppToken(
   db: Database,
-  hashKey: string,
+  hashKeys: TokenHashKeys,
   userId: number,
   label: string,
   now = new Date(),
@@ -62,8 +92,9 @@ export function createAppToken(
     )
   }
 
+  const { current } = toKeyring(hashKeys)
   const token = TOKEN_PREFIX + randomBytes(32).toString('base64url')
-  const tokenHash = hashToken(hashKey, token)
+  const tokenHash = hashToken(current.key, token)
   const expires = new Date(now)
   expires.setUTCFullYear(expires.getUTCFullYear() + 1)
   const expiresAt = expires.toISOString()
@@ -82,9 +113,9 @@ export function createAppToken(
     }
     const { lastInsertRowid } = db
       .prepare(
-        'INSERT INTO app_tokens (user_id, label, token_hash, expires_at) VALUES (?, ?, ?, ?)',
+        'INSERT INTO app_tokens (user_id, label, token_hash, key_version, expires_at) VALUES (?, ?, ?, ?, ?)',
       )
-      .run(userId, cleanLabel, tokenHash, expiresAt)
+      .run(userId, cleanLabel, tokenHash, current.version, expiresAt)
     return Number(lastInsertRowid)
   })
   return { id: create.immediate(), token, expiresAt }
@@ -120,31 +151,53 @@ export function revokeAppToken(db: Database, userId: number, id: number): boolea
 /**
  * Checks the Basic-auth credentials of a CalDAV client. Returns the owner of the token, or null
  * for an unknown, expired or revoked token and when `username` is not the owner's name.
+ *
+ * A token is accepted only with the key version its row records. One that was hashed with an older
+ * key is hashed again with the current one on this login, so a rotated key retires itself as the
+ * tokens are used. A token whose version is no longer configured is unknown.
  */
 export function verifyAppToken(
   db: Database,
-  hashKey: string,
+  hashKeys: TokenHashKeys,
   username: string,
   token: string,
   now = new Date(),
 ): VerifiedAppToken | null {
-  const row = db
+  const keyring = toKeyring(hashKeys)
+  const hashes = keyring.keys.map(({ version, key }) => ({ version, hash: hashToken(key, token) }))
+  const rows = db
     .prepare<
-      [string, string],
-      Pick<AppTokenRow, 'id' | 'expires_at'> & {
+      unknown[],
+      Pick<AppTokenRow, 'id' | 'token_hash' | 'key_version' | 'expires_at'> & {
         user_id: number
         oidc_sub: string
         username: string
       }
     >(
       // users.username compares case-insensitively.
-      `SELECT t.id, t.expires_at, u.id AS user_id, u.oidc_sub, u.username
+      `SELECT t.id, t.token_hash, t.key_version, t.expires_at, u.id AS user_id, u.oidc_sub, u.username
        FROM app_tokens t JOIN users u ON u.id = t.user_id
-       WHERE t.token_hash = ? AND u.username = ?`,
+       WHERE t.token_hash IN (${hashes.map(() => '?').join(', ')}) AND u.username = ?`,
     )
-    .get(hashToken(hashKey, token), username)
+    .all(...hashes.map(({ hash }) => hash), username)
+  const row = rows.find((candidate) =>
+    hashes.some(
+      ({ version, hash }) => version === candidate.key_version && hash === candidate.token_hash,
+    ),
+  )
   if (!row || row.expires_at <= now.toISOString()) return null
 
+  if (row.key_version !== keyring.current.version) {
+    // Guarded by the old version, so two logins at once cannot undo each other.
+    db.prepare(
+      'UPDATE app_tokens SET token_hash = ?, key_version = ? WHERE id = ? AND key_version = ?',
+    ).run(
+      hashes.find(({ version }) => version === keyring.current.version)!.hash,
+      keyring.current.version,
+      row.id,
+      row.key_version,
+    )
+  }
   db.prepare(
     'UPDATE app_tokens SET last_used_at = ? WHERE id = ? AND (last_used_at IS NULL OR last_used_at <= ?)',
   ).run(now.toISOString(), row.id, new Date(now.getTime() - LAST_USED_INTERVAL_MS).toISOString())

@@ -31,6 +31,9 @@ services:
       NUXT_OIDC_ALLOWED_CLIENTS: '${NUXT_OIDC_ALLOWED_CLIENTS:-}'
       # Key for hashing app tokens. Generate one, for example with `openssl rand -base64 48`.
       NUXT_TOKEN_HASH_KEY: '${NUXT_TOKEN_HASH_KEY:-}'
+      # Rotation: `version:key` entries separated by commas, the current key first; the key above is
+      # version 1 (server/utils/auth/token-keys.ts). Empty means only that key.
+      NUXT_TOKEN_HASH_KEYS: '${NUXT_TOKEN_HASH_KEYS:-}'
       # Kanidm membership for Radicale's group file: read-only API token (kanidm-setup.md section 3).
       NUXT_GROUP_SYNC_TOKEN: '${NUXT_GROUP_SYNC_TOKEN:-}'
       NUXT_GROUP_SYNC_INTERVAL_SEC: '${NUXT_GROUP_SYNC_INTERVAL_SEC:-60}'
@@ -98,7 +101,9 @@ services:
       web-calendar:
         condition: service_healthy
     volumes:
-      - radicale-data:/var/lib/radicale # calendars and the sharing database
+      # Calendars and the sharing database. Radicale has no quota: check the size per user with
+      # scripts/radicale-usage.mjs, run on the host against this volume (see the script's header).
+      - radicale-data:/var/lib/radicale
       - radicale-groups:/etc/radicale/groups:ro # group file, written by the app
       - ./deploy/radicale/rights:/etc/radicale/rights:ro
       - ./deploy/radicale/config:/etc/radicale/config:ro

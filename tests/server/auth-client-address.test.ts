@@ -2,6 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   UNKNOWN_ADDRESS,
+  clientGroupKey,
   lastForwardedHop,
   looksLikeProxyAddress,
   normalizeClientAddress,
@@ -43,6 +44,65 @@ describe('normalizeClientAddress', () => {
     'unknown',
   ])('maps the unusable %j to the shared unknown address', (raw) => {
     expect(normalizeClientAddress(raw)).toBe(UNKNOWN_ADDRESS)
+  })
+})
+
+describe('clientGroupKey', () => {
+  it.each([
+    // IPv4 stays as it is.
+    ['203.0.113.9', '203.0.113.9'],
+    ['::ffff:203.0.113.9', '203.0.113.9'],
+    ['::FFFF:cb00:7109', '203.0.113.9'],
+    // Every address of a /64 maps to its prefix, one spelling for it.
+    ['2001:db8:1:2::1', '2001:db8:1:2::/64'],
+    ['2001:db8:1:2:aaaa:bbbb:cccc:dddd', '2001:db8:1:2::/64'],
+    ['2001:DB8:1:2:0:0:0:1', '2001:db8:1:2::/64'],
+    ['2001:db8:1:2::', '2001:db8:1:2::/64'],
+    ['2001:db8:1:2:ffff:ffff:ffff:ffff', '2001:db8:1:2::/64'],
+    ['2001:db8:1:3::1', '2001:db8:1:3::/64'],
+    // The prefix is compressed like an address: zero groups inside it go, the first four only
+    // count.
+    ['2001:db8::1', '2001:db8::/64'],
+    ['2001:db8:0:0:1::1', '2001:db8::/64'],
+    ['2001:db8:0:1:0:0:0:1', '2001:db8:0:1::/64'],
+    ['1::1', '1::/64'],
+    ['1:2:3:4::', '1:2:3:4::/64'],
+    // Loopback, unspecified and link-local get no special treatment.
+    ['::1', '::/64'],
+    ['::', '::/64'],
+    ['fe80::1%eth0', 'fe80::/64'],
+    ['fe80::a:b:c:d%eth0', 'fe80::/64'],
+    // 64:ff9b::/96 is not IPv4-mapped; it is an ordinary prefix here.
+    ['64:ff9b::cb00:7109', '64:ff9b::/64'],
+  ])('writes %j as %j', (raw, expected) => {
+    expect(clientGroupKey(raw)).toBe(expected)
+  })
+
+  it('keeps addresses of different /64 prefixes apart, down to the last bit of the prefix', () => {
+    const keys = new Set(
+      [
+        '2001:db8:1:2::1',
+        '2001:db8:1:3::1',
+        '2001:db8:1:12::1',
+        '2001:db8:1:2:8000::1',
+        '2001:db9:1:2::1',
+      ].map(clientGroupKey),
+    )
+    // The fourth is in the same /64 as the first (the low 64 bits are free), so four keys remain.
+    expect(keys.size).toBe(4)
+  })
+
+  it.each([null, undefined, '', 'localhost', '203.0.113.9:80', '2001:db8::1::2'])(
+    'maps the unusable %j to the shared unknown address',
+    (raw) => {
+      expect(clientGroupKey(raw)).toBe(UNKNOWN_ADDRESS)
+    },
+  )
+
+  it('leaves normalizeClientAddress alone: proxy detection needs the real address', () => {
+    expect(normalizeClientAddress('2001:db8:1:2::1')).toBe('2001:db8:1:2::1')
+    expect(looksLikeProxyAddress('::1')).toBe(true)
+    expect(looksLikeProxyAddress('fd00:1:2:3::4')).toBe(true)
   })
 })
 

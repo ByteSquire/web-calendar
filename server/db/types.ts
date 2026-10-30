@@ -34,6 +34,8 @@ export interface AppTokenRow extends Timestamps {
   user_id: number
   label: string
   token_hash: string
+  /** The version of the hash key that made `token_hash` (migration 003); 1 for the first key. */
+  key_version: number
   expires_at: string
   last_used_at: string | null
 }

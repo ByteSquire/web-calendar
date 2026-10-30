@@ -219,3 +219,139 @@ describe('revokeAppToken', () => {
     expect(listAppTokens(db, alice)).toEqual([])
   })
 })
+
+describe('rotating the hash key (L7)', () => {
+  const KEY_2 = 'second-hash-key'
+  const KEY_3 = 'third-hash-key'
+  const key = (version: number, value: string) => ({ version, key: value })
+  /** Current key first, as `parseTokenKeyring` returns it. */
+  const keyring = (...keys: { version: number; key: string }[]) => ({
+    current: keys[0]!,
+    keys,
+  })
+  const hash = (value: string, token: string) =>
+    createHmac('sha256', value).update(token).digest('hex')
+  const stored = (id: number) =>
+    db.prepare('SELECT token_hash, key_version FROM app_tokens WHERE id = ?').get(id) as {
+      token_hash: string
+      key_version: number
+    }
+
+  it('records the version of the current key with a new token, and hashes it with that key', () => {
+    const { id, token } = createAppToken(
+      db,
+      keyring(key(2, KEY_2), key(1, KEY)),
+      alice,
+      'Phone',
+      NOW,
+    )
+    expect(stored(id)).toEqual({ token_hash: hash(KEY_2, token), key_version: 2 })
+  })
+
+  it('treats a plain key as version 1: the same hash as before the column existed', () => {
+    const { id, token } = createAppToken(db, KEY, alice, 'Phone', NOW)
+    expect(stored(id)).toEqual({ token_hash: hash(KEY, token), key_version: 1 })
+  })
+
+  it('moves the existing tokens to a new current key, one login at a time', () => {
+    const phone = createAppToken(db, KEY, alice, 'Phone', NOW)
+    const laptop = createAppToken(db, KEY, alice, 'Laptop', NOW)
+    const rotated = keyring(key(2, KEY_2), key(1, KEY))
+
+    expect(verifyAppToken(db, rotated, 'alice', phone.token, NOW)).toMatchObject({ userId: alice })
+    expect(stored(phone.id)).toEqual({ token_hash: hash(KEY_2, phone.token), key_version: 2 })
+    // The other token has not been used since the rotation.
+    expect(stored(laptop.id)).toEqual({ token_hash: hash(KEY, laptop.token), key_version: 1 })
+
+    // Both keep working, the first one now through the current key.
+    expect(verifyAppToken(db, rotated, 'alice', phone.token, NOW)).not.toBeNull()
+    expect(verifyAppToken(db, rotated, 'alice', laptop.token, NOW)).not.toBeNull()
+    expect(stored(laptop.id).key_version).toBe(2)
+  })
+
+  it('moves a token on the very login that finds it, whatever last_used_at says', () => {
+    const { id, token } = createAppToken(db, KEY, alice, 'Phone', NOW)
+    verifyAppToken(db, KEY, 'alice', token, NOW)
+    const rotated = keyring(key(2, KEY_2), key(1, KEY))
+    verifyAppToken(db, rotated, 'alice', token, minutesAfter(NOW, 0.5))
+    expect(lastUsed(id)).toBe(NOW.toISOString())
+    expect(stored(id).key_version).toBe(2)
+  })
+
+  it('lets a retired key go once its tokens have moved, and leaves the others unknown', () => {
+    const moved = createAppToken(db, KEY, alice, 'Moved', NOW)
+    const idle = createAppToken(db, KEY, alice, 'Idle', NOW)
+    verifyAppToken(db, keyring(key(2, KEY_2), key(1, KEY)), 'alice', moved.token, NOW)
+
+    const retired = keyring(key(2, KEY_2))
+    expect(verifyAppToken(db, retired, 'alice', moved.token, NOW)).not.toBeNull()
+    expect(verifyAppToken(db, retired, 'alice', idle.token, NOW)).toBeNull()
+    // Nothing was touched for the unknown one.
+    expect(stored(idle.id)).toEqual({ token_hash: hash(KEY, idle.token), key_version: 1 })
+  })
+
+  it('verifies with the key version the row records, not with whichever key matches', () => {
+    const { token } = createAppToken(db, KEY, alice, 'Phone', NOW)
+    // The key that made the token is listed, but under another version than the row says.
+    expect(verifyAppToken(db, keyring(key(3, KEY), key(1, KEY_3)), 'alice', token, NOW)).toBeNull()
+    expect(
+      verifyAppToken(db, keyring(key(1, KEY_3), key(2, KEY_2)), 'alice', token, NOW),
+    ).toBeNull()
+  })
+
+  it('keeps working across two rotations in a row', () => {
+    const { id, token } = createAppToken(db, KEY, alice, 'Phone', NOW)
+    verifyAppToken(db, keyring(key(2, KEY_2), key(1, KEY)), 'alice', token, NOW)
+    const third = keyring(key(3, KEY_3), key(2, KEY_2), key(1, KEY))
+    expect(verifyAppToken(db, third, 'alice', token, NOW)).not.toBeNull()
+    expect(stored(id)).toEqual({ token_hash: hash(KEY_3, token), key_version: 3 })
+  })
+
+  it('goes back when the old key is put first again: the token follows', () => {
+    const { id, token } = createAppToken(db, keyring(key(2, KEY_2), key(1, KEY)), alice, 'x', NOW)
+    expect(
+      verifyAppToken(db, keyring(key(1, KEY), key(2, KEY_2)), 'alice', token, NOW),
+    ).not.toBeNull()
+    expect(stored(id).key_version).toBe(1)
+  })
+
+  it('does not move a token that is expired, of another user, or wrong', () => {
+    const { id, token, expiresAt } = createAppToken(db, KEY, alice, 'Phone', NOW)
+    const rotated = keyring(key(2, KEY_2), key(1, KEY))
+    expect(verifyAppToken(db, rotated, 'bob', token, NOW)).toBeNull()
+    expect(verifyAppToken(db, rotated, 'alice', `${token}x`, NOW)).toBeNull()
+    expect(verifyAppToken(db, rotated, 'alice', token, new Date(expiresAt))).toBeNull()
+    expect(stored(id)).toEqual({ token_hash: hash(KEY, token), key_version: 1 })
+  })
+
+  it('refuses an empty key anywhere in the keyring', () => {
+    const { token } = createAppToken(db, KEY, alice, 'Phone', NOW)
+    expect(() =>
+      verifyAppToken(db, keyring(key(2, KEY_2), key(1, '')), 'alice', token, NOW),
+    ).toThrow(/hash key/)
+  })
+
+  it('gives tokens that existed before the column the version 1 (migration 003)', () => {
+    const fresh = openDatabase(':memory:')
+    const migrations = loadMigrationsFromDir(migrationsDir)
+    runMigrations(
+      fresh,
+      migrations.filter((migration) => migration.name < '003'),
+    )
+    const user = upsertUser(fresh, { sub: 'sub-carol', username: 'carol' }, NOW).id
+    const token = 'wcal_from-before-the-column'
+    fresh
+      .prepare(
+        'INSERT INTO app_tokens (user_id, label, token_hash, expires_at) VALUES (?, ?, ?, ?)',
+      )
+      .run(user, 'Old', hash(KEY, token), '2027-10-29T10:00:00.000Z')
+
+    expect(runMigrations(fresh, migrations)).toContain('003_app_token_key_version.sql')
+    expect(fresh.prepare('SELECT key_version FROM app_tokens').pluck().all()).toEqual([1])
+    expect(verifyAppToken(fresh, KEY, 'carol', token, NOW)).toMatchObject({ username: 'carol' })
+    expect(() => fresh.prepare('UPDATE app_tokens SET key_version = 0').run()).toThrow(
+      /CHECK constraint/,
+    )
+    fresh.close()
+  })
+})

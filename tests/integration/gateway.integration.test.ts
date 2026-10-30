@@ -19,6 +19,10 @@
 //        npx vitest run tests/integration
 //      Optional: ALICE_APP_TOKEN (an app token of the user `alice`, created in the app's database
 //      for alice's `sub`) enables the Basic-auth checks.
+//
+// Against the PRODUCTION build, with a fake Radicale and a fake identity provider and no setup at
+// all: `npm run test:gateway:prod` (scripts/test-gateway-prod.mjs). It sets these variables itself
+// and also runs gateway-raw.integration.test.ts.
 import { request } from 'node:http'
 import { decodeJwt } from 'jose'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -125,7 +129,8 @@ describe.skipIf(!enabled)('CalDAV gateway against Kanidm and Radicale', () => {
       const reply = await raw('GET', '/api/config')
       expect(reply.status).toBe(200)
       const config = JSON.parse(reply.body) as Record<string, unknown>
-      expect(Object.keys(config).sort()).toEqual(['oidc', 'timezone'])
+      expect(Object.keys(config).sort()).toEqual(['demo', 'oidc', 'timezone'])
+      expect(config.demo).toBe(false)
       expect(Object.keys(config.oidc as object).sort()).toEqual(['clientId', 'issuer', 'scope'])
       expect(config.timezone).toBe(process.env.TZ || 'Europe/Berlin')
     })
@@ -169,6 +174,8 @@ describe.skipIf(!enabled)('CalDAV gateway against Kanidm and Radicale', () => {
         chunks: Array.from({ length: 11 }, () => 'x'.repeat(1024 * 1024)),
       })
       expect(reply.status).toBe(413)
+      // The body is not read to its end, so the answer must end the connection.
+      expect(reply.headers.connection).toBe('close')
     })
   })
 

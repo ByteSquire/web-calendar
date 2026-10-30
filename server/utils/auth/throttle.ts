@@ -1,4 +1,4 @@
-import { normalizeClientAddress } from './client-address'
+import { clientGroupKey } from './client-address'
 
 // Throttle for failed HTTP Basic logins (app tokens, design §6/§7). The credential is ALWAYS checked
 // first (one HMAC and one indexed lookup, microseconds), and a correct one is accepted whatever the
@@ -47,7 +47,7 @@ export interface BasicThrottleOptions {
 
 export interface ThrottleBlock {
   scope: 'user' | 'address'
-  /** The normalized client address. */
+  /** The client as the throttle counts it: an IPv4 address, or the /64 prefix of an IPv6 one. */
   address: string
   /** The user name as sent (scope `user` only). */
   username?: string
@@ -242,9 +242,11 @@ function positiveNumber(name: string, value: number): number {
 
 /**
  * Two counters over failed logins: a sliding window per (client address, lower-cased user name),
- * and a token bucket per client address. The address in the first key is what keeps a stranger from
- * making a user's own client look bad: guessing for "alice" from elsewhere counts against the
- * guesser. The bucket slows a client that sprays user names. Neither ever refuses a correct login.
+ * and a token bucket per client address. A client is its IPv4 address or, for IPv6, its /64 (see
+ * `clientGroupKey`: a client with a whole /64 cannot start over with a new address). The address in
+ * the first key is what keeps a stranger from making a user's own client look bad: guessing for
+ * "alice" from elsewhere counts against the guesser. The bucket slows a client that sprays user
+ * names. Neither ever refuses a correct login.
  */
 export function createBasicThrottle(options: BasicThrottleOptions = {}): BasicThrottle {
   const maxUser = positiveInteger(
@@ -272,7 +274,8 @@ export function createBasicThrottle(options: BasicThrottleOptions = {}): BasicTh
     ),
   )
 
-  // The normalized address has no line break, so the first one separates it from the user name.
+  // The client key (an address or a /64 prefix) has no line break, so the first one separates it
+  // from the user name.
   const userKey = (address: string, username: string) =>
     `${address}\n${username.toLowerCase().slice(0, MAX_USERNAME_KEY_LENGTH)}`
   const seconds = (waitMs: number) => Math.max(1, Math.ceil((waitMs - EPSILON) / 1000))
@@ -289,7 +292,7 @@ export function createBasicThrottle(options: BasicThrottleOptions = {}): BasicTh
   return {
     recordFailure(address, username) {
       const now = clock()
-      const client = normalizeClientAddress(address)
+      const client = clientGroupKey(address)
       const key = userKey(client, username)
 
       const userBecameBlocked = users.add(key, now)
@@ -309,7 +312,7 @@ export function createBasicThrottle(options: BasicThrottleOptions = {}): BasicTh
     },
 
     recordSuccess(address, username) {
-      users.delete(userKey(normalizeClientAddress(address), username))
+      users.delete(userKey(clientGroupKey(address), username))
     },
 
     size: () => ({ users: users.size, addresses: addresses.size }),

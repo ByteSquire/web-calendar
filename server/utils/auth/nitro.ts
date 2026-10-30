@@ -1,16 +1,18 @@
 import type { H3Event } from 'h3'
-import { verifyAppToken } from '../../db/app-tokens'
+import { verifyAppToken, type TokenKeyring } from '../../db/app-tokens'
 import { getDb } from '../db'
 import { authenticateRequest, type Identity } from './authenticate'
 import { buildAllowedClients } from './clients'
 import { AuthError } from './errors'
 import { createTokenVerifier, type TokenVerifier } from './jwt'
 import { createBasicThrottle, describeBlock, type BasicThrottle } from './throttle'
+import { describeTokenKeyring, parseTokenKeyring } from './token-keys'
 
 // Nitro glue: reads the runtime config and wires the database. The logic is in the plain modules.
 
 let verifier: TokenVerifier | undefined
 let basicThrottle: BasicThrottle | undefined
+let tokenKeyring: TokenKeyring | undefined
 
 function getVerifier(): TokenVerifier {
   if (!verifier) {
@@ -33,6 +35,21 @@ function getVerifier(): TokenVerifier {
   return verifier
 }
 
+/**
+ * The keys that hash app tokens (NUXT_TOKEN_HASH_KEY, NUXT_TOKEN_HASH_KEYS; how to rotate them is
+ * in token-keys.ts). Built once; `authenticateCalDav` asks for it first, so the startup check stops
+ * the server on a bad setting.
+ */
+export function getTokenKeyring(): TokenKeyring {
+  if (!tokenKeyring) {
+    const { tokenHashKey, tokenHashKeys } = useRuntimeConfig()
+    tokenKeyring = parseTokenKeyring({ key: tokenHashKey, keys: tokenHashKeys })
+    const note = describeTokenKeyring(tokenKeyring)
+    if (note) console.info(`[auth] ${note}`)
+  }
+  return tokenKeyring
+}
+
 // One throttle per process, shared by every request: its counters are the whole point.
 function getBasicThrottle(): BasicThrottle {
   basicThrottle ??= createBasicThrottle({
@@ -49,10 +66,10 @@ export function authenticateCalDav(
   headers: Headers,
   context: { clientAddress: string | null } = { clientAddress: null },
 ): Promise<Identity> {
+  const keyring = getTokenKeyring()
   return authenticateRequest(headers, {
     verifier: getVerifier(),
-    verifyAppToken: (username, token) =>
-      verifyAppToken(getDb(), useRuntimeConfig().tokenHashKey, username, token),
+    verifyAppToken: (username, token) => verifyAppToken(getDb(), keyring, username, token),
     basicThrottle: getBasicThrottle(),
     clientAddress: context.clientAddress,
   })

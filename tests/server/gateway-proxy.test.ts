@@ -331,6 +331,7 @@ describe('gateway: request bodies', () => {
       body,
     })
     expect(response.status).toBe(413)
+    expect(response.headers.get('connection')).toBe('close')
     expect(fetchStub).not.toHaveBeenCalled()
   })
 
@@ -341,6 +342,7 @@ describe('gateway: request bodies', () => {
       body: stream('x'.repeat(600), 'x'.repeat(600)),
     })
     expect(response.status).toBe(413)
+    expect(response.headers.get('connection')).toBe('close')
     expect(fetchStub).not.toHaveBeenCalled()
   })
 
@@ -355,6 +357,7 @@ describe('gateway: request bodies', () => {
       body: stream('x'.repeat(600), 'x'.repeat(600)),
     })
     expect(response.status).toBe(413)
+    expect(response.headers.get('connection')).toBe('close')
   })
 
   it('accepts a body of exactly the limit', async () => {

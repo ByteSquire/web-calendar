@@ -54,6 +54,15 @@ function text(status: number, body: string, headers: Record<string, string> = {}
 }
 
 /**
+ * The body of a request over the limit is not read to its end, so the connection cannot carry the
+ * next request: the answer ends it. Without `Connection: close` the client would reuse a socket
+ * that is already gone.
+ */
+function payloadTooLarge(): Response {
+  return text(413, 'Payload Too Large', { connection: 'close' })
+}
+
+/**
  * The CalDAV gateway (design §7): authenticates the request, checks method and path, and forwards it
  * to Radicale with the caller's identity in `X-Remote-User`. Radicale trusts that header, so it is
  * set here and nowhere else; see `buildUpstreamHeaders`.
@@ -135,7 +144,7 @@ export function createGateway(
     if (lengthHeader !== null) {
       if (!/^\d{1,15}$/.test(lengthHeader.trim())) return text(400, 'Bad Request: Content-Length')
       declared = Number(lengthHeader)
-      if (declared > maxBodyBytes) return text(413, 'Payload Too Large')
+      if (declared > maxBodyBytes) return payloadTooLarge()
     }
 
     // Radicale reads a request body by Content-Length only and treats a chunked one as empty, so a
@@ -151,7 +160,7 @@ export function createGateway(
         try {
           body = await readLimited(request.body, maxBodyBytes)
         } catch (error) {
-          if (error instanceof BodyTooLargeError) return text(413, 'Payload Too Large')
+          if (error instanceof BodyTooLargeError) return payloadTooLarge()
           throw error
         }
         contentLength = body.byteLength
@@ -173,7 +182,7 @@ export function createGateway(
         signal: request.signal,
       } as RequestInit)
     } catch (error) {
-      if (exceeded) return text(413, 'Payload Too Large')
+      if (exceeded) return payloadTooLarge()
       if (!request.signal?.aborted) log('upstream request failed', error)
       return text(502, 'Bad Gateway')
     }

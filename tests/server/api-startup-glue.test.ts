@@ -16,6 +16,7 @@ interface TestConfig {
   oidc: Record<string, unknown>
   demo: boolean
   tokenHashKey: string
+  tokenHashKeys?: string
   radicale: { url: string }
   icalProxy: Record<string, unknown>
   gateway: Record<string, unknown>
@@ -100,6 +101,26 @@ describe('startup checks with the real glue modules', () => {
       'positive integer',
     ],
     [
+      'NUXT_TOKEN_HASH_KEY',
+      (c: TestConfig) => (c.tokenHashKey = ''),
+      'NUXT_TOKEN_HASH_KEY is not set',
+    ],
+    [
+      'NUXT_TOKEN_HASH_KEYS',
+      (c: TestConfig) => (c.tokenHashKeys = '2:short'),
+      'at least 32 characters',
+    ],
+    [
+      'NUXT_TOKEN_HASH_KEYS',
+      (c: TestConfig) => (c.tokenHashKeys = `v2:${'n'.repeat(32)}`),
+      'must look like <version>:<key>',
+    ],
+    [
+      'NUXT_TOKEN_HASH_KEY',
+      (c: TestConfig) => (c.tokenHashKeys = `1:${'n'.repeat(32)}`),
+      'another key for version 1',
+    ],
+    [
       'NUXT_ICAL_PROXY_MAX_BYTES',
       (c: TestConfig) => (c.icalProxy.maxBytes = '0'),
       'NUXT_ICAL_PROXY_MAX_BYTES',
@@ -118,6 +139,25 @@ describe('startup checks with the real glue modules', () => {
       expect(result.message).toContain(hint)
     },
   )
+
+  it('accepts a rotated key list next to the old key, and the list alone', async () => {
+    const rotated = `2:${'n'.repeat(32)}`
+    expect((await failuresFor((c) => (c.tokenHashKeys = rotated))).message).not.toContain(
+      'NUXT_TOKEN_HASH',
+    )
+    const listOnly = await failuresFor((c) => {
+      c.tokenHashKey = ''
+      c.tokenHashKeys = rotated
+    })
+    expect(listOnly.message).not.toContain('NUXT_TOKEN_HASH')
+  })
+
+  it('does not print a key when it refuses the settings', async () => {
+    const secret = 'sh0rt-s3cret'
+    const { message } = await failuresFor((c) => (c.tokenHashKeys = `2:${secret}`))
+    expect(message).toContain('NUXT_TOKEN_HASH_KEYS')
+    expect(message).not.toContain(secret)
+  })
 
   it('fails closed on an empty required scope: no token check is built without it', async () => {
     const result = await failuresFor((c) => (c.oidc.requiredScope = ''))

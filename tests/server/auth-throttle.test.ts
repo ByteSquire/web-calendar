@@ -327,13 +327,13 @@ describe('createBasicThrottle: the failure rate of an address', () => {
     expect(spray('198.51.100.7')).toEqual([null])
   })
 
-  it('keeps different IPv6 addresses apart', () => {
+  it('keeps IPv6 addresses of different /64 prefixes apart', () => {
     const { spray } = setup({ addressBurst: 1 })
-    spray('2001:db8::1')
-    expect(spray('2001:db8::2')).toEqual([null])
-    expect(spray('2001:db8:0:1::1')).toEqual([null])
+    spray('2001:db8:0:1::1')
+    expect(spray('2001:db8:0:2::1')).toEqual([null])
+    expect(spray('2001:db8:1:1::1')).toEqual([null])
+    expect(spray('2001:db9:0:1::1')).toEqual([null])
   })
-
   it.each([null, undefined, '', 'not an address', '999.1.1.1', '203.0.113.9:443', '[::1]:80'])(
     'puts the unusable address %j into one shared bucket',
     (address) => {
@@ -423,6 +423,64 @@ describe('createBasicThrottle: many clients and many user names', () => {
   })
 })
 
+describe('createBasicThrottle: IPv6 clients are counted by /64', () => {
+  const PREFIX = '2001:db8:0:1'
+
+  it('shares the failure rate of an address between all addresses of its /64', () => {
+    const { spray } = setup({ addressBurst: 3 })
+    spray(`${PREFIX}::1`)
+    spray(`${PREFIX}:abcd:ef01:2345:6789`)
+    spray(`${PREFIX}:ffff:ffff:ffff:ffff`)
+    // The fourth failure in the /64 is over the burst, whatever address it came from.
+    expect(spray(`${PREFIX}::2`)).toEqual([1])
+    expect(spray('2001:db8:0:2::1')).toEqual([null])
+  })
+
+  it('shares the failures per user name, so a new address does not start the count over', () => {
+    const { fail } = setup()
+    const answers = [1, 2, 3, 4, 5].map((n) => fail(`${PREFIX}::${n}`, 'alice')[0])
+    expect(answers).toEqual([null, null, null, null, 600])
+    // Another /64 is another client; so is another user name in the same /64.
+    expect(fail('2001:db8:0:2::1', 'alice')).toEqual([null])
+    expect(fail(`${PREFIX}::9`, 'bob')).toEqual([null])
+  })
+
+  it('stops a client that uses a fresh address in its /64 for every guess', () => {
+    const { fail } = setup()
+    const attempts = Array.from(
+      { length: 40 },
+      (_, n) => fail(`${PREFIX}:${n.toString(16)}:${n}:${n + 1}:${n + 2}`, 'alice')[0],
+    )
+    expect(attempts.slice(0, 4)).toEqual([null, null, null, null])
+    expect(attempts.slice(4).every((wait) => wait !== null)).toBe(true)
+  })
+
+  it('lets a correct login from the /64 start the count over for every address in it', () => {
+    const { throttle, fail } = setup()
+    fail(`${PREFIX}::1`, 'alice', 4)
+    throttle.recordSuccess(`${PREFIX}::2`, 'alice')
+    expect(fail(`${PREFIX}::3`, 'alice')).toEqual([null])
+    expect(throttle.size()).toEqual({ users: 1, addresses: 1 })
+  })
+
+  it('writes the prefix, not one address, in the report of a block', () => {
+    const { blocks, fail } = setup()
+    fail(`${PREFIX}::1`, 'alice', 4)
+    fail(`${PREFIX}::2`, 'alice')
+    expect(blocks).toEqual([
+      { scope: 'user', address: `${PREFIX}::/64`, username: 'alice', retryAfterSec: 600 },
+    ])
+    expect(describeBlock(blocks[0]!)).toContain(`from ${PREFIX}::/64;`)
+  })
+
+  it('still counts an IPv4 client, and an IPv4-mapped one, by its address', () => {
+    const { fail } = setup()
+    fail('203.0.113.9', 'alice', 3)
+    expect(fail('::ffff:203.0.113.9', 'alice', 2)).toEqual([null, 600])
+    expect(fail('203.0.113.10', 'alice')).toEqual([null])
+  })
+})
+
 describe('createBasicThrottle: reporting', () => {
   it('reports once when a user key reaches its limit, not on later failures', () => {
     const { blocks, fail } = setup()
@@ -443,7 +501,7 @@ describe('createBasicThrottle: reporting', () => {
       spray('2001:0db8::1', 20)
       advance(0.1)
     }
-    expect(blocks).toEqual([{ scope: 'address', address: '2001:db8::1', retryAfterSec: 1 }])
+    expect(blocks).toEqual([{ scope: 'address', address: '2001:db8::/64', retryAfterSec: 1 }])
   })
 
   it('reports a new run after the address was quiet long enough to refill', () => {

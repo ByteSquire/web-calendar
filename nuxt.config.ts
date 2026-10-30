@@ -33,8 +33,13 @@ export default defineNuxtConfig({
      * previews and the browser tests of the layout. The API still requires a token.
      */
     demo: false,
-    /** Key for hashing app tokens (HMAC-SHA256). */
+    /** Key for hashing app tokens (HMAC-SHA256); key version 1. */
     tokenHashKey: '',
+    /**
+     * More keys, `version:key` separated by commas, the current one first (NUXT_TOKEN_HASH_KEYS);
+     * empty means `tokenHashKey` only. How to rotate the key: server/utils/auth/token-keys.ts.
+     */
+    tokenHashKeys: '',
     /** SQLite file for app-level data. */
     dbPath: '.data/web-calendar.db',
     radicale: {

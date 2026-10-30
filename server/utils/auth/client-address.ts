@@ -15,9 +15,8 @@ function withoutZone(address: string): string {
  * One spelling per address, so a client cannot dodge a counter by writing its address differently:
  * IPv6 is compressed and lower-cased, an IPv4-mapped IPv6 address (`::ffff:1.2.3.4`, which is how a
  * dual-stack socket reports an IPv4 client) becomes the IPv4 address, a zone id (`%eth0`) is dropped.
- * Anything that is not an IP address maps to {@link UNKNOWN_ADDRESS}. Each IPv6 address is its own
- * client; a client with a whole /64 can therefore rotate (grouping by prefix would be stricter, and
- * would make a shared /64, such as an office LAN, one client).
+ * Anything that is not an IP address maps to {@link UNKNOWN_ADDRESS}. This is still one address;
+ * the throttle counts clients with {@link clientGroupKey}.
  */
 export function normalizeClientAddress(address: string | null | undefined): string {
   if (!address) return UNKNOWN_ADDRESS
@@ -39,6 +38,39 @@ export function normalizeClientAddress(address: string | null | undefined): stri
     return `${high >> 8}.${high & 0xff}.${low >> 8}.${low & 0xff}`
   }
   return canonical
+}
+
+/** The eight 16-bit groups of an IPv6 address in the compressed form the URL parser writes. */
+function ipv6Groups(canonical: string): number[] {
+  const [head = '', tail = ''] = canonical.split('::')
+  const first = head === '' ? [] : head.split(':')
+  const last = tail === '' ? [] : tail.split(':')
+  const zeros = canonical.includes('::') ? 8 - first.length - last.length : 0
+  return [...first, ...Array<string>(zeros).fill('0'), ...last].map((group) => parseInt(group, 16))
+}
+
+/** Prefix length of the IPv6 group that the login throttle counts as one client. */
+const IPV6_CLIENT_PREFIX = 64
+
+/**
+ * The key the login throttle counts a client under: its normalized address, except that all IPv6
+ * addresses of one /64 are ONE client, written as the prefix (`2001:db8:1:2::/64`). Whoever has an
+ * IPv6 connection normally owns a whole /64 (a home line, a VPS) and can use a new address in it
+ * for every attempt; counting each address alone would leave such a client unlimited. The cost is
+ * that neighbours in a shared /64 (an office LAN) share the budget of failed logins, which a
+ * correct login never feels. No prefix gets special treatment: `::1` is in `::/64`, and an
+ * IPv4-mapped address is the IPv4 address (a client is not an IPv6 address just because the socket
+ * is). {@link normalizeClientAddress} is unchanged because proxy detection needs the real address.
+ */
+export function clientGroupKey(address: string | null | undefined): string {
+  const normalized = normalizeClientAddress(address)
+  if (isIP(normalized) !== 6) return normalized
+  const prefix = ipv6Groups(normalized)
+    .slice(0, IPV6_CLIENT_PREFIX / 16)
+    .map((group) => group.toString(16))
+    .join(':')
+  // The URL parser compresses the prefix the way it does an address: one spelling per /64.
+  return `${new URL(`http://[${prefix}::]/`).hostname.slice(1, -1)}/${IPV6_CLIENT_PREFIX}`
 }
 
 /**

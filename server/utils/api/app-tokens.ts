@@ -8,6 +8,7 @@ import {
   MAX_APP_TOKENS_PER_USER,
   revokeAppToken,
   type AppTokenSummary,
+  type TokenHashKeys,
 } from '../../db/app-tokens'
 import { conflict, notFound, toBadRequest } from './errors'
 import {
@@ -60,7 +61,7 @@ export function listTokens(db: Database, userId: number, now = new Date()): AppT
 
 export function createToken(
   db: Database,
-  hashKey: string,
+  hashKey: TokenHashKeys,
   userId: number,
   body: unknown,
   now = new Date(),

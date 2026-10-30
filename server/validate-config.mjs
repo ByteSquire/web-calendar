@@ -7,6 +7,7 @@ import { pathToFileURL } from 'node:url'
 // Same default as runtimeConfig.oidc.clientId in nuxt.config.ts.
 const DEFAULT_CLIENT_ID = 'web-calendar'
 const MIN_TOKEN_HASH_KEY_LENGTH = 32
+const MAX_TOKEN_HASH_KEYS = 10
 // Mirrors ALLOW_PRIVATE_ACK_VARIABLE in utils/ical-proxy/config.ts (this script is plain JS and
 // runs before the server; a test keeps the two equal).
 const ALLOW_PRIVATE_ACK = 'NUXT_ICAL_PROXY_ALLOW_PRIVATE_I_UNDERSTAND_THE_RISK'

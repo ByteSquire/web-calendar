@@ -54,6 +54,9 @@ npm run fmt        # prettier --write .
 npm run typecheck  # nuxt typecheck
 npm run test:e2e   # builds the app, then runs the Playwright browser tests (e2e/)
 npm audit
+npm run audit:prod        # npm audit --omit=dev, failing on any advisory not on the known list
+npm run test:gateway:prod # builds into a temp dir, runs the gateway integration suites against it
+npm run radicale:usage -- <collections dir>   # size and items per Radicale home (run on the host)
 ```
 
 Linting is ESLint through `@nuxt/eslint` (flat config in `eslint.config.mjs`).
@@ -131,11 +134,14 @@ and client renders match.
   data. See [Environment](#environment).
 - The design of 2026-10-29 is recorded in `docs/design.md` (v1.3). The deployment files
   (`docker-compose.yml`, `deploy/`, `.env.example`, `server/validate-config.mjs`) follow
-  it. Built so far: the UI mock-up (sidebar, top bar, every view type incl. the split
-  view, quick-add, event sheet; all from mock data), the SQLite layer with app tokens, and
-  the token verifier and CalDAV gateway (`/caldav/`, `/api/config`). Not built yet: the
-  browser login, the calendar API and the real CalDAV client (design §11, Phase 2). Spikes
-  S1, S2, S3, S5, S6 and S9 are done; S4, S7 and S8 are open (design §12). A test stack
+  it. Built: the UI (sidebar, top bar, every view type incl. the split view, quick-add, event
+  sheet; mock data in demo mode), the browser login (Kanidm, PKCE), live calendars from Radicale
+  with recurrence and time zones (organization zone, the browser's, or a per-user setting),
+  creating, editing and deleting events, a settings page (app tokens, preferences, iCal
+  subscriptions, `.ics` file import, external CalDAV accounts), the token verifier and CalDAV
+  gateway (`/caldav/`), and the security headers. Not built yet: access administration, shared
+  views and resources (Phase 3) and the public view. Spikes S1 to S6 and S8 to S10 are done; S7
+  (real clients) is open (design §12). A test stack
   for the spikes is in `dev/spike-s1`.
 
 ### Dependency versions (as of 2026-10-24)
@@ -194,27 +200,30 @@ them at runtime. `server/validate-config.mjs` checks the required ones when the 
 starts and exits with a message if they are wrong. The defaults in the table repeat those
 in `nuxt.config.ts`; an empty value in `.env` falls back to them.
 
-| Variable                           | Required | Default                  | Meaning                                                                                                                                                  |
-| ---------------------------------- | -------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NUXT_OIDC_ISSUER`                 | yes      |                          | Issuer of the app's own Kanidm client: an https URL that ends with the client id, such as `…/oauth2/openid/web-calendar`                                 |
-| `NUXT_TOKEN_HASH_KEY`              | yes      |                          | Key for hashing app tokens, at least 32 characters                                                                                                       |
-| `NUXT_RADICALE_URL`                | yes      | `http://radicale:5232`   | Internal URL of Radicale; set by the compose file                                                                                                        |
-| `NUXT_OIDC_CLIENT_ID`              | no       | `web-calendar`           | The app's own public client; the issuer must end with it                                                                                                 |
-| `NUXT_OIDC_ALLOWED_CLIENTS`        | no       | empty (the client above) | Further Kanidm clients whose tokens the CalDAV gateway accepts, comma-separated                                                                          |
-| `NUXT_GROUP_SYNC_TOKEN`            | no       |                          | Read-only Kanidm API token for the group sync (arrives in Phase 3; the container warns and starts without it)                                            |
-| `NUXT_GROUP_SYNC_INTERVAL_SEC`     | no       | `60`                     | Seconds between group syncs; a removed member keeps access for up to this long                                                                           |
-| `NUXT_GATEWAY_CORS_ORIGINS`        | no       | empty (no CORS)          | Origins of external browser apps that may call `/caldav/`, comma-separated                                                                               |
-| `NUXT_GATEWAY_TRUST_FORWARDED_FOR` | no       | `false`                  | `true` behind a reverse proxy that overwrites `X-Forwarded-For`: its last hop is the client address for the login throttle. Leave it off without a proxy |
-| `NUXT_OIDC_KEY_MAX_AGE_SEC`        | no       | `3600`                   | Age after which the cached Kanidm signing keys are refetched in the background                                                                           |
-| `NUXT_GATEWAY_MAX_BODY_BYTES`      | no       | `10485760`               | Largest request body the gateway forwards                                                                                                                |
-| `NUXT_OIDC_ADMIN_GROUP`            | no       | `calendar_admins`        | Kanidm group whose members are admins                                                                                                                    |
-| `NUXT_ICAL_PROXY_CACHE_TTL_SEC`    | no       | `300`                    | Seconds an iCal subscription is served from the proxy's cache                                                                                            |
-| `NUXT_ICAL_PROXY_MAX_BYTES`        | no       | `5242880`                | Largest `.ics` file the proxy accepts                                                                                                                    |
-| `NUXT_ICAL_PROXY_TIMEOUT_MS`       | no       | `10000`                  | Time allowed for fetching a subscription                                                                                                                 |
-| `NUXT_ICAL_PROXY_ALLOW_PRIVATE`    | no       | `false`                  | `true` lets subscriptions point at private addresses; tests only                                                                                         |
-| `NUXT_DEMO`                        | no       | `false`                  | `true` skips the login and shows mock data; previews and browser tests only                                                                              |
-| `NUXT_DB_PATH`                     | fixed    | `/data/web-calendar.db`  | SQLite file; set by the compose file                                                                                                                     |
-| `TZ`                               | no       | `Europe/Berlin`          | Organization time zone, an IANA name (floating times, fallback and label); users see their browser's zone. Anything else stops the container             |
+| Variable                           | Required | Default                  | Meaning                                                                                                                                                                            |
+| ---------------------------------- | -------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NUXT_OIDC_ISSUER`                 | yes      |                          | Issuer of the app's own Kanidm client: an https URL that ends with the client id, such as `…/oauth2/openid/web-calendar`                                                           |
+| `NUXT_TOKEN_HASH_KEY`              | yes\*    |                          | Key for hashing app tokens, at least 32 characters (\*not needed when `NUXT_TOKEN_HASH_KEYS` is set)                                                                               |
+| `NUXT_RADICALE_URL`                | yes      | `http://radicale:5232`   | Internal URL of Radicale; set by the compose file                                                                                                                                  |
+| `NUXT_OIDC_CLIENT_ID`              | no       | `web-calendar`           | The app's own public client; the issuer must end with it                                                                                                                           |
+| `NUXT_OIDC_ALLOWED_CLIENTS`        | no       | empty (the client above) | Further Kanidm clients whose tokens the CalDAV gateway accepts, comma-separated                                                                                                    |
+| `NUXT_GROUP_SYNC_TOKEN`            | no       |                          | Read-only Kanidm API token for the group sync (arrives in Phase 3; the container warns and starts without it)                                                                      |
+| `NUXT_GROUP_SYNC_INTERVAL_SEC`     | no       | `60`                     | Seconds between group syncs; a removed member keeps access for up to this long                                                                                                     |
+| `NUXT_GATEWAY_CORS_ORIGINS`        | no       | empty (no CORS)          | Origins of external browser apps that may call `/caldav/`, comma-separated                                                                                                         |
+| `NUXT_GATEWAY_TRUST_FORWARDED_FOR` | no       | `false`                  | `true` behind a reverse proxy that overwrites `X-Forwarded-For`: its last hop is the client address for the login throttle. Leave it off without a proxy                           |
+| `NUXT_OIDC_KEY_MAX_AGE_SEC`        | no       | `3600`                   | Age after which the cached Kanidm signing keys are refetched in the background                                                                                                     |
+| `NUXT_GATEWAY_MAX_BODY_BYTES`      | no       | `10485760`               | Largest request body the gateway forwards                                                                                                                                          |
+| `NUXT_OIDC_ADMIN_GROUP`            | no       | `calendar_admins`        | Kanidm group whose members are admins                                                                                                                                              |
+| `NUXT_ICAL_PROXY_CACHE_TTL_SEC`    | no       | `300`                    | Seconds an iCal subscription is served from the proxy's cache                                                                                                                      |
+| `NUXT_ICAL_PROXY_MAX_BYTES`        | no       | `5242880`                | Largest `.ics` file the proxy accepts                                                                                                                                              |
+| `NUXT_ICAL_PROXY_TIMEOUT_MS`       | no       | `10000`                  | Time allowed for fetching a subscription                                                                                                                                           |
+| `NUXT_TOKEN_HASH_KEYS`             | no       | empty                    | Key list for rotation, `2:<new>,1:<old>`; the first entry hashes new tokens (design §6)                                                                                            |
+| `NUXT_OUTBOUND_ALLOWED_HOSTS`      | no       | empty (any public host)  | Comma-separated hosts (`name`, `*.suffix`) that iCal subscriptions and external accounts may reach                                                                                 |
+| `NUXT_EXTERNAL_SEAL_KEY`           | no       | empty                    | 64 hex characters or base64 of 32 bytes; without it external accounts with a login are off. Changing it voids every saved external password                                        |
+| `NUXT_ICAL_PROXY_ALLOW_PRIVATE`    | no       | `false`                  | `true` lets subscriptions point at private addresses; tests only                                                                                                                   |
+| `NUXT_DEMO`                        | no       | `false`                  | `true` skips the login and shows mock data; previews and browser tests only                                                                                                        |
+| `NUXT_DB_PATH`                     | fixed    | `/data/web-calendar.db`  | SQLite file; set by the compose file                                                                                                                                               |
+| `TZ`                               | no       | `Europe/Berlin`          | Organization time zone, an IANA name (floating times, fallback and label); users see their browser's zone unless they chose another in Settings. Anything else stops the container |
 
 Production builds must run on the Docker host — the Dev Container does not
 include a Docker CLI.

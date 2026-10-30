@@ -106,16 +106,24 @@ out). Views appear at the **top of the sidebar**.
 
 ### 4.2 Calendar sources
 
-- **FR-7** Users can **import a calendar from an iCal (`.ics`) URL or file**.
+- **FR-7** Users can **import a calendar from an iCal (`.ics`) URL or file**. A URL is
+  subscribed to (read-only, fetched by the server). A file is imported into one of the user's
+  own writable calendars, at most 5 MB and 2000 events, events only (VEVENT); nothing is kept
+  on the server.
 - **FR-8** Users see the calendars of the **built-in calendar service** they have
   access to without any account setup, and can **add external CalDAV accounts**
-  (a CalDAV URL plus an authentication mode: basic or none; OIDC later). Credentials
-  and tokens for external accounts are kept in the user's browser and are **never
-  stored on the server**. Browsers cannot call arbitrary CalDAV servers (CORS), so
-  the app's server forwards each request without keeping anything (decided
-  2026-10-30; design §6, §7). The credentials of an account are sent only to that
-  account's origin, and administrators cannot reference external accounts in shared
-  views.
+  (a CalDAV URL plus an authentication mode: basic or none; OIDC later). External
+  calendars are read-only. The server stores the non-secret part of an account (name,
+  address, authentication mode, user name, colour). A password is used once to make a
+  **sealed credential**, encrypted for this user, this account and this origin, that only
+  the app's proxy can open; the browser keeps the sealed text in memory, or on the device
+  if the user asks, and the password itself is never stored. Browsers cannot call arbitrary
+  CalDAV servers (CORS), so the app's server forwards each request without keeping anything
+  (design §6, §7). Credentials are sent only to the account's origin. Without the seal
+  key (`NUXT_EXTERNAL_SEAL_KEY`) accounts with a login are off and accounts without one
+  still work. An optional administrator host list limits which servers the proxy, and
+  iCal subscriptions, may reach. Administrators cannot reference external accounts in
+  shared views.
 - **FR-9** _(nice to have)_ CalDAV sync is **two-way** — users can create/edit
   events that write back to the CalDAV server.
 - **FR-10** Calendar data is **fetched live** for the visible date range and cached
@@ -193,7 +201,8 @@ minimum:
 - **FR-32** Each user sees times in **their own time zone**: the browser's, by default.
   A timed event moves to the viewer's zone (a 09:00 Berlin meeting is 19:00 for someone
   in Sydney, on the right day); **all-day events stay on their dates**. A per-user
-  setting that overrides the browser's zone is planned. Standard CalDAV clients convert
+  setting in Settings overrides the browser's zone: the precedence is the user's setting, then
+  the browser's zone, then the organization zone. Standard CalDAV clients convert
   on their own, as the data carries each event's zone.
 
 ### 4.9 Third-party CalDAV access
@@ -245,7 +254,7 @@ minimum:
   access rules are written to an audit log with actor, time and target. The CalDAV
   backend's identity header is set by at most three named components (the gateway, the
   sharing writer, the public endpoint), each with its own tests, and the backend is
-  reachable from nothing else. _(Security review 2026-10-30, `docs/security-review.md`.)_
+  reachable from nothing else. _(Audit scope and controls: `docs/security-review.md`.)_
 - **NFR-3 (Accessibility)** The web UI meets **WCAG 2.1 AA**.
 - **NFR-4 (Reliability)** Defined availability target and graceful degradation
   when an external source (iCal/CalDAV) is unreachable: that calendar shows an

@@ -18,6 +18,12 @@ export interface CalendarUser {
 }
 
 export interface Calendar {
+  /**
+   * For live calendars the calendar's ref: `dav:<collection path>` for the built-in service
+   * (for example `dav:/caldav/<sub>/<uuid>/`), `ics:<subscription id>` for an iCal subscription,
+   * `ext:<account id>:<collection url>` for an external CalDAV account. The same string is
+   * `calendar_prefs.calendar_ref` and the refs in `views.definition`.
+   */
   id: string
   name: string
   type: CalendarType
@@ -29,6 +35,10 @@ export interface Calendar {
   caldavAccountId?: string
   /** Set when `type` is `resource`. */
   resourceType?: ResourceType
+  /** The CalDAV collection URL (a path for the built-in service). */
+  href?: string
+  /** The viewer may not change events here (subscriptions, read-only shares). */
+  readOnly?: boolean
 }
 
 export interface CalendarResource {
@@ -91,4 +101,15 @@ export interface CalendarEvent {
   etag?: string
   /** Last modification time from the source (ISO 8601). */
   lastModified?: string
+  /** URL of the CalDAV resource (an .ics file) that holds the event; set for CalDAV events. */
+  href?: string
+  /**
+   * Identifies one occurrence of a recurring event: the original start as a UTC instant
+   * (`2026-10-26T08:00:00Z`), or a date (`2026-11-05`) for an all-day series. Absent for single events.
+   */
+  recurrenceId?: string
+  /** Part of a recurring series (also for single occurrences that were changed). */
+  recurring?: boolean
+  /** The names in the iCal `CATEGORIES`; `categoryIds` are resolved from them by the app. */
+  categoryNames?: string[]
 }

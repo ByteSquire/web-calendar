@@ -5,17 +5,18 @@ Before the first release (guide §1). Reviewed commit `cfe9498`. Method: read th
 build (`.output`) with the test stack (`dev/spike-s1`, users alice and bob, real Kanidm tokens).
 
 The fixes in §2 were made after the review, on top of `cfe9498`, each in its own commit (see
-`git log cfe9498..`). Release gate, run in the Dev Container on the tree those commits add up to,
+`git log cfe9498..`). Release gate, run in the Dev Container on the tree at `b431ddb` (the last of those commits),
 all passing:
 
-| Step                        | Result                                                               |
-| --------------------------- | -------------------------------------------------------------------- |
-| `npm run check`             | exit 0 (format, lint, typecheck, e2e typecheck)                      |
-| `npm test`                  | 5518 passed, 63 skipped (163 files)                                  |
-| `npm run test:e2e`          | 860 passed, 526 skipped by design (project-specific), exit 0         |
-| `npm run audit:prod`        | exit 0: only the three known advisories (glob, minimatch, deepmerge) |
-| `npm run test:gateway:prod` | 30 passed                                                            |
-| `npm run test:e2e:live`     | 20 passed, against the real Kanidm and Radicale                      |
+| Step                        | Result                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| `npm run check`             | exit 0 (format, lint, typecheck, e2e typecheck)                                 |
+| `npm test`                  | 5553 passed, 63 skipped (164 files)                                             |
+| `npm run test:e2e`          | 880 passed, 562 skipped by design (project-specific), exit 0                    |
+| `npm run audit:prod`        | exit 0: only the three known advisories (glob, minimatch, deepmerge)            |
+| `npm run test:gateway:prod` | 30 passed                                                                       |
+| `npm run test:e2e:live`     | 20 passed, against the real Kanidm and Radicale                                 |
+| `reuse lint`                | compliant: 665 of 665 files have a licence and a copyright (`fsfe/reuse` image) |
 
 ## 1. Status, by guide §6 bullet
 
@@ -68,8 +69,17 @@ Confidence is how sure the finding is real, not its severity.
    (`NUXT_GROUP_SYNC_TOKEN`), so with no token nothing removes them; tokens made after the run
    began are kept (a user added meanwhile); an empty users group removes nobody; a failed run
    removes nobody. Tests: `tests/server/group-sync-app-ports.test.ts` (real SQLite and a real
-   `verifyAppToken` afterwards), `tests/server/group-sync-service.test.ts`. **Not run: a live
-   removal in Kanidm** — the stack's sync token was not used.
+   `verifyAppToken` afterwards), `tests/server/group-sync-service.test.ts`. **Proven live** against
+   the test Kanidm: after bob was removed from `web_calendar_users`, his app token was refused
+   (401) within about 9 s with the sync interval at 5 s, the audit row `group_sync.tokens_revoked`
+   (`{"reason":"no longer in the users group","revoked":1}`) was written, and alice's token kept
+   working; bob was then added back. That run also found a defect in the sync itself, now fixed:
+   with Kanidm's documented `prefer-short-username` the stored name is `alice` but the group
+   member is `alice@idm.localhost`, so no member matched and the sync never ran. The users
+   lookup (`createUsersTableResolver` in `server/utils/group-sync/members.ts`) now also matches
+   the short name when the SPN's domain is the issuer's host or a parent of it; a member of
+   another domain with the same short name does not match. Tests:
+   `tests/server/group-sync-service.test.ts` (also checked by breaking the code).
 
 3. **Low, confidence 90. No "revoke all" for app tokens.** Guide §4 and §7.7 ask for it; only
    per-token delete exists (`server/api/app-tokens/[id].delete.ts`, max 10 tokens). FR-31 says "individually and
@@ -118,11 +128,21 @@ Confidence is how sure the finding is real, not its severity.
 
 9. **Low, confidence 50. The gateway has no per-user rate limit, concurrency cap or upstream
    timeout**, so a valid user can run unbounded heavy `REPORT`/`PROPFIND` requests, and `client_id`
-   is optional in bearer verification (`server/utils/auth/jwt.ts:284`). **Fixed the
-   small part**: the gateway now gives up after 30 s (`upstreamTimeoutMs`) when Radicale has not
-   started to answer, with `504`. Only the wait for the headers is timed, so a long streamed answer
-   is not cut off. Tests: `tests/server/gateway-proxy.test.ts`. **Not fixed**: a per-user token
-   bucket and a required `client_id`; larger changes, see §5.
+   is optional in bearer verification (`server/utils/auth/jwt.ts`). **Fixed**, in three parts:
+   - The gateway gives up after 30 s (`upstreamTimeoutMs`) when Radicale has not started to
+     answer, with `504`. Only the wait for the headers is timed, so a long streamed answer is not
+     cut off. Tests: `tests/server/gateway-proxy.test.ts`.
+   - A cap of 8 requests in flight per user (`server/utils/gateway/concurrency.ts`, setting
+     `NUXT_GATEWAY_MAX_CONCURRENT_PER_USER`, checked at startup); a ninth answers `429` with
+     `Retry-After`. The slot is held until the answer has been read to its end and is given back
+     when Radicale fails, times out or the path is refused. Tests:
+     `tests/server/gateway-concurrency.test.ts`, `tests/server/gateway-proxy.test.ts`,
+     `tests/server/api-startup-glue.test.ts`, `tests/validate-config.test.ts`.
+   - `client_id` is required: a bearer token without one is refused. Test:
+     `tests/server/auth-jwt.test.ts`.
+
+   The guide asks for a rate limit _or_ a concurrency cap; I chose the cap. A per-user request
+   rate (token bucket) was not added. The value 8 is the user's choice.
 
 10. **Low, confidence 50. Admin mutation and its audit-log row are not one transaction**
     (for example `server/api/admin/views/[id].put.ts`), unlike the booking routes. A failed audit
@@ -133,7 +153,9 @@ Confidence is how sure the finding is real, not its severity.
     break the audit insert with a trigger and check that the change is not stored.
 
 11. **Low, confidence 40. Base images pinned by tag, not digest**
-    (`node:24.15-bookworm-slim`, `radicale:3.9.0` in `dev/spike-s1`). Left open, see §5.
+    (`node:24.15-bookworm-slim`, `radicale:3.9.0` in `dev/spike-s1`). **Decided: stay on tags**
+    (your choice), so the images are not byte-for-byte reproducible and a re-tagged image would be
+    picked up on the next pull. Nothing changed.
 
 ## 3. Not checked
 
@@ -149,14 +171,13 @@ test does what it says beyond the full-suite pass already recorded above).
   test for `nosniff` or content-type coercion.
 - Compose hardening (`read_only`, `cap_drop`, `no-new-privileges`, the `internal: true` network)
   and the content of the Radicale rights file.
-- A live Kanidm user removal against the gateway (this review read the code path; it did not
-  remove a live user).
 - The "Revoke all" button in a real browser.
 
 ## 5. Open
 
-Not done, larger or touching many files:
+No finding is open. What the gate did not prove:
 
-- Finding 9: a per-user rate limit or concurrency cap on the gateway, and a required `client_id`.
-- Finding 11: base images by digest.
-- Finding 2 has no live proof against Kanidm (see its entry).
+- The reverse-proxy examples (Finding 4), the README's `docker run` backup command (Finding 7)
+  and the Compose stack with the `internal: true` network (Finding 8) were not run.
+- A per-user request rate limit (Finding 9) was not added; the concurrency cap stands in for it.
+- The items in §3 and §4 above.

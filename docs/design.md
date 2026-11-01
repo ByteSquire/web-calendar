@@ -1068,8 +1068,13 @@ this is the **order**):
   to a fork through `overrides`). Replacement: ESLint 10 (`@nuxt/eslint`) +
   Prettier (single quotes, no semicolons, 100 columns) + `nuxt typecheck`, with
   `npm test` running plain `vitest run`. `npm run check` and `npm test` pass in the
-  Dev Container. TypeScript is held at 5.9 until `vue-tsc` support for TypeScript 7
-  is verified.
+  Dev Container. TypeScript is held at 5.9: TypeScript 7 is the native compiler and ships no classic compiler
+  library, which `vue-tsc` and `typescript-eslint` (peer `<6.1.0`) load. Tried 2026-11-01 and not
+  adopted: Vize 0.627 (experimental) with the TypeScript 7.1 beta and its content mapper gave 8,531
+  syntax errors in 173 Nuxt UI `.vue` files; `vize check` caught planted errors but reported 34
+  false positives on code `vue-tsc` passes (Nuxt UI slot types, component template refs) and took
+  16 s against 3 s. Golar (`nuxt typecheck --checker golar`, bundles typescript-go) is untried.
+  Revisit when TypeScript 7.1 and `typescript-eslint` are stable.
 - **Browser-level tests** — decided and built (2026-10-29): Playwright with Chromium and WebKit in
   the Dev Container, tests in `e2e/` against the production build. Projects: phone portrait and
   landscape (touch), tablet, desktop, phone and desktop in dark mode, WebKit phone. Covered: no

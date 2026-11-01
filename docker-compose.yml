@@ -20,7 +20,8 @@ services:
     image: web-calendar:latest
     restart: unless-stopped
     init: true
-    # Bind to loopback only: expect a reverse proxy (TLS) in front.
+    # Bind to loopback only: expect a reverse proxy (TLS) in front; deploy/reverse-proxy/README.md
+    # has worked examples.
     ports:
       - '127.0.0.1:3000:3000'
     environment:

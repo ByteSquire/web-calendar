@@ -462,7 +462,8 @@ which some discovery code dislikes.
 Reference configuration: TLS 1.2+, HSTS, `X-Forwarded-For` appended **and**
 `NUXT_GATEWAY_TRUST_FORWARDED_FOR=true`, `client_max_body_size` at least the gateway limit,
 request buffering off for `/caldav/`, the app's port on loopback only. The app never trusts
-`X-Forwarded-Host` or `-Proto` for anything security-relevant.
+`X-Forwarded-Host` or `-Proto` for anything security-relevant. Worked examples (nginx and Caddy):
+`deploy/reverse-proxy/README.md`.
 
 ### 7.9 Backups
 

@@ -166,7 +166,8 @@ and client renders match.
 - `web-calendar` is the app (Nuxt 4 / Nitro). It listens on `127.0.0.1:3000`, so put a
   reverse proxy with TLS in front. It runs as the unprivileged `node` user on a read-only
   file system, and keeps its SQLite file at `/data/web-calendar.db` on the
-  `web-calendar-data` volume.
+  `web-calendar-data` volume. [`deploy/reverse-proxy/`](deploy/reverse-proxy/README.md) has nginx
+  and Caddy examples.
 - `radicale` is the CalDAV store (`ghcr.io/kozea/radicale:3.9.0`). It has **no published
   port**: it trusts the `X-Remote-User` header, so only the app may reach it on the
   Compose network. Its configuration is [`deploy/radicale/config`](deploy/radicale/config)

@@ -1073,8 +1073,14 @@ this is the **order**):
   adopted: Vize 0.627 (experimental) with the TypeScript 7.1 beta and its content mapper gave 8,531
   syntax errors in 173 Nuxt UI `.vue` files; `vize check` caught planted errors but reported 34
   false positives on code `vue-tsc` passes (Nuxt UI slot types, component template refs) and took
-  16 s against 3 s. Golar (`nuxt typecheck --checker golar`, bundles typescript-go) is untried.
-  Revisit when TypeScript 7.1 and `typescript-eslint` are stable.
+  16 s against 3 s. Golar 0.1.11 (`nuxt typecheck --checker golar`, bundles typescript-go) also
+  tried: it matched `vue-tsc` on nine planted errors and on the whole project, in about a third of
+  the time, and was left out only because replacing `vue-tsc` does not remove the old `typescript`
+  that `typescript-eslint` needs. ESLint alternatives were weighed and not adopted: Oxlint (type-aware
+  linting on the TypeScript 7 engine, no official Vue template coverage) and Biome (Vue support
+  experimental) cover far less than the 106 `eslint-plugin-vue` rules in use. Decided 2026-11-01:
+  keep ESLint, `vue-tsc` and TypeScript 5.9; revisit when `typescript-eslint` supports TypeScript 7
+  and Golar is past 0.x.
 - **Browser-level tests** — decided and built (2026-10-29): Playwright with Chromium and WebKit in
   the Dev Container, tests in `e2e/` against the production build. Projects: phone portrait and
   landscape (touch), tablet, desktop, phone and desktop in dark mode, WebKit phone. Covered: no

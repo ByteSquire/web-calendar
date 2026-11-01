@@ -39,7 +39,8 @@ beforeEach(async () => {
 
 afterEach(() => {
   app.unmount()
-  clearNuxtState()
+  // The colour mode lives in Nuxt state too, and the overflow menu needs it.
+  clearNuxtState((key) => key !== 'color-mode')
 })
 
 describe('view-type switcher', () => {
@@ -89,7 +90,7 @@ describe('overflow menu', () => {
     await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull())
     expect(
       [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim()),
-    ).toEqual(['Refresh', 'Settings', 'Help'])
+    ).toEqual(['Refresh', 'Settings', 'Appearance', 'Help'])
     expect(document.activeElement?.getAttribute('role')).toBe('menuitem')
 
     keydown(document.activeElement, 'Escape')

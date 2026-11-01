@@ -136,6 +136,8 @@ export default defineNuxtConfig({
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+        // The page handles both schemes itself (assets/css/main.css): no forced dark mode on top.
+        { name: 'color-scheme', content: 'light dark' },
         {
           name: 'description',
           content: 'Self-hosted web calendar that aggregates multiple calendars into one view.',

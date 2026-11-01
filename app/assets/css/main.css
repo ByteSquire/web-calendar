@@ -11,6 +11,18 @@
  * unlayered rules would beat both. The tokens below follow Nuxt UI's colour-mode variables. */
 
 @layer base {
+  /* The colour scheme on the root element, where browsers look for it. Browsers that darken pages
+   * by themselves (Huawei Browser, Samsung Internet, Chrome's auto dark mode) leave a page alone
+   * that declares it handles dark mode, together with the meta tag in nuxt.config.ts. Without it
+   * they darken this page a second time and borders and icons vanish. */
+  :root {
+    color-scheme: light;
+  }
+
+  :root.dark {
+    color-scheme: dark;
+  }
+
   /* White text on Nuxt UI's default primary (blue 500) is 3.7:1, below WCAG AA; shade 600 is 5.2:1.
    * The dark scheme keeps the lighter shade, which carries dark text. */
   :root:not(.dark) {

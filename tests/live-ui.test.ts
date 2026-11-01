@@ -36,12 +36,14 @@ let app: Awaited<ReturnType<typeof mountSuspended>> | undefined
 afterEach(() => {
   app?.unmount()
   app = undefined
-  clearNuxtState()
+  // The colour mode lives in Nuxt state too, and the overflow menu needs it.
+  clearNuxtState((key) => key !== 'color-mode')
   document.body.innerHTML = ''
 })
 
 beforeEach(() => {
-  clearNuxtState()
+  // The colour mode lives in Nuxt state too, and the overflow menu needs it.
+  clearNuxtState((key) => key !== 'color-mode')
   useConfig({})
 })
 
@@ -143,7 +145,7 @@ describe('overflow menu', () => {
   it('shows the user, the zone, Refresh, Settings, Help and Sign out when signed in', async () => {
     useState('cal-user').value = { id: '7', name: 'Alice', email: 'alice@example.org' }
     await open()
-    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Help', 'Sign out'])
+    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Appearance', 'Help', 'Sign out'])
     const menu = text(document.querySelector('[role="menu"]'))!
     expect(menu).toContain('Alice')
     expect(menu).toContain('alice@example.org')
@@ -163,7 +165,7 @@ describe('overflow menu', () => {
   it('keeps the placeholder items of the mock-up in demo mode', async () => {
     useConfig({ demo: true, issuer: '' })
     await open()
-    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Help'])
+    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Appearance', 'Help'])
     expect(text(document.querySelector('[role="menu"]'))).not.toContain('Times in')
   })
 
@@ -188,7 +190,14 @@ describe('overflow menu', () => {
     it('is offered where the browser has it and asks for the whole page', async () => {
       browserWithFullscreen(true)
       await open()
-      expect(menuItems()).toEqual(['Refresh', 'Settings', 'Full screen', 'Help', 'Sign out'])
+      expect(menuItems()).toEqual([
+        'Refresh',
+        'Settings',
+        'Full screen',
+        'Appearance',
+        'Help',
+        'Sign out',
+      ])
 
       const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
         (candidate) => text(candidate) === 'Full screen',
@@ -217,6 +226,42 @@ describe('overflow menu', () => {
       browserWithFullscreen(false)
       await open()
       expect(menuItems()).not.toContain('Full screen')
+    })
+  })
+
+  describe('appearance', () => {
+    afterEach(() => {
+      useColorMode().preference = 'system'
+    })
+
+    async function openAppearance() {
+      await open()
+      const entry = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+        (candidate) => text(candidate) === 'Appearance',
+      )!
+      entry.focus()
+      entry.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+      await vi.waitFor(() =>
+        expect(document.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(3),
+      )
+      return [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')]
+    }
+
+    it('offers the system default, light and dark, and marks the current one', async () => {
+      useColorMode().preference = 'light'
+      const choices = await openAppearance()
+      expect(choices.map((choice) => text(choice))).toEqual(['System default', 'Light', 'Dark'])
+      expect(choices.map((choice) => choice.getAttribute('aria-checked'))).toEqual([
+        'false',
+        'true',
+        'false',
+      ])
+    })
+
+    it('sets the colour scheme to what was chosen', async () => {
+      const choices = await openAppearance()
+      choices[2]!.click()
+      await vi.waitFor(() => expect(useColorMode().preference).toBe('dark'))
     })
   })
 

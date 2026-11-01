@@ -641,7 +641,10 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
     it, so floating events from such clients stay a known limitation.
   - _Writes_: new events carry `TZID` of the author's zone plus a `VTIMEZONE`,
     so a recurrence follows that zone's daylight saving; an edit keeps the event's own
-    `TZID`. `ical.js` ships no time zone data: the `VTIMEZONE` source is open.
+    `TZID`. `ical.js` ships no time zone data, so the `VTIMEZONE` is generated from the
+    runtime's own zone data (`app/utils/ical/vtimezone.ts`, Temporal over `Intl`, no added
+    dependency): one observance per offset change, from the year before to 25 years after the
+    event's year.
 - **Writes** — `PUT`/`DELETE` with `If-Match` ETags. On `412` (changed meanwhile)
   tell the user and reload the event. **Editing a recurring event asks what to
   change** (decided): this instance, this and following, or the whole series, with

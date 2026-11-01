@@ -3,6 +3,7 @@
 import { Temporal } from 'temporal-polyfill'
 import type { Calendar, CalendarEvent, EventStatus } from '../../shared/types/calendar'
 import { SPLIT_SPANS, type SplitBand, type SplitSpan } from './calendar-state'
+import { BASE_CALENDAR_OPTIONS } from './fullcalendar'
 
 // ---- Colour ----
 
@@ -292,7 +293,9 @@ export function splitDayWindow(
 
 /**
  * The `views` option: sizing per view, so switching the span needs no option juggling. Only the
- * day view trims the hours; week, 5-day and month show whole days. FullCalendar has no built-in
+ * day view trims the hours and labels them like the standard views (07:00); week, 5-day and month
+ * show whole days under FullCalendar's own day labels. `slotHeaderFormat` formats every slot
+ * header of a view, so it cannot be set for all views at once. FullCalendar has no built-in
  * five-day timeline, so that view is defined here.
  */
 export function splitViews(tier: SplitLayoutTier, dayWindow: SplitTimeWindow) {
@@ -305,7 +308,10 @@ export function splitViews(tier: SplitLayoutTier, dayWindow: SplitTimeWindow) {
       SPLIT_VIEW_NAMES[span],
       {
         ...(span === '5day' && { type: 'resourceTimeline', duration: { days: 5 } }),
-        ...(span === 'day' && dayWindow),
+        ...(span === 'day' && {
+          ...dayWindow,
+          slotHeaderFormat: BASE_CALENDAR_OPTIONS.slotHeaderFormat,
+        }),
         ...sizing(span),
       },
     ]),

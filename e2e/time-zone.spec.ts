@@ -179,11 +179,22 @@ async function openSettings(page: Page, now: Date = LATE) {
   return { errors, puts }
 }
 
+/**
+ * Picks an entry of the open list and waits until the list is gone and the focus is back on its
+ * button. That happens a moment after the pick and scrolls the page to the button on a phone, so a
+ * tap made earlier (on "Back to calendar") would land on whatever is under the finger by then.
+ */
+async function pickZone(page: Page, option: string) {
+  await press(page.getByRole('option', { name: option, exact: true }))
+  await expect(page.getByRole('listbox')).toBeHidden()
+  await expect(page.getByLabel('Show times in')).toBeFocused()
+}
+
 /** Opens the list of zones, looks for `search` and picks the entry called `option`. */
 async function chooseZone(page: Page, search: string, option: string) {
   await press(page.getByLabel('Show times in'))
   await page.getByLabel('Search time zones').fill(search)
-  await press(page.getByRole('option', { name: option, exact: true }))
+  await pickZone(page, option)
 }
 
 async function backToCalendar(page: Page) {
@@ -277,7 +288,7 @@ test.describe('a time zone chosen in the settings', () => {
     await openSettings(page)
     await chooseZone(page, 'sydney', 'Australia/Sydney')
     await press(page.getByLabel('Show times in'))
-    await press(page.getByRole('option', { name: "Browser's zone (Europe/Berlin)", exact: true }))
+    await pickZone(page, "Browser's zone (Europe/Berlin)")
 
     await expect(timeZoneSection(page).getByRole('status').last()).toHaveText(
       "Times are now shown in your browser's zone, Europe/Berlin.",

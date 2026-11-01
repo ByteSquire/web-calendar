@@ -306,9 +306,15 @@ describe('views', () => {
       slotDuration: { hours: 1 },
       slotMinTime: '07:00:00',
       slotMaxTime: '19:00:00',
+      // Hours read 07:00, as in the standard views.
+      slotHeaderFormat: { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' },
     })
-    for (const name of ['resourceTimelineWeek', 'resourceTimelineMonth']) {
+    for (const name of ['resourceTimeline5Day', 'resourceTimelineWeek', 'resourceTimelineMonth']) {
       expect(views[name]).not.toHaveProperty('slotMinTime')
+      // The headers of whole days keep FullCalendar's day labels: an hour format would print 00:00.
+      expect(views[name]).not.toHaveProperty('slotHeaderFormat')
+    }
+    for (const name of ['resourceTimelineWeek', 'resourceTimelineMonth']) {
       expect(views[name]).toMatchObject({ slotDuration: { days: 1 } })
     }
     expect(views.resourceTimelineWeek).not.toHaveProperty('type')
@@ -583,8 +589,8 @@ describe('SplitTimeline', () => {
     const wrapper = mountTimeline('2026-10-29', 'day')
     await flushPromises()
     // The Thursday has a deploy window from 20:00 to 22:00; the default would end at 19:00.
-    // The hour labels are plain 24-hour numbers: ...19 20 21 ends at 21, the last slot before 22:00.
-    expect(wrapper.text()).toMatch(/2021(?!\d)/)
-    expect(wrapper.text()).not.toContain('202122')
+    // The hour labels read 19:00 20:00 21:00 and end at 21:00, the last slot before 22:00.
+    expect(wrapper.text()).toMatch(/20:0021:00(?!\d)/)
+    expect(wrapper.text()).not.toContain('20:0021:0022:00')
   })
 })

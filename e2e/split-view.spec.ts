@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { closeDialogs, openApp, pointAt, settledDialogs, switchView } from './helpers'
+import { closeDialogs, openApp, pointAt, press, settledDialogs, switchView } from './helpers'
 
 test.describe('split view', () => {
   test('gives each calendar with events its own band and hides the empty ones', async ({
@@ -19,6 +19,29 @@ test.describe('split view', () => {
     ])
     // Sales, Office and Marketing are off in the default selection, so they get no band.
     await expect(page.getByRole('rowheader', { name: 'Sales' })).toHaveCount(0)
+  })
+
+  test('labels the hours of the day span as 07:00 and the days of the others as days', async ({
+    page,
+  }) => {
+    await openApp(page)
+    await switchView(page, 'Split')
+    const timeline = page.locator('.split-timeline')
+    const span = (name: string) =>
+      page.getByRole('group', { name: 'Period' }).getByRole('button', { name, exact: true })
+
+    await press(span('Day'))
+    await expect(span('Day')).toHaveAttribute('aria-pressed', 'true')
+    await expect(timeline.getByText('07:00', { exact: true })).toBeVisible()
+    await expect(timeline.getByText('08:00', { exact: true })).toBeVisible()
+
+    // A time format would print 00:00 under every day instead of the weekday and the date.
+    for (const name of ['5 days', 'Week', 'Month']) {
+      await press(span(name))
+      await expect(span(name)).toHaveAttribute('aria-pressed', 'true')
+      await expect(timeline.getByText(/^[A-Za-z]+ 29$/)).toHaveCount(1)
+      await expect(timeline.getByText('00:00', { exact: true })).toHaveCount(0)
+    }
   })
 
   test('follows the date buttons', async ({ page }) => {

@@ -4,17 +4,22 @@ import { lastForwardedHop, sharedAddressWarning } from '../auth/client-address'
 import { authenticateCalDav } from '../auth/nitro'
 import { emitChallengeLines } from './challenges'
 import { parseCorsOrigins } from './cors'
+import { getDb } from '../db'
+import { groupFilePath } from '../group-sync/config'
+import { createFileMembership } from '../sharing/membership'
+import { createPathPrecheck, type PathPrecheck } from '../sharing/precheck'
 import { createGateway, type GatewayRequest } from './gateway'
 
 // Nitro glue: reads the runtime config and adapts the Node request. The logic is in the plain modules.
 
 let gateway: ReturnType<typeof createGateway> | undefined
+let precheck: PathPrecheck | undefined
 let trustForwardedFor = false
 let warnedSharedAddress = false
 
 function getGateway() {
   if (!gateway) {
-    const { gateway: config, radicale } = useRuntimeConfig()
+    const { gateway: config, radicale, groupSync, demo } = useRuntimeConfig()
     const { origins, invalid } = parseCorsOrigins(config.corsOrigins)
     if (invalid.length > 0) {
       console.warn(`[gateway] ignoring invalid CORS origins: ${invalid.join(', ')}`)
@@ -27,11 +32,25 @@ function getGateway() {
     }
     // Env overrides are parsed like `icalProxy.allowPrivate`: only the text "true" turns it on.
     trustForwardedFor = String(config.trustForwardedFor) === 'true'
+    const precheckMembership = createFileMembership(
+      groupFilePath(groupSync.file, process.env.NODE_ENV),
+      (message) => console.warn(`[gateway] ${message}`),
+    )
     gateway = createGateway({
       upstream: radicale.url,
       corsOrigins: origins,
       maxBodyBytes,
       authenticate: authenticateCalDav,
+      // Group membership comes from the file Radicale reads, so both agree. Demo mode has no
+      // database (and no Radicale behind the gateway).
+      precheck:
+        String(demo) === 'true'
+          ? undefined
+          : (sub, request) => {
+              // Built on first use: the database opens after the plugins start.
+              precheck ??= createPathPrecheck(getDb(), precheckMembership)
+              return precheck(sub, request)
+            },
       log: (message, cause) => console.warn(`[gateway] ${message}`, cause ?? ''),
     })
   }

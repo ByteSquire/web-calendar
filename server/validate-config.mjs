@@ -343,6 +343,34 @@ export function validateEnv(env) {
     errors.push('NUXT_GROUP_SYNC_FILE must be a file path; leave it unset for the default')
   }
 
+  // The sharing writer: a longer reconcile interval would leave a share change unapplied for longer.
+  checkInteger('NUXT_SHARING_RECONCILE_INTERVAL_SEC', 1)
+  const reconcileInterval = env.NUXT_SHARING_RECONCILE_INTERVAL_SEC
+  if (
+    reconcileInterval !== undefined &&
+    /^\d{1,15}$/.test(reconcileInterval) &&
+    Number(reconcileInterval) > 900
+  ) {
+    errors.push(
+      `NUXT_SHARING_RECONCILE_INTERVAL_SEC must be at most 900, not ${show(reconcileInterval)}`,
+    )
+  }
+  checkInteger('NUXT_SHARING_AUDIT_INTERVAL_HOURS', 1)
+  const auditHours = env.NUXT_SHARING_AUDIT_INTERVAL_HOURS
+  if (auditHours !== undefined && /^\d{1,15}$/.test(auditHours) && Number(auditHours) > 168) {
+    errors.push(`NUXT_SHARING_AUDIT_INTERVAL_HOURS must be at most 168, not ${show(auditHours)}`)
+  }
+  for (const owner of get('NUXT_SHARING_SHARED_OWNERS')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '')) {
+    if (!/^_[A-Za-z0-9_.-]{1,63}$/.test(owner) || owner === '_resources') {
+      errors.push(
+        `NUXT_SHARING_SHARED_OWNERS: ${show(owner)} must be a service principal that starts with _ (and is not _resources)`,
+      )
+    }
+  }
+
   return { errors, warnings }
 }
 

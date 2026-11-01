@@ -57,6 +57,17 @@ export default defineNuxtConfig({
        */
       file: '',
     },
+    sharing: {
+      /** Seconds between sharing reconciles (NUXT_SHARING_RECONCILE_INTERVAL_SEC); at most 900. */
+      reconcileIntervalSec: '300',
+      /** Hours between the consistency audits of every home (NUXT_SHARING_AUDIT_INTERVAL_HOURS). */
+      auditIntervalHours: '24',
+      /**
+       * Service principals whose calendars are mirrored as shared calendars, comma-separated, for
+       * example `_team` (NUXT_SHARING_SHARED_OWNERS). `_resources` is handled by the app itself.
+       */
+      sharedOwners: '',
+    },
     /** The iCal proxy that fetches .ics subscriptions for the browser (design §4, FR-7). */
     icalProxy: {
       /** Seconds a fetched file is served without asking the source again. */

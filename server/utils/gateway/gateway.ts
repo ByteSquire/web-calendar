@@ -8,7 +8,8 @@ import {
   filterResponseHeaders,
   isAllowedMethod,
 } from './headers'
-import { PathRejection, resolvePublicPath, rewriteDestination } from './paths'
+import type { PathPrecheck } from '../sharing/precheck'
+import { GATEWAY_PREFIX, PathRejection, resolvePublicPath, rewriteDestination } from './paths'
 
 export interface GatewayRequest {
   method: string
@@ -37,6 +38,11 @@ export interface GatewayOptions {
   maxBodyBytes: number
   /** Resolves the caller or throws `AuthError`. */
   authenticate(headers: Headers, context: AuthenticateContext): Promise<{ sub: string }>
+  /**
+   * Second opinion from SQLite before a request is forwarded (security review §7.1): false answers
+   * 403 without saying whether the path exists. Absent means no check (tests of the plain proxy).
+   */
+  precheck?: PathPrecheck
   fetch?: typeof globalThis.fetch
   log?: (message: string, cause?: unknown) => void
 }
@@ -136,6 +142,17 @@ export function createGateway(
       } catch (error) {
         if (error instanceof PathRejection) return rejection(error, 'destination')
         throw error
+      }
+    }
+
+    if (options.precheck) {
+      const targets = [upstreamPath]
+      // The destination is already a public path under /caldav/.
+      if (destination !== undefined) targets.push(destination.slice(GATEWAY_PREFIX.length) || '/')
+      for (const path of targets) {
+        if (!(await options.precheck(identity.sub, { method, upstreamPath: path }))) {
+          return text(403, 'Forbidden')
+        }
       }
     }
 

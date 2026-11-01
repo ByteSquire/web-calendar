@@ -33,3 +33,17 @@ playwright-report/
 test-results/
 blob-report/
 test-results-live/
+
+# Claude Code sandbox: it mounts over these config files in the working dir to protect them
+# and leaves empty placeholders in the repo root when they don't exist yet.
+/.bashrc
+/.bash_profile
+/.zshrc
+/.zprofile
+/.profile
+/.gitconfig
+/.gitmodules
+/.ripgreprc
+/.mcp.json
+/.idea
+/.config/

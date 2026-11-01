@@ -68,6 +68,12 @@ export default defineNuxtConfig({
        */
       sharedOwners: '',
     },
+    resources: {
+      /** Seconds between booking reconciles (NUXT_RESOURCES_RECONCILE_INTERVAL_SEC); at most 900. */
+      reconcileIntervalSec: '300',
+      /** 'true' lets a manager of a resource cancel bookings of others (NUXT_RESOURCES_MANAGER_CANCEL). */
+      managerCancel: 'false',
+    },
     /** The iCal proxy that fetches .ics subscriptions for the browser (design §4, FR-7). */
     icalProxy: {
       /** Seconds a fetched file is served without asking the source again. */

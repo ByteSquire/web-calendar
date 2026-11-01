@@ -360,6 +360,19 @@ export function validateEnv(env) {
   if (auditHours !== undefined && /^\d{1,15}$/.test(auditHours) && Number(auditHours) > 168) {
     errors.push(`NUXT_SHARING_AUDIT_INTERVAL_HOURS must be at most 168, not ${show(auditHours)}`)
   }
+  // The booking reconcile: a longer interval would leave a moved or deleted event unnoticed longer.
+  checkInteger('NUXT_RESOURCES_RECONCILE_INTERVAL_SEC', 1)
+  const bookingInterval = env.NUXT_RESOURCES_RECONCILE_INTERVAL_SEC
+  if (
+    bookingInterval !== undefined &&
+    /^\d{1,15}$/.test(bookingInterval) &&
+    Number(bookingInterval) > 900
+  ) {
+    errors.push(
+      `NUXT_RESOURCES_RECONCILE_INTERVAL_SEC must be at most 900, not ${show(bookingInterval)}`,
+    )
+  }
+  checkBoolean('NUXT_RESOURCES_MANAGER_CANCEL')
   for (const owner of get('NUXT_SHARING_SHARED_OWNERS')
     .split(',')
     .map((entry) => entry.trim())

@@ -34,6 +34,7 @@ Config: `groupSync.file` (NUXT_GROUP_SYNC_FILE). `validate-config.mjs` rejects a
 // in server/utils/group-sync/ports.ts: createDefaultPorts() is used in server/plugins/group-sync.ts
 ports: { listExtraGroups: () => listReferencedGroupNames(getDb()), audit: (e) => writeAudit(getDb(), { actor: null, ...e }) }
 ```
+
 Replace `createDefaultPorts()` in `server/plugins/group-sync.ts` (it is the only call). `listExtraGroups`
 must return group short names (not SPNs); invalid names fail the run. `audit` is called with
 actions `group_sync.updated|unauthorized|failing|recovered`; it must not throw (a throw is swallowed).

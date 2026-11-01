@@ -1,9 +1,9 @@
 import { getDb } from '../utils/db'
+import { createAppPorts } from '../utils/group-sync/app-ports'
 import { createGroupsTracker, setActiveGroupSync } from '../utils/group-sync/active'
 import { clampIntervalSec, groupFilePath } from '../utils/group-sync/config'
 import { createKanidmClient, kanidmOrigin } from '../utils/group-sync/kanidm'
 import { createUsersTableResolver } from '../utils/group-sync/members'
-import { createDefaultPorts } from '../utils/group-sync/ports'
 import { createGroupSyncScheduler } from '../utils/group-sync/scheduler'
 import { createGroupSyncService } from '../utils/group-sync/service'
 
@@ -32,7 +32,7 @@ export default defineNitroPlugin((nitroApp) => {
   const service = createGroupSyncService({
     client: createKanidmClient({ origin, token }),
     resolver: () => createUsersTableResolver(getDb()),
-    ports: createDefaultPorts(),
+    ports: createAppPorts(getDb, console),
     log: console,
     file: groupFilePath(config.groupSync.file, process.env.NODE_ENV),
     adminGroup: config.oidc.adminGroup,

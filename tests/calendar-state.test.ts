@@ -4,6 +4,7 @@ import { Temporal } from 'temporal-polyfill'
 import { createMockData } from '../app/data/mock'
 import {
   buildSplitBands,
+  calendarIdsForView,
   createCalendarEvent,
   createCalendarState,
   createCategory,
@@ -663,5 +664,37 @@ describe('calendar state', () => {
     expect(second.visibleCalendarIds.value).toContain('cal-sales')
     expect(second.events.value.some((item) => item.title === 'X')).toBe(true)
     expect(seed).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('calendarIdsForView (FR-15: a view omits calendars the viewer cannot access)', () => {
+  const data = createMockData()
+  const [first, second] = data.calendars
+  const view = (calendarIds: string[]) => ({
+    id: 'v',
+    name: 'V',
+    icon: 'calendar' as const,
+    calendarIds,
+    isAdmin: false,
+  })
+
+  it('keeps the calendars the viewer has, in the order of the view', () => {
+    expect(calendarIdsForView(view([second!.id, first!.id]), data.calendars)).toEqual([
+      second!.id,
+      first!.id,
+    ])
+  })
+
+  it('leaves out an id that is not among the calendars the viewer can read', () => {
+    const hidden = 'dav:/caldav/sub-someone-else/private/'
+    expect(calendarIdsForView(view([first!.id, hidden, second!.id]), data.calendars)).toEqual([
+      first!.id,
+      second!.id,
+    ])
+  })
+
+  it('shows nothing, and does not throw, when none of its calendars is readable', () => {
+    expect(calendarIdsForView(view(['dav:/gone/', 'ics:404']), data.calendars)).toEqual([])
+    expect(calendarIdsForView(view([]), data.calendars)).toEqual([])
   })
 })

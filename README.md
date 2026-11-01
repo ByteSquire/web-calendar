@@ -57,6 +57,7 @@ npm audit
 npm run audit:prod        # npm audit --omit=dev, failing on any advisory not on the known list
 npm run test:gateway:prod # builds into a temp dir, runs the gateway integration suites against it
 npm run radicale:usage -- <collections dir>   # size and items per Radicale home (run on the host)
+npm run backup -- <database file> <backup dir> # a consistent copy of the SQLite file (see Production)
 ```
 
 Linting is ESLint through `@nuxt/eslint` (flat config in `eslint.config.mjs`).
@@ -203,7 +204,22 @@ Open <http://localhost:3000>. To change `deploy/radicale/rights` or `deploy/radi
 edit the file, then run `docker compose restart radicale`: Radicale reads both only at
 startup.
 
-Back up the two volumes `web-calendar-data` and `radicale-data`.
+Back up the two volumes `web-calendar-data` and `radicale-data`. Do not copy the SQLite file
+itself while the app runs: it is in WAL mode, so committed data can still be in the `-wal` file.
+[`scripts/backup-db.mjs`](scripts/backup-db.mjs) makes a consistent copy with `VACUUM INTO`,
+checks it, and does not change the source. The runtime image has no scripts, so run it on the
+host in a throwaway container (the header of the script has the exact command):
+
+```sh
+docker run --rm --user 1000:1000 -v web-calendar_web-calendar-data:/data \
+  -v "$PWD/scripts:/scripts:ro" -v "$PWD/backups:/backups" \
+  node:24-bookworm-slim node /scripts/backup-db.mjs /data/web-calendar.db /backups
+```
+
+`radicale-data` includes `sharing.csv`, which is authorization state, so back it up too. Keep the
+token hash key apart from the backups, encrypt the backups, and after a restore let the sharing
+writer reconcile (it does at start). For a restore, stop the app, replace `web-calendar.db` with
+the copy (delete the old `-wal` and `-shm` files), and start it again.
 
 ### Environment
 

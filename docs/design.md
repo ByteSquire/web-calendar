@@ -1084,7 +1084,9 @@ volumes:
   only warns until group sync exists. Optional security settings: `NUXT_OUTBOUND_ALLOWED_HOSTS`,
   `NUXT_EXTERNAL_SEAL_KEY` (64 hex characters or base64 of 32 bytes); a malformed value stops the server.
 - **Persistence and backup** — the SQLite file and Radicale's data are the two things
-  to back up. Radicale has no quota: `npm run radicale:usage <collections dir>`
+  to back up. The SQLite file is in WAL mode, so it is copied with `VACUUM INTO`
+  (`scripts/backup-db.mjs`, `npm run backup`; it checks the copy and never changes the
+  source), not with a file copy. Radicale has no quota: `npm run radicale:usage <collections dir>`
   (`scripts/radicale-usage.mjs`, run on the host) reports size and items per home and exits
   non-zero when one passes a threshold.
 - **Build** — a multi-stage Dockerfile (build the Nuxt app, then run it on a slim

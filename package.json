@@ -22,7 +22,8 @@
     "test:e2e:live": "playwright test -c playwright.live.config.ts",
     "test:gateway:prod": "node scripts/test-gateway-prod.mjs",
     "audit:prod": "node scripts/audit-prod.mjs",
-    "radicale:usage": "node scripts/radicale-usage.mjs"
+    "radicale:usage": "node scripts/radicale-usage.mjs",
+    "backup": "node scripts/backup-db.mjs"
   },
   "dependencies": {
     "@fullcalendar/vue3": "7.1.3",

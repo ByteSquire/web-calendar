@@ -1059,10 +1059,11 @@ this is the **order**):
 - **Editing scope** — Phase 1 is read-only + quick-add. Enabling `editable`
   without a real store would fake persistence; drag/resize stays off until
   Phase 2 wires the API.
-- **Dependency audit** — the S3 baseline showed 7 low and 1 high findings in the
-  Nuxt/Nitro chain (`node-forge` via `listhen`); no patched version exists yet. Do
-  not run `npm audit fix --force` (it downgrades Nuxt). Re-check on every upstream
-  release.
+- **Dependency audit** — the S3 baseline showed 7 low and 1 high findings in the Nuxt/Nitro chain
+  (`node-forge` via `listhen`). Updated 2026-11-01 (Nuxt 4.6.3, `npm audit fix`): the `node-forge`
+  and `esbuild` advisories are gone; `audit:prod` allows `glob`, `minimatch` and `deepmerge`, all
+  in build tools and absent from `.output/server`. Do not run `npm audit fix --force` (it
+  downgrades Nuxt). Re-check on every upstream release.
 - **Quality tooling** — Vite+ was removed on 2026-10-29 (too new: it forced `vite`
   to a fork through `overrides`). Replacement: ESLint 10 (`@nuxt/eslint`) +
   Prettier (single quotes, no semicolons, 100 columns) + `nuxt typecheck`, with

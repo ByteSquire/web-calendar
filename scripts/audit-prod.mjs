@@ -11,8 +11,8 @@
 // network, no lockfile, unexpected output): an audit that did not run must not pass.
 //
 // Anything new fails, whatever its severity. npm reports three advisories today (below), each of
-// them listed in ALLOWED with the reason it is accepted: none has a fix short of downgrading Nuxt
-// (design §12: no `npm audit fix`). `--min-severity` loosens the check on purpose: advisories below
+// them listed in ALLOWED with the reason it is accepted: none has a fix short of a major version
+// the build tools do not take or a downgrade of Nuxt (design §12: no `npm audit fix --force`). `--min-severity` loosens the check on purpose: advisories below
 // it are listed, but do not fail.
 //
 // No dependencies. The functions are exported for tests/scripts/audit-prod.test.ts.
@@ -20,19 +20,18 @@ import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
 /**
- * Advisories the project knows and accepts (security review I1; the first one is README "Known
- * issues"). Each needs a reason; one that npm stops reporting is
- * mentioned, so the entry can go.
+ * Advisories the project knows and accepts (security review I1; README "Known issues"). Each needs
+ * a reason; one that npm stops reporting is mentioned, so the entry can go.
  * @type {{ id: string, name: string, reason: string }[]}
  */
 export const ALLOWED = [
   {
-    id: 'GHSA-86w9-cpqp-85rv',
-    name: 'node-forge',
+    id: 'GHSA-3g3m-2fjr-6pw4',
+    name: 'glob',
     reason:
-      'RSA PKCS#1 v1.5 verification in node-forge, reached through listhen, the dev and preview ' +
-      'server of Nitro. .output/server does not contain it (npm run test:gateway:prod checks), ' +
-      'and there is no patched version (README "Known issues").',
+      'glob lets an AbortSignal cancellation be bypassed after a timeout. It is used at build ' +
+      'time (nitropack, @vercel/nft, archiver); .output/server does not contain it. The patched ' +
+      'major is not taken by those tools, and the fix npm offers is a downgrade of Nuxt.',
   },
   {
     id: 'GHSA-gcqx-w48m-w2h4',
@@ -43,12 +42,13 @@ export const ALLOWED = [
       'means downgrading Nuxt.',
   },
   {
-    id: 'GHSA-g7r4-m6w7-qqqr',
-    name: 'esbuild',
+    id: 'GHSA-g3hv-75wg-m249',
+    name: 'minimatch',
     reason:
-      'esbuild can read arbitrary files through its development server on Windows. esbuild is ' +
-      'a build tool here and its server is never started (security review I1). Fixing it means ' +
-      'downgrading Nuxt.',
+      'Denial of service in minimatch through glob patterns that amplify. Build and lint tools ' +
+      'read those patterns from the project’s own files; .output/server does not contain ' +
+      'minimatch. The patched major is not taken by those tools, and the fix npm offers is a ' +
+      'downgrade of Nuxt.',
   },
 ]
 

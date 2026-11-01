@@ -114,18 +114,14 @@ and client renders match.
   page scroll, tap targets ≥ 44 px, no hover-only actions, split view readable.
   Full details are in `docs/design.md` §9 and §13.
 
-### Known issues / security status (as of 2026-10-24)
+### Known issues / security status (as of 2026-11-01)
 
-- `npm audit` reports **7 high-severity vulnerabilities**, all in the
-  Nuxt/Nitro dependency chain (`node-forge` → `listhen` → `nitropack` → `nuxt`).
-  The underlying advisory (CVE-2026-85393, node-forge RSA PKCS#1 v1.5 signature
-  verification) currently has **no patched version**; a fix was incomplete as of
-  the Oct 2026 advisory update. Remediation is expected with the next upstream
-  releases (e.g. Nuxt 5). Practical production risk is low: the vulnerable
-  `listhen` path is used by Nitro's dev/preview server, not by the production
-  `node-server` entry point. Do **not** run `npm audit fix --force`; it proposes
-  downgrading Nuxt to 4.1.3.
-- The project is on **Nuxt 4.6.2** (latest stable). Nuxt 5 is still in development
+- `npm run audit:prod` allows three advisories, each with its reason in `scripts/audit-prod.mjs`:
+  `glob`, `minimatch` and `deepmerge`. They sit in the build tools of Nuxt (nitropack,
+  `@vercel/nft`, archiver), not in `.output/server`, and npm's own fix for them is a downgrade of
+  Nuxt to 4.1.3. Do **not** run `npm audit fix --force`. `npm audit fix` without `--force` is safe;
+  the `node-forge` advisories of October were cleared that way. Re-check on every Nuxt release.
+- The project is on **Nuxt 4.6.3** (latest stable). Nuxt 5 is still in development
   and only available via the opt-in `future.compatibilityVersion: 5` flag from
   Nuxt 4.2+ — not recommended for this project yet. When Nuxt 5 reaches stable,
   upgrade and re-run `npm audit`.

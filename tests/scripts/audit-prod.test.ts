@@ -8,7 +8,7 @@ import {
   run,
 } from '../../scripts/audit-prod.mjs'
 
-// `npm audit --omit=dev --json` of 2026-10-30, trimmed to the fields the script reads.
+// `npm audit --omit=dev --json` of 2026-11-01, trimmed to the fields the script reads.
 function advisory(source: number, name: string, ghsa: string, severity: string, title: string) {
   return {
     source,
@@ -19,12 +19,12 @@ function advisory(source: number, name: string, ghsa: string, severity: string, 
     severity,
   }
 }
-const NODE_FORGE = advisory(
-  1240912,
-  'node-forge',
-  'GHSA-86w9-cpqp-85rv',
-  'high',
-  'node-forge RSA PKCS#1 v1.5 signature verification accepts extra nested DigestAlgorithm elements',
+const GLOB = advisory(
+  1243901,
+  'glob',
+  'GHSA-3g3m-2fjr-6pw4',
+  'moderate',
+  'Glob: AbortSignal cancellation bypass allows post-timeout filesystem traversal',
 )
 const DEEPMERGE = advisory(
   1243505,
@@ -33,12 +33,12 @@ const DEEPMERGE = advisory(
   'low',
   'deepmerge mergeObject() allows prototype poisoning of returned objects',
 )
-const ESBUILD = advisory(
-  1120680,
-  'esbuild',
-  'GHSA-g7r4-m6w7-qqqr',
-  'low',
-  'esbuild allows arbitrary file read when running the development server on Windows',
+const MINIMATCH = advisory(
+  1243902,
+  'minimatch',
+  'GHSA-g3hv-75wg-m249',
+  'moderate',
+  'minimatch has potential denial of service via globparts amplification',
 )
 
 function report(...advisories: ReturnType<typeof advisory>[]) {
@@ -55,7 +55,7 @@ function report(...advisories: ReturnType<typeof advisory>[]) {
   return { auditReportVersion: 2, vulnerabilities, metadata: {} }
 }
 
-const TODAY = report(NODE_FORGE, DEEPMERGE, ESBUILD)
+const TODAY = report(GLOB, DEEPMERGE, MINIMATCH)
 
 function call(audit: () => string, argv: string[] = []) {
   const out: string[] = []
@@ -69,9 +69,9 @@ const json = (value: unknown) => () => JSON.stringify(value)
 describe('the allow-list', () => {
   it('holds the three advisories npm reports today, each with a reason', () => {
     expect(ALLOWED.map((entry) => [entry.id, entry.name])).toEqual([
-      ['GHSA-86w9-cpqp-85rv', 'node-forge'],
+      ['GHSA-3g3m-2fjr-6pw4', 'glob'],
       ['GHSA-gcqx-w48m-w2h4', 'deepmerge'],
-      ['GHSA-g7r4-m6w7-qqqr', 'esbuild'],
+      ['GHSA-g3hv-75wg-m249', 'minimatch'],
     ])
     for (const entry of ALLOWED) expect(entry.reason.length).toBeGreaterThan(40)
   })
@@ -80,28 +80,28 @@ describe('the allow-list', () => {
 describe('advisoriesOf', () => {
   it('lists each advisory once, from the entries that have one', () => {
     expect(advisoriesOf(TODAY).map((a) => a.id)).toEqual([
-      'GHSA-86w9-cpqp-85rv',
+      'GHSA-3g3m-2fjr-6pw4',
       'GHSA-gcqx-w48m-w2h4',
-      'GHSA-g7r4-m6w7-qqqr',
+      'GHSA-g3hv-75wg-m249',
     ])
-    const twice = report(NODE_FORGE)
-    twice.vulnerabilities.listhen = { name: 'listhen', severity: 'high', via: [NODE_FORGE] }
+    const twice = report(GLOB)
+    twice.vulnerabilities.archiver = { name: 'archiver', severity: 'moderate', via: [GLOB] }
     expect(advisoriesOf(twice)).toHaveLength(1)
   })
 
   it('keeps one entry per package when one advisory id is reported against several', () => {
-    const fork = { ...NODE_FORGE, name: 'node-forge-fork', dependency: 'node-forge-fork' }
-    const both = report(NODE_FORGE)
-    both.vulnerabilities.fork = { name: 'node-forge-fork', severity: 'high', via: [fork] }
-    expect(advisoriesOf(both).map((a) => a.name)).toEqual(['node-forge', 'node-forge-fork'])
+    const fork = { ...GLOB, name: 'glob-fork', dependency: 'glob-fork' }
+    const both = report(GLOB)
+    both.vulnerabilities.fork = { name: 'glob-fork', severity: 'high', via: [fork] }
+    expect(advisoriesOf(both).map((a) => a.name)).toEqual(['glob', 'glob-fork'])
     // The allow-list names the package, so only the allowed one is let through.
     const status = Object.fromEntries(evaluateAudit(both).judged.map((a) => [a.name, a.status]))
-    expect(status).toEqual({ 'node-forge': 'allowed', 'node-forge-fork': 'blocking' })
+    expect(status).toEqual({ glob: 'allowed', 'glob-fork': 'blocking' })
   })
 
   it('falls back to the npm id for an advisory without a GHSA url', () => {
-    const odd = report({ ...NODE_FORGE, url: 'https://example.org/other' })
-    expect(advisoriesOf(odd)[0]!.id).toBe('npm:1240912')
+    const odd = report({ ...GLOB, url: 'https://example.org/other' })
+    expect(advisoriesOf(odd)[0]!.id).toBe('npm:1243901')
   })
 
   it('is empty for a clean report and throws for one without the vulnerabilities', () => {
@@ -117,9 +117,9 @@ describe('evaluateAudit', () => {
 
   it('allows all three advisories of today’s report', () => {
     expect(statuses(TODAY)).toEqual({
-      'node-forge': 'allowed',
+      glob: 'allowed',
       deepmerge: 'allowed',
-      esbuild: 'allowed',
+      minimatch: 'allowed',
     })
   })
 
@@ -129,18 +129,18 @@ describe('evaluateAudit', () => {
     expect(statuses(report(fresh), 'low')).toEqual({ jose: 'blocking' })
   })
 
-  it('matches by advisory id: a second advisory for node-forge is new', () => {
-    const second = advisory(2, 'node-forge', 'GHSA-xxxx-yyyy-zzzz', 'high', 'another one')
-    const judged = evaluateAudit(report(NODE_FORGE, second)).judged
+  it('matches by advisory id: a second advisory for glob is new', () => {
+    const second = advisory(2, 'glob', 'GHSA-xxxx-yyyy-zzzz', 'high', 'another one')
+    const judged = evaluateAudit(report(GLOB, second)).judged
     expect(judged.map((a) => [a.id, a.status])).toEqual([
-      ['GHSA-86w9-cpqp-85rv', 'allowed'],
+      ['GHSA-3g3m-2fjr-6pw4', 'allowed'],
       ['GHSA-xxxx-yyyy-zzzz', 'blocking'],
     ])
   })
 
   it('does not allow the known id on another package', () => {
-    const elsewhere = advisory(3, 'other-forge', 'GHSA-86w9-cpqp-85rv', 'high', 'same id')
-    expect(statuses(report(elsewhere))).toEqual({ 'other-forge': 'blocking' })
+    const elsewhere = advisory(3, 'other-glob', 'GHSA-3g3m-2fjr-6pw4', 'high', 'same id')
+    expect(statuses(report(elsewhere))).toEqual({ 'other-glob': 'blocking' })
   })
 
   it.each([
@@ -171,8 +171,8 @@ describe('evaluateAudit', () => {
 
   it('names an allowed advisory npm no longer reports', () => {
     expect(evaluateAudit(report(DEEPMERGE)).stale.map((entry) => entry.id)).toEqual([
-      'GHSA-86w9-cpqp-85rv',
-      'GHSA-g7r4-m6w7-qqqr',
+      'GHSA-3g3m-2fjr-6pw4',
+      'GHSA-g3hv-75wg-m249',
     ])
     expect(evaluateAudit(TODAY).stale).toEqual([])
   })
@@ -188,9 +188,9 @@ describe('evaluateAudit', () => {
     const own = [{ id: 'GHSA-gcqx-w48m-w2h4', name: 'deepmerge', reason: 'build time only' }]
     const result = evaluateAudit(TODAY, { allowed: own })
     expect(Object.fromEntries(result.judged.map((a) => [a.name, a.status]))).toEqual({
-      'node-forge': 'blocking',
+      glob: 'blocking',
       deepmerge: 'allowed',
-      esbuild: 'blocking',
+      minimatch: 'blocking',
     })
   })
 })
@@ -198,7 +198,7 @@ describe('evaluateAudit', () => {
 describe('formatAudit', () => {
   it('writes a line per advisory and the verdict', () => {
     const text = formatAudit(evaluateAudit(TODAY), 'info')
-    expect(text).toContain('allowed        high      node-forge: node-forge RSA PKCS#1')
+    expect(text).toContain('allowed        moderate  glob: Glob: AbortSignal cancellation bypass')
     expect(text).toContain('allowed        low       deepmerge: deepmerge mergeObject()')
     expect(text.split('\n').at(-1)).toBe('audit:prod: no advisory that is not allowed (3 reported)')
   })
@@ -220,7 +220,7 @@ describe('formatAudit', () => {
 
   it('tells the operator to drop a stale entry', () => {
     expect(formatAudit(evaluateAudit(report()), 'info')).toContain(
-      'npm no longer reports GHSA-86w9-cpqp-85rv (node-forge): remove it from ALLOWED',
+      'npm no longer reports GHSA-3g3m-2fjr-6pw4 (glob): remove it from ALLOWED',
     )
   })
 })
@@ -229,17 +229,17 @@ describe('run', () => {
   it('exits 0 for today’s report', () => {
     const result = call(json(TODAY))
     expect(result.code).toBe(0)
-    expect(result.out).toContain('node-forge')
+    expect(result.out).toContain('glob')
     expect(result.err).toBe('')
   })
 
   it('exits 1 for a new advisory of any severity, unless it is below a threshold set on purpose', () => {
     const fresh = advisory(4, 'jose', 'GHSA-aaaa-bbbb-cccc', 'high', 'new')
     const low = advisory(5, 'jose', 'GHSA-low0-low0-low0', 'low', 'new and low')
-    expect(call(json(report(NODE_FORGE, fresh))).code).toBe(1)
-    expect(call(json(report(NODE_FORGE, low))).code).toBe(1)
-    expect(call(json(report(NODE_FORGE, low)), ['--min-severity', 'moderate']).code).toBe(0)
-    expect(call(json(report(NODE_FORGE, fresh)), ['--min-severity', 'moderate']).code).toBe(1)
+    expect(call(json(report(GLOB, fresh))).code).toBe(1)
+    expect(call(json(report(GLOB, low))).code).toBe(1)
+    expect(call(json(report(GLOB, low)), ['--min-severity', 'moderate']).code).toBe(0)
+    expect(call(json(report(GLOB, fresh)), ['--min-severity', 'moderate']).code).toBe(1)
   })
 
   it('exits 0 for a clean report', () => {

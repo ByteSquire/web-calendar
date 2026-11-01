@@ -3,7 +3,8 @@
 
 Uses only users/collections named p3v-* (and the service principals `_resources` / `_p3v-team`, whose
 only collection is deleted again). Everything created is deleted at the end, also after a failure.
-Exit code 0 when every check agrees with docs/phase3-notes/sharing-verify.md.
+Exit code 0 when every check agrees with the shapes in docs/design.md §11 (the table it was
+written against is in git history: git show 352d101:docs/phase3-notes/sharing-verify.md).
 Not covered: group MEMBERSHIP (needs a line in the stack's htgroup file, which this script never edits).
 """
 import json

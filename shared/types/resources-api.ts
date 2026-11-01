@@ -12,8 +12,7 @@
 //   GET /api/resources/updates?since=<iso>
 //     -> BookingUpdatesResponse. The caller's own bookings whose status changed after `since`.
 //
-// The routes that create, accept, decline and cancel bookings are described in
-// docs/phase3-notes/resources-core.md.
+// The routes that create, accept, decline and cancel bookings are described in docs/design.md §5.
 
 export type AvailabilityStatus = 'approved' | 'pending'
 

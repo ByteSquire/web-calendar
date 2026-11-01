@@ -827,8 +827,8 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   create about 10 ms per call (2 ms at 100), one owner's list 8 ms, a full list of all
   owners 37 ms, Radicale memory 91 to 101 MiB. A member's home `PROPFIND` costs about
   0.4 ms per share (36 ms at 100, 222 ms at 500, 171 kB). Reconciling every 5 minutes is
-  cheap; keep the number of shares per member low (hundreds at most). Details in
-  `docs/phase3-notes/s5-spike.md`.
+  cheap; keep the number of shares per member low (hundreds at most). The full tables are in git
+  history: `git show 352d101:docs/phase3-notes/s5-spike.md`.
 - **Everyone** — a Kanidm group that contains all users (for example
   `web_calendar_users`) works as the "all users" principal.
 - **Third-party clients** — they see shared calendars in their home listing like any
@@ -1114,9 +1114,8 @@ answers, seven browser projects) pass; migrations 005, 006 and 008 ran on a copy
 the test stack's Kanidm and Radicale; and the built app ran against that stack with a throwaway
 database, driven as alice and bob with real tokens (below). Not run: the app against a production
 Kanidm and Radicale, or a database that holds data. Details are in §5 (schema, resources), §8
-(audit log, sharing, groups, access administration, shared views) and the notes in
-`docs/phase3-notes/` (index there; working material the project owner may delete once the docs are
-merged).
+(audit log, sharing, groups, access administration, shared views). The per-task working notes were
+removed before the merge; they are in git history (`git show 352d101:docs/phase3-notes/README.md`).
 
 | Task                                                            | State                                                                                             |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -1181,15 +1180,21 @@ merged).
   block repair timers (60 s, then 10 min); the default interval of 300 s and its clamp; a database
   that holds data or a production Radicale and Kanidm.
 
-- **Found live, not fixed:** the sharing writer treats a member's received shares as shares the
-  member owns. It runs `map/list` for every known user, and Radicale answers a member's list with
-  the shares mapped to them, the same rows as the owner's list. The writer plans to delete those as
-  "unknown", acts as the member, and Radicale answers 403. Every run after a user holds a received
-  share logs `Radicale differs from the access rules after reconcile … cannot remove … map/delete
-answered 403 … unexpected …` and writes a `sharing.mismatch` audit entry. Access itself works and
-  a revoke works (the owner's delete succeeds), so nothing is lost; the alarm never goes quiet.
-  Reproduced in two runs on 2026-11-01. A side effect of the test runs: the writer also removes
-  shares the app's database does not know (the stack's `/{user}/team/`), as designed.
+- **Found live, fixed:** Radicale's `map/list` answers a member with the shares mapped _to_ them as
+  well (the S5 notes recorded it, "the member's own list shows the shares he receives", but the writer
+  did not account for it). Each row has an `Owner` field. The sharing writer lists every known user as an owner, so it took a
+  member's received shares for its own, planned to delete them as "unknown", and Radicale answered
+  403 to the member. Every run then logged `Radicale differs from the access rules after
+reconcile … cannot remove … map/delete answered 403 …` and wrote a `sharing.mismatch` audit entry,
+  and the alarm never went quiet; access and revocation were not affected. `listShares` in
+  `radicale-client.ts` now keeps only rows whose `Owner` is the principal it asked for (a row
+  without `Owner` is kept). The fake Radicale in the tests lists a member's received shares and
+  answers 403 to a delete by a non-owner, as the real one does; the regression tests fail without
+  the fix (5 of 12 in `sharing-reconcile.test.ts`). Checked live afterwards (2026-11-01, sharing
+  interval 10 s): with bob holding a received share the writer ran six more times without a
+  mismatch line, a `sharing.mismatch` audit entry or a removal of his share, his path kept answering,
+  and revoking the grant still removed it (404 for bob). A side effect of the test runs: the writer also removes shares the app's database does not know (the stack's
+  `/{user}/team/`), as designed.
 - The manager queue cannot tell a moved from a missing or unreadable event except by the audit
   entry; the `free_busy` narrowing of the detail check is imprecise for mixed grants (§5, part 2).
 
@@ -1309,8 +1314,8 @@ off, which the reconcile already ignores; a calendar owned by a member and named
   - The rights file is static (restart needed); group files and map shares are live;
     `f` gives the free/busy-only view; group and user shares list in a member's
     home as calendars and honor `r` and `rw`.
-  - _Follow-up, 2026-11-01_ (`dev/spike-s1/tools/s5_shares.py`, numbers in
-    `docs/phase3-notes/s5-spike.md`): a map share accepts `f` and gives exactly the free/busy
+  - _Follow-up, 2026-11-01_ (`dev/spike-s1/tools/s5_shares.py`, tables in git history,
+    `git show 352d101:docs/phase3-notes/s5-spike.md`): a map share accepts `f` and gives exactly the free/busy
     view (`free-busy-query` 200 without titles; `GET`, Depth 1, `calendar-query` and writes
     403); `r` and `rw` as expected. Share limits: calendars only, one share per (calendar,
     user), user shares need the member's `enable` and `unhide`. With 2000 shares: create

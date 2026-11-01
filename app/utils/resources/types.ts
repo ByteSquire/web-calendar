@@ -1,5 +1,5 @@
-// The shapes of the resource routes that exist since resources part 1 (docs/phase3-notes/
-// resources-core.md), declared here so no server code reaches the browser. The answers of the
+// The shapes of the resource routes that exist since resources part 1 (docs/design.md §5),
+// declared here so no server code reaches the browser. The answers of the
 // availability, requests and updates routes are in shared/types/resources-api.ts.
 export type ResourceRight = 'read' | 'book' | 'manage'
 export type BookingStatus = 'pending' | 'approved' | 'declined' | 'cancelled'

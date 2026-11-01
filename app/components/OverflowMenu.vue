@@ -5,7 +5,11 @@
   keeps the placeholder items of the mock-up. "Full screen" is only offered where the browser has
   one for pages (not on iPhone Safari): on a phone it hides the address bar. "Dark mode" is a
   switch: it shows the scheme in use, which is the system's until it is flipped, and from then on
-  on is dark and off is light. The menu stays open so the switch is seen to move.
+  on is dark and off is light. The menu stays open so the switch is seen to move. Once a scheme has
+  been chosen, a circle arrow on the same row goes back to following the system; it is a menu item
+  of its own (a button inside the switch's item would be out of reach of the keyboard), laid over
+  the end of the switch's row. The row makes room for it only while it is there, so the menu is
+  as narrow as its other rows allow until a scheme has been chosen, and then widens to fit it.
 -->
 <template>
   <UDropdownMenu :items="items" :content="{ align: 'end' }">
@@ -20,6 +24,7 @@
     <template #dark-mode-trailing>
       <!-- Only a picture of the state: the menu item is the control, so no second control inside. -->
       <span
+        data-dark-mode-switch
         aria-hidden="true"
         class="inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 motion-safe:transition-colors"
         :class="dark ? 'bg-primary' : 'bg-accented'"
@@ -29,6 +34,10 @@
           :class="dark ? 'translate-x-4' : 'translate-x-0'"
         />
       </span>
+    </template>
+    <template #follow-system>
+      <UIcon name="i-lucide-rotate-ccw" class="size-5" :title="FOLLOW_SYSTEM" aria-hidden="true" />
+      <span class="sr-only">{{ FOLLOW_SYSTEM }}</span>
     </template>
   </UDropdownMenu>
 </template>
@@ -49,6 +58,8 @@ const orgTimeZone = useOrgTimeZone()
 const live = isLiveConfig(useServerConfigState().value)
 const fullscreen = useFullscreen()
 const colorMode = useColorMode()
+
+const FOLLOW_SYSTEM = 'Follow system'
 
 // The scheme in use (the system's, or the one the switch chose), not the stored preference.
 const dark = computed(() => colorMode.value === 'dark')
@@ -75,19 +86,35 @@ const items = computed<DropdownMenuItem[][]>(() => {
     onSelect: () => mockAction('Help'),
   }
   // Flipping it stores an explicit choice (the colour mode module keeps it in the browser's storage).
+  const schemeChosen = colorMode.preference !== 'system'
   const darkMode: DropdownMenuItem = {
     label: 'Dark mode',
     icon: 'i-lucide-moon',
     slot: 'dark-mode',
     type: 'checkbox',
     checked: dark.value,
-    // The switch replaces the check mark.
+    // The switch replaces the check mark. While the reset arrow is shown, the end of the row is
+    // kept free for it (44 px and a gap), which widens the menu if this row is its widest.
+    class: schemeChosen ? 'pe-12' : '',
     ui: { itemTrailingIcon: 'hidden' },
     onUpdateChecked: (checked: boolean) => {
       colorMode.preference = checked ? 'dark' : 'light'
     },
     onSelect: (event: Event) => event.preventDefault(),
   }
+  // Rows are 44 px high (`min-h-11`, app.config.ts): `-mt-11` lifts this one onto the row above.
+  const followSystem: DropdownMenuItem[] = schemeChosen
+    ? [
+        {
+          label: FOLLOW_SYSTEM,
+          slot: 'follow-system',
+          class: '-mt-11 ms-auto w-11 justify-center px-0',
+          onSelect: () => {
+            colorMode.preference = 'system'
+          },
+        },
+      ]
+    : []
   const fullScreenItems: DropdownMenuItem[] = fullscreen.supported.value
     ? [
         {
@@ -104,6 +131,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
         { label: 'Settings', icon: 'i-lucide-settings', onSelect: () => mockAction('Settings') },
         ...fullScreenItems,
         darkMode,
+        ...followSystem,
         help,
       ],
     ]
@@ -134,6 +162,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
       { label: 'Settings', icon: 'i-lucide-settings', to: '/settings' },
       ...fullScreenItems,
       darkMode,
+      ...followSystem,
       help,
     ],
     [{ label: 'Sign out', icon: 'i-lucide-log-out', onSelect: signOut }],

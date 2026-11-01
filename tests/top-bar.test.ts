@@ -34,6 +34,8 @@ function type(input: HTMLInputElement, value: string) {
 let app: Awaited<ReturnType<typeof mountSuspended>>
 
 beforeEach(async () => {
+  // The test environment starts on 'light'; the app starts on the system's scheme.
+  useColorMode().preference = 'system'
   app = await mountSuspended(Shell, { attachTo: document.body })
 })
 

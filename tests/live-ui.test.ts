@@ -130,6 +130,11 @@ describe('problems in the sidebar', () => {
 })
 
 describe('overflow menu', () => {
+  // The test environment starts on 'light'; the app starts on the system's scheme.
+  beforeEach(() => {
+    useColorMode().preference = 'system'
+  })
+
   const menuItems = () =>
     [...document.querySelectorAll('[role^="menuitem"]')].map((item) => text(item))
 
@@ -262,6 +267,41 @@ describe('overflow menu', () => {
       entry().click()
       await vi.waitFor(() => expect(useColorMode().preference).toBe('light'))
       await vi.waitFor(() => expect(entry().getAttribute('aria-checked')).toBe('false'))
+    })
+
+    describe('reset arrow', () => {
+      const arrow = () =>
+        [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+          (item) => text(item) === 'Follow system',
+        )
+
+      it('is not there while the system is followed, and the switch keeps no room for it', async () => {
+        await open()
+        expect(arrow()).toBeUndefined()
+        expect(entry().classList.contains('pe-12')).toBe(false)
+      })
+
+      it('is the item right after the switch once a scheme was chosen', async () => {
+        useColorMode().preference = 'light'
+        await open()
+        const names = menuItems()
+        expect(names[names.indexOf('Dark mode') + 1]).toBe('Follow system')
+        // An icon with a hidden name: the item is reachable and named for the keyboard and readers.
+        expect(arrow()?.querySelector('.sr-only')?.textContent).toBe('Follow system')
+        // The switch's row makes room for it, which is what widens the menu.
+        expect(entry().classList.contains('pe-12')).toBe(true)
+      })
+
+      it('comes with the first flip of the switch, and follows the system again when used', async () => {
+        await open()
+        entry().click()
+        await vi.waitFor(() => expect(arrow()).toBeDefined())
+        expect(useColorMode().preference).toBe('dark')
+
+        arrow()!.click()
+        await vi.waitFor(() => expect(useColorMode().preference).toBe('system'))
+        await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).toBeNull())
+      })
     })
   })
 

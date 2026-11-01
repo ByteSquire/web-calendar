@@ -6,6 +6,9 @@ export type PrincipalType = 'user' | 'group' | 'authenticated' | 'public'
 export type Permission = 'free_busy' | 'read' | 'write' | 'admin'
 export type FilterKind = 'text' | 'category' | 'status'
 export type ResourceType = 'room' | 'car' | 'equipment'
+export type ResourceAclPrincipalType = 'user' | 'group' | 'authenticated'
+export type ResourceRight = 'read' | 'book' | 'manage'
+export type BookingStatus = 'pending' | 'approved' | 'declined' | 'cancelled'
 
 interface Timestamps {
   created_at: string
@@ -53,9 +56,11 @@ export interface CalendarAclRow extends Timestamps {
   id: number
   calendar_id: number
   principal_type: PrincipalType
-  /** Null for `authenticated` and `public`. */
+  /** A Kanidm `sub` UUID or a group UUID or SPN; null for `authenticated` and `public`. */
   principal: string | null
   permission: Permission
+  /** When Radicale confirmed the share; null until then (migration 006). */
+  applied_at: string | null
 }
 
 export interface ViewRow extends Timestamps {
@@ -113,11 +118,42 @@ export interface ExternalAccountRow extends Timestamps {
 
 export interface ResourceRow extends Timestamps {
   id: number
-  calendar_id: number
   name: string
   type: ResourceType
   location: string | null
   capacity: number | null
+  description: string | null
+  /** Deactivated resources keep their bookings but accept no new ones. */
+  active: 0 | 1
+}
+
+export interface ResourceAclRow extends Timestamps {
+  id: number
+  resource_id: number
+  principal_type: ResourceAclPrincipalType
+  /** Null for `authenticated`. */
+  principal: string | null
+  right: ResourceRight
+}
+
+export interface BookingRow extends Timestamps {
+  id: number
+  resource_id: number
+  requester_id: number
+  /** UTC ISO 8601 with milliseconds, so rows compare as strings. */
+  start_at: string
+  end_at: string
+  status: BookingStatus
+  approver_id: number | null
+  decided_at: string | null
+  /** The calendar holding the booker's event; null once that calendar is gone. */
+  event_calendar_id: number | null
+  event_uid: string
+  /** Opaque random id the availability block carries instead of the calendar path or UID. */
+  block_ref: string
+  /** Set while the booking event cannot be found; the status stays as it was. */
+  orphaned_at: string | null
+  reconcile_attempts: number
 }
 
 /** A user as the rest of the server sees it. */

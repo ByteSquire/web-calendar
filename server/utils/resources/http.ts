@@ -20,6 +20,7 @@ const MESSAGES: Record<ServiceErrorCode, [400 | 403 | 404 | 409, string]> = {
   too_long: [400, 'The booking is longer than allowed'],
   too_far_ahead: [400, 'The booking is too far ahead'],
   daily_limit: [409, 'Too many bookings for that day'],
+  live_limit: [409, 'Too many bookings open at once'],
   overlap: [409, 'The resource is already booked then'],
   resource_unavailable: [409, 'The resource is not available'],
   invalid_transition: [409, 'The booking cannot change to that state'],

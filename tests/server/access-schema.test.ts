@@ -518,6 +518,26 @@ describe('bookings module', () => {
     expect(code(book(15, 16))).toBe('resource_unavailable')
   })
 
+  it('caps the live (pending + approved) bookings a requester holds across every day (security review 2026-11-01)', () => {
+    const code = (r: { ok: boolean; code?: string }) => (r.ok ? 'ok' : r.code)
+    const limited = { now: NOW, limits: { maxLivePerRequester: 2 } }
+    const day = (n: number) => `2030-02-${String(n).padStart(2, '0')}`
+    expect(code(createBooking(db, booking(resourceId, user, ...slot(1, 2, day(1))), limited))).toBe(
+      'ok',
+    )
+    expect(code(createBooking(db, booking(resourceId, user, ...slot(1, 2, day(2))), limited))).toBe(
+      'ok',
+    )
+    // A third booking, on yet another day (so the per-day limit is not the one that bites).
+    expect(code(createBooking(db, booking(resourceId, user, ...slot(1, 2, day(3))), limited))).toBe(
+      'live_limit',
+    )
+    // Another user is not affected by alice's count.
+    expect(
+      code(createBooking(db, booking(resourceId, manager, ...slot(1, 2, day(3))), limited)),
+    ).toBe('ok')
+  })
+
   it('lets pending bookings overlap and refuses a booking over an approved one', () => {
     const first = book(9, 11)
     const second = book(10, 12, manager)

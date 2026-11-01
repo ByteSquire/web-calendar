@@ -11,12 +11,19 @@ export interface BookingLimits {
   /** Pending and approved bookings one user may have starting on the same UTC day,. */
   maxPerRequesterPerDay: number
   maxLookaheadMs: number
+  /**
+   * Pending and approved bookings one user may have in total, any day (security review
+   * 2026-11-01, finding 6): the per-day limit alone does not bound a year of look-ahead, so a
+   * requester could hold thousands of live bookings a day at a time.
+   */
+  maxLivePerRequester: number
 }
 
 export const DEFAULT_BOOKING_LIMITS: BookingLimits = {
   maxDurationMs: 24 * 60 * 60 * 1000,
   maxPerRequesterPerDay: 10,
   maxLookaheadMs: 365 * 24 * 60 * 60 * 1000,
+  maxLivePerRequester: 50,
 }
 
 export type BookingErrorCode =
@@ -26,6 +33,7 @@ export type BookingErrorCode =
   | 'too_long'
   | 'too_far_ahead'
   | 'daily_limit'
+  | 'live_limit'
   | 'overlap'
   | 'not_found'
   | 'invalid_transition'
@@ -96,6 +104,13 @@ export function createBooking(
       )
       .get(input.requesterId, startAt.slice(0, 10))!
     if (count >= limits.maxPerRequesterPerDay) return fail('daily_limit')
+    const { liveCount } = db
+      .prepare<[number], { liveCount: number }>(
+        `SELECT COUNT(*) AS liveCount FROM calendar_bookings
+         WHERE requester_id = ? AND status IN ('pending', 'approved')`,
+      )
+      .get(input.requesterId)!
+    if (liveCount >= limits.maxLivePerRequester) return fail('live_limit')
     if (hasApprovedOverlap(db, input.resourceId, startAt, endAt, 0)) return fail('overlap')
     const booking = db
       .prepare<[number, number, string, string, string, string, string], BookingRow>(

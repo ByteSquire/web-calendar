@@ -5,6 +5,7 @@ import { parseApiError } from '../settings/api-errors'
 const BY_CODE: Record<string, string> = {
   overlap: 'it is already booked at that time',
   daily_limit: 'you have reached the limit of bookings for that day',
+  live_limit: 'you have reached the limit of bookings open at once',
   too_long: 'the booking is longer than allowed',
   too_far_ahead: 'the booking is too far ahead',
   in_past: 'the time has already started or passed',

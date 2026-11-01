@@ -222,23 +222,58 @@ a calendar. App tokens (`wcal_` + 32 random bytes) are stored as HMAC-SHA256 and
 at most 10 unexpired ones per user; revoking deletes the row. Nitro does not await plugins, so the DB
 plugin exits the process when it cannot start and holds requests until the database is ready.
 
-**Resource model (Q12 — hybrid):**
+**Resource model (Q12 — revised 2026-10-31, Phase 3):**
 
-- A **resource is its own calendar** (`kind = resource`, plus a `resources`
-  metadata row). It holds **booking events** that mark it unavailable for a time
-  range.
-- An event in **another** calendar **references/books** a resource. The mechanism
-  is decided in Phase 3 (for example `ATTENDEE;CUTYPE=RESOURCE`, or a custom
-  property). Booking also creates a block in the resource calendar.
-- Radicale grants permissions per collection, not per event. To satisfy FR-18, the
-  block in the resource calendar is **opaque**: busy time only, with no title or
-  description, plus a back-reference to the booking calendar's event. Everyone who
-  may see the resource gets `free_busy` or `read` on it, and the SPA reads details
-  from the booking calendar only if the viewer has access to it. Otherwise the
-  block stays "blocked".
-- **Consequences** — bookers need write access to the resource calendar. FR-19
-  (accept/decline) needs a mechanism, either CalDAV scheduling (RFC 6638) or
-  app-side state, decided in Phase 3.
+A resource is a **first-class entity, not a calendar**. A calendar is a collection
+of events owned by someone; a resource is a thing (room, car, equipment) with
+metadata (name, type, location, capacity) whose availability is **derived from
+bookings**, not stored as its own events. This removes the "two things pretending
+to be one" problem, the CalDAV modeling leak (clients no longer see a resource as
+an ordinary calendar they own), and the "bookers need write access to a collection
+they don't own" problem.
+
+- **Booking.** A booking is a row in `calendar_bookings` (resource, slot,
+  requester, status, approver, …). The booker's event in their own calendar
+  references the resource and the booking through custom properties:
+  - `X-WEB-CALENDAR-RESOURCE: res:<id>`
+  - `X-WEB-CALENDAR-BOOKING: <booking id>`
+  - `X-WEB-CALENDAR-BOOKING-STATUS: pending|approved|declined|cancelled`
+    The app preserves unknown X- properties on events it creates/edits (so its own
+    metadata survives round-trips) but **strips X- properties on import** unless
+    explicitly allow-listed (privacy/security).
+- **App DB is the source of truth** for booking state; the event's properties are a
+  self-describing copy for third-party clients and for recovery. A third-party edit
+  that drops or alters those properties does not auto-cancel; only the app's own
+  reconcile pass does.
+- **Accept/decline (FR-19) is app-side state with an audit trail**, not CalDAV
+  scheduling (which would admit arbitrary iTIP input). A pending booking does not
+  hard-block the slot: it shows as a warning/hint in the web client, and managers
+  decide which overlapping request to approve. Approving one auto-declines the
+  overlapping pending ones (with a notification). Managers are per-resource
+  (users and groups) with `manage` rights; booking itself is open to any
+  authenticated user. Permissions live in a dedicated `resource_acl` table
+  mirroring `calendar_acl` (`read`/`book`/`manage`), defaulting
+  `authenticated → book`.
+- **Availability for third-party clients** is a **derived artifact**: a calendar
+  collection owned by the `_resources` service principal, shared to the resource's
+  `read` audience (default: the `web_calendar_users` group; managers may restrict
+  it). Approved blocks are written as `BUSY`; pending blocks as `BUSY-TENTATIVE`;
+  declined/cancelled blocks are removed. Blocks stay opaque (`SUMMARY:Reserved`,
+  `TRANSP:OPAQUE`, `CLASS:CONFIDENTIAL`, plus the back-reference id) — details come
+  from an API that checks the caller's access to the booking calendar first
+  (FR-18).
+- **Reconcile on move/delete.** Detection is ctag-gated (only when a calendar's
+  ctag/sync-token changed) plus a soft "orphaned" state with retry before
+  cancelling, and a manager queue for anything ambiguous; auto-cancel only when
+  the event is definitively gone or the slot changed and the user confirms (a
+  single consolidated toast: "Your booking for <resource> moved — re-approval
+  requested"). Manager-mediated cancellation (never auto-cancel) stays available
+  behind a flag that can be turned off later.
+- **Booking creation UX.** Booking is attempted automatically when an event with a
+  resource attached is first saved, gated by a checkbox next to the save/booking
+  control that is checked by default ("book right away"). Explicit add/remove of a
+  resource on an existing event remains available for drafts, recurring events and
+  multi-resource cases.
 
 ---
 
@@ -657,6 +692,9 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   - The top bar has two rows below 1024 px: toggle, period title and the quick-add / `⋮` buttons on top,
     date navigation and the view switcher below in a strip that scrolls sideways. A single row does not
     fit at 360 px and hid the switcher.
+  - **Date/time picker** — keep the browser's native inputs. The phone-specific focus issue was
+    resolved by the temporary UI workaround; the native picker remains a little unintuitive, which
+    is accepted. A custom picker is **not planned**.
 
   Fallback if a blocker appears: Reka UI (headless) with the existing CSS tokens.
 
@@ -671,6 +709,12 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   shared date (it needs app-side empty-band hiding and has no sticky labels). Readable on a 360 px
   phone with `slotMinWidth` 100–110 and a 100 px label column. Extending split to **all** view types is a **planned experiment**
   (post-initial-release), not a requirement.
+
+- **PWA / "Add to Home Screen" (post-initial-release).** The app shell scrolls internally, so
+  the mobile browser's address bar stays visible while using the site. A web app manifest (and,
+  if needed, a service worker) would let the installed app run fullscreen without the address
+  bar, giving the app-like feel without giving up the fixed top bar. Keep the manifest optional
+  and the app fully usable in the browser either way.
 - **Mobile** — responsive layout; the sidebar collapses; the split view stacks
   bands vertically.
 - **Editability (Phase 1)** — the mock-up is **read-only rendering plus
@@ -982,8 +1026,12 @@ this is the **order**):
   in-browser cache.
 - **Recurring edits** — decided and built: ask each time, "this instance" preselected;
   the mechanics and the `VTIMEZONE` source (generated from Intl) are in §7.
-- **Resource booking mechanism and FR-19** — how events reference a resource, and
-  how accept/decline works (CalDAV scheduling or app-side state). Phase 3.
+- **Resource booking mechanism and FR-19** — decided 2026-10-31: a resource is a first-class
+  entity (not a calendar); bookings are app-DB rows referenced from the booker's event via
+  `X-WEB-CALENDAR-RESOURCE` / `X-WEB-CALENDAR-BOOKING` / `X-WEB-CALENDAR-BOOKING-STATUS`;
+  accept/decline is app-side state with an audit trail (not CalDAV scheduling). Availability
+  for third-party clients is a derived calendar collection with approved blocks as `BUSY` and
+  pending as `BUSY-TENTATIVE`. See §5 resource model.
 - **Public view credentials** — service credential and published list. Decided
   when the feature is scheduled.
 - **AGPLv3 dependency audit** — confirm every dependency is AGPLv3-compatible before
@@ -993,6 +1041,8 @@ this is the **order**):
   drag/selection and is not discoverable. Every action needs a visible,
   keyboard-reachable alternative; verify at 360×640 portrait and 640×360
   landscape.
+- **Phone browser date-picker behavior** — resolved in real-device testing. The native picker is
+  still a little unintuitive, but a custom picker is not planned.
 - **Editing scope** — Phase 1 is read-only + quick-add. Enabling `editable`
   without a real store would fake persistence; drag/resize stays off until
   Phase 2 wires the API.

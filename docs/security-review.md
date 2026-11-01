@@ -218,6 +218,14 @@ data, uniform errors, key rotation voids them knowingly. Nothing secret in logs,
 `/api/config`, the bundle or the image. Startup refuses a missing or malformed security setting,
 and `allowPrivate` in production without its acknowledgement.
 
+**iCal parsing and round-trip.** The reader/writer must reject malformed input without throwing
+across the whole collection; unknown components and X- properties are handled per the fidelity
+policy (preserve X- properties on app-created/edited events, strip them on import unless
+allow-listed); size caps on input and output; control characters rejected; no entity expansion or
+billion-laughs; round-trip tests cover folding, escaping and time zones. Resource booking
+properties (`X-WEB-CALENDAR-RESOURCE`, `X-WEB-CALENDAR-BOOKING`,
+`X-WEB-CALENDAR-BOOKING-STATUS`) are app metadata, never trusted as authorization.
+
 **Data stores.** Prepared statements only; numbered migrations; backups with `VACUUM INTO`.
 Radicale: `max_content_length`, per-home growth, `sharing.csv` backed up with the collections.
 

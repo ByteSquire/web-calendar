@@ -135,8 +135,13 @@ and client renders match.
   with recurrence and time zones (organization zone, the browser's, or a per-user setting),
   creating, editing and deleting events, a settings page (app tokens, preferences, iCal
   subscriptions, `.ics` file import, external CalDAV accounts), the token verifier and CalDAV
-  gateway (`/caldav/`), and the security headers. Not built yet: access administration, shared
-  views and resources (Phase 3) and the public view. Spikes S1 to S6 and S8 to S10 are done; S7
+  gateway (`/caldav/`), and the security headers. Phase 3 is built but **not yet run** (its tests
+  are written; no unit test, e2e test or migration has been executed): the audit log, access
+  administration (`/admin/access`, menu entry "Calendar access", admins only), shared views managed
+  by admins from the sidebar, the sharing writer, the group sync and the first part of resources
+  (bookings and availability blocks on the server). Not built yet: the resource booking UI, the
+  availability reads and manager queue, reconciling moved or deleted booking events, and the public
+  view. Spikes S1 to S6 and S8 to S10 are done; S7
   (real clients) is open (design §12). A test stack
   for the spikes is in `dev/spike-s1`.
 

@@ -253,6 +253,16 @@ Each must exist **before** the feature ships, with the tests listed.
 every admin mutation, the sharing writer and the group sync, never containing tokens; the gateway
 path pre-check below.
 
+_Status (2026-11-01):_ all of these are **built; tests written, not yet run** (no unit test, e2e
+test or migration of Phase 3 has been executed). `requireAdmin` is reached only through
+`defineAdminHandler` (`server/utils/api/admin-handler.ts`), which adds a per-`sub` rate limit of
+about 60 a minute before the userinfo call and an `audit()` helper. `audit_log` (migration 005) is
+append-only (a trigger aborts `UPDATE`; `DELETE` stays for a retention job), redacts keys that look
+like secrets and Bearer/JWT patterns, omits depth above 8 and caps `details` at 8 KB. The limiter
+is per process, so it is looser after a restart or with several instances. Redaction is pattern
+based; callers still must not pass secrets. Tests: `tests/server/audit-log.test.ts`,
+`tests/server/admin-guard.test.ts`.
+
 ### 7.1 Sharing writer (`calendar_acl` → Radicale map shares)
 
 It is the one component that must send an identity it did not verify, and a drift between SQLite
@@ -261,7 +271,11 @@ and Radicale's CSV is a silent authorization error in either direction.
 - A **separate internal client**, on a path the gateway cannot reach; never expose `.sharing`
   through `/caldav/`.
 - Principals are **Kanidm `sub` UUIDs** (users) and group UUIDs or SPNs, validated against Kanidm
-  at write time and against `isValidSubject`; never a free-text name.
+  at write time and against `isValidSubject`; never a free-text name. _Built in the access
+  administration:_ a person must be a lower-case UUID that exists in `users.oidc_sub`, a group must
+  match the group-name check and exist in Kanidm (checked with the sync token for principals new to
+  the calendar; Kanidm down means `409` and nothing is stored); `public` and `admin` rules are
+  refused. A group removed between the check and the write is accepted (TOCTOU).
 - **Reconcile, do not patch:** desired shares from `calendar_acl`, Radicale's actual list, apply
   the diff, re-read, compare, alarm on any difference; on every ACL change and every 5 minutes. A
   share SQLite does not know is **removed** and the removal audited.
@@ -269,13 +283,29 @@ and Radicale's CSV is a silent authorization error in either direction.
   a calendar in S5: free/busy only, `GET`/`calendar-query`/writes 403; Radicale also accepts `''` and
   free-form strings, so the writer sends only these three values), `admin` never reaches Radicale.
 - Radicale unreachable: retry with backoff, `503` for ACL writes, `calendar_acl.applied_at` set only
-  after Radicale confirmed.
+  after Radicale confirmed. _Built:_ `applied_at` exists (migration 006) and is set after the
+  verified re-read, only for rules unchanged since the run began; the loop retries after 5 s, 10 s,
+  20 s up to the interval. The ACL routes do **not** answer `503` yet (`getSharingState()` exposes the
+  failure count for that); the rules stay saved and show as not applied.
 - **Second opinion for Radicale:** the gateway pre-checks from SQLite that the collection's owner
   is the caller or `calendar_acl` grants the caller something on that path (`403` otherwise), and a
-  nightly job lists each home as each user and compares with `calendar_acl`.
+  nightly job lists each home as each user and compares with `calendar_acl`. _Built:_
+  `precheck.ts` takes group membership from the htgroup file (a missing file grants nothing), names
+  `shared-<calendarId>` in a member's home are what it looks up (so members cannot own a calendar
+  with such a name), COPY/MOVE destinations are checked too; the job first runs 2 minutes after
+  start. Audit actions (actor `system:sharing-writer`): `sharing.removed_unknown`,
+  `sharing.replaced`, `sharing.mismatch`, `sharing.failing`, `sharing.recovered`,
+  `sharing.audit_mismatch`. The reconcile also removes any `token` share. Residual: API shapes S5
+  did not show are assumed (see `docs/design.md` §12); each owner costs one list request per run.
 - Tests: fixture ACLs → expected shares; an invented share is removed; a non-UUID `sub` is
   refused; `/caldav/.sharing/**` stays `404`; end to end, bob gains `r` on alice's calendar and
   `PUT` gets `403`, then deleting the row empties his listing within one reconcile.
+  _Written, not run:_ `tests/server/sharing-reconcile.test.ts` (fixtures, invented share removed,
+  replaced permission, deleted rule, unreachable, refused creates alarm once, invalid principal,
+  response cap, backoff), `sharing-gateway-precheck.test.ts` (owner, grantee, stranger, methods,
+  destination, `.sharing` `404`), `sharing-audit-job.test.ts`, `sharing-block-store.test.ts`,
+  `tests/server/admin-access.test.ts`, `tests/validate-config.test.ts` (sharing settings). The
+  end-to-end bob and alice case against a real Radicale is **not covered**.
 
 ### 7.2 Group sync (Kanidm → `htgroup`)
 
@@ -292,8 +322,21 @@ error.
   empty file because Kanidm answered `null`.
 - The interval is a security setting: default 60 s, hard ceiling 300 s; a group change seen in
   `/api/me` triggers a run.
+- _Built:_ the token is read-only and never logged (scrubbed from every message; 10 s timeout, 1
+  MiB cap, no redirects); groups are those named by `calendar_acl` and `resource_acl` plus the
+  two fixed ones; the interval is clamped to 1..300 and `validate-config.mjs` rejects a larger
+  value. Members are mapped from SPN to `sub` through the `users` table, so a member who never
+  signed in fails the run (fail closed; the file stays as it was). **Stale-file risk:** while
+  runs fail, removed members keep access (removals are not applied) until the cause is fixed.
+  Alarms: `401`/`403` logs at error level each run and audits `group_sync.unauthorized` once per
+  streak; the fifth consecutive failure and every fifth after it log at error level and audit
+  `group_sync.failing`; `group_sync.recovered` follows; a changed file audits `group_sync.updated`
+  (names and count, no SPNs). Actor `system:group-sync`. Not yet done: the token's 90-day rotation
+  runbook beyond `kanidm-setup.md`, and the LDAP bind.
 - Tests: fixture answers → exact file; an error or `null` leaves the file unchanged; the rename is
-  atomic; a removed member is gone after one run; the token never appears in logs.
+  atomic; a removed member is gone after one run; the token never appears in logs. _Written, not run:_
+  `tests/server/group-sync-file.test.ts`, `-kanidm.test.ts`, `-service.test.ts` and
+  `tests/validate-config.test.ts`.
 
 ### 7.3 Admin routes and shared views
 
@@ -304,6 +347,20 @@ because Radicale answers `403`, not because the app guesses. Preference refs are
 turned into a URL or path without `resolveRequestUrl` or the gateway. Tests: a forged `isAdmin` in
 the body → `403`; an admin who lost the group → `403`; an audit row per mutation.
 
+_Built (tests written, not yet run):_ the routes `POST /api/admin/views`, `PUT`/`DELETE
+/api/admin/views/:id` and the access administration routes are all `defineAdminHandler`, so the
+server enforces the admin check and hiding the controls is cosmetic. Admin view statements are
+restricted to `is_admin = 1`, `ext:` refs are refused per field, and refs are shape-checked only,
+so refs to calendars the viewer cannot read just show nothing. Audit actions: `admin_view.created`,
+`admin_view.updated`, `admin_view.deleted` (target the view id, details the name) and
+`acl.replaced` (target `calendar:<id>`, details only counts and principal types, no principals,
+no tokens; an unchanged `PUT` writes nothing). Resource administration is audited as in §7.4. Tests:
+`tests/server/admin-views.test.ts`, `tests/admin-views.test.ts`, `e2e/admin-views.spec.ts`,
+`tests/server/admin-access.test.ts`, `tests/admin-access-utils.test.ts`,
+`tests/admin-access-visibility.test.ts`, `tests/admin-access-page.test.ts`,
+`tests/admin-access-menu.test.ts`, `e2e/admin-access.spec.ts`. Residual: the browser flag costs
+an extra `/api/me` call; the rate limit is per process.
+
 ### 7.4 Resources and booking (FR-16 to FR-19)
 
 A booking writes into two calendars, and the resource calendar is widely shared as free/busy, so
@@ -311,15 +368,33 @@ any leak from the block defeats FR-18.
 
 - The **server** writes the block (internal client, service principal `_resources`); users need no
   write permission on resource calendars. A `calendar_bookings` table with a unique slot (or a
-  conflict check in one transaction) prevents double booking.
+  conflict check in one transaction) prevents double booking. _Built:_ the unique slot is the
+  approved-overlap trigger on `calendar_bookings` (migration 006); the block is written by
+  `createResourceBlockStore()` as `_resources`, only to
+  `/_resources/availability/<id>.ics`, and `server/plugins/resources.ts` repairs failed writes
+  every 10 minutes.
 - The block holds only `DTSTART`, `DTEND`, `UID`, `SUMMARY:Reserved`, `TRANSP:OPAQUE`,
   `CLASS:CONFIDENTIAL` and an opaque back-reference id, never the booking calendar's path or UID.
-  Details come from an API that checks the caller's access to the booking calendar first.
+  Details come from an API that checks the caller's access to the booking calendar first. _Built:_
+  the block also carries `X-WEB-CALENDAR-BLOCK:<block_ref>` and `STATUS:TENTATIVE` while pending
+  (the block reference is random and unique, not the booking id); the detail API is part of
+  resources part 2 and **not built yet**.
 - Users get `f` (or `r`) on resource calendars; the API refuses `write` ACLs on resources.
 - Accept/decline is app-side state with an audit trail (CalDAV scheduling would admit arbitrary
-  iTIP input). Limit bookings per user per day, duration and look-ahead.
+  iTIP input). Limit bookings per user per day, duration and look-ahead. _Built:_ 24 h, 10 per
+  requester and UTC day and 365 days ahead are placeholders (the design gave no values), plus a
+  booking rate limit of 10 burst and one per 2 s per user (per process); the resource ACL routes
+  accept only `read`, `book`, `manage` for user, group, authenticated, never `public`. Event-level
+  `X-` properties are stripped on import and booking marks are trusted only from the built-in
+  service. Audit actions: `resource_booking.created|approved|declined|cancelled|block_failed`,
+  `resource.created|updated|deactivated|acl_replaced`, ids only; an automatic decline carries
+  `automatic: true`. Residual: a removed group right lingers up to the 60 s userinfo cache.
 - Tests: the block contains nothing else; a user with `f` cannot `GET` it; two concurrent bookings
-  → one wins; a booker cannot delete another's block; a non-reader gets "blocked".
+  → one wins; a booker cannot delete another's block; a non-reader gets "blocked". _Written, not run:_
+  `tests/server/access-schema.test.ts`, `tests/server/resources-service.test.ts`,
+  `resources-input.test.ts`, `resources-routes.test.ts`, `tests/ical-x-properties.test.ts`,
+  `tests/ical-split.test.ts` (changed). Not covered yet: the "contains nothing else" and "user with
+  `f` cannot `GET`" checks against a real Radicale, and the detail API.
 
 ### 7.5 Public view (FR-26/27)
 

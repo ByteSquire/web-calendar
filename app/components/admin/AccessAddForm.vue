@@ -1,0 +1,163 @@
+<!--
+  Adds a rule for a person (picked from the people who signed in once), a group (its Kanidm short
+  name) or everyone signed in, with a plain description of each level. Adding someone who has a
+  rule already changes their level. The parent saves and says whether it worked; only then are the
+  inputs cleared.
+-->
+<template>
+  <form
+    class="flex flex-col gap-4"
+    novalidate
+    aria-labelledby="access-add-heading"
+    :aria-busy="busy"
+    @submit.prevent="submit"
+  >
+    <h2 id="access-add-heading" class="text-lg font-semibold">Add access</h2>
+
+    <URadioGroup
+      v-model="type"
+      legend="Give access to"
+      :items="whoItems"
+      :ui="RADIO_UI"
+      orientation="vertical"
+    />
+
+    <UFormField v-if="type === 'user'" label="Person" :error="problem" required>
+      <USelectMenu
+        v-model="person"
+        :items="personItems"
+        value-key="value"
+        :search-input="SEARCH_PEOPLE"
+        placeholder="Choose a person"
+        class="w-full max-w-md"
+        :ui="{ base: 'min-h-11', item: 'min-h-11 items-center' }"
+      >
+        <template #empty>Nobody matches. People appear here after they signed in once.</template>
+      </USelectMenu>
+    </UFormField>
+
+    <UFormField
+      v-else-if="type === 'group'"
+      label="Group name"
+      help="The short name of the group in Kanidm, for example staff."
+      :error="problem"
+      required
+    >
+      <UInput
+        v-model="group"
+        autocomplete="off"
+        autocapitalize="none"
+        spellcheck="false"
+        class="w-full max-w-md"
+      />
+    </UFormField>
+
+    <p v-else class="text-toned">Everyone who can sign in to this calendar app gets this access.</p>
+
+    <URadioGroup
+      v-model="permission"
+      legend="Access level"
+      :items="levelItems"
+      :ui="RADIO_UI"
+      orientation="vertical"
+    />
+
+    <div>
+      <UButton type="submit" label="Add access" icon="i-lucide-plus" :loading="busy" />
+    </div>
+  </form>
+</template>
+
+<script setup lang="ts">
+import {
+  ACCESS_LEVELS,
+  PRINCIPAL_CHOICES,
+  isGroupName,
+  userLabel,
+  type AccessPermission,
+  type AccessPrincipalType,
+  type AccessRuleInput,
+  type AccessUser,
+} from '~/utils/admin/access'
+
+const props = defineProps<{
+  users: readonly AccessUser[]
+  groupsAvailable: boolean
+  busy: boolean
+  /** Saves the rule; true when it worked. `label` names who it is for. */
+  save: (rule: AccessRuleInput, label: string) => Promise<boolean>
+}>()
+
+// The search field is named; a placeholder is no name for assistive technology.
+const SEARCH_PEOPLE = { placeholder: 'Search people', 'aria-label': 'Search people' }
+// 44 px rows for the radio buttons (design §9).
+const RADIO_UI = { item: 'min-h-11 items-center' }
+
+const type = ref<AccessPrincipalType>('user')
+const person = ref<string | undefined>(undefined)
+const group = ref('')
+const permission = ref<AccessPermission>('read')
+const problem = ref<string | undefined>(undefined)
+
+const whoItems = computed(() =>
+  PRINCIPAL_CHOICES.map((choice) =>
+    choice.value === 'group' && !props.groupsAvailable
+      ? {
+          ...choice,
+          disabled: true,
+          description: 'Not available: the server has no Kanidm token to check groups with.',
+        }
+      : choice,
+  ),
+)
+const levelItems = ACCESS_LEVELS.map((level) => ({
+  value: level.value,
+  label: level.label,
+  description: level.help,
+}))
+const personItems = computed(() =>
+  props.users.map((user) => ({ value: user.sub, label: userLabel(user) })),
+)
+
+watch(type, () => {
+  problem.value = undefined
+})
+
+async function submit() {
+  problem.value = undefined
+  if (type.value === 'user') {
+    const chosen = props.users.find((user) => user.sub === person.value)
+    if (!chosen) {
+      problem.value = 'Choose a person.'
+      return
+    }
+    if (
+      await props.save(
+        { principalType: 'user', principal: chosen.sub, permission: permission.value },
+        userLabel(chosen),
+      )
+    ) {
+      person.value = undefined
+    }
+  } else if (type.value === 'group') {
+    const name = group.value.trim()
+    if (!isGroupName(name)) {
+      problem.value = 'Enter the group name: letters, digits, dots, dashes and underscores.'
+      return
+    }
+    if (
+      await props.save(
+        { principalType: 'group', principal: name, permission: permission.value },
+        name,
+      )
+    ) {
+      group.value = ''
+    }
+  } else {
+    await props.save(
+      { principalType: 'authenticated', principal: null, permission: permission.value },
+      'Everyone signed in',
+    )
+  }
+}
+</script>

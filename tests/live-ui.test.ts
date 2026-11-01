@@ -131,7 +131,7 @@ describe('problems in the sidebar', () => {
 
 describe('overflow menu', () => {
   const menuItems = () =>
-    [...document.querySelectorAll('[role="menuitem"]')].map((item) => text(item))
+    [...document.querySelectorAll('[role^="menuitem"]')].map((item) => text(item))
 
   async function open() {
     app = await mountSuspended(shell(OverflowMenu), { attachTo: document.body })
@@ -145,7 +145,7 @@ describe('overflow menu', () => {
   it('shows the user, the zone, Refresh, Settings, Help and Sign out when signed in', async () => {
     useState('cal-user').value = { id: '7', name: 'Alice', email: 'alice@example.org' }
     await open()
-    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Appearance', 'Help', 'Sign out'])
+    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Dark mode', 'Help', 'Sign out'])
     const menu = text(document.querySelector('[role="menu"]'))!
     expect(menu).toContain('Alice')
     expect(menu).toContain('alice@example.org')
@@ -165,7 +165,7 @@ describe('overflow menu', () => {
   it('keeps the placeholder items of the mock-up in demo mode', async () => {
     useConfig({ demo: true, issuer: '' })
     await open()
-    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Appearance', 'Help'])
+    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Dark mode', 'Help'])
     expect(text(document.querySelector('[role="menu"]'))).not.toContain('Times in')
   })
 
@@ -194,7 +194,7 @@ describe('overflow menu', () => {
         'Refresh',
         'Settings',
         'Full screen',
-        'Appearance',
+        'Dark mode',
         'Help',
         'Sign out',
       ])
@@ -229,39 +229,39 @@ describe('overflow menu', () => {
     })
   })
 
-  describe('appearance', () => {
+  describe('dark mode switch', () => {
     afterEach(() => {
       useColorMode().preference = 'system'
     })
 
-    async function openAppearance() {
-      await open()
-      const entry = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-        (candidate) => text(candidate) === 'Appearance',
-      )!
-      entry.focus()
-      entry.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
-      await vi.waitFor(() =>
-        expect(document.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(3),
-      )
-      return [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')]
-    }
+    const entry = () => document.querySelector<HTMLElement>('[role="menuitemcheckbox"]')!
 
-    it('offers the system default, light and dark, and marks the current one', async () => {
+    it('is a single menu item that shows the scheme in use', async () => {
       useColorMode().preference = 'light'
-      const choices = await openAppearance()
-      expect(choices.map((choice) => text(choice))).toEqual(['System default', 'Light', 'Dark'])
-      expect(choices.map((choice) => choice.getAttribute('aria-checked'))).toEqual([
-        'false',
-        'true',
-        'false',
-      ])
+      await open()
+      expect(document.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(1)
+      expect(text(entry())).toBe('Dark mode')
+      expect(entry().getAttribute('aria-checked')).toBe('false')
+      // The switch is a picture of the state; the item itself is the control.
+      expect(entry().querySelector('button, [role="switch"]')).toBeNull()
     })
 
-    it('sets the colour scheme to what was chosen', async () => {
-      const choices = await openAppearance()
-      choices[2]!.click()
+    it('is on when the dark scheme is in use', async () => {
+      useColorMode().preference = 'dark'
+      await open()
+      expect(entry().getAttribute('aria-checked')).toBe('true')
+    })
+
+    it('stores dark when turned on and light when turned off, and stays open', async () => {
+      await open()
+      entry().click()
       await vi.waitFor(() => expect(useColorMode().preference).toBe('dark'))
+      await vi.waitFor(() => expect(entry().getAttribute('aria-checked')).toBe('true'))
+      expect(document.querySelector('[role="menu"]')).not.toBeNull()
+
+      entry().click()
+      await vi.waitFor(() => expect(useColorMode().preference).toBe('light'))
+      await vi.waitFor(() => expect(entry().getAttribute('aria-checked')).toBe('false'))
     })
   })
 

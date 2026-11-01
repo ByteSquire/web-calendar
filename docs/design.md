@@ -759,6 +759,11 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   Nuxt's colour mode, or set the attribute on an ancestor. The app re-points the palette variables at
   the Nuxt UI tokens in `main.css`. Event colours are chosen in code per scheme (text contrast ≥ 4.5).
   Custom theming is possible through class-name props if the variables are not enough.
+  The root declares `color-scheme` (CSS and `<meta>`), and the ⋮ menu has a "Dark mode" switch: the
+  system's scheme until flipped, then on is dark and off is light, kept in the browser. Limit: the
+  "night mode" of Huawei Browser darkens pages on its own even then, which leaves the dark scheme
+  low in contrast (seen on a phone). A page cannot switch it off; the answer is to turn it off for
+  the site in that browser.
 - **Interaction** — `editable` and `selectable` default to **`false`**. Dragging,
   resizing and selection require the **`interaction`** plugin; date clicks and
   selections are registered by the same plugin.

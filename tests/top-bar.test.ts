@@ -89,8 +89,8 @@ describe('overflow menu', () => {
     keydown(trigger, 'Enter')
     await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull())
     expect(
-      [...document.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent?.trim()),
-    ).toEqual(['Refresh', 'Settings', 'Appearance', 'Help'])
+      [...document.querySelectorAll('[role^="menuitem"]')].map((item) => item.textContent?.trim()),
+    ).toEqual(['Refresh', 'Settings', 'Dark mode', 'Help'])
     expect(document.activeElement?.getAttribute('role')).toBe('menuitem')
 
     keydown(document.activeElement, 'Escape')

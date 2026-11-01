@@ -86,7 +86,7 @@ Confidence is how sure the finding is real, not its severity.
    all at once". **Fixed**: `DELETE /api/app-tokens` (revokes all of the caller's tokens, answers
    `{ revoked: n }`) and a "Revoke all" button with a confirmation next to the list in Settings →
    App tokens. Tests: `tests/server/api-app-tokens.test.ts`, `tests/server/api-routes.test.ts`,
-   `tests/settings-tokens-section.test.ts`. The new button has no browser (Playwright) test.
+   `tests/settings-tokens-section.test.ts`. Browser tests (`e2e/settings.spec.ts`): confirm, cancel, a failing server and no tokens.
 
 4. **Low, confidence 85. No reverse-proxy reference configuration shipped.** Guide §7.8 asks for
    one (TLS, HSTS, appended `X-Forwarded-For`, body size, buffering off for `/caldav/`); `deploy/`
@@ -171,7 +171,6 @@ test does what it says beyond the full-suite pass already recorded above).
   test for `nosniff` or content-type coercion.
 - Compose hardening (`read_only`, `cap_drop`, `no-new-privileges`, the `internal: true` network)
   and the content of the Radicale rights file.
-- The "Revoke all" button in a real browser.
 
 ## 5. Open
 

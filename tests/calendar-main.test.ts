@@ -73,8 +73,30 @@ describe('display zone', () => {
   })
 })
 
+/**
+ * The mock events cover the current week only, so what a view shows would depend on the weekday the
+ * suite runs on. One all-day stub event on every day of the last, the current and the next week
+ * (Monday to Sunday) makes the days around today the same on every run.
+ */
+function addStubEventsAroundToday() {
+  const { anchorDate, calendars, addEvent } = useCalendarState()
+  const calendarId = calendars.value[0]!.id
+  const monday = anchorDate.value.subtract({ days: anchorDate.value.dayOfWeek - 1 })
+  for (let offset = -7; offset < 14; offset += 1) {
+    const day = monday.add({ days: offset })
+    addEvent({
+      title: 'Stub event',
+      calendarId,
+      start: day.toString(),
+      end: day.add({ days: 1 }).toString(),
+      allDay: true,
+    })
+  }
+}
+
 describe('standard views', () => {
-  it('renders the mock events in every view and keeps the selected date', async () => {
+  it('renders events in every view and keeps the selected date', async () => {
+    addStubEventsAroundToday()
     const { viewType, anchorDate } = useCalendarState()
     const date = anchorDate.value.add({ days: 2 })
     anchorDate.value = date

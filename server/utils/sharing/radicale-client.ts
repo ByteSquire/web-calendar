@@ -61,7 +61,7 @@ function stringField(row: Record<string, unknown>, key: string): string | null {
   return typeof value === 'string' ? value : null
 }
 
-function parseShares(text: string): SharingResult<RadicaleShare[]> {
+function parseShares(text: string, owner: string): SharingResult<RadicaleShare[]> {
   let parsed: unknown
   try {
     parsed = JSON.parse(text)
@@ -77,6 +77,9 @@ function parseShares(text: string): SharingResult<RadicaleShare[]> {
   const shares: RadicaleShare[] = []
   for (const item of content) {
     const row = item !== null && typeof item === 'object' ? (item as Record<string, unknown>) : {}
+    // A member's list also holds the shares mapped to them, which only their owner may change.
+    const rowOwner = stringField(row, 'Owner')
+    if (rowOwner !== null && rowOwner !== owner) continue
     const pathMapped = stringField(row, 'PathMapped')
     const pathOrToken = stringField(row, 'PathOrToken')
     const user = stringField(row, 'User')
@@ -188,7 +191,7 @@ export function createRadicaleClient(options: RadicaleClientOptions): RadicaleCl
   return {
     async listShares(owner, type) {
       const result = await api(owner, type, 'list', {})
-      return result.ok ? parseShares(result.value) : result
+      return result.ok ? parseShares(result.value, owner) : result
     },
     async createShare(owner, share) {
       const result = await api(owner, 'map', 'create', {

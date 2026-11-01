@@ -94,9 +94,11 @@ export async function startFakeRadicale(): Promise<FakeRadicale> {
       if (type === 'token')
         return { status: 404, text: 'The requested resource could not be found.' }
       if (action === 'list') {
+        // Radicale 3.9 lists the shares of the owner and, to a member, those mapped to them.
         const content = fake.shares
-          .filter((share) => share.owner === user)
+          .filter((share) => share.owner === user || share.user === user)
           .map((share) => ({
+            Owner: share.owner,
             PathMapped: share.pathMapped,
             PathOrToken: share.pathOrToken,
             User: share.user,
@@ -128,11 +130,12 @@ export async function startFakeRadicale(): Promise<FakeRadicale> {
         return { status: 200, text: '{}' }
       }
       if (action === 'delete') {
-        const before = fake.shares.length
-        fake.shares = fake.shares.filter(
-          (share) => !(share.owner === user && share.pathOrToken === payload.PathOrToken),
-        )
-        return { status: fake.shares.length < before ? 200 : 404, text: '{}' }
+        const named = fake.shares.filter((share) => share.pathOrToken === payload.PathOrToken)
+        const own = named.filter((share) => share.owner === user)
+        // Only the owner may delete; a member who tries gets 403 (observed 2026-11-01).
+        if (own.length === 0) return { status: named.length > 0 ? 403 : 404, text: '{}' }
+        fake.shares = fake.shares.filter((share) => !own.includes(share))
+        return { status: 200, text: '{}' }
       }
       if (action === 'enable' || action === 'unhide') {
         const share = fake.shares.find(

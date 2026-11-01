@@ -131,6 +131,25 @@ describe('sharing reconcile', () => {
     expect(entry?.details).toContain(CAROL)
   })
 
+  it('leaves the shares a member received alone', async () => {
+    const job = reconciler()
+    await job.run()
+    const id = calendarId(`/${ALICE}/work/`)
+    addCalendarAcl(db, id, { principalType: 'user', principal: BOB, permission: 'read' })
+    await job.run()
+    radicale.requests.length = 0
+    logs.length = 0
+
+    // Bob is a known user now holding a received share; his own list must not make it "unknown".
+    const again = await job.run()
+    expect(again).toMatchObject({ ok: true, value: { differences: [], removed: 0, updated: 0 } })
+    expect(radicale.requests.filter((r) => r.url.endsWith('/map/delete'))).toEqual([])
+    expect(logs).toEqual([])
+    expect(listAuditEntries(db, { limit: 50 }).some((e) => e.action.includes('mismatch'))).toBe(
+      false,
+    )
+  })
+
   it('replaces a share whose permission differs', async () => {
     const job = reconciler()
     await job.run()
@@ -196,6 +215,24 @@ describe('sharing client', () => {
       expect(!result.ok && result.failure.kind).toBe('invalid-principal')
     }
     expect(radicale.requests).toHaveLength(0)
+  })
+
+  it('lists only the shares the principal owns, not those mapped to them', async () => {
+    radicale.shares.push({
+      owner: ALICE,
+      pathMapped: `/${ALICE}/work/`,
+      pathOrToken: `/${BOB}/shared-1/`,
+      user: BOB,
+      permissions: 'r',
+      enabled: true,
+      hidden: false,
+      accepted: true,
+    })
+    const client = createRadicaleClient({ baseUrl: radicale.url })
+    const owner = await client.listShares(ALICE, 'map')
+    const member = await client.listShares(BOB, 'map')
+    expect(owner.ok && owner.value.map((s) => s.pathOrToken)).toEqual([`/${BOB}/shared-1/`])
+    expect(member).toEqual({ ok: true, value: [] })
   })
 
   it('does not follow redirects and caps the response size', async () => {

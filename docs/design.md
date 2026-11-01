@@ -1,6 +1,6 @@
 # Web Calendar — Design
 
-> Status: **Draft v1.3** — companion to `requirements.md` (Draft v1.4).
+> Status: **Draft v1.4** — companion to `requirements.md` (Draft v1.4).
 > This document turns the requirements into a concrete technical design.
 > v1.2 (2026-10-29), after spike S1: the app bundles Radicale and exposes its own authenticated
 > `/caldav/` endpoint (bearer tokens verified locally, app tokens for other clients). Access rules
@@ -10,6 +10,8 @@
 > v1.3 (2026-10-29), implementation started: Phase 1 steps 4–7 (sidebar, top bar, standard views,
 > split view) and the Phase 2 groundwork (SQLite layer, app tokens, token verifier, CalDAV gateway)
 > are built. Spikes S2 and S6 are done (§12); the deployment files follow this design (§10).
+> v1.4 (2026-11-01): no CI for now; releases are gated by a manual run of the checks on the
+> maintainer's machine (§12, Security backlog; README "Release checks").
 
 ---
 
@@ -1465,9 +1467,12 @@ off, which the reconcile already ignores; a calendar owned by a member and named
   (`npm run test:gateway:prod`), `npm run audit:prod` (three known advisories allowed) and a
   live key rotation test against Kanidm. Phase 3: the audit log, `requireAdmin` with a rate limit,
   the sharing writer with its pre-check, the group sync and the resource blocks are built (unit and
-  e2e tests pass; §8). Open: the dependency audit on each Nuxt release; the two
-  scripts are not wired into a CI yet (the repo has no CI configuration); the public view and its
-  controls.
+  e2e tests pass; §8). Open: the dependency audit on each Nuxt release; the public view and its
+  controls. **No CI for now** (decided 2026-11-01): the repo is private, Codeberg's hosted Woodpecker
+  needs a public repo, and the live-login suite cannot run on a hosted runner anyway (it needs the
+  Kanidm and Radicale test stack). A release is gated by a manual run of the checks on the
+  maintainer's machine, in the Dev Container: `check`, `test`, `test:e2e`, `audit:prod`,
+  `test:gateway:prod` and `test:e2e:live` (README "Release checks"). The repo has no CI configuration.
 - **External accounts, residual risks** — the Radicale host is refused by name, and by address
   only when `NUXT_RADICALE_URL` is an IP literal, so a listed internal name that resolves to the
   Radicale container would get through; worst-case memory of the proxy is about 32 × 10 MiB; an

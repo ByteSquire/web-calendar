@@ -1,0 +1,10 @@
+version = 1
+
+# Copyright and license of every file (REUSE specification 3.3, https://reuse.software). The
+# specification recommends a comment header in each file and allows this file for large trees; the
+# source files here carry no headers. A file that has its own SPDX header keeps it (the default
+# precedence is "closest"). The license text is in LICENSES/AGPL-3.0-only.txt, a copy of LICENSE.
+[[annotations]]
+path = "**"
+SPDX-FileCopyrightText = "2026 ByteSquire"
+SPDX-License-Identifier = "AGPL-3.0-only"

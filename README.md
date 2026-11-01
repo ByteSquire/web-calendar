@@ -268,6 +268,75 @@ Kanidm is then at `https://idm.localhost:8443` (issuer
 [`dev/spike-s1/README.md`](dev/spike-s1/README.md) for the accounts, all commands and what
 each spike tested.
 
+### Release checks (run on your machine)
+
+There is no CI for now (design §12). A release is gated by this manual run on the maintainer's
+machine. Replace `intelligent_mayer` with the name of your Dev Container; `-w` is needed because
+`docker exec` does not start in the workspace. The Dev Container has no Docker CLI, so the steps
+that start or connect the test stack run on the **host**; everything else runs in the container.
+
+1. In the container, in this order (`check` is `fmt:check`, `lint`, `typecheck` and
+   `typecheck:e2e`; `test:e2e` builds the app first):
+
+   ```sh
+   docker exec -u node -w /workspaces/web-calendar intelligent_mayer npm run check
+   docker exec -u node -w /workspaces/web-calendar intelligent_mayer npm test
+   docker exec -u node -w /workspaces/web-calendar intelligent_mayer npm run test:e2e
+   docker exec -u node -w /workspaces/web-calendar intelligent_mayer npm run audit:prod
+   docker exec -u node -w /workspaces/web-calendar intelligent_mayer npm run test:gateway:prod
+   ```
+
+2. The live-login suite (`test:e2e:live`) uses the real Kanidm and Radicale of the
+   [test stack](#test-stack-kanidm-and-radicale) and the build that `test:e2e` just made:
+
+   ```sh
+   # host, in dev/spike-s1 of the repo (needs docker, openssl, curl and python3)
+   ./spike.sh up
+   ./spike.sh bootstrap   # says "Already bootstrapped" and does nothing on later runs
+   docker network connect spike-s1_default intelligent_mayer
+
+   # container
+   docker exec -u node -w /workspaces/web-calendar intelligent_mayer npm run test:e2e:live
+
+   # host again
+   docker network disconnect spike-s1_default intelligent_mayer
+   ./spike.sh down        # or ./spike.sh reset: also deletes the data and dev/spike-s1/.local/
+   ```
+
+   The `network connect` lets the container resolve `idm.localhost` and `radicale`; if it says the
+   container is already connected, carry on. The suite reads the test CA and the users' passwords
+   from `dev/spike-s1/.local/`, which the container sees through the workspace mount. Disconnect
+   before `down`: Docker does not remove a network while a container is still in it.
+
+**Pass:** every command above exits 0, and `audit:prod` reports only the three known advisories
+(`glob`, `minimatch` and `deepmerge`, see Known issues). Any other advisory makes it exit 1; exit 2
+means the audit could not run, which is a fail too.
+
+When GG Coder runs these checks it needs the maintainer's approval each time; it does not start a
+full run on its own.
+
 ## License
 
-AGPL-3.0-only. See [`LICENSE`](LICENSE).
+Copyright (C) 2026 ByteSquire
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+The package is declared `AGPL-3.0-only`. See [`LICENSE`](LICENSE). The source files, tests included,
+carry no headers: the copyright and license of every file are recorded once in
+[`REUSE.toml`](REUSE.toml), following the [REUSE specification](https://reuse.software/spec-3.3/).
+The REUSE tool looks for the license text in [`LICENSES/`](LICENSES/AGPL-3.0-only.txt), which holds
+a copy of `LICENSE`.
+
+FullCalendar Premium (v7) is used under its AGPLv3 license, with its AGPLv3 license key
+(design §2).

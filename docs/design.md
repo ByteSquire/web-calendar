@@ -629,9 +629,23 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   [kanidm-setup.md](kanidm-setup.md) §3.
 - **Team and resource calendars** — owned by a service principal that is not a
   Kanidm user (for example `_team`, `_resources`) and shared to groups. A resource
-  calendar is shared so that users see "blocked" entries only (FR-18). The `f`
-  permission was tested in the rights file; whether a map share accepts it is
-  untested (S5 follow-up).
+  calendar is shared so that users see "blocked" entries only (FR-18) with a map share
+  with permission `f` (RUNTIME, S5 follow-up): the member gets the calendar's
+  properties (`read-free-busy` privilege, only `free-busy-query` in the report set) and
+  `free-busy-query` returns a `VFREEBUSY` without titles, while `GET`, `PROPFIND` Depth 1,
+  `calendar-query` and every write give 403. `r` and `rw` behave as before (`r` implies
+  free/busy). Limits: `PathMapped` must be a collection (a single event is refused with
+  400), a share of a whole home is not usable, only one share per (calendar, user) exists
+  (409), a **user** share is live only after the member itself calls `enable` and `unhide`
+  (group shares need neither), and the API also stores an empty or free-form combination
+  (`''`, `fr`, `rwf`), so the writer must send only the closed set.
+- **Many shares (S5 follow-up).** Each share is about 100 bytes of `sharing.csv`; every create
+  rewrites the whole file and every lookup scans the cache (CODE). RUNTIME with 2000 shares:
+  create about 10 ms per call (2 ms at 100), one owner's list 8 ms, a full list of all
+  owners 37 ms, Radicale memory 91 to 101 MiB. A member's home `PROPFIND` costs about
+  0.4 ms per share (36 ms at 100, 222 ms at 500, 171 kB). Reconciling every 5 minutes is
+  cheap; keep the number of shares per member low (hundreds at most). Details in
+  `docs/phase3-notes/s5-spike.md`.
 - **Everyone** — a Kanidm group that contains all users (for example
   `web_calendar_users`) works as the "all users" principal.
 - **Third-party clients** — they see shared calendars in their home listing like any
@@ -992,9 +1006,15 @@ this is the **order**):
   - The rights file is static (restart needed); group files and map shares are live;
     `f` gives the free/busy-only view; group and user shares list in a member's
     home as calendars and honor `r` and `rw`.
-  - _Still open:_ `f` as a share permission; real clients (S7); how the app reads
-    group membership from Kanidm (service account, interval); behavior with many
-    shares.
+  - _Follow-up, 2026-11-01_ (`dev/spike-s1/tools/s5_shares.py`, numbers in
+    `docs/phase3-notes/s5-spike.md`): a map share accepts `f` and gives exactly the free/busy
+    view (`free-busy-query` 200 without titles; `GET`, Depth 1, `calendar-query` and writes
+    403); `r` and `rw` as expected. Share limits: calendars only, one share per (calendar,
+    user), user shares need the member's `enable` and `unhide`. With 2000 shares: create
+    about 10 ms, full list 37 ms, member home `PROPFIND` 0.4 ms per share (222 ms at 500).
+    No fallback for FR-18 and FR-19 is needed.
+  - _Still open:_ real clients (S7); how the app reads group membership from Kanidm
+    (service account, interval); group shares at scale; more than 2000 shares.
 - **S6 — Gateway prototype. Done 2026-10-29** (`server/utils/gateway`, `server/utils/auth`; notes in
   §7). Verified by hand against the real Kanidm and Radicale through `nuxt dev` and through the
   production build (`.output`): `PROPFIND` with a real token gives 207; a spoofed `X-Remote-User`,

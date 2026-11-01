@@ -11,6 +11,8 @@ export const SOURCE_KEYS = {
   views: 'source:views',
   subscriptions: 'source:subscriptions',
   calendars: 'source:calendars',
+  resources: 'source:resources',
+  availability: 'source:availability',
 } as const
 
 export type SourceKey = (typeof SOURCE_KEYS)[keyof typeof SOURCE_KEYS]
@@ -23,6 +25,8 @@ export const SOURCE_LABELS: Record<SourceKey, string> = {
   'source:views': 'Views',
   'source:subscriptions': 'iCal subscriptions',
   'source:calendars': 'Calendar list',
+  'source:resources': 'Resources',
+  'source:availability': 'Resource availability',
 }
 
 /** The list of external accounts itself could not be read. */

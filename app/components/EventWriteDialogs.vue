@@ -45,6 +45,9 @@
 <script setup lang="ts">
 import type { CalendarEvent } from '../../shared/types/calendar'
 import type { EventChanges } from '~/utils/ical/write-types'
+import type { ReadEvent } from '~/utils/ical/x-properties'
+import { slotOf } from '~/utils/resources/slot'
+import type { BookableResource } from '~/utils/resources/types'
 import { eventTargetOf, eventWriteAccess } from '~/utils/writes/rules'
 import { SUCCESS_TITLES } from '~/utils/writes/messages'
 import type { EventTarget, ScopeChoice } from '~/utils/writes/types'
@@ -56,6 +59,8 @@ const emit = defineEmits<{
 
 const { calendarById, categories } = useCalendarState()
 const { edit, remove } = useEventWrites()
+const { book } = useResourceBooking()
+const timeZone = useDisplayTimeZone()
 const toast = useToast()
 
 type Step = 'idle' | 'scope' | 'final'
@@ -84,6 +89,8 @@ const DELETE_DETAILS: Record<ScopeChoice, string> = {
 const deleteDetail = computed(() =>
   scope.value ? DELETE_DETAILS[scope.value] : 'The event is removed from the calendar.',
 )
+
+const hasMarks = (chosen: CalendarEvent) => (chosen as ReadEvent).bookingMarks !== undefined
 
 function begin(kind: 'edit' | 'delete', chosen: CalendarEvent) {
   const found = eventTargetOf(chosen, calendarById.value)
@@ -131,7 +138,31 @@ function failureToast(title: string, message: string) {
   toast.add({ title, description: message, icon: 'i-lucide-triangle-alert', color: 'error' })
 }
 
-async function onEditSubmit(changes: EventChanges) {
+/** Books the resources chosen in the edit form for the saved event; the event stays saved. */
+async function bookFor(
+  chosen: EventTarget & { uid: string; marked: boolean },
+  ev: CalendarEvent,
+  changes: EventChanges,
+  resources: BookableResource[],
+) {
+  const when = changes.when ?? { start: ev.start, end: ev.end, allDay: ev.allDay }
+  const report = await book({
+    resources,
+    slot: slotOf(when, timeZone.value),
+    eventUid: chosen.uid,
+    // The marks name one resource for the whole series: not for one occurrence, and not over the
+    // marks of a resource the event already books.
+    markUrl: ev.recurring || chosen.marked ? null : chosen.href,
+    calendarHref: chosen.calendarHref,
+  })
+  const failures = [...report.failures]
+  if (report.result.marksFailed) {
+    failures.push('The booking was made, but the event could not be marked with it.')
+  }
+  return { failures, summary: report.booked ?? '', anyBooked: report.result.booked.length > 0 }
+}
+
+async function onEditSubmit(changes: EventChanges, resources: BookableResource[] = []) {
   if (pending.value || !target.value || !event.value) return
   const mine = flowId
   const title = event.value.title
@@ -150,7 +181,29 @@ async function onEditSubmit(changes: EventChanges) {
       failureToast('The event could not be saved', outcome.failure.message)
       return
     }
-    if (outcome.unchanged) {
+    const booking =
+      resources.length > 0
+        ? await bookFor(
+            { ...target.value, uid: event.value.uid, marked: hasMarks(event.value) },
+            event.value,
+            changes,
+            resources,
+          )
+        : null
+    if (booking && booking.failures.length > 0) {
+      // Nothing changed in the event itself and nothing was booked: the form can try again.
+      if (open && outcome.unchanged && !booking.anyBooked) {
+        error.value = `Nothing was booked. ${booking.failures.join(' ')}`
+        return
+      }
+      if (open) {
+        finish(false)
+        emit('done')
+      }
+      failureToast('The event was saved, but not everything was booked', booking.failures.join(' '))
+      return
+    }
+    if (outcome.unchanged && !booking) {
       if (open) finish(true)
       toast.add({ title: SUCCESS_TITLES.unchanged, icon: 'i-lucide-info', color: 'neutral' })
       return
@@ -161,7 +214,7 @@ async function onEditSubmit(changes: EventChanges) {
     }
     toast.add({
       title: SUCCESS_TITLES.updated,
-      description: title,
+      description: [title, booking?.summary].filter(Boolean).join('. '),
       icon: 'i-lucide-check',
     })
   } finally {

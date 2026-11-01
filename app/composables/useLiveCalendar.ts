@@ -7,11 +7,13 @@ import { useAuthFetch } from '~/composables/useAuthFetch'
 import { useCalDav } from '~/composables/useCalDav'
 import { useCalendarState } from '~/composables/useCalendarState'
 import { useExternalAccess } from '~/composables/useExternalAccess'
+import { useResourceUpdates } from '~/composables/useResourceUpdates'
 import { useServerConfigState } from '~/composables/useServerConfigState'
 import { fetchIcsText } from '~/utils/live/ics'
 import { createLiveLoader, type LiveLoader } from '~/utils/live/loader'
 import { isLiveConfig } from '~/utils/live/seed'
 import { createLiveStatusState } from '~/utils/live/status'
+import type { ResourceRight } from '~/utils/resources/types'
 
 // One loader per app: the layout creates it, `useLiveStatus` reaches it from anywhere.
 const loaders = new WeakMap<object, LiveLoader>()
@@ -64,6 +66,8 @@ export function useLiveCalendar(): void {
   const orgTimeZone = useOrgTimeZone()
   const userTimeZone = useUserTimeZone()
   const toast = useToast()
+  const updates = useResourceUpdates()
+  const rights = useState<Record<string, ResourceRight>>('resource-rights', () => ({}))
 
   const loader = createLiveLoader({
     store: state,
@@ -73,6 +77,13 @@ export function useLiveCalendar(): void {
     api: <T>(path: string) => api<T>(path) as Promise<T>,
     fetchIcs: (id) => fetchIcsText(auth.authFetch, id),
     external: useExternalAccess().source,
+    resources: {
+      onList: (list) => {
+        rights.value = Object.fromEntries(
+          list.map((resource) => [String(resource.id), resource.right]),
+        )
+      },
+    },
     displayTimeZone: () => displayTimeZone.value,
     orgTimeZone: () => orgTimeZone.value,
     setUserTimeZone: (zone) => {
@@ -97,7 +108,10 @@ export function useLiveCalendar(): void {
   const stop = watch(
     auth.status,
     (status) => {
-      if (status === 'authenticated') void loader.start()
+      if (status === 'authenticated') {
+        void loader.start()
+        void updates.announce()
+      }
     },
     { immediate: true },
   )

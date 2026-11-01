@@ -24,6 +24,7 @@
         novalidate
         class="flex flex-col gap-4"
         :aria-busy="pending"
+        :inert="saved"
         @submit.prevent="onSubmit"
       >
         <FormAlert :message="submitError" />
@@ -43,11 +44,26 @@
           :calendars="choosableCalendars"
           :time-zone="timeZone"
         />
+        <ResourceBookingFields
+          v-model="chosenResources"
+          :offered="bookable"
+          :note="isSeries && chosenResources.length > 0 ? SERIES_NOTE : ''"
+          :disabled="pending"
+        />
       </form>
     </template>
 
     <template #footer>
-      <div class="flex w-full justify-end gap-2">
+      <div v-if="saved" class="flex w-full justify-end gap-2">
+        <UButton label="Close" @click="closeQuickAdd()" />
+      </div>
+      <div v-else class="flex w-full flex-wrap items-center justify-end gap-2">
+        <BookRightAwayCheckbox
+          v-if="chosenResources.length > 0 && !isSeries"
+          v-model="bookNow"
+          :disabled="pending"
+          class="me-auto"
+        />
         <UButton label="Cancel" color="neutral" variant="outline" @click="closeQuickAdd()" />
         <UButton
           type="submit"
@@ -74,6 +90,7 @@ import {
   validateEventForm,
   type EventForm,
 } from '~/utils/writes/event-form'
+import { slotOf } from '~/utils/resources/slot'
 import { SUCCESS_TITLES } from '~/utils/writes/messages'
 import { writableCalendars } from '~/utils/writes/rules'
 
@@ -93,6 +110,12 @@ const toast = useToast()
 const timeZone = useDisplayTimeZone()
 const { live, create } = useEventWrites()
 const { loading } = useLiveStatus()
+const { bookable } = useResourceRights()
+const { book } = useResourceBooking()
+const resourceBookings = useResourceBookings()
+
+const SERIES_NOTE =
+  'This event repeats, so it is saved without booking. Open one occurrence afterwards and add the resource there.'
 
 const fields = useTemplateRef('fields')
 const formElement = useTemplateRef('formElement')
@@ -120,6 +143,11 @@ const form = ref(createForm())
 const submitted = ref(false)
 const pending = ref(false)
 const submitError = ref('')
+const chosenResources = ref<string[]>([])
+const bookNow = ref(true)
+/** The event is saved but a resource was refused: the form only says so, saving again would double it. */
+const saved = ref(false)
+const isSeries = computed(() => form.value.repeat !== 'none')
 const errors = computed(() =>
   submitted.value ? validateEventForm(form.value, calendarIds.value) : {},
 )
@@ -138,6 +166,9 @@ watch(quickAddOpen, (open) => {
   submitted.value = false
   pending.value = false
   submitError.value = ''
+  chosenResources.value = []
+  bookNow.value = true
+  saved.value = false
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
 })
 
@@ -157,12 +188,14 @@ function restoreFocus(event: Event) {
 }
 
 /** The toast after an event was added: where it is, and a way to it when it is out of view. */
-function announceAdded(event: CalendarEvent) {
+function announceAdded(event: CalendarEvent, extra = '') {
   const calendarName = calendarById.value.get(event.calendarId)?.name ?? 'The calendar'
   if (!visibleCalendarIds.value.includes(event.calendarId)) {
     toast.add({
       title: SUCCESS_TITLES.created,
-      description: `${calendarName} is hidden, so the new event is not shown.`,
+      description: [`${calendarName} is hidden, so the new event is not shown.`, extra]
+        .filter(Boolean)
+        .join(' '),
       icon: 'i-lucide-check',
     })
     return
@@ -171,7 +204,7 @@ function announceAdded(event: CalendarEvent) {
   const shown = eventOverlapsRange(event, visibleRange.value)
   toast.add({
     title: SUCCESS_TITLES.created,
-    description: `${event.title} in ${calendarName}`,
+    description: [`${event.title} in ${calendarName}.`, extra].filter(Boolean).join(' '),
     icon: 'i-lucide-check',
     actions: shown
       ? undefined
@@ -200,6 +233,49 @@ function previewOf(value: EventForm): CalendarEvent {
     status: 'confirmed',
     categoryIds: [],
   }
+}
+
+/** Books the chosen resources of a saved event; never throws. */
+async function bookChosen(
+  values: EventForm,
+  outcome: { uid: string; url: string },
+  calendarHref: string,
+): Promise<{ failures: string[]; summary: string }> {
+  const chosen = bookable.value.filter((item) => chosenResources.value.includes(item.id))
+  if (chosen.length === 0) return { failures: [], summary: '' }
+  if (isSeries.value) return { failures: [SERIES_NOTE], summary: '' }
+  if (!bookNow.value) return { failures: [], summary: 'Saved as a draft: nothing is booked yet.' }
+  const report = await book({
+    resources: chosen,
+    slot: slotOf(toWallClockRange(values), timeZone.value),
+    eventUid: outcome.uid,
+    markUrl: outcome.url,
+    calendarHref,
+  })
+  const failures = [...report.failures]
+  if (report.result.marksFailed) {
+    failures.push('The booking was made, but the event could not be marked with it.')
+  }
+  return { failures, summary: report.booked ?? '' }
+}
+
+/** Demo mode: the bookings only exist in local state, and they wait for approval like real ones. */
+function bookChosenInDemo(values: EventForm): string {
+  const chosen = bookable.value.filter((item) => chosenResources.value.includes(item.id))
+  if (chosen.length === 0) return ''
+  if (isSeries.value) return SERIES_NOTE
+  if (!bookNow.value) return 'Saved as a draft: nothing is booked yet.'
+  const slot = slotOf(toWallClockRange(values), timeZone.value)
+  for (const item of chosen) {
+    resourceBookings.addDemoBooking({
+      resourceId: item.id,
+      resourceName: item.name,
+      start: slot.startAt,
+      end: slot.endAt,
+      requesterName: 'You',
+    })
+  }
+  return `${chosen.map((item) => item.name).join(', ')} requested, waiting for approval.`
 }
 
 async function submitLive() {
@@ -233,8 +309,12 @@ async function submitLive() {
       }
       return
     }
-    if (!stale) closeQuickAdd()
-    announceAdded(previewOf(values))
+    const booking = await bookChosen(values, outcome, calendar.href)
+    if (booking.failures.length > 0 && !stale) {
+      submitError.value = `The event was saved. ${booking.failures.join(' ')}`
+      saved.value = true
+    } else if (!stale) closeQuickAdd()
+    announceAdded(previewOf(values), booking.summary)
   } finally {
     if (mine === session) pending.value = false
   }
@@ -254,7 +334,8 @@ async function onSubmit() {
     return
   }
   const event = addEvent(toNewEventInput(form.value))
+  const summary = bookChosenInDemo(form.value)
   closeQuickAdd()
-  announceAdded(event)
+  announceAdded(event, summary)
 }
 </script>

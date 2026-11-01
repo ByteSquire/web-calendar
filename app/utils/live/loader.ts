@@ -17,12 +17,22 @@
 //   wait for them, and each account is merged in as soon as its server has answered.
 import { computed, watch } from 'vue'
 import type { Ref } from 'vue'
-import type { Calendar, CalendarUser } from '../../../shared/types/calendar'
+import type { Calendar, CalendarResource, CalendarUser } from '../../../shared/types/calendar'
+import type { AvailabilityResponse } from '../../../shared/types/resources-api'
 import type { CalDavClient } from '../caldav/client'
 import { DavError } from '../caldav/errors'
 import type { CalendarReader } from '../caldav/reader'
 import type { DavCalendar } from '../caldav/types'
 import type { CalendarState } from '../calendar-state'
+import {
+  availabilityRanges,
+  availabilityToEvents,
+  apiIdOfResourceCalendar,
+  isResourceCalendarId,
+  toCalendarResources,
+  toResourceCalendars,
+} from '../resources/availability'
+import type { ApiResource } from '../resources/types'
 import type { ExternalSource } from '../external/source'
 import type {
   ApiCalendarPref,
@@ -75,7 +85,16 @@ export type LiveStore = Pick<
   | 'events'
   | 'visibleCalendarIds'
   | 'visibleRange'
->
+> & {
+  /** Where the resources of the API go; a store without it (tests, demo) gets none. */
+  resources?: Ref<CalendarResource[]>
+}
+
+/** Resources in live mode (FR-16..FR-18); without it the loader knows none. */
+export interface ResourceSource {
+  /** The resources the viewer may read, each time the list was read. */
+  onList?: (list: readonly ApiResource[]) => void
+}
 
 export interface LiveDeps {
   store: LiveStore
@@ -88,6 +107,7 @@ export interface LiveDeps {
   fetchIcs: (subscriptionId: string) => Promise<string>
   /** The external CalDAV accounts (FR-8); without it the loader knows none. */
   external?: ExternalSource
+  resources?: ResourceSource
   displayTimeZone: () => string
   orgTimeZone: () => string
   /**
@@ -169,6 +189,9 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
   const latest = new Map<string, number>()
   /** The viewer's calendar preferences as the last load of the sources read them. */
   let preferences: ApiCalendarPref[] = []
+  /** The newest availability answers (one per piece of the range), kept to match titles later. */
+  let availability: AvailabilityResponse[] = []
+  let availabilityToken = 0
   const externalTrack = deps.external
     ? createExternalTrack({
         source: deps.external,
@@ -239,8 +262,8 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
   async function runSources(): Promise<void> {
     beginWork()
     try {
-      const [me, prefs, categories, filters, views, subscriptions, collections] = await Promise.all(
-        [
+      const [me, prefs, categories, filters, views, subscriptions, collections, resourceList] =
+        await Promise.all([
           attempt(() => deps.api<ApiMe>('/api/me')),
           attempt(() => deps.api<{ prefs: ApiCalendarPref[] }>('/api/calendar-prefs')),
           attempt(() => deps.api<{ categories: ApiCategory[] }>('/api/categories')),
@@ -250,8 +273,10 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
             deps.api<{ subscriptions: ApiIcalSubscription[] }>('/api/ical-subscriptions'),
           ),
           attempt(() => deps.client.listCalendars()),
-        ],
-      )
+          deps.resources
+            ? attempt(() => deps.api<{ resources: ApiResource[] }>('/api/resources'))
+            : Promise.resolve(null),
+        ])
       if (disposed) return
 
       const problems: Record<string, string> = {}
@@ -309,7 +334,12 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
           subscriptionList !== null
             ? built.filter((c) => c.type === 'ical')
             : previous.filter((c) => c.type === 'ical')
-        const next = [...dav, ...ical, ...built.filter((c) => isExternalRef(c.id))]
+        const next = [
+          ...dav,
+          ...ical,
+          ...built.filter((c) => isExternalRef(c.id)),
+          ...previous.filter((c) => c.type === 'resource'),
+        ]
         store.visibleCalendarIds.value = reconcileVisibleCalendars({
           visibleIds: store.visibleCalendarIds.value,
           previous,
@@ -317,6 +347,8 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
         })
         store.calendars.value = next
       }
+
+      if (resourceList) applyResources(resourceList, problems)
 
       // Keep the messages of calendars that still exist; the source messages are replaced, except
       // those of the external accounts, which their own track keeps.
@@ -328,6 +360,95 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
       )
       setErrors({ ...calendarErrors, ...problems })
       syncCategories()
+    } finally {
+      endWork()
+    }
+  }
+
+  /** The resources become sidebar entries; a listing that failed keeps the ones it had. */
+  function applyResources(
+    result: PromiseSettledResult<{ resources: ApiResource[] }>,
+    problems: Record<string, string>,
+  ) {
+    if (result.status === 'rejected') {
+      problems[SOURCE_KEYS.resources] = describeLoadError(result.reason)
+      return
+    }
+    const list = result.value.resources
+    const previous = store.calendars.value
+    const next = [...previous.filter((c) => c.type !== 'resource'), ...toResourceCalendars(list)]
+    store.visibleCalendarIds.value = reconcileVisibleCalendars({
+      visibleIds: store.visibleCalendarIds.value,
+      previous,
+      next,
+    })
+    store.calendars.value = next
+    if (store.resources) store.resources.value = toCalendarResources(list)
+    deps.resources?.onList?.(list)
+  }
+
+  // ---- availability of the resources ----
+
+  /** Puts the availability entries into the events, with the titles of events the browser has. */
+  function applyAvailability() {
+    const own = store.events.value.filter((event) => !isResourceCalendarId(event.calendarId))
+    const titles = new Map<string, string>()
+    for (const event of own)
+      if (!event.isBlocked && !titles.has(event.uid)) titles.set(event.uid, event.title)
+    const entries = availability.flatMap((answer) =>
+      availabilityToEvents(answer, {
+        displayTimeZone: deps.displayTimeZone(),
+        titleOf: (uid) => titles.get(uid),
+      }),
+    )
+    const next = dedupeEvents([...own, ...entries])
+    const current = store.events.value
+    if (next.length !== current.length || next.some((event, index) => event !== current[index])) {
+      store.events.value = next
+    }
+  }
+
+  /** The availability of the visible resources for the loaded range. Never throws. */
+  async function loadAvailability(): Promise<void> {
+    if (!deps.resources || disposed) return
+    const token = ++availabilityToken
+    const visible = new Set(store.visibleCalendarIds.value)
+    const ids = store.calendars.value
+      .filter((calendar) => calendar.type === 'resource' && visible.has(calendar.id))
+      .flatMap((calendar) => apiIdOfResourceCalendar(calendar.id) ?? [])
+    if (ids.length === 0) {
+      availability = []
+      applyAvailability()
+      return
+    }
+    const range = loadRange(store.visibleRange.value, deps.displayTimeZone())
+    beginWork()
+    try {
+      const answers = await Promise.all(
+        availabilityRanges(range.start, range.end).map(({ from, to }) =>
+          attempt(() =>
+            deps.api<AvailabilityResponse>(
+              `/api/resources/availability?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&resource=${ids.join(',')}`,
+            ),
+          ),
+        ),
+      )
+      if (disposed || token !== availabilityToken) return
+      const ok = answers.flatMap((answer) => (answer.status === 'fulfilled' ? [answer.value] : []))
+      const failed = answers.find((answer) => answer.status === 'rejected')
+      const others = Object.entries(status.errors.value).filter(
+        ([key]) => key !== SOURCE_KEYS.availability,
+      )
+      setErrors({
+        ...Object.fromEntries(others),
+        ...(failed && failed.status === 'rejected'
+          ? { [SOURCE_KEYS.availability]: describeLoadError(failed.reason) }
+          : {}),
+      })
+      // Nothing came in: what is shown stays instead of flashing away.
+      if (ok.length === 0) return
+      availability = ok
+      applyAvailability()
     } finally {
       endWork()
     }
@@ -502,7 +623,11 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
 
   /** Drops the events, messages and notes of calendars that are no longer loaded. */
   function prune(loadable: readonly Calendar[]) {
-    const ids = new Set(loadable.map((calendar) => calendar.id))
+    // Resource calendars are not read from CalDAV: their entries come from `loadAvailability`.
+    const ids = new Set([
+      ...loadable.map((calendar) => calendar.id),
+      ...store.calendars.value.filter((c) => c.type === 'resource').map((c) => c.id),
+    ])
     if (store.events.value.some((event) => !ids.has(event.calendarId))) {
       store.events.value = store.events.value.filter((event) => ids.has(event.calendarId))
     }
@@ -539,7 +664,11 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
     const targets = options.skipExternal
       ? picked.filter((calendar) => !isExternalRef(calendar.id))
       : picked
-    if (targets.length === 0) return
+    const availabilityLoaded = options.only ? Promise.resolve() : loadAvailability()
+    if (targets.length === 0) {
+      await availabilityLoaded
+      return
+    }
 
     const context: ReadContext = {
       displayTimeZone: deps.displayTimeZone(),
@@ -580,6 +709,9 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
             : false,
         ),
       ])
+      await availabilityLoaded
+      // New events may be the ones the availability entries belong to.
+      if (availability.length > 0 && !disposed) applyAvailability()
       if (!disposed && applied.some(Boolean)) status.lastLoadedAt.value = now()
     } finally {
       endWork()

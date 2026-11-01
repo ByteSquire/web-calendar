@@ -398,6 +398,32 @@ describe('validateEnv', () => {
   })
 })
 
+describe('validateEnv: booking reconcile', () => {
+  it('accepts an interval from 1 to 900 seconds and refuses others', () => {
+    for (const ok of ['1', '300', '900']) {
+      expect(validateEnv({ ...valid, NUXT_RESOURCES_RECONCILE_INTERVAL_SEC: ok }).errors).toEqual(
+        [],
+      )
+    }
+    for (const bad of ['901', '0', '-1', 'abc', '']) {
+      const { errors } = validateEnv({ ...valid, NUXT_RESOURCES_RECONCILE_INTERVAL_SEC: bad })
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('NUXT_RESOURCES_RECONCILE_INTERVAL_SEC')
+    }
+  })
+
+  it('takes the manager cancel flag as exactly true or false', () => {
+    for (const ok of ['true', 'false']) {
+      expect(validateEnv({ ...valid, NUXT_RESOURCES_MANAGER_CANCEL: ok }).errors).toEqual([])
+    }
+    for (const bad of ['yes', '1', '']) {
+      const { errors } = validateEnv({ ...valid, NUXT_RESOURCES_MANAGER_CANCEL: bad })
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('NUXT_RESOURCES_MANAGER_CANCEL')
+    }
+  })
+})
+
 describe('validateEnv: sharing writer', () => {
   it('accepts a reconcile interval from 1 to 900 seconds and refuses others', () => {
     for (const ok of ['1', '300', '900']) {

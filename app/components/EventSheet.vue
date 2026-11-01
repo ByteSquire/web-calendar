@@ -122,7 +122,7 @@
 import type { CalendarEvent } from '../../shared/types/calendar'
 import { resourceIconName } from '~/utils/calendar-icons'
 import { buildEventDetails, type EventDetails } from '~/utils/event-display'
-import { pickFocusTarget } from '~/utils/focus'
+import { keepFocusOffControlsOnTouch, pickFocusTarget } from '~/utils/focus'
 import { makeScrollersFocusable } from '~/utils/scroll-a11y'
 import { eventWriteAccess } from '~/utils/writes/rules'
 
@@ -214,6 +214,7 @@ function restoreFocus(event: Event) {
 
 // The body scrolls when the details are taller than a phone sheet: give it a tab stop.
 function markScrollers(event: Event) {
+  keepFocusOffControlsOnTouch(event)
   const content = event.target
   if (content instanceof HTMLElement) requestAnimationFrame(() => makeScrollersFocusable(content))
 }

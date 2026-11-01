@@ -40,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import { pickFocusTarget } from '~/utils/focus'
+import { keepFocusOffControlsOnTouch, pickFocusTarget } from '~/utils/focus'
 
 const props = withDefaults(
   defineProps<{
@@ -70,6 +70,7 @@ function onOpenChange(open: boolean) {
 }
 
 function focusCancel(event: Event) {
+  if (keepFocusOffControlsOnTouch(event)) return
   const button = cancelButton.value?.$el
   if (!button) return
   event.preventDefault()

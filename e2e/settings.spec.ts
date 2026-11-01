@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
-import { TODAY, press } from './helpers'
+import { TODAY, expectOpenFocus, isTouch, press } from './helpers'
 
 // The settings screen (FR-31 app tokens, FR-7 iCal subscriptions, account). The app runs in demo
 // mode here, which serves the SPA without a login, and every `/api/**` call except the settings
@@ -457,6 +457,7 @@ test.describe('settings: app tokens', () => {
     browserName,
   }) => {
     test.skip(browserName === 'webkit', 'WebKit does not Tab to buttons by default')
+    test.skip(isTouch(), 'a touch screen puts the focus on the dialog, not on a button')
     await mockApi(page)
     await openSettings(page)
 
@@ -665,7 +666,7 @@ test.describe('settings: iCal subscriptions', () => {
     await press(opener)
     const dialog = page.getByRole('dialog', { name: 'Edit subscription' })
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByLabel('Name', { exact: true })).toBeFocused()
+    await expectOpenFocus(dialog, dialog.getByLabel('Name', { exact: true }))
     await expect(dialog.getByLabel('Name', { exact: true })).toHaveValue('Holidays')
 
     // Escape throws the changes away and focus goes back to the button
@@ -689,6 +690,7 @@ test.describe('settings: iCal subscriptions', () => {
 
   test('the delete dialog works with the keyboard', async ({ page, browserName }) => {
     test.skip(browserName === 'webkit', 'WebKit does not Tab to buttons by default')
+    test.skip(isTouch(), 'a touch screen puts the focus on the dialog, not on a button')
     const api = await mockApi(page)
     await openSettings(page)
     const opener = page.getByRole('button', { name: 'Delete Holidays' })

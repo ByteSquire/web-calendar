@@ -206,6 +206,7 @@
 </template>
 
 <script setup lang="ts">
+import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { MAX_EXTERNAL_ACCOUNTS, type ExternalAccount } from '../../../shared/types/external'
 import { useExternalAccess } from '~/composables/useExternalAccess'
 import { useLiveStatus } from '~/composables/useLiveCalendar'
@@ -326,6 +327,7 @@ function closeEdit(open: boolean) {
 }
 
 function focusEditForm(event: Event) {
+  if (keepFocusOffControlsOnTouch(event)) return
   event.preventDefault()
   editForm.value?.focusFirst()
 }

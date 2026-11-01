@@ -41,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { pickFocusTarget } from '~/utils/focus'
+import { keepFocusOffControlsOnTouch, pickFocusTarget } from '~/utils/focus'
 import { SCOPE_CHOICES, SCOPE_LABELS, type ScopeChoice } from '~/utils/writes/types'
 
 const props = withDefaults(
@@ -97,6 +97,7 @@ function onContinue() {
 
 // The first tab stop would be the close button; the question is the radio group.
 function focusChoice(event: Event) {
+  if (keepFocusOffControlsOnTouch(event)) return
   const content = event.target
   if (!(content instanceof HTMLElement)) return
   const radio =

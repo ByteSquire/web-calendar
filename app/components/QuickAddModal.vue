@@ -62,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { Temporal } from 'temporal-polyfill'
 import type { CalendarEvent } from '../../shared/types/calendar'
 import { eventOverlapsRange } from '~/utils/calendar-state'
@@ -145,6 +146,7 @@ function onOpenChange(open: boolean) {
 }
 
 function focusTitle(event: Event) {
+  if (keepFocusOffControlsOnTouch(event)) return
   if (fields.value?.focusTitle()) event.preventDefault()
 }
 

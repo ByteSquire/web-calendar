@@ -178,6 +178,7 @@
 </template>
 
 <script setup lang="ts">
+import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { useAuthFetch } from '~/composables/useAuthFetch'
 import {
   describeError,
@@ -285,6 +286,7 @@ function closeEdit(open: boolean) {
 }
 
 function focusEditForm(event: Event) {
+  if (keepFocusOffControlsOnTouch(event)) return
   event.preventDefault()
   editForm.value?.focusFirst()
 }

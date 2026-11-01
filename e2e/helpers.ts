@@ -38,6 +38,19 @@ export async function press(locator: Locator): Promise<void> {
   else await locator.click()
 }
 
+/**
+ * Where the focus is once a dialog has opened: on `control` (its first or safest one), or, on a
+ * touch screen, on the dialog itself, so that no keyboard opens and no ring shows under the finger.
+ */
+export async function expectOpenFocus(dialog: Locator, control: Locator): Promise<void> {
+  if (isTouch()) {
+    await expect(dialog).toBeFocused()
+    await expect(control).not.toBeFocused()
+  } else {
+    await expect(control).toBeFocused()
+  }
+}
+
 export function viewButton(page: Page, name: (typeof VIEW_TYPES)[number]): Locator {
   return page.getByRole('group', { name: 'View type' }).getByRole('button', { name, exact: true })
 }

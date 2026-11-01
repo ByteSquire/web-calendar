@@ -18,7 +18,7 @@
         title="Views and calendars"
         description="Choose views, calendars, resources, categories and filters"
         :ui="{ content: 'w-80 max-w-[85vw]', description: 'sr-only' }"
-        :content="{ onCloseAutoFocus: restoreFocus }"
+        :content="{ onOpenAutoFocus: keepFocusOffControlsOnTouch, onCloseAutoFocus: restoreFocus }"
       >
         <template #body>
           <SidebarContent />
@@ -37,6 +37,7 @@
 </template>
 
 <script setup lang="ts">
+import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { useAuth } from '~/composables/useAuth'
 import { useLiveCalendar, useLiveStatus } from '~/composables/useLiveCalendar'
 import { useServerConfigState } from '~/composables/useServerConfigState'

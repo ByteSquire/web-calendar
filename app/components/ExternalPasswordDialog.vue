@@ -69,6 +69,7 @@
 </template>
 
 <script setup lang="ts">
+import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { createFocusReturn } from '~/utils/settings/focus-return'
 import { FIELD_UI } from '~/utils/settings/ui'
 
@@ -126,6 +127,7 @@ function onOpenChange(open: boolean) {
 }
 
 function focusPassword(event: Event) {
+  if (keepFocusOffControlsOnTouch(event)) return
   event.preventDefault()
   passwordInput.value?.inputRef?.focus()
 }

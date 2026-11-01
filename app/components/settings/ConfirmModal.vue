@@ -41,6 +41,7 @@
 </template>
 
 <script setup lang="ts">
+import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { createFocusReturn } from '~/utils/settings/focus-return'
 
 const props = defineProps<{
@@ -78,6 +79,7 @@ function onConfirm() {
 }
 
 function focusCancel(event: Event) {
+  if (keepFocusOffControlsOnTouch(event)) return
   event.preventDefault()
   cancelButton.value?.$el.focus()
 }

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openApp, press, switchView } from './helpers'
+import { expectOpenFocus, openApp, press, switchView } from './helpers'
 
 test.describe('quick add', () => {
   test('adds an event that shows in the current view, and returns focus', async ({ page }) => {
@@ -10,7 +10,7 @@ test.describe('quick add', () => {
 
     const dialog = page.getByRole('dialog', { name: 'Quick add' })
     await expect(dialog).toBeVisible()
-    await expect(dialog.getByLabel('Title')).toBeFocused()
+    await expectOpenFocus(dialog, dialog.getByLabel('Title'))
     await dialog.getByLabel('Title').fill('E2E planning')
     await press(dialog.getByRole('button', { name: 'Add event' }))
 

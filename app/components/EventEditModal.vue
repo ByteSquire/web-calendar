@@ -56,7 +56,7 @@
 
 <script setup lang="ts">
 import type { Calendar, CalendarEvent } from '../../shared/types/calendar'
-import { pickFocusTarget } from '~/utils/focus'
+import { keepFocusOffControlsOnTouch, pickFocusTarget } from '~/utils/focus'
 import type { EventChanges } from '~/utils/ical/write-types'
 import {
   diffEventForm,
@@ -139,6 +139,7 @@ function onOpenChange(open: boolean) {
 }
 
 function focusTitle(event: Event) {
+  if (keepFocusOffControlsOnTouch(event)) return
   if (fields.value?.focusTitle()) event.preventDefault()
 }
 

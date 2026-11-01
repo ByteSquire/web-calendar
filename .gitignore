@@ -47,3 +47,5 @@ test-results-live/
 /.mcp.json
 /.idea
 /.config/
+/.vscode
+/.claude

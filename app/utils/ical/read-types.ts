@@ -1,5 +1,5 @@
 // Types of the iCalendar reader (`readCalendarObject` in read.ts).
-import type { CalendarEvent } from '../../../shared/types/calendar'
+import type { ReadEvent } from './x-properties'
 
 export interface ReadOptions {
   /** Goes into `CalendarEvent.calendarId`. */
@@ -24,6 +24,12 @@ export interface ReadOptions {
    * Default 2000.
    */
   maxOccurrencesPerSeries?: number
+  /**
+   * true: read the X-WEB-CALENDAR-* properties into `bookingMarks`. Only for calendars of the
+   * app's own server; a subscription or an external feed is a stranger's and must leave this off
+   * (the default), so it cannot claim a booking.
+   */
+  trustBookingProperties?: boolean
 }
 
 export interface ReadIssue {
@@ -38,6 +44,6 @@ export interface ReadIssue {
 }
 
 export interface ReadResult {
-  events: CalendarEvent[]
+  events: ReadEvent[]
   errors: ReadIssue[]
 }

@@ -61,14 +61,15 @@ describe('a recurring event and its overrides', () => {
     expect(occurrences[2]?.endUtc).toBe('2026-10-26T08:30:00.000Z')
   })
 
-  it('come out line by line as they went in, folds and odd parameters included', async () => {
+  it('come out line by line as they went in, folds and odd parameters included (X- properties apart)', async () => {
     const { resources } = await splitCalendar(fixture('import-recurring-overrides.ics'))
     const { ics } = byUid(resources, 'series-1@example.com')
     expect(ics).toContain(
       'DESCRIPTION:Agenda: this line is long enough to be folded by a careful clien\r\n' +
         ' t, and the fold must come out exactly as it went in.\r\n',
     )
-    expect(ics).toContain('X-CUSTOM;X-PARAM="a\\nb":kept as written\r\n')
+    // X- properties of an imported event are removed (see ical-x-properties.test.ts).
+    expect(ics).not.toContain('X-CUSTOM')
     expect(ics).toContain(
       ['BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:Reminder', 'TRIGGER:-PT15M', 'END:VALARM']
         .map((line) => `${line}\r\n`)

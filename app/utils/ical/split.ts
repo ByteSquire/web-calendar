@@ -23,6 +23,7 @@ import {
   type Comp,
   type Prop,
 } from './write-lines'
+import { IMPORT_ALLOWED_X_PROPERTIES } from './x-properties'
 
 // The writer's own PRODID (write.ts), for a file that has none.
 const PRODID = '-//web-calendar//Web Calendar//EN'
@@ -184,6 +185,19 @@ interface ParsedEvent {
   tzids: Set<string>
 }
 
+/**
+ * Removes the X- properties of the event itself (those of its alarms are no claim about the event)
+ * unless allow-listed: a file from outside must not say that an event books a resource.
+ */
+function stripForeignXProperties(comp: Comp): void {
+  comp.children = comp.children.filter(
+    (child) =>
+      child.kind !== 'prop' ||
+      !child.name.startsWith('X-') ||
+      IMPORT_ALLOWED_X_PROPERTIES.has(child.name),
+  )
+}
+
 /** The VEVENT of a block, or why it is not usable. */
 function readEvent(block: Block): ParsedEvent | 'damaged' | 'no-start' {
   if (!block.complete) return 'damaged'
@@ -194,6 +208,7 @@ function readEvent(block: Block): ParsedEvent | 'damaged' | 'no-start' {
     return 'damaged'
   }
   if (!comp) return 'damaged'
+  stripForeignXProperties(comp)
   const start = firstProp(comp, 'DTSTART')
   if (!start || rawValue(start).trim() === '') return 'no-start'
   const recurrenceId = firstProp(comp, 'RECURRENCE-ID')

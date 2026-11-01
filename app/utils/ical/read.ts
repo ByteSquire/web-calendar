@@ -13,7 +13,7 @@
 // - Only the occurrences that touch the requested range are built; a series that began years ago
 //   is not walked from its beginning (see read-recur.ts).
 import ICAL from 'ical.js'
-import type { CalendarEvent, EventStatus } from '../../../shared/types/calendar'
+import type { EventStatus } from '../../../shared/types/calendar'
 import {
   isValidTimeZone,
   resolveDisplayTimeZone,
@@ -21,6 +21,7 @@ import {
 } from '../../../shared/utils/time-zone'
 import { RecurrenceError, ruleWalls } from './read-recur'
 import type { ReadIssue, ReadOptions, ReadResult } from './read-types'
+import { parseBookingMarks, type BookingMarks, type ReadEvent } from './x-properties'
 import { zoneFromVtimezone } from './read-vtimezone'
 import {
   DAY_MS,
@@ -62,6 +63,7 @@ interface Fields {
   status: EventStatus
   categoryNames: string[]
   lastModified?: string
+  bookingMarks?: BookingMarks
 }
 
 /** One occurrence in the display zone, with the instants used for range checks and ordering. */
@@ -301,6 +303,14 @@ function fieldsOf(vevent: ICAL.Component, reader: Reader, uid: string): Fields {
   if (description !== undefined) fields.description = description
   const location = textOf(vevent, 'location')
   if (location !== undefined) fields.location = location
+  if (reader.options.trustBookingProperties) {
+    const marks = parseBookingMarks(
+      textOf(vevent, 'x-web-calendar-resource'),
+      textOf(vevent, 'x-web-calendar-booking'),
+      textOf(vevent, 'x-web-calendar-booking-status'),
+    )
+    if (marks) fields.bookingMarks = marks
+  }
   const modified = vevent.getFirstProperty('last-modified')
   if (modified) {
     try {
@@ -318,9 +328,9 @@ function makeEvent(
   fields: Fields,
   span: Span,
   recurrenceId: string | undefined,
-): CalendarEvent {
+): ReadEvent {
   const { calendarId, href, etag } = reader.options
-  const event: CalendarEvent = {
+  const event: ReadEvent = {
     id: `${calendarId}|${href}|${recurrenceId ?? ''}${reader.multiUid ? `|${fields.uid}` : ''}`,
     calendarId,
     uid: fields.uid,
@@ -338,6 +348,7 @@ function makeEvent(
   if (fields.location !== undefined) event.location = fields.location
   if (etag !== undefined) event.etag = etag
   if (fields.lastModified !== undefined) event.lastModified = fields.lastModified
+  if (fields.bookingMarks) event.bookingMarks = { ...fields.bookingMarks }
   if (recurrenceId !== undefined) event.recurrenceId = recurrenceId
   return event
 }
@@ -365,7 +376,7 @@ function readAsWritten(
   vevent: ICAL.Component,
   reader: Reader,
   uid: string,
-): { event: CalendarEvent; span: Span } | null {
+): { event: ReadEvent; span: Span } | null {
   const start = startOf(vevent, reader, uid)
   const length = lengthOf(vevent, start, reader, uid)
   const span = spanAt(reader, start, wallOfStamp(start), length)
@@ -420,7 +431,7 @@ function expandSeries(
   reader: Reader,
   uid: string,
   overrideSlots: Stamp[],
-): { event: CalendarEvent; span: Span }[] {
+): { event: ReadEvent; span: Span }[] {
   const start = startOf(master, reader, uid)
   const length = lengthOf(master, start, reader, uid)
   const zone = zoneOfStamp(start)
@@ -539,7 +550,7 @@ function expandSeries(
     }
   }
 
-  const occurrences: { event: CalendarEvent; span: Span }[] = []
+  const occurrences: { event: ReadEvent; span: Span }[] = []
   let fields: Fields | null = null
   for (const candidate of candidates.values()) {
     if (hasSlot(excluded, candidate.wall, candidate.instant, start.allDay)) continue
@@ -758,7 +769,7 @@ function createReader(options: ReadOptions, errors: ReadIssue[]): Reader | null 
  */
 export function readCalendarObject(ics: string, options: ReadOptions): ReadResult {
   const errors: ReadIssue[] = []
-  const found: { event: CalendarEvent; span: Span }[] = []
+  const found: { event: ReadEvent; span: Span }[] = []
   try {
     collectEvents(ics, options, errors, found)
   } catch (error) {
@@ -777,7 +788,7 @@ function collectEvents(
   ics: string,
   options: ReadOptions,
   errors: ReadIssue[],
-  found: { event: CalendarEvent; span: Span }[],
+  found: { event: ReadEvent; span: Span }[],
 ): void {
   if (typeof ics !== 'string') {
     errors.push({ message: 'The calendar data is not text' })
@@ -806,7 +817,7 @@ function collectEvents(
   reader.multiUid = groups.size > 1
 
   const ids = new Set<string>()
-  const add = (uid: string, read: () => { event: CalendarEvent; span: Span }[] | null): void => {
+  const add = (uid: string, read: () => { event: ReadEvent; span: Span }[] | null): void => {
     try {
       for (const entry of read() ?? []) {
         if (ids.has(entry.event.id)) {

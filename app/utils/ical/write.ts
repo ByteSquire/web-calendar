@@ -25,6 +25,7 @@ import {
   type Comp,
   type Prop,
 } from './write-lines'
+import { X_BOOKING, X_BOOKING_STATUS, X_RESOURCE } from './x-properties'
 import {
   editRule,
   excludedIds,
@@ -568,6 +569,11 @@ function findOverride(doc: Doc, id: string, series: SeriesContext): Comp | undef
   return doc.overrides.find((o) => overrideId(o, series) === id)
 }
 
+/** A new series made by a split is not what the booking was made for: it must not claim it. */
+function dropBookingProps(comp: Comp): void {
+  for (const name of [X_RESOURCE, X_BOOKING, X_BOOKING_STATUS]) removeProps(comp, name)
+}
+
 /** A new override for `slot`: a copy of the master without its recurrence properties. */
 function buildOverride(master: Comp, slot: Slot, series: SeriesContext, doc: Doc): Comp {
   const copy = cloneComp(master)
@@ -701,6 +707,7 @@ function editThisAndFollowing(
   const uid = globalThis.crypto.randomUUID()
   const successor = cloneComp(master)
   replaceProps(successor, 'UID', [makeProp('UID', [], uid)])
+  dropBookingProps(successor)
   writeRange(
     successor,
     newInfo,
@@ -742,6 +749,7 @@ function editThisAndFollowing(
     if (overrideSlot === null || overrideSlot < slot.id) continue
     const copy = cloneComp(override)
     replaceProps(copy, 'UID', [makeProp('UID', [], uid)])
+    dropBookingProps(copy)
     moveOverride(
       copy,
       series,

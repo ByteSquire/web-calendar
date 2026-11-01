@@ -4,8 +4,9 @@ import { VIEW_TYPES, openApp, switchView } from './helpers'
 // "Any screen size" (requirements FR-20, NFR-3). The projects in playwright.config.ts cover the
 // common devices; this spec sweeps the widths between and beyond them: 320 px is WCAG 1.4.10
 // (Reflow, a 1280 px window at 400 % zoom), 2560 px is a large monitor, and the last size is a
-// desktop window that is only 400 px tall. It sets its own viewport, so it runs once, on the
-// desktop project, and not on every project.
+// desktop window that is only 400 px tall; 640 x 400 is the 200 % zoom of a
+// 1280 x 800 window and 320 x 256 the size WCAG 1.4.10 names for 400 % (design §9: "not clipped at 200 % zoom"). It sets its own viewport, so it
+// runs once, on the desktop project, and not on every project.
 const SIZES = [
   { width: 320, height: 568 },
   { width: 375, height: 667 },
@@ -16,6 +17,10 @@ const SIZES = [
   { width: 1920, height: 1080 },
   { width: 2560, height: 1440 },
   { width: 1280, height: 400 },
+  // 200 % browser zoom of a 1280 x 800 window (the layout only knows CSS pixels), and WCAG's own
+  // reference for 400 % (1.4.10): 320 x 256.
+  { width: 640, height: 400 },
+  { width: 320, height: 256 },
 ] as const
 
 test.describe('screen sizes', () => {

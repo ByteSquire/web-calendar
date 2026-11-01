@@ -109,7 +109,6 @@ const options = computed<CalendarOptions>(() => ({
   locales: [enGbLocale],
   locale: BASE_CALENDAR_OPTIONS.locale,
   eventTimeFormat: BASE_CALENDAR_OPTIONS.eventTimeFormat,
-  slotLabelFormat: BASE_CALENDAR_OPTIONS.slotHeaderFormat,
   colorScheme: props.scheme,
   initialView,
   initialDate,

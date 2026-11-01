@@ -11,8 +11,8 @@ all passing:
 | Step                        | Result                                                               |
 | --------------------------- | -------------------------------------------------------------------- |
 | `npm run check`             | exit 0 (format, lint, typecheck, e2e typecheck)                      |
-| `npm test`                  | 5491 passed, 63 skipped (161 files)                                  |
-| `npm run test:e2e`          | 844 passed, 430 skipped by design (project-specific), exit 0         |
+| `npm test`                  | 5518 passed, 63 skipped (163 files)                                  |
+| `npm run test:e2e`          | 860 passed, 526 skipped by design (project-specific), exit 0         |
 | `npm run audit:prod`        | exit 0: only the three known advisories (glob, minimatch, deepmerge) |
 | `npm run test:gateway:prod` | 30 passed                                                            |
 | `npm run test:e2e:live`     | 20 passed, against the real Kanidm and Radicale                      |
@@ -126,7 +126,11 @@ Confidence is how sure the finding is real, not its severity.
 
 10. **Low, confidence 50. Admin mutation and its audit-log row are not one transaction**
     (for example `server/api/admin/views/[id].put.ts`), unlike the booking routes. A failed audit
-    insert leaves a change with no audit row. Left open, see §5.
+    insert leaves a change with no audit row. **Fixed**: `defineAdminHandler` gives every admin
+    route `atomic()`, which runs the change and its `audit()` in one database transaction; the
+    seven mutating admin routes use it, and the reconcile request of the access route runs after
+    the commit. Tests: `tests/server/admin-views.test.ts` and `tests/server/admin-access.test.ts`
+    break the audit insert with a trigger and check that the change is not stored.
 
 11. **Low, confidence 40. Base images pinned by tag, not digest**
     (`node:24.15-bookworm-slim`, `radicale:3.9.0` in `dev/spike-s1`). Left open, see §5.
@@ -154,6 +158,5 @@ test does what it says beyond the full-suite pass already recorded above).
 Not done, larger or touching many files:
 
 - Finding 9: a per-user rate limit or concurrency cap on the gateway, and a required `client_id`.
-- Finding 10: one transaction for each admin mutation and its audit row.
 - Finding 11: base images by digest.
 - Finding 2 has no live proof against Kanidm (see its entry).

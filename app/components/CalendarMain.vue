@@ -14,8 +14,8 @@
     tabindex="-1"
     role="region"
     :aria-label="`Calendar, ${rangeLabel}`"
-    @pointerdown.capture="startGesture"
-    @click="onCalendarClick"
+    @pointerdown.capture="dateTap.start"
+    @click="dateTap.click"
   >
     <FullCalendar ref="calendar" :options="options">
       <!-- Visible text is hidden from assistive technology; the label below names the entry. -->
@@ -90,14 +90,7 @@ const scheme = computed<ColorScheme>(() => (colorMode.value === 'dark' ? 'dark' 
 
 const rootElement = ref<HTMLElement | null>(null)
 const calendar = ref<InstanceType<typeof FullCalendar> | null>(null)
-// What the current pointer gesture has produced so far (see onDateClick).
-interface Gesture {
-  clicked: boolean
-  /** An event, day number or other control took the click. */
-  claimed: boolean
-  datePreset: ReturnType<typeof quickAddPresetForClick> | null
-}
-let gesture: Gesture = { clicked: false, claimed: false, datePreset: null }
+const dateTap = useDateClickGesture<ReturnType<typeof quickAddPresetForClick>>(openQuickAdd)
 
 // The calendar sizes itself from its container (ResizeObserver); options that cannot be expressed
 // that way follow the container width. The first guess uses the window until the observer reports.
@@ -164,54 +157,21 @@ watch(
 // Calendar -> state. A click on a day number opens that day; the state is written only if the
 // date differs, so the watcher above has nothing to undo.
 function onDayNumberClick(date: Date) {
-  gesture.claimed = true
+  dateTap.claim()
   const target = plainDateInCalendarZone(date, timeZone.value)
   if (!target.equals(anchorDate.value)) anchorDate.value = target
   viewType.value = 'day'
 }
 
 function onEventClick(info: EventClickInfo) {
-  gesture.claimed = true
+  dateTap.claim()
   info.jsEvent.preventDefault()
   const { eventId } = info.event.extendedProps as Partial<EventExtendedProps>
   if (eventId) selectEvent(eventId)
 }
 
-// A tap or click in an empty cell opens quick-add. FullCalendar reports the date hit on its own
-// schedule: after the click, because it ends its pointer tracking in a timeout, but the order is
-// not guaranteed. An event or a day number is reported from the click itself. On a touch screen the
-// browser sends the click to a clickable element near the tap, such as an event card, while the
-// touch started in the cell, so a date hit alone must not open quick-add: the sheet would open
-// as well. Quick-add opens once the click has arrived, in whichever order, and nothing else
-// claimed it. Opening it from the click also keeps the dialog from appearing under the finger
-// before the click arrives and landing on its controls.
-function startGesture() {
-  gesture = { clicked: false, claimed: false, datePreset: null }
-}
-
 function onDateClick(info: DateClickInfo) {
-  gesture.datePreset = quickAddPresetForClick(info.dateStr, info.allDay)
-  openForUnclaimedClick()
-}
-
-/** An element FullCalendar or the browser treats as its own click target, not as an empty cell. */
-const OWN_CLICK_TARGET = 'a, button, [role="button"], [role="link"]'
-
-// The click bubbles up to here after FullCalendar's handlers inside the calendar have run, so
-// `onEventClick` and `onDayNumberClick` have already claimed it.
-function onCalendarClick(event: MouseEvent) {
-  gesture.clicked = true
-  if (event.target instanceof Element && event.target.closest(OWN_CLICK_TARGET)) {
-    gesture.claimed = true
-  }
-  openForUnclaimedClick()
-}
-
-function openForUnclaimedClick() {
-  const { clicked, claimed, datePreset } = gesture
-  if (!datePreset || !clicked || claimed) return
-  gesture.datePreset = null
-  openQuickAdd(datePreset)
+  dateTap.hit(quickAddPresetForClick(info.dateStr, info.allDay))
 }
 
 function extendedProps(arg: EventDisplayInfo) {

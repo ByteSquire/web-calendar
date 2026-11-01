@@ -27,6 +27,7 @@
       :scheme="scheme"
       :time-zone="timeZone"
       @select="selectEvent"
+      @create="openQuickAdd"
     />
     <div
       v-else
@@ -46,7 +47,8 @@
 import { SPLIT_SPANS, VIEW_TYPE_LABELS } from '~/utils/calendar-state'
 import { splitColorScheme } from '~/utils/split-view'
 
-const { anchorDate, rangeLabel, selectEvent, splitBands, splitSpan } = useCalendarState()
+const { anchorDate, openQuickAdd, rangeLabel, selectEvent, splitBands, splitSpan } =
+  useCalendarState()
 const timeZone = useDisplayTimeZone()
 const colorMode = useColorMode()
 const scheme = computed(() => splitColorScheme(colorMode.value))

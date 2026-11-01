@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { isTouch, openApp, switchView } from './helpers'
+import { closeDialogs, openApp, pointAt, settledDialogs, switchView } from './helpers'
 
 // A tap on an empty part of a day opens quick-add, a tap on an event opens its sheet, and a tap
 // close to an event opens exactly one of them. The browser may send the click of a tap to an
@@ -21,45 +21,6 @@ async function boxOf(page: Page, textStart: string): Promise<Box> {
   const box = await entry.boundingBox()
   if (!box) throw new Error(`no box for ${textStart}`)
   return box
-}
-
-/** A touch of `radius` px at the point, sent as Chromium sends the finger of a real phone. */
-async function touch(page: Page, x: number, y: number, radius: number): Promise<void> {
-  const session = await page.context().newCDPSession(page)
-  const point = { x, y, radiusX: radius, radiusY: radius }
-  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] })
-  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
-  await session.detach()
-}
-
-async function pointAt(page: Page, x: number, y: number, radius = 1): Promise<void> {
-  if (isTouch()) {
-    await touch(page, x, y, radius)
-    return
-  }
-  await page.mouse.move(x, y)
-  await page.mouse.down()
-  await page.mouse.up()
-}
-
-/**
- * Wait for the dialogs a gesture opens: a second one would show up within this time. A modal
- * hides the others from the accessibility tree, so they are found by their markup, not by role.
- */
-async function settledDialogs(page: Page): Promise<string[]> {
-  await page.waitForTimeout(600)
-  return page
-    .locator('[role="dialog"]')
-    .evaluateAll((items) =>
-      items.map((item) => item.getAttribute('aria-label') ?? item.textContent?.slice(0, 20) ?? ''),
-    )
-}
-
-async function closeDialogs(page: Page): Promise<void> {
-  while ((await page.locator('[role="dialog"]').count()) > 0) {
-    await page.keyboard.press('Escape')
-    await page.waitForTimeout(300)
-  }
 }
 
 test.describe('tapping a day', () => {

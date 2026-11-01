@@ -66,3 +66,43 @@ export function viewport(page: Page): { width: number; height: number } {
   if (!size) throw new Error('no viewport')
   return size
 }
+
+/** A touch of `radius` px at the point, sent as Chromium sends the finger of a real phone. */
+async function touch(page: Page, x: number, y: number, radius: number): Promise<void> {
+  const session = await page.context().newCDPSession(page)
+  const point = { x, y, radiusX: radius, radiusY: radius }
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] })
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await session.detach()
+}
+
+/** A touch where the touch screen is the input, a mouse press elsewhere, at the point. */
+export async function pointAt(page: Page, x: number, y: number, radius = 1): Promise<void> {
+  if (isTouch()) {
+    await touch(page, x, y, radius)
+    return
+  }
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.up()
+}
+
+/**
+ * Wait for the dialogs a gesture opens: a second one would show up within this time. A modal
+ * hides the others from the accessibility tree, so they are found by their markup, not by role.
+ */
+export async function settledDialogs(page: Page): Promise<string[]> {
+  await page.waitForTimeout(600)
+  return page
+    .locator('[role="dialog"]')
+    .evaluateAll((items) =>
+      items.map((item) => item.getAttribute('aria-label') ?? item.textContent?.slice(0, 20) ?? ''),
+    )
+}
+
+export async function closeDialogs(page: Page): Promise<void> {
+  while ((await page.locator('[role="dialog"]').count()) > 0) {
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(300)
+  }
+}

@@ -6,6 +6,9 @@
   through the reactive options. `initialView` and `initialDate` are only read at mount and are
   captured once here.
 
+  A tap on an empty cell asks for a new event in that row's calendar (`create`), under the same
+  rules as in the standard views (composables/useDateClickGesture.ts).
+
   The calendar column is a pane of its own beside the scrolling timeline, so labels stay in place
   when the timeline scrolls sideways. `height: 'auto'` lets the surrounding main area do the
   vertical scrolling, which also makes the date header sticky against it.
@@ -15,6 +18,8 @@
     ref="rootElement"
     class="split-timeline"
     :style="{ '--split-label-width': `${labelWidth}px` }"
+    @pointerdown.capture="dateTap.start"
+    @click="dateTap.click"
   >
     <FullCalendar ref="calendar" :options="options">
       <template #resourceCellContent="{ resource }">
@@ -37,12 +42,17 @@
 
 <script setup lang="ts">
 import { Temporal } from 'temporal-polyfill'
-import FullCalendar, { type CalendarOptions } from '@fullcalendar/vue3'
+import FullCalendar, { type CalendarOptions, type DateClickInfo } from '@fullcalendar/vue3'
+import interactionPlugin from '@fullcalendar/vue3/interaction'
 import enGbLocale from '@fullcalendar/vue3/locales/en-gb'
 import classicTheme from '@fullcalendar/vue3/themes/classic'
 import resourceTimeline from '@fullcalendar/vue3-scheduler/resource-timeline'
-import type { SplitBand, SplitSpan } from '~/utils/calendar-state'
-import { BASE_CALENDAR_OPTIONS, SCHEDULER_LICENSE_KEY } from '~/utils/fullcalendar'
+import type { NewEventInput, SplitBand, SplitSpan } from '~/utils/calendar-state'
+import {
+  BASE_CALENDAR_OPTIONS,
+  SCHEDULER_LICENSE_KEY,
+  quickAddPresetForClick,
+} from '~/utils/fullcalendar'
 import {
   splitDayWindow,
   splitLayoutFor,
@@ -64,7 +74,13 @@ const props = defineProps<{
   timeZone: string
 }>()
 
-const emit = defineEmits<{ select: [eventId: string] }>()
+const emit = defineEmits<{
+  select: [eventId: string]
+  /** A new event was asked for on an empty cell: its time and the calendar of its row. */
+  create: [preset: Partial<NewEventInput>]
+}>()
+
+const dateTap = useDateClickGesture<Partial<NewEventInput>>((preset) => emit('create', preset))
 
 // Not reactive: FullCalendar only reads these when it mounts; changes go through `changeView`.
 const initialView = splitViewName(props.span)
@@ -99,7 +115,7 @@ const dayWindow = computed(() =>
   ),
 )
 
-const plugins = [classicTheme, resourceTimeline]
+const plugins = [classicTheme, resourceTimeline, interactionPlugin]
 
 const options = computed<CalendarOptions>(() => ({
   plugins,
@@ -126,8 +142,20 @@ const options = computed<CalendarOptions>(() => ({
   resourceColumnsWidth: layout.value.resourceColumnsWidth,
   // A tap target is at least 44 px wide, also for a short event.
   eventMinWidth: 44,
-  eventClick: (info) => emit('select', info.event.id),
+  eventClick: (info) => {
+    dateTap.claim()
+    emit('select', info.event.id)
+  },
+  dateClick: onDateClick,
 }))
+
+function onDateClick(info: DateClickInfo) {
+  dateTap.hit({
+    ...quickAddPresetForClick(info.dateStr, info.allDay),
+    // The row is the calendar: a new event starts in it.
+    ...(info.resource ? { calendarId: info.resource.id } : {}),
+  })
+}
 
 watch(
   () => [props.span, props.date] as const,

@@ -398,6 +398,39 @@ describe('validateEnv', () => {
   })
 })
 
+describe('validateEnv: sharing writer', () => {
+  it('accepts a reconcile interval from 1 to 900 seconds and refuses others', () => {
+    for (const ok of ['1', '300', '900']) {
+      expect(validateEnv({ ...valid, NUXT_SHARING_RECONCILE_INTERVAL_SEC: ok }).errors).toEqual([])
+    }
+    for (const bad of ['901', '0', '-1', '1.5', 'abc', '']) {
+      const { errors } = validateEnv({ ...valid, NUXT_SHARING_RECONCILE_INTERVAL_SEC: bad })
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('NUXT_SHARING_RECONCILE_INTERVAL_SEC')
+    }
+  })
+
+  it('accepts an audit interval from 1 to 168 hours and refuses others', () => {
+    for (const ok of ['1', '24', '168']) {
+      expect(validateEnv({ ...valid, NUXT_SHARING_AUDIT_INTERVAL_HOURS: ok }).errors).toEqual([])
+    }
+    for (const bad of ['169', '0', 'x']) {
+      const { errors } = validateEnv({ ...valid, NUXT_SHARING_AUDIT_INTERVAL_HOURS: bad })
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('NUXT_SHARING_AUDIT_INTERVAL_HOURS')
+    }
+  })
+
+  it('accepts service principals that start with _ and refuses others', () => {
+    expect(validateEnv({ ...valid, NUXT_SHARING_SHARED_OWNERS: '_team, _lab' }).errors).toEqual([])
+    for (const bad of ['team', '_resources', '_a/b', '_']) {
+      const { errors } = validateEnv({ ...valid, NUXT_SHARING_SHARED_OWNERS: bad })
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('NUXT_SHARING_SHARED_OWNERS')
+    }
+  })
+})
+
 describe('validate-config.mjs as a script', () => {
   const run = (env: Record<string, string>) =>
     spawnSync(process.execPath, [script], { env, encoding: 'utf8' })

@@ -119,8 +119,12 @@ END;
 -- approved one does (triggers below). Orphaned is not a status: orphaned_at is set while the
 -- booking event cannot be found, and the booking keeps its status (and slot) during the retries.
 -- requester_id is RESTRICT like calendars.owner_id: a user with bookings is not deleted silently.
--- event_calendar_id becomes NULL if that calendar is deleted. block_ref is the opaque id the
--- availability block carries instead of the booking calendar's path or UID.
+-- event_calendar_path is the collection of the booking event as the requester sees it, in the form
+-- calendars.collection_path uses (decoded, '/<sub>/<name>/'): an own calendar, or a share at
+-- '/<sub>/shared-<id>[-<group>]/'. It is a plain path, not a foreign key: a share or a calendar that
+-- discovery has not seen yet has no calendars row for the requester, and a deleted calendar must
+-- not unlink the booking. block_ref is the opaque id the availability block carries instead of the
+-- booking calendar's path or UID.
 CREATE TABLE calendar_bookings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   resource_id INTEGER NOT NULL REFERENCES resources (id) ON DELETE RESTRICT,
@@ -133,7 +137,14 @@ CREATE TABLE calendar_bookings (
     CHECK (status IN ('pending', 'approved', 'declined', 'cancelled')),
   approver_id INTEGER REFERENCES users (id) ON DELETE SET NULL,
   decided_at TEXT,
-  event_calendar_id INTEGER REFERENCES calendars (id) ON DELETE SET NULL,
+  event_calendar_path TEXT NOT NULL
+    CHECK (
+      length(event_calendar_path) <= 500
+      AND substr(event_calendar_path, 1, 1) = '/'
+      AND substr(event_calendar_path, -1) = '/'
+      AND instr(event_calendar_path, '//') = 0
+      AND length(event_calendar_path) - length(replace(event_calendar_path, '/', '')) = 3
+    ),
   event_uid TEXT NOT NULL CHECK (event_uid <> ''),
   block_ref TEXT NOT NULL UNIQUE CHECK (length(block_ref) >= 16),
   orphaned_at TEXT,
@@ -147,7 +158,7 @@ CREATE INDEX calendar_bookings_slot ON calendar_bookings (resource_id, start_at,
 CREATE INDEX calendar_bookings_approved_slot ON calendar_bookings (resource_id, start_at, end_at)
   WHERE status = 'approved';
 CREATE INDEX calendar_bookings_requester ON calendar_bookings (requester_id, start_at);
-CREATE INDEX calendar_bookings_event ON calendar_bookings (event_calendar_id, event_uid);
+CREATE INDEX calendar_bookings_event ON calendar_bookings (event_calendar_path, event_uid);
 CREATE INDEX calendar_bookings_orphaned ON calendar_bookings (orphaned_at)
   WHERE orphaned_at IS NOT NULL;
 

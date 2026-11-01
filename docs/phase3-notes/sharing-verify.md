@@ -8,7 +8,7 @@ CODE read in `radicale/sharing/*.py`, DEDUCED.
 | --- | ---------------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1a  | Group share is created with `User: ':group'` and `PathOrToken` starting `/{user}/`       | **Confirmed**       | RUNTIME 200; without the placeholder 403 (CODE `__init__.py` create). Creating does not need the group to exist or have members.                                                                                                                                                                                                                   |
 | 1b  | The list returns `User: ':group'`, `{user}` unchanged, `epu` appended                    | **Confirmed**       | RUNTIME owner list: `Permissions` `eupr`, `EnabledByUser` true, `HiddenByUser` false. CODE `common.py`: only a non-owner member's list resolves `{user}` and `U`.                                                                                                                                                                                  |
-| 1c  | Group membership resolves the share for the member                                       | **Not checked**     | The stack's htgroup file is empty and may not be edited. CODE `common.py` only.                                                                                                                                                                                                                                                                    |
+| 1c  | Group membership resolves the share for the member                                       | **Confirmed**       | RUNTIME 2026-11-01 ("Reader checks" below): with `p3r-g: p3r-grp` in the htgroup file a member reads the group share, a non-member gets 404.                                                                                                                                                                                                       |
 | 2a  | `token/list`, `token/delete`                                                             | **Corrected**       | RUNTIME 404 for every token call: `collection_by_token` is off (CODE `post`). The reconcile already ignores a non-unreachable failure; the comment says so now.                                                                                                                                                                                    |
 | 2b  | List field names                                                                         | **Corrected (bug)** | RUNTIME/CODE: `EnabledByOwner`, `EnabledByUser`, `HiddenByOwner`, `HiddenByUser`, not `Enabled`/`Hidden`. The old parse always read enabled and not hidden, so a disabled user share was never re-accepted. Fixed in `radicale-client.ts`.                                                                                                         |
 | 2c  | Empty list                                                                               | Confirmed           | RUNTIME 200, `Status: not-found`, `Content: []`.                                                                                                                                                                                                                                                                                                   |
@@ -23,3 +23,26 @@ Fake Radicale (`tests/server/sharing-fake-radicale.ts`) now returns these shapes
 prefix, token calls 404, user shares start disabled and hidden, MKCALENDAR of an existing collection 409.
 
 Open: group membership resolution (1c) needs a line in `.local/rules/groups` and a Radicale reload.
+
+## Reader checks (2026-11-01, RUNTIME)
+
+The real `reconcile-reader` (bundled with esbuild, run in a container sharing Radicale's network) read as
+each user on the spike stack, Radicale 3.9.0. Fixtures were users `p3r-*`; every share and collection was
+deleted afterwards and the htgroup line was removed again. Results:
+
+| Case                                                | `stamp` / `findEvent`           | In `listCalendars` |
+| --------------------------------------------------- | ------------------------------- | ------------------ |
+| own calendar; UID present / absent                  | `ok` / `found` / `absent`       | yes                |
+| own calendar with a space and `é` in its name       | `ok` / `found`                  | yes, decoded       |
+| missing calendar in the own home                    | `no_collection` (404)           |                    |
+| another user's calendar, not shared                 | `forbidden` (403)               |                    |
+| user share, not yet accepted by the member          | `no_collection` (404)           | no                 |
+| user share accepted (`r`)                           | `ok` / `found`                  | yes                |
+| accepted share: the stamp after the owner writes    | changes; equals the source's    |                    |
+| write through an `r` share / an `rw` share          | 403 / 201 (found at the source) |                    |
+| share hidden by the member                          | `ok` / `found`                  | **no**             |
+| share disabled by the member / by the owner         | `no_collection` (404)           | no                 |
+| share deleted by the owner (revoked)                | `no_collection` (404)           | no                 |
+| group share, member (`p3r-g: p3r-grp`) / non-member | `ok` / `found` ; 404            | yes ; no           |
+
+The UID query matches substrings (`p3r-ev` also returned `p3r-ev2`); the reconcile compares the exact UID line.

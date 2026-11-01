@@ -29,7 +29,7 @@ export function bookingDto(db: Database, booking: BookingRow, manager: boolean) 
     decidedAt: booking.decided_at,
   }
   if (!manager) {
-    return { ...base, eventCalendarId: booking.event_calendar_id, eventUid: booking.event_uid }
+    return { ...base, eventCalendarPath: booking.event_calendar_path, eventUid: booking.event_uid }
   }
   const requester = db
     .prepare<[number], { id: number; username: string | null; name: string | null }>(

@@ -45,7 +45,7 @@ deactivated|acl_replaced`; ids only. Auto-declines are audited as `declined` wit
 - design.md §5/§8 and security-review 7.4: block carries `STATUS:TENTATIVE` for pending, back-reference property
   `X-WEB-CALENDAR-BLOCK`; routes and audit actions above; import strips all event X- properties.
 
-## Tests (written, NOT run)
+## Tests (run at integration, pass)
 
 `tests/server/resources-service.test.ts`, `resources-input.test.ts`, `resources-routes.test.ts`,
 `tests/ical-x-properties.test.ts`; `tests/ical-split.test.ts` edited (X-CUSTOM now removed).

@@ -46,7 +46,7 @@ actions `group_sync.updated|unauthorized|failing|recovered`; it must not throw (
 - security-review.md §7.2: add the audit actions above; note the "stale file keeps removed members"
   risk during failures and that the escalation threshold is 5 runs.
 
-## Tests (written, NOT run)
+## Tests (run at integration, pass)
 
 `tests/server/group-sync-file.test.ts`, `-kanidm.test.ts`, `-service.test.ts` (exact file, null/error
 leaves file, atomic rename and `.prev`, removed member, token never in logs, interval clamp, no

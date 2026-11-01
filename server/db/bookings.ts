@@ -38,7 +38,8 @@ export interface NewBooking {
   /** Any ISO 8601 instant; stored as UTC with milliseconds. */
   startAt: string
   endAt: string
-  eventCalendarId: number | null
+  /** The collection holding the event, as the requester sees it: '/<sub>/<name>/'. */
+  eventCalendarPath: string
   eventUid: string
 }
 
@@ -97,9 +98,9 @@ export function createBooking(
     if (count >= limits.maxPerRequesterPerDay) return fail('daily_limit')
     if (hasApprovedOverlap(db, input.resourceId, startAt, endAt, 0)) return fail('overlap')
     const booking = db
-      .prepare<[number, number, string, string, number | null, string, string], BookingRow>(
+      .prepare<[number, number, string, string, string, string, string], BookingRow>(
         `INSERT INTO calendar_bookings
-           (resource_id, requester_id, start_at, end_at, event_calendar_id, event_uid, block_ref)
+           (resource_id, requester_id, start_at, end_at, event_calendar_path, event_uid, block_ref)
          VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *`,
       )
       .get(
@@ -107,7 +108,7 @@ export function createBooking(
         input.requesterId,
         startAt,
         endAt,
-        input.eventCalendarId,
+        input.eventCalendarPath,
         input.eventUid,
         newBlockRef(),
       )!
@@ -309,14 +310,14 @@ export function clearBookingOrphaned(db: Database, id: number): BookingRow | nul
 export function setBookingEvent(
   db: Database,
   id: number,
-  eventCalendarId: number | null,
+  eventCalendarPath: string,
   eventUid: string,
 ): BookingRow | null {
   return (
     db
-      .prepare<[number | null, string, number], BookingRow>(
-        'UPDATE calendar_bookings SET event_calendar_id = ?, event_uid = ? WHERE id = ? RETURNING *',
+      .prepare<[string, string, number], BookingRow>(
+        'UPDATE calendar_bookings SET event_calendar_path = ?, event_uid = ? WHERE id = ? RETURNING *',
       )
-      .get(eventCalendarId, eventUid, id) ?? null
+      .get(eventCalendarPath, eventUid, id) ?? null
   )
 }

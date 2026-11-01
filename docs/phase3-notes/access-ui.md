@@ -51,7 +51,7 @@ The route catches a throwing port (warning), the rules stay saved.
 - security-review §7.1: principals validated at write time (user exists, group exists in Kanidm); §7.3:
   `acl.replaced` audit action, rule counts only.
 
-## Tests (written, NOT run)
+## Tests (run at integration, pass)
 
 `tests/server/admin-access.test.ts`, `tests/admin-access-utils.test.ts`, `tests/admin-access-visibility.test.ts`,
 `tests/admin-access-page.test.ts` (nuxt env), `tests/admin-access-menu.test.ts` (nuxt env),

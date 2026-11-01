@@ -146,8 +146,8 @@ export interface BookingRow extends Timestamps {
   status: BookingStatus
   approver_id: number | null
   decided_at: string | null
-  /** The calendar holding the booker's event; null once that calendar is gone. */
-  event_calendar_id: number | null
+  /** Collection of the booker's event as the booker sees it: '/<sub>/<name>/', or a share name. */
+  event_calendar_path: string
   event_uid: string
   /** Opaque random id the availability block carries instead of the calendar path or UID. */
   block_ref: string

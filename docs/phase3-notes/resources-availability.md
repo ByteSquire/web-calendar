@@ -30,7 +30,7 @@
 - docs/design.md §5 / security-review 7.4: describe the three routes, the blocked-entry key set, and the
   free_busy narrowing above.
 
-## Tests (written, NOT run)
+## Tests (run at integration, pass)
 
 `tests/server/resources-availability.test.ts`, `resources-availability-routes.test.ts`.
 

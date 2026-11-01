@@ -12,20 +12,22 @@
 
 ## Behaviour
 
-- Active = pending/approved, not ended, `event_calendar_id` set and the calendar owned by the requester. Bookings
-  without a calendar are skipped (not saved yet, or the calendar was deleted: not decidable).
-- Gate: per calendar the stamp (`ctag|sync-token`) is compared with `booking_sync`; unchanged = no event read.
+- Active = pending/approved, not ended. CHANGED at integration: the booking stores `event_calendar_path` (as the
+  requester sees it, a share included) instead of `event_calendar_id`; every active booking is looked at, and the
+  calendar is read as the requester at that path. A path outside the requester's home counts as unavailable.
+- Gate: per path (`booking_sync` is keyed by `collection_path`, pruned at the end of a run) the stamp (`ctag|sync-token`) is compared with `booking_sync`; unchanged = no event read.
   A calendar with a booking in retry (orphaned, attempts < limit) is read anyway. The stamp is stored only when every
   booking of the calendar is resolved. A server with neither ctag nor token is never gated.
 - Outcomes: unchanged (UID found, same slot, marks `res:<resource>` and booking id match) clears orphaned.
-  Not readable (error/timeout/non-207) = `markBookingOrphaned`, up to 3 attempts, never a cancel. Gone (calendar 404,
-  or the UID absent in the calendar and in every other calendar of the booker's home; a shared mount appears there)
+  Not readable (error/timeout/non-207) = `markBookingOrphaned`, up to 3 attempts, never a cancel. Gone (the UID absent in a readable calendar and in every other calendar of the booker's home;
+  a shared mount appears there. CHANGED at integration: 403 or 404 on the collection is no longer "gone", see below)
   = mark; at the 3rd sighting the booking is cancelled, block removed (`syncBlock`), audited
   `resource_booking.cancelled` `{reason:'event_removed'}` (actor `system:resources`). Found in another calendar of the
-  booker with the same slot and marks: `setBookingEvent`. Slot or resource changed, marks stripped, or moved to
-  a calendar the app has no row for: `event_moved`: attempts jump to the limit (manager queue), audit
+  booker with the same slot and marks: `setBookingEvent`. Slot or resource changed or marks stripped: `event_moved`: attempts jump to the limit (manager queue), audit
   `resource_booking.orphaned {reason:'event_moved'}` once; never cancelled. Orphaned audits also carry
-  `event_unreadable` / `event_missing` (first marking only).
+  `event_unreadable` / `event_missing` (first marking only). CHANGED at integration: 403 or 404 on the collection =
+  `calendar_unavailable` with `cause: 'forbidden' | 'missing'`: straight to the manager queue, never cancelled, the
+  stored stamp of the path is deleted.
 - A booking younger than 10 min with missing marks is left alone (part 2 writes them after the booking).
 - The cancel is a direct `transitionBooking` + audit in one transaction (the service's `cancelBooking` needs an actor
   with rights and cannot carry a reason or system actor), then `syncBlock` from the service.
@@ -46,7 +48,7 @@
 - docs/security-review.md 7.4: reconcile runs as the booker through the internal client, never auto-cancels on a
   changed/stripped/unreadable event; audit actions `resource_booking.orphaned`, `resource_booking.cancelled` (reason).
 
-## Tests (written, NOT run)
+## Tests (run at integration, pass)
 
 `tests/server/resources-reconcile.test.ts` (unchanged clears, grace, deleted cancels only after retries + block + audit,
 calendar gone, follows a moved event, unreadable never cancels, moved flagged, stripped marks, ctag gate, settled
@@ -56,8 +58,11 @@ HTTP fake (it has no REPORT/ctag); the real HTTP reader is only covered by the s
 
 ## Risks
 
-- Radicale's REPORT/PROPFIND shapes (getctag/sync-token, `calendar-data` quoting) are unverified live.
+- Radicale's REPORT/PROPFIND shapes were checked live at integration (Radicale 3.9.0, 2026-11-01, see
+  `sharing-verify.md`, section "Reader checks"). The reconcile loop in the running app is not.
 - Mixed counting: attempts from unreadable looks and "gone" looks share one counter, so unreadable x3 then one
   "gone" cancels. A moved-flagged booking whose event is later deleted is cancelled on the first "gone" look.
-- Events in a shared calendar the booker does not own cannot be followed (skipped); an event moved there is flagged.
+- CHANGED at integration: an event in a share is followed like any other calendar (the share path is stored). A
+  share hidden by the member is not in the home listing, so an event moved into a hidden share is not found
+  there (the booking goes to the manager queue as `gone` only if every other calendar says absent).
 - Booker's home with more than 20 calendars: the search is treated as unreadable (never cancels).

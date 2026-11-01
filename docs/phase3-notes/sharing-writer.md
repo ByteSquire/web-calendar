@@ -67,7 +67,7 @@ mode and without `radicale.url`). Gateway: optional `precheck` option, wired in 
   suffix in group lists; token shares are removed.
 - security-review §7.1: `applied_at` and the audit actions exist; tests list below; §7.10 unchanged.
 
-## Tests (written, NOT run)
+## Tests (run at integration, pass)
 
 `tests/server/sharing-reconcile.test.ts` (fixture ACLs to shares, invented share removed, replaced
 permission, deleted rule, unreachable, refused creates alarm once, invalid principal refused, response

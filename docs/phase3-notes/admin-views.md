@@ -21,7 +21,7 @@
 - design.md §8/§12: shared views are managed via `/api/admin/views`, `ext:` refs refused there; security-review 7.3:
   audit actions above, server enforces, UI hiding is cosmetic. README: mention shared views.
 
-## Tests (written, NOT run)
+## Tests (run at integration, pass)
 
 `tests/server/admin-views.test.ts`, `tests/admin-views.test.ts`, `e2e/admin-views.spec.ts`.
 

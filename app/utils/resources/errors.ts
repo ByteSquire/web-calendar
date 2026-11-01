@@ -9,7 +9,8 @@ const BY_CODE: Record<string, string> = {
   too_far_ahead: 'the booking is too far ahead',
   in_past: 'the time has already started or passed',
   invalid_slot: 'the time slot is not valid',
-  invalid_event: 'the calendar of the event is not yours',
+  invalid_event: 'the calendar of the event is not one of yours',
+  calendar_not_readable: 'you cannot read the calendar of the event',
   resource_unavailable: 'it is not available',
   invalid_transition: 'its state has changed meanwhile',
 }

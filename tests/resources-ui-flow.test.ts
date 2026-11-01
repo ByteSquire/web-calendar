@@ -87,6 +87,39 @@ describe('bookResources', () => {
     expect(written.data).toContain('X-WEB-CALENDAR-BOOKING-STATUS:pending')
   })
 
+  it('sends a shared calendar path unchanged and no calendar id', async () => {
+    const post = vi.fn(async () => ({ id: 11, status: 'pending' as const }))
+    await bookResources(deps(post).deps, {
+      resources: [a],
+      slot,
+      eventUid: 'e1',
+      calendarHref: '/caldav/sub-1/shared-12-staff/',
+      markUrl: null,
+    })
+    const body = (post.mock.calls[0] as unknown as [string, Record<string, unknown>])[1]
+    expect(body.eventCalendarPath).toBe('/caldav/sub-1/shared-12-staff/')
+    expect(body).not.toHaveProperty('eventCalendarId')
+  })
+
+  it('does not book from a calendar of another server and fails once per resource', async () => {
+    const post = vi.fn(async () => ({ id: 11, status: 'pending' as const }))
+    const d = deps(post)
+    const result = await bookResources(d.deps, {
+      resources: [a, b],
+      slot,
+      eventUid: 'e1',
+      calendarHref: 'https://dav.example.org/dav/cal/',
+      markUrl: '/c/e1.ics',
+    })
+    expect(post).not.toHaveBeenCalled()
+    expect(d.getObject).not.toHaveBeenCalled()
+    expect(result.booked).toEqual([])
+    expect(describeFailures(result)).toEqual([
+      'Room 1 could not be booked: the calendar of the event cannot be booked from.',
+      'Van could not be booked: the calendar of the event cannot be booked from.',
+    ])
+  })
+
   it('reports a refusal per resource and still books the others', async () => {
     const post = vi.fn(async (path: string) => {
       if (path.includes('/5/')) throw { statusCode: 409, data: { data: { code: 'overlap' } } }
@@ -168,6 +201,18 @@ describe('describeBookingRefusal', () => {
     ).toContain('limit')
     expect(describeBookingRefusal({ statusCode: 404 })).toContain('no longer exists')
     expect(describeBookingRefusal({ statusCode: 429 })).toContain('wait')
+  })
+
+  it('words the codes of an event calendar that cannot be used', () => {
+    expect(
+      describeBookingRefusal({ statusCode: 400, data: { data: { code: 'invalid_event' } } }),
+    ).toBe('the calendar of the event is not one of yours')
+    expect(
+      describeBookingRefusal({
+        statusCode: 403,
+        data: { data: { code: 'calendar_not_readable' } },
+      }),
+    ).toBe('you cannot read the calendar of the event')
   })
 })
 

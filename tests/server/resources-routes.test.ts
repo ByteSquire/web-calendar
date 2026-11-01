@@ -130,6 +130,7 @@ function slotBody(offsetHours = 0) {
   return {
     startAt: start.toISOString(),
     endAt: new Date(start.getTime() + 3_600_000).toISOString(),
+    eventCalendarPath: '/caldav/sub-alice/work/',
     eventUid: `uid-${offsetHours}`,
   }
 }
@@ -238,33 +239,75 @@ describe('user routes', () => {
     expect((await call('alice', 'GET', '/api/resources/abc')).status).toBe(404)
   })
 
-  it('link the booking to the calendar named by its path, and refuse a malformed path', async () => {
+  it('store the calendar path of the event as the requester sees it, a share included', async () => {
     const id = await createRoom()
     await call('admin', 'PUT', `/api/admin/resources/${id}/acl`, {
       rules: [{ principalType: 'authenticated', right: 'book' }],
     })
-    await call('alice', 'GET', '/api/resources')
-    const owner = db.prepare("SELECT id FROM users WHERE oidc_sub = 'sub-alice'").get() as {
-      id: number
-    }
-    const calendarId = (
-      db
-        .prepare(
-          "INSERT INTO calendars (name, kind, owner_id, collection_path) VALUES ('c', 'personal', ?, '/sub-alice/c/') RETURNING id",
-        )
-        .get(owner.id) as { id: number }
-    ).id
-    const linked = await call('alice', 'POST', `/api/resources/${id}/bookings`, {
-      ...slotBody(),
-      eventCalendarPath: '/caldav/sub-alice/c/',
-    })
-    expect(linked.status).toBe(201)
-    expect(await linked.json()).toMatchObject({ eventCalendarId: calendarId })
-    const bad = await call('alice', 'POST', `/api/resources/${id}/bookings`, {
+    const owner = db
+      .prepare("INSERT INTO users (oidc_sub) VALUES ('sub-owner') RETURNING id")
+      .pluck()
+      .get() as number
+    const shared = db
+      .prepare(
+        "INSERT INTO calendars (name, kind, owner_id, collection_path) VALUES ('t', 'personal', ?, '/sub-owner/t/') RETURNING id",
+      )
+      .pluck()
+      .get(owner) as number
+    const url = `/api/resources/${id}/bookings`
+
+    // A calendar discovery has not seen yet.
+    const fresh = await call('alice', 'POST', url, slotBody())
+    expect(fresh.status).toBe(201)
+    expect(await fresh.json()).toMatchObject({ eventCalendarPath: '/sub-alice/work/' })
+
+    // A share with read access.
+    db.prepare(
+      "INSERT INTO calendar_acl (calendar_id, principal_type, principal, permission) VALUES (?, 'user', 'sub-alice', 'read')",
+    ).run(shared)
+    const viaShare = await call('alice', 'POST', url, {
       ...slotBody(1),
-      eventCalendarPath: '/caldav/sub-alice/',
+      eventCalendarPath: `/caldav/sub-alice/shared-${shared}/`,
     })
-    expect(bad.status).toBe(400)
+    expect(viaShare.status).toBe(201)
+    expect(await viaShare.json()).toMatchObject({
+      eventCalendarPath: `/sub-alice/shared-${shared}/`,
+    })
+  })
+
+  it('refuse an event calendar that is missing, foreign or not readable', async () => {
+    const id = await createRoom()
+    await call('admin', 'PUT', `/api/admin/resources/${id}/acl`, {
+      rules: [{ principalType: 'authenticated', right: 'book' }],
+    })
+    const owner = db
+      .prepare("INSERT INTO users (oidc_sub) VALUES ('sub-owner') RETURNING id")
+      .pluck()
+      .get() as number
+    const shared = db
+      .prepare(
+        "INSERT INTO calendars (name, kind, owner_id, collection_path) VALUES ('t', 'personal', ?, '/sub-owner/t/') RETURNING id",
+      )
+      .pluck()
+      .get(owner) as number
+    db.prepare(
+      "INSERT INTO calendar_acl (calendar_id, principal_type, principal, permission) VALUES (?, 'user', 'sub-bob', 'free_busy')",
+    ).run(shared)
+    const post = (n: number, eventCalendarPath: unknown) =>
+      call('bob', 'POST', `/api/resources/${id}/bookings`, {
+        ...slotBody(n),
+        eventCalendarPath,
+      })
+
+    expect((await post(0, undefined)).status).toBe(400)
+    expect((await post(1, null)).status).toBe(400)
+    expect((await post(2, '/caldav/sub-bob/')).status).toBe(400)
+    expect((await post(3, '/caldav/sub-alice/work/')).status).toBe(400)
+    const hidden = await post(4, `/caldav/sub-bob/shared-${shared}/`)
+    expect(hidden.status).toBe(403)
+    expect(await hidden.json()).toMatchObject({ data: { code: 'calendar_not_readable' } })
+    expect((await post(5, '/caldav/sub-bob/shared-9999/')).status).toBe(403)
+    expect(db.prepare('SELECT COUNT(*) AS n FROM calendar_bookings').get()).toEqual({ n: 0 })
   })
 
   it('let a manager cancel the booking of someone else only while the setting allows it', async () => {

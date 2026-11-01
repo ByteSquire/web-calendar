@@ -27,7 +27,8 @@ interface ApiBookingBase {
 
 /** A booking as its requester sees it. */
 export interface ApiOwnBooking extends ApiBookingBase {
-  eventCalendarId: number | null
+  /** The event's calendar as its requester sees it: `/<sub>/<name>/`. */
+  eventCalendarPath: string
   eventUid: string
 }
 
@@ -43,8 +44,8 @@ export type ApiBooking = ApiOwnBooking | ApiManagedBooking
 export interface NewBookingBody {
   startAt: string
   endAt: string
-  /** The event's calendar by its CalDAV path; the server finds its own id. Null when not the built-in service's. */
-  eventCalendarPath: string | null
+  /** The event's calendar by its public CalDAV path (`/caldav/<owner>/<name>/`), a share included. */
+  eventCalendarPath: string
   eventUid: string
 }
 

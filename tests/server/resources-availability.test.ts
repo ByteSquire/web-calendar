@@ -22,6 +22,8 @@ let roomId: number
 let hiddenId: number
 let calendarId: number
 
+const workPath = () => `/${owner.sub}/work/`
+
 const DAY = '2026-12-01'
 const at = (hour: number) => `${DAY}T${String(hour).padStart(2, '0')}:00:00.000Z`
 const RANGE = { from: `${DAY}T00:00:00.000Z`, to: `${DAY}T23:59:59.000Z`, resourceIds: [] }
@@ -37,7 +39,7 @@ function book(
   end: number,
   options: {
     status?: string
-    calendar?: number | null
+    path?: string
     uid?: string
     orphanedAt?: string | null
     createdAt?: string
@@ -47,7 +49,7 @@ function book(
   return db
     .prepare(
       `INSERT INTO calendar_bookings
-         (resource_id, requester_id, start_at, end_at, status, event_calendar_id, event_uid,
+         (resource_id, requester_id, start_at, end_at, status, event_calendar_path, event_uid,
           block_ref, orphaned_at, created_at, decided_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
@@ -57,7 +59,7 @@ function book(
       at(start),
       at(end),
       options.status ?? 'pending',
-      options.calendar === undefined ? null : options.calendar,
+      options.path ?? `/${requester.sub}/default/`,
       options.uid ?? `uid-${start}-${end}-${requester.id}`,
       `ref-${Math.random().toString(16).slice(2)}-0000000000000000`,
       options.orphanedAt ?? null,
@@ -77,6 +79,9 @@ beforeEach(() => {
   hiddenId = createResource(db, { ...fields, name: 'Hidden' }).id
   addResourceAcl(db, roomId, { principalType: 'authenticated', principal: null, right: 'book' })
   addResourceAcl(db, roomId, { principalType: 'group', principal: 'facility', right: 'manage' })
+  db.prepare(
+    "DELETE FROM resource_acl WHERE resource_id = ? AND principal_type = 'authenticated'",
+  ).run(hiddenId)
   addResourceAcl(db, hiddenId, { principalType: 'group', principal: 'facility', right: 'manage' })
   calendarId = db
     .prepare(
@@ -98,7 +103,7 @@ function share(permission: string, principalType = 'user', principal: string | n
 
 describe('listAvailability', () => {
   it('blocks a booking whose event calendar is not readable, with exactly the allowed keys', async () => {
-    book(roomId, owner, 9, 10, { status: 'approved', calendar: calendarId })
+    book(roomId, owner, 9, 10, { status: 'approved', path: workPath() })
     const { resources } = await listAvailability(db, bob, RANGE)
     const [entry] = resources[0]?.entries ?? []
     expect(Object.keys(entry ?? {}).sort()).toEqual(
@@ -107,8 +112,8 @@ describe('listAvailability', () => {
     expect(entry).toMatchObject({ blocked: true, mine: false, status: 'approved' })
   })
 
-  it('blocks a booking without an event calendar, even for its requester’s calendar-less peers', async () => {
-    book(roomId, owner, 9, 10, { status: 'approved', calendar: null })
+  it('blocks a booking from an own calendar nobody else can read', async () => {
+    book(roomId, owner, 9, 10, { status: 'approved', path: `/${owner.sub}/not-discovered/` })
     const [entry] = (await listAvailability(db, bob, RANGE)).resources[0]?.entries ?? []
     expect(entry?.blocked).toBe(true)
     expect(entry).not.toHaveProperty('eventUid')
@@ -116,7 +121,7 @@ describe('listAvailability', () => {
 
   it('gives details to a reader of the event calendar', async () => {
     share('read')
-    book(roomId, owner, 9, 10, { status: 'approved', calendar: calendarId, uid: 'meeting' })
+    book(roomId, owner, 9, 10, { status: 'approved', path: workPath(), uid: 'meeting' })
     const [entry] = (await listAvailability(db, bob, RANGE)).resources[0]?.entries ?? []
     expect(entry).toMatchObject({
       blocked: false,
@@ -128,7 +133,7 @@ describe('listAvailability', () => {
 
   it('gives details to a reader through a group', async () => {
     share('read', 'group', 'readers')
-    book(roomId, owner, 9, 10, { status: 'approved', calendar: calendarId })
+    book(roomId, owner, 9, 10, { status: 'approved', path: workPath() })
     const reader = { ...bob, groups: ['readers'] }
     expect((await listAvailability(db, reader, RANGE)).resources[0]?.entries[0]?.blocked).toBe(
       false,
@@ -136,14 +141,46 @@ describe('listAvailability', () => {
     expect((await listAvailability(db, bob, RANGE)).resources[0]?.entries[0]?.blocked).toBe(true)
   })
 
-  it('keeps a free/busy grant blocked', async () => {
-    share('free_busy')
-    book(roomId, owner, 9, 10, { status: 'approved', calendar: calendarId })
+  it('gives details to a reader of the calendar a booking was made from as a share', async () => {
+    share('read')
+    book(roomId, alice, 9, 10, {
+      status: 'approved',
+      path: `/${alice.sub}/shared-${calendarId}/`,
+      uid: 'meeting',
+    })
+    const [entry] = (await listAvailability(db, bob, RANGE)).resources[0]?.entries ?? []
+    expect(entry).toMatchObject({ blocked: false, mine: false, eventUid: 'meeting' })
+  })
+
+  it('blocks a share booking for someone who cannot read that calendar', async () => {
+    book(roomId, alice, 9, 10, { status: 'approved', path: `/${alice.sub}/shared-${calendarId}/` })
     expect((await listAvailability(db, bob, RANGE)).resources[0]?.entries[0]?.blocked).toBe(true)
   })
 
-  it('shows the caller their own booking in detail, even without a calendar', async () => {
-    book(roomId, bob, 9, 10, { status: 'pending', calendar: null, uid: 'mine' })
+  it('blocks a booking from a share that names no calendar', async () => {
+    share('read')
+    book(roomId, alice, 9, 10, { status: 'approved', path: `/${alice.sub}/shared-9999/` })
+    expect((await listAvailability(db, bob, RANGE)).resources[0]?.entries[0]?.blocked).toBe(true)
+  })
+
+  it('keeps a free/busy grant blocked', async () => {
+    share('free_busy')
+    book(roomId, owner, 9, 10, { status: 'approved', path: workPath() })
+    expect((await listAvailability(db, bob, RANGE)).resources[0]?.entries[0]?.blocked).toBe(true)
+  })
+
+  it('keeps a free/busy grant blocked for a booking made from the share too', async () => {
+    share('free_busy')
+    book(roomId, alice, 9, 10, { status: 'approved', path: `/${alice.sub}/shared-${calendarId}/` })
+    expect((await listAvailability(db, bob, RANGE)).resources[0]?.entries[0]?.blocked).toBe(true)
+  })
+
+  it('shows the caller their own booking in detail, whatever the calendar', async () => {
+    book(roomId, bob, 9, 10, {
+      status: 'pending',
+      path: `/${bob.sub}/not-discovered/`,
+      uid: 'mine',
+    })
     const [entry] = (await listAvailability(db, bob, RANGE)).resources[0]?.entries ?? []
     expect(entry).toMatchObject({
       blocked: false,

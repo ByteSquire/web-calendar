@@ -2,13 +2,23 @@ import { isActingPrincipal } from '../sharing/radicale-client'
 
 // Reads the booker's calendar as the booker (internal Radicale client identity, never reachable
 // from the browser). The sharing client has no ctag or REPORT call, so this is a small separate
-// reader that refuses the same principals. Anything it cannot read is `error`, never `gone`:
-// only a 404 on the calendar or a successful query without the UID says something is gone.
+// reader that refuses the same principals. Paths are the decoded form of the requester's view
+// (`/<sub>/<name>/`, a share included). Only a successful query without the UID says the event is
+// absent; a 403 or a 404 on the collection says the requester cannot read it, which for a share
+// is the same as it being revoked or hidden. Anything else it cannot read is `error`.
 
-export type CalendarStamp = { kind: 'ok'; stamp: string } | { kind: 'gone' } | { kind: 'error' }
+export type CalendarStamp =
+  | { kind: 'ok'; stamp: string }
+  | { kind: 'forbidden' }
+  | { kind: 'no_collection' }
+  | { kind: 'error' }
 
 export type EventLookup =
-  { kind: 'found'; objects: string[] } | { kind: 'absent' } | { kind: 'gone' } | { kind: 'error' }
+  | { kind: 'found'; objects: string[] }
+  | { kind: 'absent' }
+  | { kind: 'forbidden' }
+  | { kind: 'no_collection' }
+  | { kind: 'error' }
 
 export type CalendarList = { kind: 'ok'; paths: string[] } | { kind: 'error' }
 
@@ -29,12 +39,25 @@ export interface EventReaderOptions {
 }
 
 const NAME = '(?:[\\w-]+:)?'
+const COLLECTION = /^\/[^/]+\/[^/]+\/$/
 
 function isStorePath(path: string): boolean {
   if (!path.startsWith('/') || path.includes('//') || path.includes('?') || path.includes('#')) {
     return false
   }
   return path.split('/').every((segment) => segment !== '.' && segment !== '..')
+}
+
+function encodedPath(path: string): string {
+  return path.split('/').map(encodeURIComponent).join('/')
+}
+
+function decodedHref(href: string): string | null {
+  try {
+    return decodeURIComponent(href)
+  } catch {
+    return null
+  }
 }
 
 function unescapeXml(text: string): string {
@@ -79,7 +102,7 @@ export function createBookingEventReader(options: EventReaderOptions): BookingEv
   ): Promise<{ status: number; text: string } | null> {
     if (!isActingPrincipal(principal) || !isStorePath(path)) return null
     try {
-      const response = await doFetch(base + path, {
+      const response = await doFetch(base + encodedPath(path), {
         method,
         headers: { 'x-remote-user': principal, depth, 'content-type': 'application/xml' },
         body,
@@ -108,7 +131,8 @@ export function createBookingEventReader(options: EventReaderOptions): BookingEv
         '<?xml version="1.0"?><D:propfind xmlns:D="DAV:" xmlns:CS="http://calendarserver.org/ns/"><D:prop><CS:getctag/><D:sync-token/></D:prop></D:propfind>',
       )
       if (!answer) return { kind: 'error' }
-      if (answer.status === 404) return { kind: 'gone' }
+      if (answer.status === 403) return { kind: 'forbidden' }
+      if (answer.status === 404) return { kind: 'no_collection' }
       if (answer.status !== 207) return { kind: 'error' }
       const ctag = tagText(answer.text, 'getctag') ?? ''
       const token = tagText(answer.text, 'sync-token') ?? ''
@@ -126,7 +150,8 @@ export function createBookingEventReader(options: EventReaderOptions): BookingEv
           '</C:text-match></C:prop-filter></C:comp-filter></C:comp-filter></C:filter></C:calendar-query>',
       )
       if (!answer) return { kind: 'error' }
-      if (answer.status === 404) return { kind: 'gone' }
+      if (answer.status === 403) return { kind: 'forbidden' }
+      if (answer.status === 404) return { kind: 'no_collection' }
       if (answer.status !== 207) return { kind: 'error' }
       const objects: string[] = []
       for (const block of responses(answer.text)) {
@@ -149,8 +174,8 @@ export function createBookingEventReader(options: EventReaderOptions): BookingEv
       const paths: string[] = []
       for (const block of responses(answer.text)) {
         if (!new RegExp(`<${NAME}calendar\\s*/>`, 'i').test(block)) continue
-        const href = tagText(block, 'href')
-        if (href && href.startsWith(home) && href !== home) paths.push(href)
+        const href = decodedHref(tagText(block, 'href') ?? '')
+        if (href && href.startsWith(home) && COLLECTION.test(href)) paths.push(href)
       }
       return { kind: 'ok', paths: paths.sort() }
     },

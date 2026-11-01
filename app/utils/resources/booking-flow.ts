@@ -44,7 +44,7 @@ export interface BookingFlowResult {
   marksFailed: boolean
 }
 
-/** The path the server finds the booker's calendar by; null for a calendar of another service. */
+/** The path the server links the booking to the calendar by; null for a calendar of another service. */
 export function calendarPathOf(href: string): string | null {
   const path = toDavPath(href.trim()).replace(/[?#].*$/, '')
   return path.startsWith('/caldav/') ? ensureTrailingSlash(path) : null
@@ -60,13 +60,20 @@ export async function bookResources(
   args: BookingFlowArgs,
 ): Promise<BookingFlowResult> {
   const result: BookingFlowResult = { booked: [], failed: [], marksFailed: false }
+  const eventCalendarPath = calendarPathOf(args.calendarHref)
+  if (eventCalendarPath === null) {
+    // No path, no booking: the event would never be followed. The saved event stays.
+    for (const resource of args.resources) {
+      result.failed.push({ resource, reason: 'the calendar of the event cannot be booked from' })
+    }
+    return result
+  }
   for (const resource of args.resources) {
     try {
       const booking = await deps.post(`/api/resources/${resource.id}/bookings`, {
         startAt: args.slot.startAt,
         endAt: args.slot.endAt,
-        // The server turns the path into its own calendar id, so the reconcile can follow the event.
-        eventCalendarPath: calendarPathOf(args.calendarHref),
+        eventCalendarPath,
         eventUid: args.eventUid,
       })
       result.booked.push({ resource, bookingId: booking.id, status: booking.status })

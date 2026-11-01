@@ -194,8 +194,9 @@ describe('schema', () => {
     const user = addUser(SUB_A, 'alice')
     const resource = createResource(db, room())
     const insert = db.prepare(
-      `INSERT INTO calendar_bookings (resource_id, requester_id, start_at, end_at, status, event_uid, block_ref)
-       VALUES (?, ?, ?, ?, ?, 'uid', ?)`,
+      `INSERT INTO calendar_bookings
+         (resource_id, requester_id, start_at, end_at, status, event_calendar_path, event_uid, block_ref)
+       VALUES (?, ?, ?, ?, ?, '/sub-a/work/', 'uid', ?)`,
     )
     const ref = (n: number) => `ref-${String(n).padStart(20, '0')}`
     const [start, end] = slot(9, 10)
@@ -220,13 +221,46 @@ describe('schema', () => {
     )
   })
 
+  it('accepts only a collection path as the event calendar of a booking', () => {
+    const user = addUser(SUB_A, 'alice')
+    const resource = createResource(db, room())
+    const insert = db.prepare(
+      `INSERT INTO calendar_bookings
+         (resource_id, requester_id, start_at, end_at, status, event_calendar_path, event_uid, block_ref)
+       VALUES (?, ?, ?, ?, 'pending', ?, 'uid', ?)`,
+    )
+    const [start, end] = slot(9, 10)
+    const ref = (n: number) => `ref-${String(n).padStart(20, '0')}`
+    expect(() =>
+      insert.run(resource.id, user, start, end, '/sub/shared-12-staff/', ref(1)),
+    ).not.toThrow()
+    for (const [n, bad] of [
+      '',
+      '/sub/',
+      '/sub/a/b/',
+      'sub/a/',
+      '/sub/a',
+      '//a/',
+      '/sub//',
+      `/s/${'x'.repeat(500)}/`,
+    ].entries()) {
+      expect(() => insert.run(resource.id, user, start, end, bad, ref(n + 2)), bad).toThrow(
+        /CHECK constraint/,
+      )
+    }
+    expect(() => insert.run(resource.id, user, start, end, null, ref(20))).toThrow(
+      /NOT NULL constraint/,
+    )
+  })
+
   it('lets pending bookings overlap but not approved ones (insert and update)', () => {
     const user = addUser(SUB_A, 'alice')
     const resource = createResource(db, room())
     const other = createResource(db, room('Room 2'))
     const insert = db.prepare(
-      `INSERT INTO calendar_bookings (resource_id, requester_id, start_at, end_at, status, event_uid, block_ref)
-       VALUES (?, ?, ?, ?, ?, 'uid', ?)`,
+      `INSERT INTO calendar_bookings
+         (resource_id, requester_id, start_at, end_at, status, event_calendar_path, event_uid, block_ref)
+       VALUES (?, ?, ?, ?, ?, '/sub-a/work/', 'uid', ?)`,
     )
     const ref = (n: number) => `ref-${String(n).padStart(20, '0')}`
     const [s1, e1] = slot(9, 11)
@@ -272,7 +306,14 @@ function room(name = 'Room 1') {
 }
 
 function booking(resourceId: number, requesterId: number, startAt: string, endAt: string) {
-  return { resourceId, requesterId, startAt, endAt, eventCalendarId: null, eventUid: 'uid-1' }
+  return {
+    resourceId,
+    requesterId,
+    startAt,
+    endAt,
+    eventCalendarPath: '/sub-a/work/',
+    eventUid: 'uid-1',
+  }
 }
 
 describe('calendar-acl module', () => {

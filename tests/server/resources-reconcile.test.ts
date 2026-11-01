@@ -3,7 +3,7 @@
 import type { Database } from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { listAuditEntries } from '../../server/db/audit-log'
-import { getSyncStamp } from '../../server/db/booking-sync'
+import { getSyncStamp, setSyncStamp } from '../../server/db/booking-sync'
 import { approveBooking, createBooking, getBooking } from '../../server/db/bookings'
 import { createResource } from '../../server/db/resources'
 import type { BookingRow } from '../../server/db/types'
@@ -28,6 +28,8 @@ interface FakeCalendar {
   /** uid -> ics */
   events: Map<string, string>
   unreadable: boolean
+  /** The requester may not read it (403). */
+  forbidden: boolean
 }
 
 function ics(options: {
@@ -69,7 +71,7 @@ class FakeReader implements BookingEventReader {
   delayMs = 0
 
   add(path: string, stamp = 'c1'): FakeCalendar {
-    const calendar: FakeCalendar = { stamp, events: new Map(), unreadable: false }
+    const calendar: FakeCalendar = { stamp, events: new Map(), unreadable: false, forbidden: false }
     this.calendars.set(path, calendar)
     return calendar
   }
@@ -77,7 +79,8 @@ class FakeReader implements BookingEventReader {
   async stamp(_principal: string, path: string): Promise<CalendarStamp> {
     this.stampCalls++
     const calendar = this.calendars.get(path)
-    if (!calendar) return { kind: 'gone' }
+    if (!calendar) return { kind: 'no_collection' }
+    if (calendar.forbidden) return { kind: 'forbidden' }
     if (calendar.unreadable) return { kind: 'error' }
     return { kind: 'ok', stamp: calendar.stamp }
   }
@@ -89,7 +92,8 @@ class FakeReader implements BookingEventReader {
     if (this.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.delayMs))
     this.concurrent--
     const calendar = this.calendars.get(path)
-    if (!calendar) return { kind: 'gone' }
+    if (!calendar) return { kind: 'no_collection' }
+    if (calendar.forbidden) return { kind: 'forbidden' }
     if (calendar.unreadable) return { kind: 'error' }
     const objects = [...calendar.events.entries()]
       .filter(([key]) => key.includes(uid))
@@ -108,8 +112,6 @@ let reader: FakeReader
 let puts: Map<string, string>
 let deletes: string[]
 let aliceId: number
-let calendarId: number
-let otherId: number
 let resourceId: number
 let now: Date
 
@@ -126,15 +128,18 @@ const store: BlockStore = {
 const reconciler = (maxAttempts?: number) =>
   createBookingReconciler({ db, reader, store, now: () => now, log: () => undefined, maxAttempts })
 
-function book(uid = 'ev-1', options: { approve?: boolean } = {}): BookingRow {
+function book(
+  uid = 'ev-1',
+  options: { approve?: boolean; path?: string; requesterId?: number } = {},
+): BookingRow {
   const result = createBooking(
     db,
     {
       resourceId,
-      requesterId: aliceId,
+      requesterId: options.requesterId ?? aliceId,
       startAt: START,
       endAt: END,
-      eventCalendarId: calendarId,
+      eventCalendarPath: options.path ?? WORK,
       eventUid: uid,
     },
     { now: NOW },
@@ -153,6 +158,7 @@ const marked = (booking: BookingRow, uid = 'ev-1') =>
 
 const auditRows = () =>
   listAuditEntries(db, { limit: 200 })
+    .reverse()
     .filter((row) => row.action.startsWith('resource_booking.'))
     .map((row) => ({
       action: row.action,
@@ -163,11 +169,6 @@ const auditRows = () =>
 beforeEach(() => {
   db = openTestDb()
   aliceId = createUsers(db).alice
-  const insert = db.prepare(
-    "INSERT INTO calendars (name, kind, owner_id, collection_path) VALUES (?, 'personal', ?, ?) RETURNING id",
-  )
-  calendarId = (insert.get('work', aliceId, WORK) as { id: number }).id
-  otherId = (insert.get('other', aliceId, OTHER) as { id: number }).id
   resourceId = createResource(db, {
     name: 'Room 1',
     type: 'room',
@@ -199,7 +200,7 @@ describe('booking reconcile: unchanged', () => {
     expect(row.reconcile_attempts).toBe(0)
     expect(row.status).toBe('pending')
     expect(summary.unchanged).toBe(1)
-    expect(getSyncStamp(db, calendarId)).toBe('c1')
+    expect(getSyncStamp(db, WORK)).toBe('c1')
   })
 
   it('does not judge a young booking whose marks may not be written yet', async () => {
@@ -211,7 +212,7 @@ describe('booking reconcile: unchanged', () => {
     reader.calendars.get(WORK)!.events.set('ev-1', ics({ uid: 'ev-1' }))
     await reconciler().run()
     expect(getBooking(db, booking.id)!.orphaned_at).toBeNull()
-    expect(getSyncStamp(db, calendarId)).toBeNull()
+    expect(getSyncStamp(db, WORK)).toBeNull()
     expect(auditRows()).toEqual([])
   })
 })
@@ -241,14 +242,13 @@ describe('booking reconcile: deleted event', () => {
     })
   })
 
-  it('cancels when the calendar itself is gone, after the retries', async () => {
+  it('does not cancel when the calendar itself is gone, it goes to the manager queue', async () => {
     const booking = book()
     reader.calendars.delete(WORK)
     const run = reconciler(2)
-    await run.run()
-    expect(getBooking(db, booking.id)!.status).toBe('pending')
-    await run.run()
-    expect(getBooking(db, booking.id)!.status).toBe('cancelled')
+    for (let i = 0; i < 4; i++) await run.run()
+    expect(getBooking(db, booking.id)).toMatchObject({ status: 'pending', reconcile_attempts: 2 })
+    expect(getBooking(db, booking.id)!.orphaned_at).not.toBeNull()
   })
 
   it('finds an event that moved to another calendar of the booker and follows it', async () => {
@@ -256,7 +256,28 @@ describe('booking reconcile: deleted event', () => {
     reader.add(OTHER).events.set('ev-1', marked(booking))
     await reconciler().run()
     const row = getBooking(db, booking.id)!
-    expect(row).toMatchObject({ status: 'pending', orphaned_at: null, event_calendar_id: otherId })
+    expect(row).toMatchObject({ status: 'pending', orphaned_at: null, event_calendar_path: OTHER })
+  })
+
+  it('follows an event that moved into a share and stores the share path', async () => {
+    const booking = book()
+    const share = '/sub-alice/shared-12/'
+    reader.add(share).events.set('ev-1', marked(booking))
+    await reconciler().run()
+    expect(getBooking(db, booking.id)).toMatchObject({
+      status: 'pending',
+      orphaned_at: null,
+      event_calendar_path: share,
+    })
+  })
+
+  it('does not cancel when another calendar of the home may not be read', async () => {
+    const booking = book('ev-1', { approve: true })
+    reader.add(OTHER).forbidden = true
+    const run = reconciler(2)
+    for (let i = 0; i < 5; i++) await run.run()
+    expect(getBooking(db, booking.id)!.status).toBe('approved')
+    expect(deletes).toEqual([])
   })
 
   it('does not cancel when the rest of the home cannot be searched', async () => {
@@ -293,6 +314,66 @@ describe('booking reconcile: unreadable calendar', () => {
     calendar.events.set('ev-1', marked(booking))
     await reconciler().run()
     expect(getBooking(db, booking.id)).toMatchObject({ orphaned_at: null, reconcile_attempts: 0 })
+  })
+})
+
+describe('booking reconcile: calendar the requester cannot read', () => {
+  it.each([
+    ['forbidden', 'forbidden'],
+    ['no_collection', 'missing'],
+  ])(
+    'sends a %s calendar to the manager queue in one run and never cancels',
+    async (kind, cause) => {
+      const booking = book('ev-1', { approve: true })
+      setSyncStamp(db, WORK, 'c1', NOW)
+      if (kind === 'forbidden') reader.calendars.get(WORK)!.forbidden = true
+      else reader.calendars.delete(WORK)
+      const run = reconciler(3)
+      const summary = await run.run()
+      expect(summary.lost).toBe(1)
+      for (let i = 0; i < 4; i++) await run.run()
+      const row = getBooking(db, booking.id)!
+      expect(row.status).toBe('approved')
+      expect(row.orphaned_at).not.toBeNull()
+      expect(row.reconcile_attempts).toBe(3)
+      expect(deletes).toEqual([])
+      expect(getSyncStamp(db, WORK)).toBeNull()
+      expect(auditRows()).toEqual([
+        {
+          action: 'resource_booking.orphaned',
+          actor: 'system:resources',
+          details: expect.objectContaining({
+            reason: 'calendar_unavailable',
+            cause,
+            bookingId: booking.id,
+          }),
+        },
+      ])
+    },
+  )
+
+  it('does not read a path outside the home of the requester', async () => {
+    const booking = book('ev-1', { path: '/sub-bob/work/' })
+    reader.add('/sub-bob/work/').events.set('ev-1', marked(booking))
+    const summary = await reconciler().run()
+    expect(summary.lost).toBe(1)
+    expect(reader.stampCalls).toBe(0)
+    expect(reader.findCalls).toEqual([])
+    expect(getBooking(db, booking.id)!.status).toBe('pending')
+    expect(getBooking(db, booking.id)!.orphaned_at).not.toBeNull()
+  })
+
+  it('clears the orphaned state when the access comes back', async () => {
+    const booking = book()
+    const calendar = reader.calendars.get(WORK)!
+    calendar.events.set('ev-1', marked(booking))
+    calendar.forbidden = true
+    await reconciler().run()
+    expect(getBooking(db, booking.id)!.orphaned_at).not.toBeNull()
+    calendar.forbidden = false
+    await reconciler().run()
+    expect(getBooking(db, booking.id)).toMatchObject({ orphaned_at: null, reconcile_attempts: 0 })
+    expect(getSyncStamp(db, WORK)).toBe('c1')
   })
 })
 
@@ -382,6 +463,27 @@ describe('booking reconcile: ctag gate', () => {
     db.prepare("UPDATE calendar_bookings SET status = 'cancelled' WHERE id = ?").run(second.id)
     await reconciler().run()
     expect(reader.stampCalls).toBe(0)
+  })
+})
+
+describe('booking reconcile: stored stamps', () => {
+  it('forgets the stamp of a path that has no active booking any more', async () => {
+    book()
+    setSyncStamp(db, '/sub-alice/old/', 'x', NOW)
+    setSyncStamp(db, WORK, 'y', NOW)
+    await reconciler().run()
+    expect(getSyncStamp(db, '/sub-alice/old/')).toBeNull()
+    expect(getSyncStamp(db, WORK)).not.toBeNull()
+  })
+
+  it('keeps the stamps of two calendars apart', async () => {
+    const first = book('ev-1')
+    const second = book('ev-2', { path: OTHER })
+    reader.calendars.get(WORK)!.events.set('ev-1', marked(first))
+    reader.add(OTHER, 'o1').events.set('ev-2', marked(second, 'ev-2'))
+    await reconciler().run()
+    expect(getSyncStamp(db, WORK)).toBe('c1')
+    expect(getSyncStamp(db, OTHER)).toBe('o1')
   })
 })
 

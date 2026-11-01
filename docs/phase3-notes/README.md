@@ -2,8 +2,8 @@
 
 Working notes of the Phase 3 tasks, one file per task. Their content is folded into
 [`design.md`](../design.md) (§5, §8, §11, §12), [`security-review.md`](../security-review.md) (§7)
-and the [README](../../README.md). Nothing described here has been run yet: the tests are written,
-not executed.
+and the [README](../../README.md). The tests named here were written per task and run at integration on 2026-11-01 (unit and e2e
+suites pass; failures found then are fixed); the notes still describe each task as it was handed in.
 
 - [`audit-log.md`](audit-log.md) — the `audit_log` table, redaction, and `defineAdminHandler` with its rate limit.
 - [`schema-rework.md`](schema-rework.md) — migration 006: access rules, resources, resource ACL, bookings, and their DB modules.

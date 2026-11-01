@@ -89,25 +89,12 @@ export function parseBookingInput(body: unknown, resourceId: number): Parsed<New
   const startAt = readInstant(input.startAt, 'startAt', errors)
   const endAt = readInstant(input.endAt, 'endAt', errors)
   const eventUid = readText(input.eventUid, 'eventUid', MAX_UID_LENGTH, errors)
-  let eventCalendarId: number | null = null
-  if (input.eventCalendarId !== undefined && input.eventCalendarId !== null) {
-    const id = input.eventCalendarId
-    if (typeof id === 'number' && Number.isSafeInteger(id) && id > 0) eventCalendarId = id
-    else errors.add('eventCalendarId', 'must be a calendar id or null')
-  }
-  let eventCalendarPath: string | null = null
-  if (input.eventCalendarPath !== undefined && input.eventCalendarPath !== null) {
-    const path =
-      typeof input.eventCalendarPath === 'string' && input.eventCalendarPath.length <= 500
-        ? storedCollectionPath(input.eventCalendarPath)
-        : null
-    if (path === null) {
-      errors.add('eventCalendarPath', 'must be a calendar path like /caldav/<owner>/<name>/')
-    } else if (eventCalendarId !== null) {
-      errors.add('eventCalendarPath', 'give the calendar by id or by path, not both')
-    } else {
-      eventCalendarPath = path
-    }
+  const eventCalendarPath =
+    typeof input.eventCalendarPath === 'string' && input.eventCalendarPath.length <= 500
+      ? storedCollectionPath(input.eventCalendarPath)
+      : null
+  if (eventCalendarPath === null) {
+    errors.add('eventCalendarPath', 'must be a calendar path like /caldav/<owner>/<name>/')
   }
   if (startAt && endAt && Date.parse(endAt) <= Date.parse(startAt)) {
     errors.add('endAt', 'must be after startAt')
@@ -116,8 +103,7 @@ export function parseBookingInput(body: unknown, resourceId: number): Parsed<New
     resourceId,
     startAt: startAt!,
     endAt: endAt!,
-    eventCalendarId,
-    eventCalendarPath,
+    eventCalendarPath: eventCalendarPath!,
     eventUid: eventUid!,
   }))
 }

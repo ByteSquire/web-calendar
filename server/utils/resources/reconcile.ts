@@ -1,12 +1,14 @@
 // Keeps bookings and their events in step when someone moves or deletes the event (design §5
 // "Reconcile on move/delete", security review 7.4). The database is the truth: a changed or
-// unreadable event never cancels a booking by itself. Only an event that is definitively gone
-// (calendar read, UID absent everywhere in the booker's home, or the calendar is gone), seen on
-// repeated runs, cancels it. Everything else becomes an orphaned booking for the manager queue.
+// unreadable event never cancels a booking by itself. The calendar is read as the requester at the
+// stored path (a share included). Only an event that is definitively gone (calendar readable, UID
+// absent everywhere in the booker's home), seen on repeated runs, cancels it. A calendar the
+// requester can no longer read (403, or 404 on the collection) is ambiguous, so it goes to the
+// manager queue and is never cancelled. Everything else becomes an orphaned booking too.
 import type { Database } from 'better-sqlite3'
 import { readCalendarObject } from '../../../app/utils/ical/read'
 import { recordAudit } from '../../db/audit-log'
-import { getSyncStamp, setSyncStamp } from '../../db/booking-sync'
+import { clearSyncStamp, getSyncStamp, pruneSyncStamps, setSyncStamp } from '../../db/booking-sync'
 import {
   clearBookingOrphaned,
   listBookingsInRange,
@@ -15,6 +17,7 @@ import {
   transitionBooking,
 } from '../../db/bookings'
 import type { BookingRow } from '../../db/types'
+import { splitCollectionPath } from '../sharing/names'
 import type { BlockStore } from './block'
 import type { BookingEventReader } from './reconcile-reader'
 import { syncBlock } from './service'
@@ -42,19 +45,23 @@ export interface BookingReconcileSummary {
   unchanged: number
   orphaned: number
   moved: number
+  /** Bookings whose calendar the requester can no longer read (sent to the manager queue). */
+  lost: number
   cancelled: number
   /** Calendars whose stamp matched the stored one, so no event was read. */
   gated: number
 }
 
-type Outcome = 'unchanged' | 'moved' | 'gone' | 'unreadable' | 'wait'
-
-interface CalendarInfo {
-  id: number
-  collection_path: string
-  owner_id: number | null
-  owner_sub: string | null
+type Verdict = 'unchanged' | 'moved' | 'gone' | 'unreadable' | 'wait'
+interface Lost {
+  lost: 'forbidden' | 'missing'
 }
+type Outcome = Verdict | Lost
+
+const LOST_FORBIDDEN: Lost = { lost: 'forbidden' }
+const LOST_MISSING: Lost = { lost: 'missing' }
+/** The longest collection path the table accepts. */
+const MAX_PATH_LENGTH = 500
 
 export interface BookingReconciler {
   run(): Promise<BookingReconcileSummary>
@@ -66,12 +73,18 @@ const emptySummary = (skipped: boolean): BookingReconcileSummary => ({
   unchanged: 0,
   orphaned: 0,
   moved: 0,
+  lost: 0,
   cancelled: 0,
   gated: 0,
 })
 
 /** Does the event of this object still hold the booking's slot and marks? */
-function matchEvent(booking: BookingRow, objects: string[], created: Date, now: Date): Outcome {
+function matchEvent(
+  booking: BookingRow,
+  objects: string[],
+  created: Date,
+  now: Date,
+): Exclude<Verdict, 'unreadable'> {
   const from = new Date(Date.parse(booking.start_at) - DAY_MS)
   const to = new Date(Date.parse(booking.end_at) + DAY_MS)
   const uidLine = `UID:${booking.event_uid}`
@@ -85,7 +98,7 @@ function matchEvent(booking: BookingRow, objects: string[], created: Date, now: 
   if (!present) return 'gone'
   for (const ics of objects) {
     const read = readCalendarObject(ics, {
-      calendarId: String(booking.event_calendar_id),
+      calendarId: booking.event_calendar_path,
       href: '/',
       displayTimeZone: 'UTC',
       orgTimeZone: 'UTC',
@@ -123,13 +136,16 @@ export function createBookingReconciler(options: BookingReconcilerOptions): Book
   const log = options.log ?? ((message: string) => console.warn(message))
   let running = false
 
-  const calendarOf = (id: number): CalendarInfo | undefined =>
-    db
-      .prepare<[number], CalendarInfo>(
-        `SELECT c.id, c.collection_path, c.owner_id, u.oidc_sub AS owner_sub
-         FROM calendars c LEFT JOIN users u ON u.id = c.owner_id WHERE c.id = ?`,
+  function subsOf(requesterIds: number[]): Map<number, string> {
+    if (requesterIds.length === 0) return new Map()
+    const marks = requesterIds.map(() => '?').join(', ')
+    const rows = db
+      .prepare<number[], { id: number; oidc_sub: string }>(
+        `SELECT id, oidc_sub FROM users WHERE id IN (${marks})`,
       )
-      .get(id)
+      .all(...requesterIds)
+    return new Map(rows.map((row) => [row.id, row.oidc_sub]))
+  }
 
   function audit(booking: BookingRow, action: string, details: Record<string, unknown>): void {
     recordAudit(db, {
@@ -145,6 +161,15 @@ export function createBookingReconciler(options: BookingReconcilerOptions): Book
     const row = markBookingOrphaned(db, booking.id, now)
     if (booking.orphaned_at === null) audit(booking, 'resource_booking.orphaned', { reason })
     return row?.reconcile_attempts ?? booking.reconcile_attempts + 1
+  }
+
+  /** Straight to the manager queue: the attempts jump to the limit, so no further look counts. */
+  function sendToManagers(booking: BookingRow, reason: string, extra: object, now: Date): void {
+    let attempts = booking.reconcile_attempts
+    while (attempts < maxAttempts) {
+      attempts = markBookingOrphaned(db, booking.id, now)?.reconcile_attempts ?? maxAttempts
+    }
+    audit(booking, 'resource_booking.orphaned', { reason, ...extra })
   }
 
   async function cancel(booking: BookingRow, now: Date): Promise<void> {
@@ -172,41 +197,29 @@ export function createBookingReconciler(options: BookingReconcilerOptions): Book
     if (others.length > MAX_CALENDARS_SEARCHED) return 'unreadable'
     for (const path of others) {
       const found = await reader.findEvent(principal, path, booking.event_uid)
-      if (found.kind === 'error') return 'unreadable'
+      // Not being allowed to look is not the event being absent.
+      if (found.kind === 'error' || found.kind === 'forbidden') return 'unreadable'
       if (found.kind !== 'found') continue
       const outcome = matchEvent(booking, found.objects, new Date(booking.created_at), now)
       if (outcome === 'gone') continue
-      const target = db
-        .prepare<[string, number], { id: number }>(
-          'SELECT id FROM calendars WHERE collection_path = ? AND owner_id = ?',
-        )
-        .get(path, booking.requester_id)
-      if (outcome === 'unchanged' && target) {
-        setBookingEvent(db, booking.id, target.id, booking.event_uid)
-        return 'unchanged'
+      if (outcome === 'unchanged') {
+        if (path.length > MAX_PATH_LENGTH) return 'moved'
+        setBookingEvent(db, booking.id, path, booking.event_uid)
       }
-      // Moved to a calendar the app cannot point at, or changed on the way: ambiguous.
-      return outcome === 'unchanged' ? 'moved' : outcome
+      return outcome
     }
     return 'gone'
   }
 
-  async function lookAt(
-    booking: BookingRow,
-    calendar: CalendarInfo,
-    principal: string,
-    now: Date,
-  ): Promise<Outcome> {
-    const found = await reader.findEvent(principal, calendar.collection_path, booking.event_uid)
+  async function lookAt(booking: BookingRow, principal: string, now: Date): Promise<Outcome> {
+    const path = booking.event_calendar_path
+    const found = await reader.findEvent(principal, path, booking.event_uid)
     if (found.kind === 'error') return 'unreadable'
-    if (found.kind === 'gone') return 'gone'
-    if (found.kind === 'absent') {
-      return searchElsewhere(booking, principal, calendar.collection_path, now)
-    }
+    if (found.kind === 'forbidden') return LOST_FORBIDDEN
+    if (found.kind === 'no_collection') return LOST_MISSING
+    if (found.kind === 'absent') return searchElsewhere(booking, principal, path, now)
     const outcome = matchEvent(booking, found.objects, new Date(booking.created_at), now)
-    return outcome === 'gone'
-      ? searchElsewhere(booking, principal, calendar.collection_path, now)
-      : outcome
+    return outcome === 'gone' ? searchElsewhere(booking, principal, path, now) : outcome
   }
 
   /** Applies the outcome; true when the booking needs no further look. */
@@ -216,6 +229,15 @@ export function createBookingReconciler(options: BookingReconcilerOptions): Book
     summary: BookingReconcileSummary,
     now: Date,
   ): Promise<boolean> {
+    if (typeof outcome === 'object') {
+      // The stored stamp goes, so a share that comes back is read again; never "resolved".
+      clearSyncStamp(db, booking.event_calendar_path)
+      if (booking.reconcile_attempts >= maxAttempts) return false
+      sendToManagers(booking, 'calendar_unavailable', { cause: outcome.lost }, now)
+      summary.lost++
+      summary.orphaned++
+      return false
+    }
     if (outcome === 'wait') return false
     if (outcome === 'unchanged') {
       if (booking.orphaned_at !== null || booking.reconcile_attempts > 0) {
@@ -227,11 +249,7 @@ export function createBookingReconciler(options: BookingReconcilerOptions): Book
     if (outcome === 'moved') {
       // Ambiguous: straight to the manager queue, never an automatic cancel.
       if (booking.reconcile_attempts >= maxAttempts) return true
-      let attempts = booking.reconcile_attempts
-      while (attempts < maxAttempts) {
-        attempts = markBookingOrphaned(db, booking.id, now)?.reconcile_attempts ?? maxAttempts
-      }
-      audit(booking, 'resource_booking.orphaned', { reason: 'event_moved' })
+      sendToManagers(booking, 'event_moved', {}, now)
       summary.moved++
       summary.orphaned++
       return true
@@ -258,44 +276,50 @@ export function createBookingReconciler(options: BookingReconcilerOptions): Book
     const now = clock()
     const summary = emptySummary(false)
     const active = listBookingsInRange(db, { from: now.toISOString() }, ['pending', 'approved'])
-    const byCalendar = new Map<number, BookingRow[]>()
+    const subs = subsOf(
+      [...new Set(active.map((booking) => booking.requester_id))].sort((a, b) => a - b),
+    )
+    const byPath = new Map<string, BookingRow[]>()
     for (const booking of active) {
-      // No calendar: the event is not saved yet, or its calendar was deleted; not decidable here.
-      if (booking.event_calendar_id === null) continue
-      const list = byCalendar.get(booking.event_calendar_id) ?? []
+      const list = byPath.get(booking.event_calendar_path) ?? []
       list.push(booking)
-      byCalendar.set(booking.event_calendar_id, list)
+      byPath.set(booking.event_calendar_path, list)
     }
-    for (const [calendarId, bookings] of [...byCalendar].sort((a, b) => a[0] - b[0])) {
-      const calendar = calendarOf(calendarId)
-      if (!calendar || calendar.owner_sub === null) continue
-      const principal = calendar.owner_sub
-      const mine = bookings.filter((booking) => booking.requester_id === calendar.owner_id)
-      if (mine.length === 0) continue
-      const stamp = await reader.stamp(principal, calendar.collection_path)
+    for (const [path, bookings] of [...byPath].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+      const home = splitCollectionPath(path)?.owner
+      // Read as the requester, and only in the requester's own home.
+      const mine: BookingRow[] = []
+      for (const booking of bookings) {
+        if (home !== undefined && subs.get(booking.requester_id) === home) mine.push(booking)
+        else await apply(booking, LOST_FORBIDDEN, summary, now)
+      }
+      if (mine.length === 0 || home === undefined) continue
+      const stamp = await reader.stamp(home, path)
       if (stamp.kind === 'error') {
         for (const booking of mine) await apply(booking, 'unreadable', summary, now)
         continue
       }
-      if (stamp.kind === 'gone') {
-        for (const booking of mine) await apply(booking, 'gone', summary, now)
+      if (stamp.kind !== 'ok') {
+        const lost = stamp.kind === 'forbidden' ? LOST_FORBIDDEN : LOST_MISSING
+        for (const booking of mine) await apply(booking, lost, summary, now)
         continue
       }
       const retrying = mine.some(
         (booking) => booking.orphaned_at !== null && booking.reconcile_attempts < maxAttempts,
       )
-      if (!retrying && stamp.stamp !== '' && getSyncStamp(db, calendarId) === stamp.stamp) {
+      if (!retrying && stamp.stamp !== '' && getSyncStamp(db, path) === stamp.stamp) {
         summary.gated++
         continue
       }
       let resolved = true
       for (const booking of mine) {
         summary.looked++
-        const outcome = await lookAt(booking, calendar, principal, now)
+        const outcome = await lookAt(booking, home, now)
         if (!(await apply(booking, outcome, summary, now))) resolved = false
       }
-      if (resolved && stamp.stamp !== '') setSyncStamp(db, calendarId, stamp.stamp, now)
+      if (resolved && stamp.stamp !== '') setSyncStamp(db, path, stamp.stamp, now)
     }
+    pruneSyncStamps(db)
     return summary
   }
 

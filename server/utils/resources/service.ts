@@ -19,6 +19,7 @@ import { getResource, listResources } from '../../db/resources'
 import { effectiveResourceRight } from '../../db/resource-acl'
 import type { BookingRow, ResourceRight, ResourceRow } from '../../db/types'
 import { blockPath, buildAvailabilityBlock, type BlockStore } from './block'
+import { eventCalendarReader } from './event-calendar'
 
 export interface Actor {
   id: number
@@ -39,20 +40,16 @@ export interface ServiceDeps {
   requestId?: string
 }
 
-export type ServiceErrorCode = BookingErrorCode | 'forbidden' | 'invalid_event'
+export type ServiceErrorCode =
+  BookingErrorCode | 'forbidden' | 'invalid_event' | 'calendar_not_readable'
 export type ServiceResult<T> = ({ ok: true } & T) | { ok: false; code: ServiceErrorCode }
 
 export interface NewBookingRequest {
   resourceId: number
   startAt: string
   endAt: string
-  /** The booker's own calendar holding the event; null when the event is not saved yet. */
-  eventCalendarId: number | null
-  /**
-   * The same calendar by its stored path (`/owner/name/`), for a caller that does not know ids.
-   * One that is not the booker's own (a share) leaves the booking unlinked instead of refusing it.
-   */
-  eventCalendarPath?: string | null
+  /** The calendar holding the event, as the booker sees it: `/<booker's sub>/<name>/`. */
+  eventCalendarPath: string
   eventUid: string
 }
 
@@ -133,43 +130,31 @@ export async function repairBlocks(deps: ServiceDeps): Promise<{ synced: number;
   return { synced, failed }
 }
 
-function ownCalendarIdByPath(db: Database, actor: Actor, path: string): number | null {
-  const row = db
-    .prepare<[string, number], { id: number }>(
-      'SELECT id FROM calendars WHERE collection_path = ? AND owner_id = ?',
-    )
-    .get(path, actor.id)
-  return row?.id ?? null
-}
-
-function ownsCalendar(db: Database, actor: Actor, calendarId: number): boolean {
-  return (
-    db
-      .prepare<[number, number], { found: 1 }>(
-        'SELECT 1 AS found FROM calendars WHERE id = ? AND owner_id = ?',
-      )
-      .get(calendarId, actor.id) !== undefined
-  )
-}
-
 export async function requestBooking(
   deps: ServiceDeps,
   actor: Actor,
   input: NewBookingRequest,
 ): Promise<ServiceResult<{ booking: BookingRow }>> {
   const { db } = deps
-  const create = db.transaction((): ServiceResult<{ booking: BookingRow }> => {
-    // A resource the caller may not even read does not exist for them.
+  // A resource the caller may not even read does not exist for them.
+  const refusal = (): ServiceResult<never> | null => {
     const right = effectiveResourceRight(db, input.resourceId, actor)
     if (!getResource(db, input.resourceId) || right === null) return fail('not_found')
-    if (!rightAtLeast(right, 'book')) return fail('forbidden')
-    // Only the booker's own calendar may be named, so a booking cannot point into a stranger's.
-    let eventCalendarId = input.eventCalendarId
-    if (input.eventCalendarPath) {
-      eventCalendarId = ownCalendarIdByPath(db, actor, input.eventCalendarPath)
-    } else if (eventCalendarId !== null && !ownsCalendar(db, actor, eventCalendarId)) {
-      return fail('invalid_event')
-    }
+    return rightAtLeast(right, 'book') ? null : fail('forbidden')
+  }
+  // The resource rights come first, so a hidden resource stays a 404. The calendar check is async
+  // (the path pre-check), so it runs before the transaction, which then looks at the rights again.
+  const early = refusal()
+  if (early) return early
+  // A booking points at a calendar of the booker's own home (a share shows up there too) that the
+  // booker can read; a path into a stranger's home is refused.
+  if (!input.eventCalendarPath.startsWith(`/${actor.sub}/`)) return fail('invalid_event')
+  if (!(await eventCalendarReader(db, actor)(input.eventCalendarPath))) {
+    return fail('calendar_not_readable')
+  }
+  const create = db.transaction((): ServiceResult<{ booking: BookingRow }> => {
+    const late = refusal()
+    if (late) return late
     const result = createBooking(
       db,
       {
@@ -177,7 +162,7 @@ export async function requestBooking(
         requesterId: actor.id,
         startAt: input.startAt,
         endAt: input.endAt,
-        eventCalendarId,
+        eventCalendarPath: input.eventCalendarPath,
         eventUid: input.eventUid,
       },
       { now: deps.now?.(), limits: deps.limits },

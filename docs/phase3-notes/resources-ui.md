@@ -19,16 +19,16 @@
 
 - Recurring events: new repeating events and edits with scope other than "this" are saved WITHOUT booking, with a message (marks cover a
   series). An occurrence ("This event") can get a booking; marks are not written for it.
-- Booking sends `eventCalendarPath` (`/caldav/<owner>/<name>/`; the browser knows calendars by path, not by DB id) and the server resolves the id. Several resources: only the first booked one is marked.
+- Booking sends `eventCalendarPath` (`/caldav/<owner>/<name>/`; the browser knows calendars by path, not by DB id) and the server stores the path (CHANGED at integration: no id; a share path `/caldav/<sub>/shared-<id>/` is sent as it is, and a calendar of another server is not booked). Several resources: only the first booked one is marked.
 - Refused booking: event stays saved; quick add shows the reasons and switches to a Close button (saving again would duplicate the event).
 - Own bookings are collected from `GET /api/resources/:id/bookings` for resources with book/manage right (N requests); a managed list is filtered to own requester id.
 
 ## Needs integration
 
-- A route listing all own bookings in one call would replace the N requests. DONE at integration: the body sends `eventCalendarPath` (not `eventCalendarId: null`) and the server resolves the booker's calendar by it.
+- A route listing all own bookings in one call would replace the N requests. DONE at integration: the body sends `eventCalendarPath` (not `eventCalendarId: null`) and the server stores it if the booker can read that calendar (no id any more).
 - design.md §5/§9: describe the page, availability display and the series rule. README: add `/resources/requests`.
 
-## Tests (written, NOT run)
+## Tests (run at integration, pass)
 
 `tests/resources-ui-availability.test.ts`, `resources-ui-updates.test.ts`, `resources-ui-flow.test.ts`, `e2e/resources-requests.spec.ts`.
 Existing specs/tests not edited; demo overflow menu and live menu unchanged for non-managers.

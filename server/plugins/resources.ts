@@ -69,9 +69,9 @@ export default defineNitroPlugin((nitroApp) => {
           log: (m) => console.warn(m),
         })
         const summary = await reconciler.run()
-        if (summary.cancelled > 0 || summary.moved > 0) {
+        if (summary.cancelled > 0 || summary.moved > 0 || summary.lost > 0) {
           console.warn(
-            `[resources] booking reconcile: ${summary.cancelled} cancelled, ${summary.moved} moved`,
+            `[resources] booking reconcile: ${summary.cancelled} cancelled, ${summary.moved} moved, ${summary.lost} calendar(s) not readable`,
           )
         }
         return true

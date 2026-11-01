@@ -50,7 +50,7 @@
   `applied_at`; add `resource_acl` and `calendar_bookings` bullets; "Built" paragraph: migration 006.
 - security-review §7.1: `applied_at` exists. §7.4: the unique slot is the approved-overlap trigger.
 
-## Tests (written, NOT run)
+## Tests (run at integration, pass)
 
 `tests/server/access-schema.test.ts` (new), `tests/server/db.test.ts` (table list needs migration
 005's `audit_log`; old resources/acl assertions rewritten).

@@ -17,7 +17,7 @@ Admin routes use only `defineAdminHandler`. Limit is checked BEFORE the userinfo
 - design.md §8 / security-review.md §7.3: audit log exists (table, append-only trigger, redaction, 8 KB cap), admin routes rate limited at ~60/min per sub; retention job may DELETE.
 - Schema agent: add `audit_log` to the expected table list in tests/server/db.test.ts and a row type if wanted.
 
-## Tests written, NOT run
+## Tests (run at integration, pass)
 
 tests/server/audit-log.test.ts, tests/server/admin-guard.test.ts.
 

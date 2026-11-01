@@ -44,14 +44,14 @@ function actor(id: number, sub: string, groups: string[] = []): Actor {
   return { id, sub, groups }
 }
 
-function slot(day: number, from = 9, to = 10): NewBookingRequest {
+function slot(day: number, from = 9, to = 10, who: Actor = alice): NewBookingRequest {
   const at = (hour: number) =>
     `2026-11-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:00:00Z`
   return {
     resourceId: resource.id,
     startAt: at(from),
     endAt: at(to),
-    eventCalendarId: null,
+    eventCalendarPath: `/${who.sub}/work/`,
     eventUid: `uid-${day}-${from}`,
   }
 }
@@ -143,7 +143,10 @@ describe('requestBooking', () => {
 
   it('hides a resource the caller cannot read', async () => {
     db.prepare("DELETE FROM resource_acl WHERE principal_type = 'authenticated'").run()
-    expect(await requestBooking(deps, bob, slot(5))).toEqual({ ok: false, code: 'not_found' })
+    expect(await requestBooking(deps, bob, slot(5, 9, 10, bob))).toEqual({
+      ok: false,
+      code: 'not_found',
+    })
     expect(listResourcesFor(db, bob)).toEqual([])
     expect(listResourcesFor(db, manager).map((view) => view.right)).toEqual(['manage'])
   })
@@ -178,36 +181,89 @@ describe('requestBooking', () => {
   it('refuses a slot that an approved booking holds', async () => {
     const first = await book(alice, slot(5))
     await acceptBooking(deps, manager, first.id)
-    expect(await requestBooking(deps, bob, slot(5, 9, 11))).toEqual({ ok: false, code: 'overlap' })
-  })
-
-  it('accepts only a calendar of the booker as the event calendar', async () => {
-    const insert = db.prepare(
-      "INSERT INTO calendars (name, kind, owner_id, collection_path) VALUES ('c', 'personal', ?, ?) RETURNING id",
-    )
-    const bobs = (insert.get(bob.id, '/bob/c/') as { id: number }).id
-    const alices = (insert.get(alice.id, '/alice/c/') as { id: number }).id
-    expect(await requestBooking(deps, alice, { ...slot(5), eventCalendarId: bobs })).toEqual({
+    expect(await requestBooking(deps, bob, slot(5, 9, 11, bob))).toEqual({
       ok: false,
-      code: 'invalid_event',
+      code: 'overlap',
     })
-    const ok = await requestBooking(deps, alice, { ...slot(5), eventCalendarId: alices })
-    expect(ok.ok).toBe(true)
   })
 
-  it('finds the calendar of the booker by its path and leaves any other unlinked', async () => {
-    const insert = db.prepare(
-      "INSERT INTO calendars (name, kind, owner_id, collection_path) VALUES ('c', 'personal', ?, ?) RETURNING id",
+  describe('the calendar of the event', () => {
+    function sharedCalendar(permission: string, principalType = 'user', principal = 'sub-alice') {
+      const id = db
+        .prepare(
+          "INSERT INTO calendars (name, kind, owner_id, collection_path) VALUES ('c', 'personal', ?, '/sub-bob/c/') RETURNING id",
+        )
+        .pluck()
+        .get(bob.id) as number
+      db.prepare(
+        'INSERT INTO calendar_acl (calendar_id, principal_type, principal, permission) VALUES (?, ?, ?, ?)',
+      ).run(id, principalType, principal, permission)
+      return id
+    }
+    const from = (eventCalendarPath: string, day = 5) => ({ ...slot(day), eventCalendarPath })
+
+    it('stores the path of an own calendar discovery has not seen yet, as given', async () => {
+      const booking = await book(alice, from('/sub-alice/Büro new/'))
+      expect(booking.event_calendar_path).toBe('/sub-alice/Büro new/')
+    })
+
+    it.each(['read', 'write'])(
+      'accepts a share with %s access under its share name',
+      async (permission) => {
+        const id = sharedCalendar(permission)
+        const booking = await book(alice, from(`/sub-alice/shared-${id}/`))
+        expect(booking.event_calendar_path).toBe(`/sub-alice/shared-${id}/`)
+      },
     )
-    insert.get(bob.id, '/bob/c/')
-    const alices = (insert.get(alice.id, '/alice/c/') as { id: number }).id
-    const linked = await book(alice, { ...slot(5), eventCalendarPath: '/alice/c/' })
-    expect(linked.event_calendar_id).toBe(alices)
-    // A calendar of someone else and a path nobody has: the booking works, the event is not followed.
-    const strangers = await book(alice, { ...slot(6), eventCalendarPath: '/bob/c/' })
-    expect(strangers.event_calendar_id).toBeNull()
-    const unknown = await book(alice, { ...slot(7), eventCalendarPath: '/alice/none/' })
-    expect(unknown.event_calendar_id).toBeNull()
+
+    it('accepts a group share through the groups of the booker', async () => {
+      const id = sharedCalendar('read', 'group', 'staff')
+      const path = `/sub-alice/shared-${id}-staff/`
+      expect(await requestBooking(deps, alice, from(path))).toEqual({
+        ok: false,
+        code: 'calendar_not_readable',
+      })
+      const member = { ...alice, groups: ['staff'] }
+      expect((await book(member, from(path))).event_calendar_path).toBe(path)
+    })
+
+    it('refuses a share that only shows free/busy', async () => {
+      const id = sharedCalendar('free_busy')
+      expect(await requestBooking(deps, alice, from(`/sub-alice/shared-${id}/`))).toEqual({
+        ok: false,
+        code: 'calendar_not_readable',
+      })
+    })
+
+    it('refuses a share nobody gave to the booker and one that does not exist', async () => {
+      const id = sharedCalendar('read', 'user', 'sub-carol')
+      for (const path of [`/sub-alice/shared-${id}/`, '/sub-alice/shared-999/']) {
+        expect(await requestBooking(deps, alice, from(path))).toEqual({
+          ok: false,
+          code: 'calendar_not_readable',
+        })
+      }
+      expect(db.prepare('SELECT COUNT(*) AS n FROM calendar_bookings').get()).toEqual({ n: 0 })
+    })
+
+    it('refuses a path in the home of somebody else', async () => {
+      expect(await requestBooking(deps, alice, from('/sub-bob/c/'))).toEqual({
+        ok: false,
+        code: 'invalid_event',
+      })
+      expect(await requestBooking(deps, alice, from('/sub-alice-2/c/'))).toEqual({
+        ok: false,
+        code: 'invalid_event',
+      })
+    })
+
+    it('answers not_found for a hidden resource before it looks at the calendar', async () => {
+      db.prepare("DELETE FROM resource_acl WHERE principal_type = 'authenticated'").run()
+      expect(await requestBooking(deps, bob, from('/sub-alice/c/'))).toEqual({
+        ok: false,
+        code: 'not_found',
+      })
+    })
   })
 })
 
@@ -289,7 +345,7 @@ describe('who may change a booking', () => {
   it('stops a manager cancelling the booking of someone else when the setting is off', async () => {
     const strict: ServiceDeps = { ...deps, managerCancel: false }
     const one = await book(alice, slot(5))
-    const two = await book(manager, slot(6))
+    const two = await book(manager, slot(6, 9, 10, manager))
     expect(await cancelBooking(strict, manager, one.id)).toEqual({ ok: false, code: 'forbidden' })
     expect(getBooking(db, one.id)?.status).toBe('pending')
     // Declining is still the manager's decision, and nobody loses the right to cancel their own.
@@ -311,8 +367,8 @@ describe('who may change a booking', () => {
 describe('accepting', () => {
   it('declines the overlapping pending bookings, reports and audits them', async () => {
     const winner = await book(alice, slot(5, 9, 11))
-    const loser = await book(bob, slot(5, 10, 12))
-    const apart = await book(bob, slot(5, 13, 14))
+    const loser = await book(bob, slot(5, 10, 12, bob))
+    const apart = await book(bob, slot(5, 13, 14, bob))
     const result = await acceptBooking(deps, manager, winner.id)
     expect(result.ok && result.declined.map((b) => b.id)).toEqual([loser.id])
     expect(getBooking(db, loser.id)?.status).toBe('declined')
@@ -327,7 +383,7 @@ describe('accepting', () => {
 
   it('gives two concurrent accepts of overlapping bookings one winner', async () => {
     const one = await book(alice, slot(5, 9, 11))
-    const two = await book(bob, slot(5, 10, 12))
+    const two = await book(bob, slot(5, 10, 12, bob))
     const results = await Promise.all([
       acceptBooking(deps, manager, one.id),
       acceptBooking(deps, manager, two.id),
@@ -339,7 +395,7 @@ describe('accepting', () => {
 
   it('leaves the database to refuse a second approval of the same slot', async () => {
     const one = await book(alice, slot(5, 9, 11))
-    const two = await book(bob, slot(5, 10, 12))
+    const two = await book(bob, slot(5, 10, 12, bob))
     await acceptBooking(deps, manager, one.id)
     expect(await acceptBooking(deps, manager, two.id)).toMatchObject({ ok: false })
   })
@@ -364,7 +420,7 @@ describe('a failing block store', () => {
   it('is repaired by syncBlock and repairBlocks, which can run again', async () => {
     failing = true
     const booking = await book(alice, slot(5))
-    const gone = await book(bob, slot(6))
+    const gone = await book(bob, slot(6, 9, 10, bob))
     await cancelBooking(deps, bob, gone.id)
     expect(puts.size).toBe(0)
 
@@ -389,7 +445,7 @@ describe('a failing block store', () => {
 describe('listBookingsFor', () => {
   it('gives a booker their own bookings and a manager all of them', async () => {
     const mine = await book(alice, slot(5))
-    const theirs = await book(bob, slot(6))
+    const theirs = await book(bob, slot(6, 9, 10, bob))
     expect(listBookingsFor(db, alice, resource.id)?.bookings.map((b) => b.id)).toEqual([mine.id])
     const all = listBookingsFor(db, manager, resource.id)
     expect(all?.manager).toBe(true)

@@ -8,9 +8,8 @@ import type {
   ResourceAvailability,
 } from '../../../shared/types/resources-api'
 import { MAX_AVAILABILITY_RANGE_DAYS } from '../../../shared/types/resources-api'
-import { USERS_GROUP } from '../group-sync/config'
 import { FieldErrors, finish, type Parsed } from '../api/validation'
-import { createPathPrecheck } from '../sharing/precheck'
+import { eventCalendarReader } from './event-calendar'
 import { listResourcesFor, type Actor } from './service'
 
 export const MAX_RESOURCE_IDS = 50
@@ -81,35 +80,8 @@ interface Row {
   end_at: string
   status: 'approved' | 'pending'
   event_uid: string
-  event_collection_path: string | null
+  event_calendar_path: string
   requester_name: string
-}
-
-/**
- * The caller's right to read a calendar by path. The pre-check also lets `free_busy` grants
- * through; those are narrowed away here, because free/busy must not reveal who booked.
- */
-function readableCalendars(db: Database, actor: Actor): (path: string) => Promise<boolean> {
-  const precheck = createPathPrecheck(db, {
-    groupsOf: async () => new Set([...actor.groups, USERS_GROUP]),
-    all: async () => new Map(),
-  })
-  const detailed = db.prepare<[string], { found: 1 }>(
-    `SELECT 1 AS found FROM calendar_acl a JOIN calendars c ON c.id = a.calendar_id
-     WHERE c.collection_path = ? AND a.permission <> 'free_busy' LIMIT 1`,
-  )
-  const cache = new Map<string, Promise<boolean>>()
-  return (path) => {
-    let answer = cache.get(path)
-    if (!answer) {
-      const own = path.startsWith(`/${actor.sub}/`)
-      answer = precheck(actor.sub, { method: 'GET', upstreamPath: path }).then(
-        (ok) => ok && (own || detailed.get(path) !== undefined),
-      )
-      cache.set(path, answer)
-    }
-    return answer
-  }
 }
 
 export async function listAvailability(
@@ -126,21 +98,19 @@ export async function listAvailability(
     const rows = db
       .prepare<unknown[], Row>(
         `SELECT b.id, b.resource_id, b.requester_id, b.start_at, b.end_at, b.status, b.event_uid,
-                c.collection_path AS event_collection_path,
+                b.event_calendar_path,
                 COALESCE(NULLIF(u.name, ''), u.username) AS requester_name
          FROM calendar_bookings b
          JOIN users u ON u.id = b.requester_id
-         LEFT JOIN calendars c ON c.id = b.event_calendar_id
          WHERE b.resource_id IN (${ids.map(() => '?').join(',')})
            AND b.status IN ('approved', 'pending') AND b.start_at < ? AND b.end_at > ?
          ORDER BY b.start_at, b.id`,
       )
       .all(...ids, query.to, query.from)
-    const canRead = readableCalendars(db, actor)
+    const canRead = eventCalendarReader(db, actor)
     for (const row of rows) {
       const mine = row.requester_id === actor.id
-      const detailed =
-        mine || (row.event_collection_path !== null && (await canRead(row.event_collection_path)))
+      const detailed = mine || (await canRead(row.event_calendar_path))
       const entry: AvailabilityEntry = {
         bookingId: row.id,
         start: row.start_at,

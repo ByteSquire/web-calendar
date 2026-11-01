@@ -253,8 +253,9 @@ Each must exist **before** the feature ships, with the tests listed.
 every admin mutation, the sharing writer and the group sync, never containing tokens; the gateway
 path pre-check below.
 
-_Status (2026-11-01):_ all of these are **built; tests written, not yet run** (no unit test, e2e
-test or migration of Phase 3 has been executed). `requireAdmin` is reached only through
+_Status (2026-11-01):_ all of these are **built; unit and e2e tests pass**, and migrations 005, 006
+and 008 ran on a copy of the dev database (which held no rows). Not yet run: the app as a whole
+against a real Kanidm and Radicale. `requireAdmin` is reached only through
 `defineAdminHandler` (`server/utils/api/admin-handler.ts`), which adds a per-`sub` rate limit of
 about 60 a minute before the userinfo call and an `audit()` helper. `audit_log` (migration 005) is
 append-only (a trigger aborts `UPDATE`; `DELETE` stays for a retention job), redacts keys that look
@@ -300,7 +301,7 @@ and Radicale's CSV is a silent authorization error in either direction.
 - Tests: fixture ACLs → expected shares; an invented share is removed; a non-UUID `sub` is
   refused; `/caldav/.sharing/**` stays `404`; end to end, bob gains `r` on alice's calendar and
   `PUT` gets `403`, then deleting the row empties his listing within one reconcile.
-  _Written, not run:_ `tests/server/sharing-reconcile.test.ts` (fixtures, invented share removed,
+  _Tests:_ `tests/server/sharing-reconcile.test.ts` (fixtures, invented share removed,
   replaced permission, deleted rule, unreachable, refused creates alarm once, invalid principal,
   response cap, backoff), `sharing-gateway-precheck.test.ts` (owner, grantee, stranger, methods,
   destination, `.sharing` `404`), `sharing-audit-job.test.ts`, `sharing-block-store.test.ts`,
@@ -334,7 +335,7 @@ error.
   (names and count, no SPNs). Actor `system:group-sync`. Not yet done: the token's 90-day rotation
   runbook beyond `kanidm-setup.md`, and the LDAP bind.
 - Tests: fixture answers → exact file; an error or `null` leaves the file unchanged; the rename is
-  atomic; a removed member is gone after one run; the token never appears in logs. _Written, not run:_
+  atomic; a removed member is gone after one run; the token never appears in logs. _Tests:_
   `tests/server/group-sync-file.test.ts`, `-kanidm.test.ts`, `-service.test.ts` and
   `tests/validate-config.test.ts`.
 
@@ -347,7 +348,7 @@ because Radicale answers `403`, not because the app guesses. Preference refs are
 turned into a URL or path without `resolveRequestUrl` or the gateway. Tests: a forged `isAdmin` in
 the body → `403`; an admin who lost the group → `403`; an audit row per mutation.
 
-_Built (tests written, not yet run):_ the routes `POST /api/admin/views`, `PUT`/`DELETE
+_Built (unit tests pass):_ the routes `POST /api/admin/views`, `PUT`/`DELETE
 /api/admin/views/:id` and the access administration routes are all `defineAdminHandler`, so the
 server enforces the admin check and hiding the controls is cosmetic. Admin view statements are
 restricted to `is_admin = 1`, `ext:` refs are refused per field, and refs are shape-checked only,
@@ -378,7 +379,7 @@ any leak from the block defeats FR-18.
   Details come from an API that checks the caller's access to the booking calendar first. _Built:_
   the block also carries `X-WEB-CALENDAR-BLOCK:<block_ref>` and `STATUS:TENTATIVE` while pending
   (the block reference is random and unique, not the booking id); the detail API is
-  `GET /api/resources/availability` (built, not run): a caller who cannot read the event's calendar
+  `GET /api/resources/availability` (built, tests pass): a caller who cannot read the event's calendar
   gets exactly `bookingId, start, end, status, blocked, mine`, and an event without a calendar is
   blocked. Residual: the check also takes `free_busy` grants and is imprecise for mixed grants.
 - Users get `f` (or `r`) on resource calendars; the API refuses `write` ACLs on resources.
@@ -397,10 +398,12 @@ any leak from the block defeats FR-18.
   definitively gone cancels, after 3 looks, audited as `system:resources` with
   `reason: 'event_removed'`. A manager cancels the booking of someone else only while
   `NUXT_RESOURCES_MANAGER_CANCEL` is not `false` (on by default); the requester always may. The
-  booking names its event calendar by path; the server accepts only a calendar the booker owns and
-  otherwise leaves the booking unlinked, so a booking cannot point into a stranger's calendar.
+  booking names its event calendar by path; the server accepts only a path in the booker's own home
+  that the booker can read (their own calendar, or a share with a `read` or `write` grant) and
+  otherwise answers 400 or 403, so a booking cannot point into a stranger's calendar. The reconcile
+  reads that path as the booker, so it cannot be used to read anything the booker cannot.
 - Tests: the block contains nothing else; a user with `f` cannot `GET` it; two concurrent bookings
-  → one wins; a booker cannot delete another's block; a non-reader gets "blocked". _Written, not run:_
+  → one wins; a booker cannot delete another's block; a non-reader gets "blocked". _Tests:_
   `tests/server/access-schema.test.ts`, `tests/server/resources-service.test.ts`,
   `resources-input.test.ts`, `resources-routes.test.ts`, `resources-availability.test.ts`,
   `resources-availability-routes.test.ts`, `resources-reconcile.test.ts`,

@@ -1590,6 +1590,13 @@ menu items and Edit and Delete only show a toast.
   640×400 (200 % of a 1280×800 window) and a 1280×400 window, in every view; it checks the
   page, the area that holds the view and the reach of every top-bar control. It does not check
   that no content inside the calendar is clipped.
+- _NFR-1 data:_ the demo has 9 calendars. Opening it with `?demo-load=busy` adds 8 more (17 in
+  all) and a busy day of 11 added entries (`app/data/mock-busy.ts`, read by `useMockData`, so only
+  where mock data is shown, never for a live calendar). `e2e/busy-day.spec.ts` checks the Split view
+  with it: each calendar has a band, every entry is on screen, none covers another, no sideways
+  page scroll, and a cut-off title opens in full in the entry sheet. At that density most titles
+  of one-hour entries are cut off with an ellipsis in the Day span (an hour is about 60 px wide);
+  the test does not judge that.
 
 **Step 4 — Sidebar (FR-21)**
 

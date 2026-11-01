@@ -144,8 +144,9 @@ out). Views appear at the **top of the sidebar**.
 
 - **FR-14** Access control supports **all** of these granularity levels:
   **per-user, per-team, per-role, per-calendar**, and **public / not-logged-in**
-  visibility. Admins manage who may access which calendar **in the app**; the app
-  turns those rules into the CalDAV backend's own access rules.
+  visibility _(public: planned, with the public view, FR-26 and FR-27)_. Admins manage
+  who may access which calendar **in the app**; the app turns those rules into the
+  CalDAV backend's own access rules.
 - **FR-15** The **CalDAV backend enforces** the rules, for every client (the web
   app and third-party clients alike), so users only see what they're permitted to
   see. Views that reference inaccessible calendars omit them.

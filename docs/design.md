@@ -922,7 +922,9 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   - Do **not** use `UDrawer`: it depends on `vaul-vue`, which is unmaintained and
     ships no license metadata (§12). Use `USlideover` and `UModal`.
   - Defaults are 32 px high (buttons, menu items, close buttons), below the 44 px
-    tap-target rule. Override the sizes before Step 8; not yet tested.
+    tap-target rule. The sizes are overridden; `e2e/a11y.spec.ts` and the settings, time zone,
+    event sheet and admin access specs check 44 px, but nothing checks the sidebar toggles, the
+    split view or the calendar grid.
   - Wrap the app in `<UApp>` and import Tailwind and Nuxt UI in the main CSS file.
   - Nuxt UI's default primary (blue 500) is 3.7:1 against white, below WCAG AA. The light scheme
     uses shade 600 (5.2:1) through `--ui-primary` in `main.css`; dark keeps the lighter shade.
@@ -1120,11 +1122,11 @@ volumes:
 Aligned with the requirements' delivery phasing (all requirements are in scope;
 this is the **order**):
 
-| Phase                        | Focus                                                                                 | Key requirements                                         | Design pieces                                                                                                                     |
-| ---------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **1 — UI shell / mock-up**   | The webpage + a mock-up of all UI (sidebar with views at top, view types incl. split) | FR-21…FR-25, FR-6, FR-20                                 | §9 (sidebar, view types, split view mock-up, mobile); trial S2                                                                    |
-| **2 — Core calendar + auth** | Calendar features, authentication, the CalDAV gateway (owner-only access)             | FR-7…FR-13, FR-30, FR-31, FR-3…FR-5, FR-20, FR-28, FR-29 | §6 (login, local JWT verification, app tokens), §7 (gateway, reads, writes, recurrence), §5 (users, tokens, calendars); S4, S6–S8 |
-| **3 — Organizational**       | Grouping/views, resources, sharing and access administration                          | FR-1…FR-2, FR-14…FR-19                                   | §8 (access rules, rules writer, sharing), §5 (views, resources, ACL); S5                                                          |
+| Phase                        | Focus                                                                                 | Key requirements                                                | Design pieces                                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **1 — UI shell / mock-up**   | The webpage + a mock-up of all UI (sidebar with views at top, view types incl. split) | FR-21…FR-25, FR-6, FR-20                                        | §9 (sidebar, view types, split view mock-up, mobile); trial S2                                                                    |
+| **2 — Core calendar + auth** | Calendar features, authentication, the CalDAV gateway (owner-only access)             | FR-7…FR-13, FR-30, FR-31, FR-3…FR-5, FR-20, FR-28, FR-29, FR-32 | §6 (login, local JWT verification, app tokens), §7 (gateway, reads, writes, recurrence), §5 (users, tokens, calendars); S4, S6–S8 |
+| **3 — Organizational**       | Grouping/views, resources, sharing and access administration                          | FR-1…FR-2, FR-14…FR-19                                          | §8 (access rules, rules writer, sharing), §5 (views, resources, ACL); S5                                                          |
 
 ### Phase 3 status (2026-11-01)
 

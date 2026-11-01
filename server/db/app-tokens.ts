@@ -148,6 +148,12 @@ export function revokeAppToken(db: Database, userId: number, id: number): boolea
   )
 }
 
+/** Deletes every one of the user's tokens at once (security review 2026-11-01, finding 3). Returns
+ *  how many were deleted. */
+export function revokeAllAppTokens(db: Database, userId: number): number {
+  return db.prepare('DELETE FROM app_tokens WHERE user_id = ?').run(userId).changes
+}
+
 /**
  * Checks the Basic-auth credentials of a CalDAV client. Returns the owner of the token, or null
  * for an unknown, expired or revoked token and when `username` is not the owner's name.

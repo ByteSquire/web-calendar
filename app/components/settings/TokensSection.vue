@@ -120,7 +120,18 @@
     />
 
     <template v-if="list">
-      <p v-if="!limit.reached" class="text-sm text-toned">{{ limit.message }}</p>
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <p v-if="!limit.reached" class="text-sm text-toned">{{ limit.message }}</p>
+        <UButton
+          v-if="list.tokens.length > 0"
+          label="Revoke all"
+          icon="i-lucide-shield-off"
+          color="neutral"
+          variant="outline"
+          :class="ERROR_TEXT"
+          @click="askRevokeAll"
+        />
+      </div>
       <ul v-if="list.tokens.length > 0" aria-label="Your app tokens" class="flex flex-col gap-2">
         <li
           v-for="token in list.tokens"
@@ -188,6 +199,18 @@
       :fallback="heading"
       @update:open="closeRevoke"
       @confirm="revokeToken"
+    />
+
+    <SettingsConfirmModal
+      :open="revokeAllOpen"
+      title="Revoke all app tokens?"
+      description="Every calendar app that uses one of your tokens is signed out at once. This cannot be undone."
+      confirm-label="Revoke all"
+      :busy="revokingAll"
+      :error="revokeAllError"
+      :fallback="heading"
+      @update:open="closeRevokeAll"
+      @confirm="revokeAllTokens"
     />
   </section>
 </template>
@@ -351,5 +374,37 @@ async function revokeToken() {
   notice.value = `Token “${target.label}” revoked.`
   revokeTarget.value = null
   revoking.value = false
+}
+
+// ---- Revoking every token (security review 2026-11-01, finding 3) ----------------------------
+
+const revokeAllOpen = ref(false)
+const revokingAll = ref(false)
+const revokeAllError = ref<string | null>(null)
+
+function askRevokeAll() {
+  revokeAllError.value = null
+  revokeAllOpen.value = true
+}
+
+function closeRevokeAll(open: boolean) {
+  if (!open) revokeAllOpen.value = false
+}
+
+async function revokeAllTokens() {
+  if (revokingAll.value) return
+  revokingAll.value = true
+  revokeAllError.value = null
+  try {
+    await api('/api/app-tokens', { method: 'DELETE' })
+  } catch (cause) {
+    revokeAllError.value = describeError(cause, 'revoke your app tokens')
+    revokingAll.value = false
+    return
+  }
+  tokens.update((current) => ({ ...current, tokens: [] }))
+  notice.value = 'All app tokens revoked.'
+  revokeAllOpen.value = false
+  revokingAll.value = false
 }
 </script>

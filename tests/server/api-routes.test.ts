@@ -8,6 +8,7 @@ import { createApp, createRouter, toWebHandler, type EventHandler, type H3Event 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import icalData from '../../server/api/ical-subscriptions/[id]/data.get'
 import appTokensDelete from '../../server/api/app-tokens/[id].delete'
+import appTokensDeleteAll from '../../server/api/app-tokens/index.delete'
 import appTokensGet from '../../server/api/app-tokens/index.get'
 import appTokensPost from '../../server/api/app-tokens/index.post'
 import calendarPrefsDelete from '../../server/api/calendar-prefs/index.delete'
@@ -71,6 +72,7 @@ const ROUTES: [method: string, path: string, handler: EventHandler][] = [
   ['GET', '/api/app-tokens', appTokensGet],
   ['POST', '/api/app-tokens', appTokensPost],
   ['DELETE', '/api/app-tokens/:id', appTokensDelete],
+  ['DELETE', '/api/app-tokens', appTokensDeleteAll],
   ['GET', '/api/views', viewsGet],
   ['POST', '/api/views', viewsPost],
   ['PUT', '/api/views/:id', viewsPut],
@@ -469,6 +471,19 @@ describe('app tokens', () => {
     expect((await call('bob', 'GET', '/api/app-tokens')).body.tokens).toEqual([])
     expect((await call('bob', 'DELETE', `/api/app-tokens/${created.body.id}`)).status).toBe(404)
     expect((await call('alice', 'GET', '/api/app-tokens')).body.tokens).toHaveLength(1)
+  })
+
+  it("revoke-all removes only the caller's own tokens (security review 2026-11-01)", async () => {
+    await call('alice', 'POST', '/api/app-tokens', { label: 'phone' })
+    await call('alice', 'POST', '/api/app-tokens', { label: 'laptop' })
+    const bobToken = await call('bob', 'POST', '/api/app-tokens', { label: 'bob only' })
+
+    const all = await call('alice', 'DELETE', '/api/app-tokens')
+    expect(all.status).toBe(200)
+    expect(all.body).toEqual({ revoked: 2 })
+    expect((await call('alice', 'GET', '/api/app-tokens')).body.tokens).toEqual([])
+    expect((await call('bob', 'GET', '/api/app-tokens')).body.tokens).toHaveLength(1)
+    expect((await call('bob', 'DELETE', `/api/app-tokens/${bobToken.body.id}`)).status).toBe(204)
   })
 
   it.each(['abc', '0', '-1', '1.5', '99999999999999999999'])(

@@ -7,6 +7,7 @@ import {
   listTokens,
   MAX_TOKEN_LABEL_LENGTH,
   parseTokenInput,
+  revokeAllTokens,
   revokeToken,
 } from '../../server/utils/api/app-tokens'
 import { apiError, createUsers, openTestDb } from './api-fixtures'
@@ -188,6 +189,32 @@ describe('revokeToken', () => {
       createToken(db, KEY, alice, { label: `t${i}` }, NOW),
     )
     revokeToken(db, alice, String(tokens[0]!.id))
+    expect(() => createToken(db, KEY, alice, { label: 'again' }, NOW)).not.toThrow()
+  })
+})
+
+describe('revokeAllTokens', () => {
+  it('revokes every own token at once, which stops them all working', () => {
+    const phone = createToken(db, KEY, alice, { label: 'phone' }, NOW)
+    const laptop = createToken(db, KEY, alice, { label: 'laptop' }, NOW)
+    expect(revokeAllTokens(db, alice)).toEqual({ revoked: 2 })
+    expect(listTokens(db, alice, NOW).tokens).toEqual([])
+    expect(verifyAppToken(db, KEY, 'alice', phone.token, NOW)).toBeNull()
+    expect(verifyAppToken(db, KEY, 'alice', laptop.token, NOW)).toBeNull()
+  })
+
+  it('leaves another user untouched and reports zero for an empty list', () => {
+    const mine = createToken(db, KEY, alice, { label: 'alice' }, NOW)
+    expect(revokeAllTokens(db, bob)).toEqual({ revoked: 0 })
+    expect(listTokens(db, alice, NOW).tokens).toHaveLength(1)
+    expect(verifyAppToken(db, KEY, 'alice', mine.token, NOW)).not.toBeNull()
+  })
+
+  it('frees every slot, so a full user can create tokens again', () => {
+    Array.from({ length: MAX_APP_TOKENS_PER_USER }, (_, i) =>
+      createToken(db, KEY, alice, { label: `t${i}` }, NOW),
+    )
+    revokeAllTokens(db, alice)
     expect(() => createToken(db, KEY, alice, { label: 'again' }, NOW)).not.toThrow()
   })
 })

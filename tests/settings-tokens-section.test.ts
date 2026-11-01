@@ -417,3 +417,59 @@ describe('revoking a token', () => {
     ])
   })
 })
+
+describe('revoking every token (security review 2026-11-01, finding 3)', () => {
+  beforeEach(async () => {
+    await mountSection((api) => {
+      api.tokens = [token(2, { label: 'DAVx5' }), token(1, { label: 'Thunderbird' })]
+    })
+  })
+
+  it('asks first, with the focus on Cancel, and revokes nothing on Cancel', async () => {
+    const opener = requireButton('Revoke all')
+    opener.focus()
+    opener.click()
+    await vi.waitFor(() => expect(dialog()).not.toBeNull())
+    expect(dialog()!.textContent).toContain('Revoke all app tokens?')
+    expect(dialog()!.textContent).toContain('This cannot be undone.')
+    await vi.waitFor(() => expect(document.activeElement?.textContent?.trim()).toBe('Cancel'))
+
+    button('Cancel', dialog()!)!.click()
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(backend.calls.filter((call) => call.method === 'DELETE')).toHaveLength(0)
+    expect(rows('Your app tokens')).toHaveLength(2)
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('revokes every token on confirm, empties the list and announces it', async () => {
+    requireButton('Revoke all').click()
+    await vi.waitFor(() => expect(dialog()).not.toBeNull())
+    button('Revoke all', dialog()!)!.click()
+
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(backend.callsTo('DELETE', '/api/app-tokens')).toHaveLength(1)
+    expect(backend.tokens).toEqual([])
+    expect(document.body.textContent).toContain('You have no app tokens yet.')
+    expect(statusText()).toContain('All app tokens revoked.')
+    expect(button('Revoke all')).toBeUndefined()
+    expect(document.activeElement?.textContent?.trim()).toBe('App tokens')
+  })
+
+  it('keeps the dialog open with the reason when it fails, and the tokens stay listed', async () => {
+    backend.override = (call) => (call.method === 'DELETE' ? reply.error(500, 'boom') : undefined)
+    requireButton('Revoke all').click()
+    await vi.waitFor(() => expect(dialog()).not.toBeNull())
+    button('Revoke all', dialog()!)!.click()
+    await vi.waitFor(() => expect(dialog()!.querySelector('[role="alert"]')).not.toBeNull())
+    expect(dialog()!.textContent).toContain('Could not revoke your app tokens.')
+    expect(rows('Your app tokens')).toHaveLength(2)
+  })
+})
+
+describe('with no tokens', () => {
+  it('has nothing to revoke, so it offers no "Revoke all"', async () => {
+    await mountSection()
+    expect(rows('Your app tokens')).toHaveLength(0)
+    expect(button('Revoke all')).toBeUndefined()
+  })
+})

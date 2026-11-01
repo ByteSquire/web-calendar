@@ -6,6 +6,7 @@ import {
   createAppToken,
   listAppTokens,
   MAX_APP_TOKENS_PER_USER,
+  revokeAllAppTokens,
   revokeAppToken,
   type AppTokenSummary,
   type TokenHashKeys,
@@ -81,4 +82,9 @@ export function createToken(
 export function revokeToken(db: Database, userId: number, rawId: unknown): void {
   const id = parseId(rawId)
   if (!revokeAppToken(db, userId, id)) throw notFound()
+}
+
+/** Revokes every one of the caller's tokens at once (security review 2026-11-01, finding 3). */
+export function revokeAllTokens(db: Database, userId: number): { revoked: number } {
+  return { revoked: revokeAllAppTokens(db, userId) }
 }

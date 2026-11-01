@@ -146,6 +146,11 @@ export class FakeBackend {
       this.tokens = [token(created.id, { label, expiresAt: created.expiresAt }), ...this.tokens]
       return reply.json(created, 201)
     }
+    if (method === 'DELETE' && path === '/api/app-tokens') {
+      const revoked = this.tokens.length
+      this.tokens = []
+      return reply.json({ revoked })
+    }
     if (method === 'DELETE' && tokenId) {
       const id = Number(tokenId[1])
       if (!this.tokens.some((item) => item.id === id)) return reply.error(404, 'Not found')

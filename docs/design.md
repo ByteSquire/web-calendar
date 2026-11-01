@@ -816,8 +816,10 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   API token lists members as SPNs only and cannot read persons, so SPN (`preferred_username`) is
   mapped to `sub` from users who signed in once. A member who never signed in makes the run fail
   (the warning names up to five SPNs) and the file stays stale until the next interval after their
-  first sign-in; nested groups are unresolvable the same way, and if `preferred_username` is not
-  the SPN nothing resolves. LDAP (`entryuuid`) would remove the limit. A first look at a user's
+  first sign-in; nested groups are unresolvable the same way. `preferred_username` is the SPN, or
+  the short name (the documented `prefer-short-username`) when the member's domain is the Kanidm
+  domain, the host of the issuer or a parent of it (`createUsersTableResolver`); otherwise nothing
+  resolves. LDAP (`entryuuid`) would remove the limit. A first look at a user's
   groups is not a change; a differing later claim triggers a run (debounce 2 s). Alarms: `401`/`403`
   logs at error level every run and records `group_sync.unauthorized` once per streak; every fifth
   consecutive failure logs at error level and records `group_sync.failing`; the first success

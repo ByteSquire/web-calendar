@@ -106,7 +106,11 @@ the first good run afterwards writes `group_sync.recovered`.
 
 **Members and UUIDs.** Kanidm lists group members as SPNs and the token cannot read persons, so the app
 maps each SPN to the `sub` UUID with its own `users` table (the `preferred_username` of the sign-in).
-A member who has never signed in makes the run fail, with a warning naming them, until they do.
+With `prefer-short-username` (set above) that name is `alice`, not `alice@idm.example.org`, so a
+member also matches the user with the short name, but only when the member's domain is the Kanidm
+domain: the host of `NUXT_OIDC_ISSUER` has to be that domain or a subdomain of it. An
+`alice@other.example` never matches `alice`. A member who has never signed in makes the run fail,
+with a warning naming them, until they do.
 
 **Target state: the LDAP read-only bind.** Kanidm's LDAP interface is read-only by construction and a
 service-account bind there needs no `idm_group_admins`; it also returns `entryuuid` for members. The

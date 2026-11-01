@@ -31,7 +31,7 @@ export default defineNitroPlugin((nitroApp) => {
 
   const service = createGroupSyncService({
     client: createKanidmClient({ origin, token }),
-    resolver: () => createUsersTableResolver(getDb()),
+    resolver: () => createUsersTableResolver(getDb(), { issuer: config.oidc.issuer }),
     ports: createAppPorts(getDb, console),
     log: console,
     file: groupFilePath(config.groupSync.file, process.env.NODE_ENV),

@@ -342,6 +342,80 @@ describe('createUsersTableResolver', () => {
   })
 })
 
+describe('createUsersTableResolver: short names (prefer-short-username)', () => {
+  const ISSUER = 'https://idm.example.org/oauth2/openid/web-calendar'
+  let db: Database
+  beforeEach(() => {
+    db = openTestDb()
+  })
+  afterEach(() => db.close())
+  const resolveOne = (spn: string, issuer: string = ISSUER) =>
+    createUsersTableResolver(db, { issuer })([spn])
+
+  it('maps a member of the Kanidm domain to the user with the short name', () => {
+    upsertUser(db, { sub: ALICE, username: 'alice' })
+    expect(resolveOne('alice@idm.example.org')).toEqual({
+      ok: true,
+      value: new Map([['alice@idm.example.org', ALICE]]),
+    })
+    // Case does not matter, as with the whole SPN.
+    expect(resolveOne('Alice@IDM.example.org').ok).toBe(true)
+  })
+
+  it('accepts the domain of Kanidm when the issuer is a host within it', () => {
+    upsertUser(db, { sub: ALICE, username: 'alice' })
+    const issuer = 'https://login.idm.example.org/oauth2/openid/web-calendar'
+    expect(resolveOne('alice@idm.example.org', issuer).ok).toBe(true)
+  })
+
+  it('does not match a member of another domain with the same short name', () => {
+    upsertUser(db, { sub: ALICE, username: 'alice' })
+    for (const spn of [
+      'alice@evil.example',
+      'alice@example.org', // a parent of the issuer's host is a domain, but not the one of Kanidm
+      'alice@notidm.example.org',
+      'alice@sub.idm.example.org', // a child domain does not cover the issuer's host
+    ]) {
+      const result = resolveOne(spn)
+      expect(result.ok, spn).toBe(spn === 'alice@example.org')
+    }
+  })
+
+  it('does not match a short name without an issuer, or with one that is no URL', () => {
+    upsertUser(db, { sub: ALICE, username: 'alice' })
+    expect(resolveOne('alice@idm.example.org', 'not a url').ok).toBe(false)
+    expect(resolveOne('alice@idm.example.org', '').ok).toBe(false)
+    expect(createUsersTableResolver(db)(['alice@idm.example.org']).ok).toBe(false)
+    expect(createUsersTableResolver(db, {})(['alice@idm.example.org']).ok).toBe(false)
+  })
+
+  it('prefers the user who has the whole SPN as a name', () => {
+    upsertUser(db, { sub: ALICE, username: 'alice' })
+    upsertUser(db, { sub: BOB, username: 'alice@idm.example.org' })
+    expect(resolveOne('alice@idm.example.org')).toEqual({
+      ok: true,
+      value: new Map([['alice@idm.example.org', BOB]]),
+    })
+  })
+
+  it('refuses a member without a name or a domain, and an SPN with more than one @', () => {
+    upsertUser(db, { sub: ALICE, username: 'alice' })
+    for (const spn of ['@idm.example.org', 'alice@', 'a@b@idm.example.org']) {
+      expect(resolveOne(spn).ok, spn).toBe(false)
+    }
+  })
+
+  it('still names the members nobody knows', () => {
+    upsertUser(db, { sub: ALICE, username: 'alice' })
+    const result = createUsersTableResolver(db, { issuer: ISSUER })([
+      'alice@idm.example.org',
+      'carol@idm.example.org',
+    ])
+    expect(!result.ok && result.failure.message).toContain('carol@idm.example.org')
+    expect(!result.ok && result.failure.message).not.toContain('alice')
+  })
+})
+
 describe('config', () => {
   it('clamps the interval to 1..300 and falls back to 60', () => {
     expect(clampIntervalSec('60')).toBe(60)

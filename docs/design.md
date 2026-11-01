@@ -1461,7 +1461,13 @@ off, which the reconcile already ignores; a calendar owned by a member and named
   landscape (touch), tablet, desktop, phone and desktop in dark mode, WebKit phone. Covered: no
   sideways page scroll and no console errors in every view, the controls by tap and keyboard,
   focus return after dialogs, the split view's bands, and an axe scan (WCAG 2.1 A/AA) of every view,
-  the quick-add dialog and the event sheet. The suite found real problems the unit tests could not
+  the quick-add dialog and the event sheet. **Known gap against WCAG 2.1 AA** (review
+  2026-11-01): the scan allow-lists, by selector, three `aria-required-children` findings inside
+  FullCalendar's own markup (the pannable time grid and the resource timeline hang their cells off
+  `aria-owns` lists, the year view lists months without list items); they need a change in
+  FullCalendar, not in this app. Two findings of the same scan, `label-content-name-mismatch`
+  (WCAG 2.5.3) on the column headers and the month titles, are fixed in `app/utils/fullcalendar.ts`
+  (`navLinkName`, `nameDayHeader`). The suite found real problems the unit tests could not
   (the scroll grid error was reproduced by removing the plugin; the event sheet's description list;
   scrollers without a tab stop). Playwright (Apache-2.0) and axe-core (MPL-2.0) are dev-only. Known
   upstream findings inside FullCalendar's markup are listed with their reasons in
@@ -1578,6 +1584,10 @@ menu items and Edit and Delete only show a toast.
 - _Acceptance:_ the three regions render; **no horizontal page scroll** at
   360×640, 640×360 (landscape), 768×1024 and 1280×800; the sidebar toggle is
   reachable and closes the drawer; content is not clipped at 200 % zoom.
+  `e2e/screen-sizes.spec.ts` sweeps 320×256 (the size WCAG 1.4.10 names for 400 %) to 2560×1440,
+  640×400 (200 % of a 1280×800 window) and a 1280×400 window, in every view; it checks the
+  page, the area that holds the view and the reach of every top-bar control. It does not check
+  that no content inside the calendar is clipped.
 
 **Step 4 — Sidebar (FR-21)**
 

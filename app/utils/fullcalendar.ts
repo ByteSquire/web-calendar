@@ -52,6 +52,41 @@ export const SCHEDULER_LICENSE_KEY = 'AGPL-My-Frontend-And-Backend-Are-Open-Sour
  * the viewer's display zone (`useDisplayTimeZone()`, FR-29). Editing stays off in Phase 1: `editable` and
  * `selectable` are the master switches, the rest repeats them for events and drops.
  */
+// ---- Accessible names of date links (WCAG 2.5.3, Label in Name) ----
+//
+// FullCalendar names a link to a date after the date and not after the text on screen: a month
+// title shown as "Sep" is named "Go to 2026-09", and a column header shown as "Mon 26" is named
+// "26 October 2026". A voice-control user who says what they see ("click Sep") then misses the
+// link. Neither name has an option, so the hint is a function and the header is named when it is
+// mounted. What is on screen does not change.
+
+const MONTH_ISO = /^(\d{4})-(\d{2})$/
+const MONTH_AND_YEAR = new Intl.DateTimeFormat('en-GB', {
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+
+/** The name of a link to a date, from FullCalendar's text for it ("2026-09", "26 October 2026"). */
+export function navLinkName(dateStr: string): string {
+  const month = MONTH_ISO.exec(dateStr)
+  if (!month) return `Go to ${dateStr}`
+  const first = new Date(Date.UTC(Number(month[1]), Number(month[2]) - 1, 1))
+  return `Go to ${MONTH_AND_YEAR.format(first)}`
+}
+
+/**
+ * Puts the text on screen at the start of the name of a column header link, unless the name holds
+ * it already: "Mon 26" and "26 October 2026" become "Mon 26, 26 October 2026".
+ */
+export function nameDayHeader(cell: HTMLElement): void {
+  const link = cell.matches('[aria-label]') ? cell : cell.querySelector<HTMLElement>('[aria-label]')
+  const shown = link?.textContent?.replace(/\s+/g, ' ').trim()
+  const name = link?.getAttribute('aria-label')
+  if (!link || !shown || !name || name.includes(shown)) return
+  link.setAttribute('aria-label', `${shown}, ${name}`)
+}
+
 export const BASE_CALENDAR_OPTIONS = {
   // AGPLv3 key for projects whose frontend and backend are open source (design §2). The Premium
   // scroll grid, which lets narrow day columns pan sideways, and the split view's resource timeline
@@ -70,6 +105,8 @@ export const BASE_CALENDAR_OPTIONS = {
   droppable: false,
   height: '100%',
   navLinks: true,
+  navLinkHint: navLinkName,
+  dayHeaderDidMount: ({ el }: { el: HTMLElement }) => nameDayHeader(el),
   nowIndicator: true,
   scrollTime: '07:00:00',
   moreLinkClick: 'popover',

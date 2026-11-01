@@ -2,19 +2,10 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { TODAY, VIEW_TYPES, isTouch, openApp, press, switchView } from './helpers'
 
-// Problems inside FullCalendar's own markup that no option reaches. axe reports them by selector;
-// each entry names the rule, the selectors it applies to and why. Anything else fails the test.
+// Problems inside FullCalendar's own markup that neither an option nor a hook reaches (design §12,
+// "Known gap against WCAG 2.1 AA"). axe reports them by selector; each entry names the rule, the
+// selectors it applies to and why. Anything else fails the test.
 const UPSTREAM: { rule: string; target: RegExp; why: string }[] = [
-  {
-    rule: 'label-content-name-mismatch',
-    target: /^div\[aria-label="\d{1,2} \w+ \d{4}"\]$/,
-    why: 'time-grid day header links are named with the long date and ignore dayHeaderFormat, so the visible "Mon 26" is not part of the name',
-  },
-  {
-    rule: 'label-content-name-mismatch',
-    target: /^div\[aria-label="Go to \d{4}-\d{2}"\]$/,
-    why: 'month titles of the year view are named "Go to 2026-09" while the page shows "Sep"',
-  },
   {
     rule: 'aria-required-children',
     target: /^div\[aria-rowindex="\d+"\]$/,

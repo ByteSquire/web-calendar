@@ -28,6 +28,5 @@ gone, stop and ask.
 
 - Commit only when asked. End the message with the trailer already in `git log`:
   `Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>`
-- Never push.
 - Run the full lint, typecheck, unit and e2e suites only when the user says so.
 - End every reply with what was skipped or not verified.

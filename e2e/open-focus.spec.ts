@@ -36,12 +36,15 @@ test.describe('opening a dialog on a touch screen', () => {
   test('the event sheet and the sidebar leave their buttons alone', async ({ page }) => {
     await openApp(page)
 
-    await press(page.getByRole('button', { name: 'Open sidebar' }))
-    const sidebar = page.getByRole('dialog', { name: 'Views and calendars' })
-    await expect(sidebar).toBeVisible()
-    await expect(sidebar).toBeFocused()
-    await page.keyboard.press('Escape')
-    await expect(sidebar).toBeHidden()
+    // From 768 px the sidebar is a fixed column, not a drawer.
+    if ((page.viewportSize()?.width ?? 0) < 768) {
+      await press(page.getByRole('button', { name: 'Open sidebar' }))
+      const sidebar = page.getByRole('dialog', { name: 'Views and calendars' })
+      await expect(sidebar).toBeVisible()
+      await expect(sidebar).toBeFocused()
+      await page.keyboard.press('Escape')
+      await expect(sidebar).toBeHidden()
+    }
 
     await switchView(page, 'Week')
     await press(page.locator('[data-calendar-main]').getByText('Sprint planning').first())

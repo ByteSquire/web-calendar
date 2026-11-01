@@ -1,15 +1,16 @@
 <!--
-  Event details sheet: a bottom sheet on phones, a side panel on desktop. Open while
-  `selectedEventId` is set; closing (Escape, the close button, the backdrop) clears it. Blocked
-  events show "Busy" and the time only. On live data Edit and Delete open the dialogs of
+  Event details sheet: a bottom sheet on phones, a centered window (like quick-add) on desktop.
+  Open while `selectedEventId` is set; closing (Escape, the close button, the backdrop) clears it.
+  Blocked events show "Busy" and the time only. On live data Edit and Delete open the dialogs of
   EventWriteDialogs (for events the viewer may change; otherwise the buttons are disabled and the
   reason is written next to them). In the demo they are visible buttons that say that editing
   arrives with the real calendar service.
 -->
 <template>
-  <USlideover
+  <component
+    :is="isDesktop ? UModal : USlideover"
+    v-bind="isDesktop ? {} : { side: 'bottom' }"
     :open="selectedEvent !== null"
-    :side="isDesktop ? 'right' : 'bottom'"
     :title="shown?.title"
     :description="whenText"
     :transition="!reducedMotion"
@@ -114,11 +115,12 @@
         </div>
       </div>
     </template>
-  </USlideover>
+  </component>
   <EventWriteDialogs ref="dialogs" @done="selectEvent(null)" />
 </template>
 
 <script setup lang="ts">
+import { UModal, USlideover } from '#components'
 import type { CalendarEvent } from '../../shared/types/calendar'
 import { resourceIconName } from '~/utils/calendar-icons'
 import { buildEventDetails, type EventDetails } from '~/utils/event-display'

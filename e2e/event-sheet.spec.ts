@@ -15,8 +15,10 @@ test.describe('event sheet', () => {
     for (const name of ['Edit', 'Delete']) {
       const button = sheet.getByRole('button', { name })
       await expect(button).toBeVisible()
-      const box = await button.boundingBox()
-      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44)
+      // The window scales in while it opens: measure once it has settled.
+      await expect
+        .poll(async () => (await button.boundingBox())?.height ?? 0)
+        .toBeGreaterThanOrEqual(44)
     }
 
     await press(sheet.getByRole('button', { name: 'Edit' }))

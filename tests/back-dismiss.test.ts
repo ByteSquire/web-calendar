@@ -25,6 +25,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.useRealTimers()
   hosts.forEach((host) => host.unmount())
   hosts = []
   await settle()
@@ -95,6 +96,36 @@ describe('one overlay', () => {
       expect(sheet.open.value).toBe(false)
     }
     expect(sheet.dismissed).toBe(3)
+  })
+
+  it('steps back once when the timer of an earlier step runs out during the next one', async () => {
+    // The timer that gives up on a pop that never comes must not outlive the pop that did come:
+    // it would find the next step under way and send a second `go(-1)`, out of the page.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const sheet = addOverlay()
+    const realGo = history.go.bind(history)
+    const held: number[] = []
+    const go = vi.spyOn(history, 'go').mockImplementation((delta) => void held.push(delta ?? 0))
+    const deliver = async () => {
+      realGo(held.shift())
+      await vi.advanceTimersByTimeAsync(10)
+    }
+
+    sheet.open.value = true
+    await vi.advanceTimersByTimeAsync(10)
+    sheet.open.value = false
+    await vi.advanceTimersByTimeAsync(10)
+    await deliver()
+    sheet.open.value = true
+    await vi.advanceTimersByTimeAsync(970)
+    // The first step's timer has 10 ms left when the second step is made, and its pop is late.
+    sheet.open.value = false
+    await vi.advanceTimersByTimeAsync(20)
+
+    expect(go).toHaveBeenCalledTimes(2)
+    await deliver()
+    expect(go).toHaveBeenCalledTimes(2)
+    expect(markOfCurrentEntry()).toBeUndefined()
   })
 
   it('removes its step when the component goes away while open', async () => {

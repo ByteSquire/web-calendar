@@ -38,6 +38,7 @@ let pushed = 0
 /** Our own `history.go(-n)` is under way; its pop is not a Back press. */
 let waiting = false
 let syncTimer = 0
+let waitTimer = 0
 let anchorCount = 0
 let listening = false
 /** The history of the router, which can step back without telling the router about it. */
@@ -61,19 +62,24 @@ function depthOf(state: unknown): number | null {
   return samePage ? 0 : null
 }
 
+function stopWaiting() {
+  waiting = false
+  window.clearTimeout(waitTimer)
+}
+
 function onPopState(event: PopStateEvent) {
   const depth = depthOf(event.state)
   if (depth === null) {
     // Another page or position: the router deals with it. The overlays belonged to the old one.
     anchor = null
     pushed = 0
-    waiting = false
+    stopWaiting()
     while (stack.length > 0) stack.pop()?.dismiss()
     return
   }
 
   const ownStep = waiting
-  waiting = false
+  stopWaiting()
   // Set before anything is dismissed: the close that follows must find the history in line.
   pushed = depth
   if (!ownStep) {
@@ -123,8 +129,10 @@ function sync() {
   waiting = true
   if (routerHistory) routerHistory.go(wanted - pushed, false)
   else window.history.go(wanted - pushed)
-  // A pop that never arrives must not switch the feature off.
-  window.setTimeout(() => {
+  // A pop that never arrives must not switch the feature off. The timer of an earlier step must
+  // not run out during this one, so each step replaces it and a pop clears it.
+  window.clearTimeout(waitTimer)
+  waitTimer = window.setTimeout(() => {
     if (!waiting) return
     waiting = false
     pushed = depthOf(window.history.state) ?? 0

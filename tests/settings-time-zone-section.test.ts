@@ -27,6 +27,11 @@ const Shell = defineComponent({
 })
 
 const BROWSER = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+// The list holds about 420 zones and happy-dom is slow to render them, seconds on a busy machine,
+// so the waits and the tests get more room than the 1 s and 5 s defaults.
+vi.setConfig({ testTimeout: 30_000 })
+const until = (check: () => void) => vi.waitFor(check, { timeout: 15_000 })
 const SYDNEY_NOTICE = 'Times are now shown in Australia/Sydney.'
 
 let backend: FakeBackend
@@ -133,7 +138,7 @@ describe('while the account loads', () => {
     await mountSection({ me: null })
     expect(control()).toBeNull()
     await app.setProps({ me: { ...ME, timeZone: 'Asia/Tokyo' } })
-    await vi.waitFor(() => expect(control()?.textContent).toContain('Asia/Tokyo'))
+    await until(() => expect(control()?.textContent).toContain('Asia/Tokyo'))
     expect(useUserTimeZone().value).toBe('Asia/Tokyo')
   })
 })
@@ -144,7 +149,7 @@ describe('choosing a zone', () => {
     expect(useDisplayTimeZone().value).toBe(BROWSER)
 
     choose('Australia/Sydney')
-    await vi.waitFor(() => expect(statusText()).toContain(SYDNEY_NOTICE))
+    await until(() => expect(statusText()).toContain(SYDNEY_NOTICE))
 
     expect(puts().map((call) => call.body)).toEqual([{ timeZone: 'Australia/Sydney' }])
     expect(backend.me.timeZone).toBe('Australia/Sydney')
@@ -159,8 +164,8 @@ describe('choosing a zone', () => {
     await mountSection()
 
     choose('browser')
-    await vi.waitFor(() => expect(puts()).toHaveLength(1))
-    await vi.waitFor(() => expect(statusText()).toContain("your browser's zone"))
+    await until(() => expect(puts()).toHaveLength(1))
+    await until(() => expect(statusText()).toContain("your browser's zone"))
 
     expect(puts()[0]!.body).toEqual({ timeZone: null })
     expect(backend.me.timeZone).toBeNull()
@@ -174,7 +179,7 @@ describe('choosing a zone', () => {
     await mountSection()
     choose('Asia/Tokyo')
     choose('browser')
-    await vi.waitFor(() => expect(puts()).toHaveLength(1))
+    await until(() => expect(puts()).toHaveLength(1))
     choose('browser')
     expect(puts()).toHaveLength(1)
   })
@@ -186,7 +191,7 @@ describe('choosing a zone', () => {
     await mountSection()
 
     choose('Australia/Sydney')
-    await vi.waitFor(() => expect(alerts()).toHaveLength(1))
+    await until(() => expect(alerts()).toHaveLength(1))
 
     expect(alerts()[0]!.textContent).toContain('Could not save your time zone.')
     expect(statusText()).not.toContain('Times are now shown')
@@ -202,12 +207,12 @@ describe('choosing a zone', () => {
     await mountSection()
 
     choose('Australia/Sydney')
-    await vi.waitFor(() => expect(alerts()).toHaveLength(1))
+    await until(() => expect(alerts()).toHaveLength(1))
     expect(alerts()[0]!.textContent).toContain('The server answered with an error (HTTP 500)')
 
     fail = false
     choose('Australia/Sydney')
-    await vi.waitFor(() => expect(alerts()).toHaveLength(0))
+    await until(() => expect(alerts()).toHaveLength(0))
     expect(useUserTimeZone().value).toBe('Australia/Sydney')
   })
 
@@ -217,7 +222,7 @@ describe('choosing a zone', () => {
       throw new TypeError('Failed to fetch')
     }
     choose('Asia/Tokyo')
-    await vi.waitFor(() => expect(alerts()).toHaveLength(1))
+    await until(() => expect(alerts()).toHaveLength(1))
     expect(alerts()[0]!.textContent).toContain('The server could not be reached')
     expect(useUserTimeZone().value).toBeNull()
   })
@@ -232,13 +237,13 @@ describe('choosing a zone', () => {
     await mountSection()
 
     choose('Australia/Sydney')
-    await vi.waitFor(() => expect(puts()).toHaveLength(1))
+    await until(() => expect(puts()).toHaveLength(1))
     expect(section().querySelector('[aria-busy="true"]')).not.toBeNull()
     choose('Asia/Tokyo')
     expect(puts()).toHaveLength(1)
 
     release()
-    await vi.waitFor(() => expect(useUserTimeZone().value).toBe('Australia/Sydney'))
+    await until(() => expect(useUserTimeZone().value).toBe('Australia/Sydney'))
     expect(section().querySelector('[aria-busy="true"]')).toBeNull()
     expect(puts()).toHaveLength(1)
   })
@@ -258,7 +263,7 @@ describe('the list', () => {
 
   async function openList() {
     control()!.click()
-    await vi.waitFor(() => expect(options().length).toBeGreaterThan(0))
+    await until(() => expect(options().length).toBeGreaterThan(0))
   }
 
   async function search(text: string) {
@@ -290,18 +295,18 @@ describe('the list', () => {
     await mountSection()
     await openList()
     await search('new york')
-    await vi.waitFor(() => expect(names()).toEqual(['America/New_York']))
+    await until(() => expect(names()).toEqual(['America/New_York']))
     await search('europe/ber')
-    await vi.waitFor(() => expect(names()).toEqual(['Europe/Berlin']))
+    await until(() => expect(names()).toEqual(['Europe/Berlin']))
     await search('browser')
-    await vi.waitFor(() => expect(names()).toEqual([`Browser's zone (${BROWSER})`]))
+    await until(() => expect(names()).toEqual([`Browser's zone (${BROWSER})`]))
   })
 
   it('says so when nothing matches', async () => {
     await mountSection()
     await openList()
     await search('atlantis')
-    await vi.waitFor(() => expect(options()).toHaveLength(0))
+    await until(() => expect(options()).toHaveLength(0))
     expect(document.body.textContent).toContain('No time zone matches your search.')
   })
 
@@ -309,13 +314,13 @@ describe('the list', () => {
     await mountSection()
     await openList()
     await search('tokyo')
-    await vi.waitFor(() => expect(names()).toEqual(['Asia/Tokyo']))
+    await until(() => expect(names()).toEqual(['Asia/Tokyo']))
     options()[0]!.click()
 
-    await vi.waitFor(() => expect(puts()).toHaveLength(1))
+    await until(() => expect(puts()).toHaveLength(1))
     expect(puts()[0]!.body).toEqual({ timeZone: 'Asia/Tokyo' })
-    await vi.waitFor(() => expect(useDisplayTimeZone().value).toBe('Asia/Tokyo'))
-    await vi.waitFor(() => expect(control()!.textContent).toContain('Asia/Tokyo'))
+    await until(() => expect(useDisplayTimeZone().value).toBe('Asia/Tokyo'))
+    await until(() => expect(control()!.textContent).toContain('Asia/Tokyo'))
   })
 })
 
@@ -327,14 +332,14 @@ describe('demo mode', () => {
     expect(control()).not.toBeNull()
 
     choose('Australia/Sydney')
-    await vi.waitFor(() => expect(statusText()).toContain(SYDNEY_NOTICE))
+    await until(() => expect(statusText()).toContain(SYDNEY_NOTICE))
 
     expect(backend.calls).toEqual([])
     expect(useDisplayTimeZone().value).toBe('Australia/Sydney')
     expect(alerts()).toHaveLength(0)
 
     choose('browser')
-    await vi.waitFor(() => expect(useUserTimeZone().value).toBeNull())
+    await until(() => expect(useUserTimeZone().value).toBeNull())
     expect(backend.calls).toEqual([])
   })
 

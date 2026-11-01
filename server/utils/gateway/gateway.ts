@@ -45,7 +45,16 @@ export interface GatewayOptions {
   precheck?: PathPrecheck
   fetch?: typeof globalThis.fetch
   log?: (message: string, cause?: unknown) => void
+  /**
+   * How long Radicale may take to start its answer (the response headers), in milliseconds. Only
+   * that wait is timed: once the headers are in, the body streams for as long as the client reads
+   * it. Default `DEFAULT_UPSTREAM_TIMEOUT_MS`. Without a limit, requests that never get an answer
+   * pile up (security review 2026-11-01, finding 9).
+   */
+  upstreamTimeoutMs?: number
 }
+
+export const DEFAULT_UPSTREAM_TIMEOUT_MS = 30_000
 
 function text(status: number, body: string, headers: Record<string, string> = {}): Response {
   return new Response(body, {
@@ -81,6 +90,7 @@ export function createGateway(
   const maxBodyBytes = options.maxBodyBytes
   const doFetch = options.fetch ?? globalThis.fetch
   const log = options.log ?? (() => undefined)
+  const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
 
   function authFailure(error: AuthError): Response {
     // Every client's first request has no credentials, by design; that is not worth a log line. A
@@ -186,6 +196,18 @@ export function createGateway(
       await request.body?.cancel().catch(() => undefined)
     }
 
+    // One controller for both ways out: the client leaving (for the whole exchange, the streamed
+    // body included) and Radicale not answering in time (for the wait for its headers only).
+    const upstreamAbort = new AbortController()
+    const abortOnClientLeave = () => upstreamAbort.abort()
+    if (request.signal?.aborted) abortOnClientLeave()
+    else request.signal?.addEventListener('abort', abortOnClientLeave, { once: true })
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      upstreamAbort.abort()
+    }, upstreamTimeoutMs)
+
     let upstream: Response
     try {
       upstream = await doFetch(upstreamBase + upstreamPath, {
@@ -196,12 +218,20 @@ export function createGateway(
         duplex: 'half',
         // Redirects are the client's business; following one could leave /caldav/.
         redirect: 'manual',
-        signal: request.signal,
+        signal: upstreamAbort.signal,
       } as RequestInit)
     } catch (error) {
+      request.signal?.removeEventListener('abort', abortOnClientLeave)
       if (exceeded) return payloadTooLarge()
+      if (timedOut) {
+        log(`upstream did not answer within ${upstreamTimeoutMs} ms`)
+        return text(504, 'Gateway Timeout')
+      }
       if (!request.signal?.aborted) log('upstream request failed', error)
       return text(502, 'Bad Gateway')
+    } finally {
+      // The headers are in (or the request failed): from here the body is the client's to read.
+      clearTimeout(timer)
     }
 
     if (upstream.status === 401) {

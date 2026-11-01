@@ -6,6 +6,7 @@ import { createBasicThrottle } from '../../server/utils/auth/throttle'
 import { challengeLines } from '../../server/utils/gateway/challenges'
 import {
   createGateway,
+  DEFAULT_UPSTREAM_TIMEOUT_MS,
   type GatewayOptions,
   type GatewayRequest,
 } from '../../server/utils/gateway/gateway'
@@ -79,6 +80,7 @@ function setup(
       headers?: Record<string, string>
       body?: GatewayRequest['body']
       authorized?: boolean
+      signal?: AbortSignal
     } = {},
   ) =>
     handle({
@@ -89,6 +91,7 @@ function setup(
         ...init.headers,
       }),
       body: init.body ?? null,
+      signal: init.signal,
     })
   return { call, seen, fetchStub, authenticate, log }
 }
@@ -483,6 +486,57 @@ describe('gateway: responses', () => {
     expect(response.status).toBe(502)
     expect(await response.text()).not.toContain('fetch failed')
     expect(log).toHaveBeenCalled()
+  })
+
+  describe('upstream timeout (security review 2026-11-01, finding 9)', () => {
+    /** A Radicale that never answers: the request ends only when the gateway aborts it. */
+    const silent = (seen: Seen) =>
+      new Promise<Response>((_resolve, reject) => {
+        seen.init.signal!.addEventListener('abort', () =>
+          reject(new DOMException('aborted', 'AbortError')),
+        )
+      })
+
+    it('answers 504 when Radicale does not start answering in time, and logs it', async () => {
+      const { call, log, seen } = setup(silent, { upstreamTimeoutMs: 20 })
+      const response = await call('GET', '/caldav/alice/')
+      expect(response.status).toBe(504)
+      expect(await response.text()).toBe('Gateway Timeout')
+      expect(log).toHaveBeenCalledWith('upstream did not answer within 20 ms')
+      expect(seen[0]!.init.signal!.aborted).toBe(true)
+    })
+
+    it('times only the wait for the headers: a body that streams longer is not cut off', async () => {
+      const slowBody = new ReadableStream<Uint8Array>({
+        async start(controller) {
+          const encoder = new TextEncoder()
+          controller.enqueue(encoder.encode('a'))
+          await new Promise((resolve) => setTimeout(resolve, 80))
+          controller.enqueue(encoder.encode('b'))
+          controller.close()
+        },
+      })
+      const { call } = setup(() => new Response(slowBody), { upstreamTimeoutMs: 20 })
+      const response = await call('GET', '/caldav/alice/')
+      expect(response.status).toBe(200)
+      expect(await response.text()).toBe('ab')
+    })
+
+    it('still aborts the upstream request when the client goes away, and says 502, not 504', async () => {
+      const client = new AbortController()
+      const { call, log, seen } = setup(silent, { upstreamTimeoutMs: 60_000 })
+      const pending = call('GET', '/caldav/alice/', { signal: client.signal })
+      await vi.waitFor(() => expect(seen).toHaveLength(1))
+      client.abort()
+      const response = await pending
+      expect(response.status).toBe(502)
+      expect(seen[0]!.init.signal!.aborted).toBe(true)
+      expect(log).not.toHaveBeenCalled()
+    })
+
+    it('has a default of 30 seconds', () => {
+      expect(DEFAULT_UPSTREAM_TIMEOUT_MS).toBe(30_000)
+    })
   })
 
   it('answers 403 and 404 from Radicale as they are', async () => {

@@ -482,7 +482,11 @@ verification only**, with no introspection and no per-request call to Kanidm:
   requests.
 - **Revocation:** a revoked token keeps working until it expires, at most **15
   minutes**. This is the accepted trade-off for no cache and no Kanidm call per
-  request. App tokens are looked up in SQLite and are revoked immediately.
+  request. App tokens are looked up in SQLite and are revoked immediately. A user who is no longer
+  in `web_calendar_users` (removed, disabled or deleted in Kanidm) loses all their app tokens at
+  the next group sync run, within one interval (review 2026-11-01): the gateway never asks Kanidm
+  about an app token, and a request to one's own calendar checks no group. This needs the group
+  sync (`NUXT_GROUP_SYNC_TOKEN`); without it nothing removes them.
 - Introspection (a confidential client sees `active: true` for tokens of any client)
   was tested in S1 and would add revocation checks; it was not chosen.
 - **User mapping** — the token's `sub` is the stable key: look up or create the
@@ -815,7 +819,10 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   logs at error level every run and records `group_sync.unauthorized` once per streak; every fifth
   consecutive failure logs at error level and records `group_sync.failing`; the first success
   afterwards records `group_sync.recovered`; a changed file records `group_sync.updated` (group
-  names and member count, no SPNs). Audit actor `system:group-sync`, wired in
+  names and member count, no SPNs). After a run that read every group and wrote the file, the
+  app tokens of every user outside `web_calendar_users` are deleted (only those made before the
+  run began; an empty group removes nobody; one `group_sync.tokens_revoked` event per user, with
+  the count). Audit actor `system:group-sync`, wired in
   `group-sync/app-ports.ts` (an audit failure never ends a run). The service account and its read-only token are in
   [kanidm-setup.md](kanidm-setup.md) §3.
 - **Team and resource calendars** — owned by a service principal that is not a
@@ -1383,7 +1390,8 @@ off, which the reconcile already ignores; a calendar owned by a member and named
 - **Gateway is security-critical** — header spoofing, open-proxy paths and request
   limits must be tested (S6).
 - **Revocation latency** — a revoked bearer token works until it expires, at most 15
-  minutes (decided: local JWT verification only). App tokens are revoked at once.
+  minutes (decided: local JWT verification only). App tokens are revoked at once, and those of a
+  user who left `web_calendar_users` at the next group sync run.
 - **Tokens in the browser** — XSS exposure; strict CSP, no third-party scripts,
   refresh token in memory only. App tokens are long-lived secrets: hashed, expiring.
 - **Share and group writer correctness** — built (§8): reconcile of `calendar_acl` against

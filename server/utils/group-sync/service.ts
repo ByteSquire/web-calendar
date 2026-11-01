@@ -35,6 +35,7 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
   let alarmRaised = false
 
   async function attempt(): Promise<Result<'written' | 'unchanged'>> {
+    const startedAt = new Date()
     let extra: string[]
     try {
       extra = await ports.listExtraGroups()
@@ -70,7 +71,35 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
         details: { groups: names, members: new Set(spns).size },
       })
     }
+    if (written.ok) revokeTokensOfRemovedUsers(fileGroups, startedAt)
     return written
+  }
+
+  /**
+   * An app token is checked against the local database only, so a user who is no longer in the
+   * users group would keep CalDAV access for as long as the token lives (security review
+   * 2026-11-01, finding 2). Runs only after a run that read every group and wrote the file, so a
+   * half answer from Kanidm never removes anybody. An EMPTY users group removes nobody: that is
+   * far more likely a Kanidm or sync misconfiguration than an offboarding of everyone. It never
+   * fails the run.
+   */
+  function revokeTokensOfRemovedUsers(fileGroups: FileGroup[], startedAt: Date): void {
+    if (!ports.revokeTokensOfNonMembers) return
+    const members = fileGroups.find((group) => group.name === USERS_GROUP)?.members ?? []
+    if (members.length === 0) {
+      log.warn(`[group-sync] ${USERS_GROUP} has no members: no app tokens are revoked`)
+      return
+    }
+    try {
+      const { users, revoked } = ports.revokeTokensOfNonMembers(new Set(members), startedAt)
+      if (revoked > 0) {
+        log.info(
+          `[group-sync] revoked ${revoked} app token(s) of ${users} user(s) no longer in ${USERS_GROUP}`,
+        )
+      }
+    } catch {
+      log.warn('[group-sync] could not revoke the app tokens of removed users; will retry')
+    }
   }
 
   function onFailure(failure: GroupSyncFailure): void {

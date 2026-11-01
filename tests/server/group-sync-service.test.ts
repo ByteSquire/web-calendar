@@ -41,6 +41,10 @@ describe('group sync run', () => {
   let logs: string[]
   let audits: GroupSyncAuditEvent[]
   let extra: string[]
+  let revokes: { members: string[]; createdBefore: Date }[]
+  let revokeThrows: boolean
+  /** What the stub port says it revoked; nothing, unless a test is about that. */
+  let revoked: { users: number; revoked: number }
 
   const resolver: MemberResolver = (spns) => {
     const unknown = spns.filter((spn) => !SPNS[spn])
@@ -67,7 +71,15 @@ describe('group sync run', () => {
         },
       }),
       resolver: () => resolver,
-      ports: { listExtraGroups: () => extra, audit: (event) => void audits.push(event) },
+      ports: {
+        listExtraGroups: () => extra,
+        audit: (event) => void audits.push(event),
+        revokeTokensOfNonMembers: (members, createdBefore) => {
+          if (revokeThrows) throw new Error('database is locked')
+          revokes.push({ members: [...members].sort(), createdBefore })
+          return revoked
+        },
+      },
       log: { info: line('info'), warn: line('warn'), error: line('error') },
       file,
       adminGroup: 'calendar_admins',
@@ -80,6 +92,9 @@ describe('group sync run', () => {
     logs = []
     audits = []
     extra = []
+    revokes = []
+    revokeThrows = false
+    revoked = { users: 0, revoked: 0 }
     answers = {
       calendar_admins: () => new Response(groupBody('calendar_admins', ['alice@idm.example.org'])),
       web_calendar_users: () =>
@@ -96,6 +111,95 @@ describe('group sync run', () => {
       `calendar_admins: ${ALICE}\nweb_calendar_users: ${ALICE} ${BOB}\n`,
     )
     expect(audits.map((event) => event.action)).toEqual(['group_sync.updated'])
+  })
+
+  describe('app tokens of users who left the users group (security review 2026-11-01)', () => {
+    it('revokes the tokens of everybody outside the users group after a good run', async () => {
+      revoked = { users: 2, revoked: 3 }
+      const before = Date.now()
+      await service().run()
+      expect(revokes).toHaveLength(1)
+      expect(revokes[0]!.members).toEqual([ALICE, BOB].sort())
+      // The cut-off is when the run began, so a token made while it ran is safe.
+      expect(revokes[0]!.createdBefore.getTime()).toBeGreaterThanOrEqual(before)
+      expect(revokes[0]!.createdBefore.getTime()).toBeLessThanOrEqual(Date.now())
+      expect(logs).toContain(
+        'info [group-sync] revoked 3 app token(s) of 2 user(s) no longer in web_calendar_users',
+      )
+    })
+
+    it('also does it when the file did not change (the first run after an update)', async () => {
+      const sync = service()
+      await sync.run()
+      expect(await sync.run()).toEqual({ ok: true, outcome: 'unchanged' })
+      expect(revokes).toHaveLength(2)
+    })
+
+    it('uses the members of the users group, not of the admin group or the extra groups', async () => {
+      extra = ['team_a']
+      answers.team_a = () => new Response(groupBody('team_a', ['bob@idm.example.org']))
+      answers.web_calendar_users = () =>
+        new Response(groupBody('web_calendar_users', ['alice@idm.example.org']))
+      await service().run()
+      expect(revokes[0]!.members).toEqual([ALICE])
+    })
+
+    it.each([
+      ['Kanidm answered null', () => (answers.web_calendar_users = () => new Response('null'))],
+      [
+        'Kanidm answered with an error',
+        () => (answers.web_calendar_users = () => new Response('oops', { status: 500 })),
+      ],
+      [
+        'a member cannot be resolved',
+        () =>
+          (answers.web_calendar_users = () =>
+            new Response(groupBody('web_calendar_users', ['mallory@idm.example.org']))),
+      ],
+      ['a group cannot be read at all', () => delete answers.web_calendar_users],
+    ])('removes nobody when the run fails: %s', async (_name, breakIt) => {
+      breakIt()
+      expect((await service().run()).ok).toBe(false)
+      expect(revokes).toEqual([])
+    })
+
+    it('removes nobody when the users group is empty, and says so', async () => {
+      answers.web_calendar_users = () => new Response(groupBody('web_calendar_users', []))
+      expect((await service().run()).ok).toBe(true)
+      expect(revokes).toEqual([])
+      expect(logs).toContain(
+        'warn [group-sync] web_calendar_users has no members: no app tokens are revoked',
+      )
+    })
+
+    it('does not fail the run, nor lose the file, when the revoking fails', async () => {
+      revokeThrows = true
+      expect(await service().run()).toEqual({ ok: true, outcome: 'written' })
+      expect(await readFile(file, 'utf8')).toContain(`web_calendar_users: ${ALICE} ${BOB}`)
+      expect(logs).toContain(
+        'warn [group-sync] could not revoke the app tokens of removed users; will retry',
+      )
+    })
+
+    it('is optional: ports without it leave the tokens alone', async () => {
+      const ports = createDefaultPorts(() => {})
+      expect(ports.revokeTokensOfNonMembers).toBeUndefined()
+      await expect(
+        createGroupSyncService({
+          client: createKanidmClient({
+            origin: 'https://idm.example.org',
+            token: TOKEN,
+            fetch: async (input) =>
+              answers[decodeURIComponent(String(input).split('/').pop() ?? '')]!(),
+          }),
+          resolver: () => resolver,
+          ports,
+          log: { info() {}, warn() {}, error() {} },
+          file,
+          adminGroup: 'calendar_admins',
+        }).run(),
+      ).resolves.toEqual({ ok: true, outcome: 'written' })
+    })
   })
 
   it('reads the extra groups of the access rules too', async () => {

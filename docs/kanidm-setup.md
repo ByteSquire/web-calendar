@@ -91,6 +91,13 @@ kanidm service-account api-token generate calendar-sync 'group sync <date>' 2026
 3. Revoke the old one: `kanidm service-account api-token list calendar-sync`, then
    `kanidm service-account api-token destroy calendar-sync <token-uuid>`.
 
+**Leavers.** After each good run the sync deletes the app tokens of every user who is no longer a
+member of `web_calendar_users` (removed from the group, or disabled or deleted in Kanidm), and
+writes one `group_sync.tokens_revoked` audit event per user. A user's sign-in with their Kanidm
+account ends within minutes anyway; the app tokens are what this closes. If the users group is
+empty, nobody's tokens are deleted. Without `NUXT_GROUP_SYNC_TOKEN` there is no sync, and no
+removal.
+
 **The alarm.** An HTTP 401 or 403 from Kanidm means the token expired, was revoked or lost the right.
 The sync logs `[group-sync] ALARM` at error level every run and writes one audit event
 `group_sync.unauthorized`. The group file stays as it was, so removed members keep access: rotate the

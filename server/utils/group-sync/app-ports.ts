@@ -30,9 +30,53 @@ export function listAclGroupNames(db: Database, log: Pick<Logger, 'warn'>): stri
   return usable
 }
 
+/**
+ * Deletes the app tokens of every user whose `sub` is not in `members` (security review 2026-11-01,
+ * finding 2). An app token is checked against the local database only, so without this a user who
+ * was removed from the users group, disabled or deleted in Kanidm keeps CalDAV access to their own
+ * calendar for as long as the token lives (up to a year). Only tokens made before `createdBefore`
+ * are touched: a user added to the group after the run read it may sign in and make a token while
+ * the run is still going, and that token must survive. Returns who lost how many, in one
+ * transaction.
+ */
+export function revokeTokensOfNonMembers(
+  db: Database,
+  members: ReadonlySet<string>,
+  createdBefore: Date,
+): { username: string; revoked: number }[] {
+  const before = createdBefore.toISOString()
+  const holders = db
+    .prepare<[string], { userId: number; sub: string; username: string }>(
+      `SELECT DISTINCT u.id AS userId, u.oidc_sub AS sub, u.username AS username
+       FROM app_tokens t JOIN users u ON u.id = t.user_id
+       WHERE t.created_at < ?`,
+    )
+    .all(before)
+    .filter((holder) => !members.has(holder.sub))
+  if (holders.length === 0) return []
+  const remove = db.prepare('DELETE FROM app_tokens WHERE user_id = ? AND created_at < ?')
+  return db.transaction(() =>
+    holders.map((holder) => ({
+      username: holder.username,
+      revoked: remove.run(holder.userId, before).changes,
+    })),
+  )()
+}
+
 export function createAppPorts(getDb: () => Database, log: Logger = console): GroupSyncPorts {
-  return {
+  const ports: GroupSyncPorts = {
     listExtraGroups: () => listAclGroupNames(getDb(), log),
+    revokeTokensOfNonMembers: (members, createdBefore) => {
+      const gone = revokeTokensOfNonMembers(getDb(), members, createdBefore)
+      for (const { username, revoked } of gone) {
+        ports.audit({
+          action: 'group_sync.tokens_revoked',
+          target: username,
+          details: { revoked, reason: 'no longer in the users group' },
+        })
+      }
+      return { users: gone.length, revoked: gone.reduce((sum, one) => sum + one.revoked, 0) }
+    },
     audit: (event: GroupSyncAuditEvent) => {
       // An audit failure must not end a run: the log line is the fallback.
       try {
@@ -46,4 +90,5 @@ export function createAppPorts(getDb: () => Database, log: Logger = console): Gr
       }
     },
   }
+  return ports
 }

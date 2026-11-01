@@ -333,7 +333,8 @@ error.
   Alarms: `401`/`403` logs at error level each run and audits `group_sync.unauthorized` once per
   streak; the fifth consecutive failure and every fifth after it log at error level and audit
   `group_sync.failing`; `group_sync.recovered` follows; a changed file audits `group_sync.updated`
-  (names and count, no SPNs). Actor `system:group-sync`. Not yet done: the token's 90-day rotation
+  (names and count, no SPNs). After a good run the app tokens of everyone outside the users group
+  are deleted (`group_sync.tokens_revoked`; review 2026-11-01, finding 2). Actor `system:group-sync`. Not yet done: the token's 90-day rotation
   runbook beyond `kanidm-setup.md`, and the LDAP bind.
 - Tests: fixture answers → exact file; an error or `null` leaves the file unchanged; the rename is
   atomic; a removed member is gone after one run; the token never appears in logs. _Tests:_

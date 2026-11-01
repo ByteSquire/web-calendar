@@ -713,7 +713,9 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
 - **PWA / "Add to Home Screen" (backlog, after the initial release).** The app shell scrolls
   internally, so the mobile browser's address bar stays visible while using the site. Stopgap, done:
   "Full screen" in the ⋮ menu (Fullscreen API) hides the bar on request on Android; iPhone Safari
-  has no such API. The installed app is the real fix and the only one on iPhone: it runs without
+  has no such API. Its limit, found on an Android phone: in full screen the browser spends the first
+  Back on leaving full screen, before the app's history steps can close a dialog, and page code
+  cannot intercept that. The installed app is the real fix and the only one on iPhone: it runs without
   the address bar and keeps the fixed top bar. Keep it optional; the app stays fully usable in the
   browser. The files are small, the acceptance is not, so it waits for a deployment with HTTPS and
   two real phones. Work list:
@@ -726,6 +728,8 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     bottom sheet, for notched phones in the installed app.
   - Sign-in: the OIDC redirect leaves the app's origin. Check the round trip inside the installed
     app on Android and iPhone (an installed iPhone app has its own storage: a fresh sign-in).
+  - Check on a phone: in the installed app one Back closes a dialog (full screen in the browser
+    spends it on leaving full screen).
   - Tests: manifest and icons served with the right types, no request leaves the origin, CSP
     unchanged (`manifest-src` falls back to `default-src 'self'`).
 - **Mobile** — responsive layout; the sidebar collapses; the split view stacks

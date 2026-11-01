@@ -358,6 +358,47 @@ describe('validateEnv', () => {
     })
   })
 
+  describe('one purpose per key (security review 2026-11-01, finding 5)', () => {
+    const sealKey = Buffer.from(Array.from({ length: 32 }, (_, i) => i + 1)).toString('hex')
+
+    it('refuses the seal key reused as the group-sync token', () => {
+      const { errors } = validateEnv({
+        ...valid,
+        NUXT_EXTERNAL_SEAL_KEY: sealKey,
+        NUXT_GROUP_SYNC_TOKEN: sealKey,
+      })
+      expect(errors).toEqual([
+        'NUXT_EXTERNAL_SEAL_KEY and NUXT_GROUP_SYNC_TOKEN must not be the same value: each secret has one purpose',
+      ])
+    })
+
+    it('refuses the token hash key reused as the seal key or the group-sync token', () => {
+      const shared = 'k'.repeat(32)
+      expect(
+        validateEnv({ ...valid, NUXT_TOKEN_HASH_KEY: shared, NUXT_GROUP_SYNC_TOKEN: shared })
+          .errors,
+      ).toEqual([
+        'NUXT_TOKEN_HASH_KEY(S) and NUXT_GROUP_SYNC_TOKEN must not be the same value: each secret has one purpose',
+      ])
+    })
+
+    it('does not mind two DIFFERENT token hash key versions sharing a purpose', () => {
+      expect(
+        validateEnv({ ...valid, NUXT_TOKEN_HASH_KEYS: `1:${valid.NUXT_TOKEN_HASH_KEY}` }).errors,
+      ).toEqual([])
+    })
+
+    it('accepts three different values', () => {
+      expect(
+        validateEnv({
+          ...valid,
+          NUXT_EXTERNAL_SEAL_KEY: sealKey,
+          NUXT_GROUP_SYNC_TOKEN: 'a-different-sync-token',
+        }),
+      ).toEqual({ errors: [], warnings: [] })
+    })
+  })
+
   describe('NUXT_DEMO', () => {
     it('warns loudly, and only for true', () => {
       const { errors, warnings } = validateEnv({ ...valid, NUXT_DEMO: 'true' })

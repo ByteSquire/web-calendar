@@ -103,6 +103,30 @@ const MAX_HOST_LIST_ENTRIES = 200
  * @param {string} name already trimmed and lower-cased
  * @returns {string | null}
  */
+/**
+ * Every app-token hash key value, from NUXT_TOKEN_HASH_KEY and each entry of
+ * NUXT_TOKEN_HASH_KEYS, trimmed and with blanks removed. Used only to compare against the other
+ * keys below (security review 2026-11-01, finding 5); `tokenHashKeyErrors` is the real parser and
+ * has already rejected a malformed list by the time this runs.
+ * @param {Record<string, string | undefined>} env
+ * @returns {string[]}
+ */
+function tokenHashKeyValues(env) {
+  const values = []
+  const single = (env.NUXT_TOKEN_HASH_KEY ?? '').trim()
+  if (single !== '') values.push(single)
+  const list = (env.NUXT_TOKEN_HASH_KEYS ?? '').trim()
+  if (list !== '') {
+    for (const entry of list.split(',')) {
+      const colon = entry.indexOf(':')
+      if (colon === -1) continue
+      const key = entry.slice(colon + 1).trim()
+      if (key !== '') values.push(key)
+    }
+  }
+  return values
+}
+
 function hostNameProblem(name) {
   if (name === '') return 'is empty'
   if (name.length > 253) return 'is too long for a host name'
@@ -330,6 +354,27 @@ export function validateEnv(env) {
       "NUXT_GROUP_SYNC_TOKEN is not set: Radicale's group file is not filled from Kanidm, so " +
         'group changes never reach it',
     )
+  }
+
+  // One purpose per key (security review 2026-11-01, finding 5): a value shared between the
+  // token hash key, the seal key and the group-sync token would let compromising one of them
+  // compromise another.
+  const groupSyncToken = get('NUXT_GROUP_SYNC_TOKEN')
+  const namedSecrets = [
+    ...tokenHashKeyValues(env).map((value) => ({ name: 'NUXT_TOKEN_HASH_KEY(S)', value })),
+    ...(sealKey !== '' ? [{ name: 'NUXT_EXTERNAL_SEAL_KEY', value: sealKey }] : []),
+    ...(groupSyncToken !== '' ? [{ name: 'NUXT_GROUP_SYNC_TOKEN', value: groupSyncToken }] : []),
+  ]
+  for (let i = 0; i < namedSecrets.length; i += 1) {
+    for (let j = i + 1; j < namedSecrets.length; j += 1) {
+      if (namedSecrets[i].name === namedSecrets[j].name) continue
+      if (namedSecrets[i].value === namedSecrets[j].value) {
+        errors.push(
+          `${namedSecrets[i].name} and ${namedSecrets[j].name} must not be the same value: ` +
+            'each secret has one purpose',
+        )
+      }
+    }
   }
   // The interval is a security setting: a removed member keeps access for up to this long.
   checkInteger('NUXT_GROUP_SYNC_INTERVAL_SEC', 1)

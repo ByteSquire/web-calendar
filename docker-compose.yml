@@ -37,6 +37,7 @@ services:
       # Kanidm membership for Radicale's group file: read-only API token (kanidm-setup.md section 3).
       NUXT_GROUP_SYNC_TOKEN: '${NUXT_GROUP_SYNC_TOKEN:-}'
       NUXT_GROUP_SYNC_INTERVAL_SEC: '${NUXT_GROUP_SYNC_INTERVAL_SEC:-60}'
+      NUXT_GROUP_SYNC_FILE: /groups/htgroup
       # Kanidm group whose members are admins (short name or SPN); must not be empty.
       NUXT_OIDC_ADMIN_GROUP: '${NUXT_OIDC_ADMIN_GROUP:-calendar_admins}'
       # Seconds the cached Kanidm signing keys are used before they are fetched again.

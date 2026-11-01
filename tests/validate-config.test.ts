@@ -375,6 +375,27 @@ describe('validateEnv', () => {
     expect(warnings).toHaveLength(1)
     expect(warnings[0]).toContain('NUXT_GROUP_SYNC_TOKEN')
   })
+
+  it('accepts a group sync interval from 1 to 300 seconds and refuses others', () => {
+    for (const ok of ['1', '60', '300']) {
+      expect(validateEnv({ ...valid, NUXT_GROUP_SYNC_INTERVAL_SEC: ok }).errors).toEqual([])
+    }
+    for (const bad of ['301', '3600', '0', '-5', '1.5', 'abc', '']) {
+      const { errors } = validateEnv({ ...valid, NUXT_GROUP_SYNC_INTERVAL_SEC: bad })
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('NUXT_GROUP_SYNC_INTERVAL_SEC')
+    }
+    expect(validateEnv({ ...valid, NUXT_GROUP_SYNC_INTERVAL_SEC: '301' }).errors[0]).toContain(
+      'at most 300',
+    )
+  })
+
+  it('refuses an empty group file path but accepts a set one', () => {
+    expect(validateEnv({ ...valid, NUXT_GROUP_SYNC_FILE: '/groups/htgroup' }).errors).toEqual([])
+    const { errors } = validateEnv({ ...valid, NUXT_GROUP_SYNC_FILE: ' ' })
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('NUXT_GROUP_SYNC_FILE')
+  })
 })
 
 describe('validate-config.mjs as a script', () => {

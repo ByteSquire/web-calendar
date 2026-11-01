@@ -3,6 +3,7 @@
 import type { Database } from 'better-sqlite3'
 import { upsertUser } from '../../db/users'
 import type { User } from '../../db/types'
+import { noteUserGroups } from '../group-sync/active'
 import { isAdminByGroups, type UserinfoResult } from './userinfo'
 
 export interface Me {
@@ -28,6 +29,8 @@ export interface ResolveMeOptions {
   userinfo: (sub: string, accessToken: string | null) => Promise<UserinfoResult>
   /** Called with a message that never contains the token. */
   warn: (message: string) => void
+  /** Told the `groups` claim of the user; a change makes the group sync run. Defaults to that. */
+  groupsSeen?: (sub: string, groups: readonly string[]) => void
 }
 
 /** The token of an `Authorization: Bearer` header, or null. */
@@ -68,6 +71,7 @@ export async function resolveMe(
   }
 
   const { profile } = result
+  if (profile.groups) (options.groupsSeen ?? noteUserGroups)(user.sub, profile.groups)
   const isAdmin = profile.groups ? isAdminByGroups(profile.groups, options.adminGroup) : false
   const stored = upsertUser(options.db, {
     sub: user.sub,

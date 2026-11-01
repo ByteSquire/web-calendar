@@ -70,6 +70,42 @@ and a write attempt with the read-only token returned 403 with the membership un
 - If you prefer least privilege over this workaround, the alternatives are Kanidm's LDAP interface
   with a service-account bind, or a future read-only built-in group (design §12, S9).
 
+**Residual risk of `idm_group_admins`.** Whoever holds the token can read every group, and anyone who
+obtains a _read-write_ token for this account (or who can add a token to it) can change any group's
+members, including `calendar_admins` and the groups that gate other systems. The sync only ever sends
+reads and its token is read-only, but the account is more powerful than its job. Keep the token in the
+environment only: it is never logged, put into an error text or returned by the app.
+
+**The token expires.** Generate it with an expiry of at most 90 days:
+
+```sh
+kanidm service-account api-token generate calendar-sync 'group sync <date>' 2026-12-31T00:00:00+00:00
+```
+
+**Rotation runbook** (calendar it every 60 days):
+
+1. Generate a new token as above (the old one keeps working).
+2. Put it into `NUXT_GROUP_SYNC_TOKEN` and restart the app. The log shows no `ALARM` line, and the
+   group file's modified time or `htgroup.prev` shows the next run (or check
+   `docker compose logs web-calendar | grep group-sync`).
+3. Revoke the old one: `kanidm service-account api-token list calendar-sync`, then
+   `kanidm service-account api-token destroy calendar-sync <token-uuid>`.
+
+**The alarm.** An HTTP 401 or 403 from Kanidm means the token expired, was revoked or lost the right.
+The sync logs `[group-sync] ALARM` at error level every run and writes one audit event
+`group_sync.unauthorized`. The group file stays as it was, so removed members keep access: rotate the
+token at once. Five failed runs in a row (any reason) log an error and write `group_sync.failing`;
+the first good run afterwards writes `group_sync.recovered`.
+
+**Members and UUIDs.** Kanidm lists group members as SPNs and the token cannot read persons, so the app
+maps each SPN to the `sub` UUID with its own `users` table (the `preferred_username` of the sign-in).
+A member who has never signed in makes the run fail, with a warning naming them, until they do.
+
+**Target state: the LDAP read-only bind.** Kanidm's LDAP interface is read-only by construction and a
+service-account bind there needs no `idm_group_admins`; it also returns `entryuuid` for members. The
+sync is built on the API token because adding an LDAP library is out of scope for now; replace
+`server/utils/group-sync/kanidm.ts` and `members.ts` when you switch.
+
 ## 4. Test users in development only
 
 The test stack relaxes the credential policy so users can log in with a password alone:

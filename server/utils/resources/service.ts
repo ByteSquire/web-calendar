@@ -198,6 +198,7 @@ export async function acceptBooking(
       for (const other of declined) {
         audit(deps, actor.sub, 'resource_booking.declined', other, {
           automatic: true,
+          reason: 'overlap',
           becauseOfBookingId: id,
         })
       }

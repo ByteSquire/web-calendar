@@ -1,6 +1,7 @@
 # Resources part 2, client (FR-16..FR-19)
 
 ## Built
+
 - Loader (`app/utils/live/loader.ts`): lists `/api/resources` with the sources; each resource becomes a `type: 'resource'`
   calendar `res:<id>` (hidden by default, read-only) plus a `CalendarResource`. For visible resource calendars it asks
   `/api/resources/availability` (pieces of <= 62 days) and adds entries to `events`: approved+blocked = hatched "Busy",
@@ -15,6 +16,7 @@
 - Page: pending requests (accept/decline, overlap hint, orphaned note), "My bookings" (cancel). Redirects home when nothing to manage or show.
 
 ## Decisions
+
 - Recurring events: new repeating events and edits with scope other than "this" are saved WITHOUT booking, with a message (marks cover a
   series). An occurrence ("This event") can get a booking; marks are not written for it.
 - Booking sends `eventCalendarId: null` (the browser knows calendars by ref, not by DB id). Several resources: only the first booked one is marked.
@@ -22,13 +24,16 @@
 - Own bookings are collected from `GET /api/resources/:id/bookings` for resources with book/manage right (N requests); a managed list is filtered to own requester id.
 
 ## Needs integration
+
 - A route listing all own bookings in one call would replace the N requests; and `eventCalendarId` could be resolved if `/api/calendar-prefs`/calendars exposed DB ids.
 - design.md §5/§9: describe the page, availability display and the series rule. README: add `/resources/requests`.
 
 ## Tests (written, NOT run)
+
 `tests/resources-ui-availability.test.ts`, `resources-ui-updates.test.ts`, `resources-ui-flow.test.ts`, `e2e/resources-requests.spec.ts`.
 Existing specs/tests not edited; demo overflow menu and live menu unchanged for non-managers.
 
 ## Risks
+
 - No component test of the forms; the marks edit after create races nothing but needs a real CalDAV check. Sidebar "Resource bookings" link is shown in demo and live.
 - Pending-hatch: no tentative+hatched variant, so pending blocked is plain tentative.

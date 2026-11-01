@@ -25,8 +25,8 @@
 
 ## Needs integration
 
-- Nothing required. Part 1 auto-declines audit `automatic: true` without `reason`; to show `overlap`, add
-  `reason: 'overlap'` to that audit call in service.ts (frozen here).
+- Nothing required. The auto-decline audit in service.ts now carries `reason: 'overlap'` (added at
+  integration), so the requester's update shows it.
 - docs/design.md §5 / security-review 7.4: describe the three routes, the blocked-entry key set, and the
   free_busy narrowing above.
 

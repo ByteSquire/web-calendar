@@ -169,8 +169,9 @@ and client renders match.
   `web-calendar-data` volume. [`deploy/reverse-proxy/`](deploy/reverse-proxy/README.md) has nginx
   and Caddy examples.
 - `radicale` is the CalDAV store (`ghcr.io/kozea/radicale:3.9.0`). It has **no published
-  port**: it trusts the `X-Remote-User` header, so only the app may reach it on the
-  Compose network. Its configuration is [`deploy/radicale/config`](deploy/radicale/config)
+  port**: it trusts the `X-Remote-User` header, so only the app may reach it, on a Compose
+  network that only these two services share (`internal: true`, so it has no route out
+  either). Its configuration is [`deploy/radicale/config`](deploy/radicale/config)
   and its static, owner-only rules are [`deploy/radicale/rights`](deploy/radicale/rights),
   bind-mounted read-only. Calendars live on the `radicale-data` volume.
 - Radicale's group file is in the `radicale-groups` volume. Radicale refuses to start

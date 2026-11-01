@@ -24,6 +24,13 @@ services:
     # has worked examples.
     ports:
       - '127.0.0.1:3000:3000'
+    # default: everything else this service needs (Kanidm, the outbound hosts). radicale: shared
+    # only with the radicale service below, so nothing else on this Docker host can ever send it a
+    # request, whatever network another container is later attached to (security review
+    # 2026-11-01, finding 8).
+    networks:
+      - default
+      - radicale
     environment:
       # OIDC (generic; currently Kanidm). The issuer ends with the app's own public client.
       NUXT_OIDC_ISSUER: '${NUXT_OIDC_ISSUER:-}'
@@ -102,9 +109,11 @@ services:
   radicale:
     image: *radicale-image
     restart: unless-stopped
-    # No published port: Radicale trusts X-Remote-User, so only the app (on the Compose network) may
-    # reach it. Do not add `ports:` here.
+    # No published port, and no `default` network: Radicale trusts X-Remote-User, so only the app,
+    # on the `radicale` network below, may reach it. Do not add `ports:` here.
     # Radicale refuses to start without its group file, which the app creates when it starts.
+    networks:
+      - radicale
     depends_on:
       web-calendar:
         condition: service_healthy
@@ -129,6 +138,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+networks:
+  default:
+  # internal: true means Docker gives it no route out, so nothing on it can reach the internet or
+  # be reached from outside the host, whatever is later attached to `default`.
+  radicale:
+    internal: true
 
 volumes:
   web-calendar-data:

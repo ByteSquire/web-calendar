@@ -1,6 +1,6 @@
 # Web Calendar — Design
 
-> Status: **Draft v1.4** — companion to `requirements.md` (Draft v1.4).
+> Status: **Draft v1.5** — companion to `requirements.md` (Draft v1.4).
 > This document turns the requirements into a concrete technical design.
 > v1.2 (2026-10-29), after spike S1: the app bundles Radicale and exposes its own authenticated
 > `/caldav/` endpoint (bearer tokens verified locally, app tokens for other clients). Access rules
@@ -12,6 +12,8 @@
 > are built. Spikes S2 and S6 are done (§12); the deployment files follow this design (§10).
 > v1.4 (2026-11-01): no CI for now; releases are gated by a manual run of the checks on the
 > maintainer's machine (§12, Security backlog; README "Release checks").
+> v1.5 (2026-11-01): the external-account proxy and the time-zone ranges and writes are marked as
+> built, not planned (§4, §7); the `calendar-timezone` hint is still planned.
 
 ---
 
@@ -131,8 +133,9 @@ graph TD
   access rules (§8).
 - **iCal proxy** — fetches `.ics` subscriptions for the browser, which cannot read
   arbitrary URLs cross-origin.
-- **External-account proxy** (planned) — forwards CalDAV requests to a user-added server
-  with the credentials the browser sends per request; stores and logs none (§6, §7).
+- **External-account proxy** — forwards CalDAV requests to a user-added server
+  with the credentials the browser sends per request; stores and logs none (§6, §7;
+  `server/api/external/[id]/`).
 - **Caches** — Kanidm signing keys and iCal fetches (server); fetched events for
   30 s (SPA). Nothing is served stale.
 
@@ -624,14 +627,14 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
     the display zone. **All-day events are dates and do not move.** A weekly 09:00 Berlin
     meeting follows Berlin's daylight saving, not the viewer's; for a viewer in Sydney it
     can fall on another weekday.
-  - _Ranges_ (planned): the visible range is a range in the display zone; it is sent to
-    Radicale as UTC instants, padded by a day (Radicale matches floating times and all-day
-    events as if they were UTC, see S10).
+  - _Ranges_: the visible range is a range in the display zone; it is sent to
+    Radicale as UTC instants, padded by a day (`padDays` in `app/utils/caldav/reader.ts`;
+    Radicale matches floating times and all-day events as if they were UTC, see S10).
   - _Third-party clients_ show events in their device's zone; nothing server-side is
     needed. Planned: the app sets `calendar-timezone` on calendars it creates as a hint for
     floating times; Radicale stores it but does not use it (S10) and most clients ignore
     it, so floating events from such clients stay a known limitation.
-  - _Writes_ (planned): new events carry `TZID` of the author's zone plus a `VTIMEZONE`,
+  - _Writes_: new events carry `TZID` of the author's zone plus a `VTIMEZONE`,
     so a recurrence follows that zone's daylight saving; an edit keeps the event's own
     `TZID`. `ical.js` ships no time zone data: the `VTIMEZONE` source is open.
 - **Writes** — `PUT`/`DELETE` with `If-Match` ETags. On `412` (changed meanwhile)

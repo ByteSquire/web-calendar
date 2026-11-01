@@ -64,6 +64,7 @@ const emit = defineEmits<{
   'update:open': [open: boolean]
   choose: [scope: ScopeChoice]
 }>()
+useBackDismiss(toRef(props, 'open'), () => emit('update:open', false))
 
 // A row is a 44 px target in full: the radio's pseudo-element spreads over the whole row.
 const RADIO_UI = {

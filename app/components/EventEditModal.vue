@@ -95,6 +95,7 @@ const emit = defineEmits<{
   'update:open': [open: boolean]
   submit: [changes: EventChanges]
 }>()
+useBackDismiss(toRef(props, 'open'), () => emit('update:open', false))
 
 const timeZone = useDisplayTimeZone()
 const fields = useTemplateRef('fields')

@@ -60,6 +60,7 @@ const emit = defineEmits<{
   'update:open': [open: boolean]
   confirm: []
 }>()
+useBackDismiss(toRef(props, 'open'), () => emit('update:open', false))
 
 const title = computed(() => `Delete "${props.eventTitle}"?`)
 const cancelButton = useTemplateRef<{ $el: HTMLElement }>('cancelButton')

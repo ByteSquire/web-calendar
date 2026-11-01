@@ -128,6 +128,10 @@ import { eventWriteAccess } from '~/utils/writes/rules'
 
 const { selectedEvent, selectedEventId, selectEvent, calendarById, categoryById, resourceById } =
   useCalendarState()
+useBackDismiss(
+  computed(() => selectedEvent.value !== null),
+  () => selectEvent(null),
+)
 const timeZone = useDisplayTimeZone()
 const orgTimeZone = useOrgTimeZone()
 const isDesktop = useIsDesktop()

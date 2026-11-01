@@ -87,6 +87,7 @@ const {
   visibleRange,
   addEvent,
 } = useCalendarState()
+useBackDismiss(quickAddOpen, closeQuickAdd)
 const toast = useToast()
 const timeZone = useDisplayTimeZone()
 const { live, create } = useEventWrites()

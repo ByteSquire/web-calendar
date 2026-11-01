@@ -48,6 +48,13 @@
           />
         </li>
       </ul>
+      <NuxtLink
+        to="/resources/requests"
+        class="inline-flex min-h-11 items-center gap-1.5 px-2 underline"
+      >
+        <UIcon name="i-lucide-inbox" class="size-4" aria-hidden="true" />
+        Resource bookings
+      </NuxtLink>
     </SidebarSection>
 
     <SidebarSection title="Categories">

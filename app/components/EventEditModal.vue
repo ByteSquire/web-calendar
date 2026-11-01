@@ -37,11 +37,24 @@
           :category-names="categoryNames"
           :time-zone="timeZone"
         />
+        <ResourceBookingFields
+          v-model="chosenResources"
+          :offered="offered"
+          :booked="booked"
+          :note="resourceNote"
+          :disabled="pending"
+        />
       </form>
     </template>
 
     <template #footer>
-      <div class="flex w-full justify-end gap-2">
+      <div class="flex w-full flex-wrap items-center justify-end gap-2">
+        <BookRightAwayCheckbox
+          v-if="chosenResources.length > 0"
+          v-model="bookNow"
+          :disabled="pending"
+          class="me-auto"
+        />
         <UButton
           label="Cancel"
           color="neutral"
@@ -56,6 +69,8 @@
 
 <script setup lang="ts">
 import type { Calendar, CalendarEvent } from '../../shared/types/calendar'
+import type { BookableResource } from '~/utils/resources/types'
+import type { ReadEvent } from '~/utils/ical/x-properties'
 import { keepFocusOffControlsOnTouch, pickFocusTarget } from '~/utils/focus'
 import type { EventChanges } from '~/utils/ical/write-types'
 import {
@@ -93,17 +108,42 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   'update:open': [open: boolean]
-  submit: [changes: EventChanges]
+  /** `booking`: the resources to book for the event, only when "Book right away" is checked. */
+  submit: [changes: EventChanges, booking?: BookableResource[]]
 }>()
 useBackDismiss(toRef(props, 'open'), () => emit('update:open', false))
 
 const timeZone = useDisplayTimeZone()
+const { bookable } = useResourceRights()
+const { resources } = useCalendarState()
 const fields = useTemplateRef('fields')
 const formElement = useTemplateRef('formElement')
 
 const original = ref<EventForm | null>(null)
 const form = ref<EventForm | null>(null)
 const submitted = ref(false)
+
+// Resources (FR-17). Marks cover a whole series, so a series can only get a resource through one
+// occurrence ("this event"); resources the event books already are shown, not offered again.
+const chosenResources = ref<string[]>([])
+const bookNow = ref(true)
+const marks = computed(() => (props.event as ReadEvent | null)?.bookingMarks)
+const booked = computed(() => {
+  const id = marks.value?.resourceId
+  const resource = resources.value.find((item) => item.id === String(id))
+  return resource ? [{ name: resource.name, status: marks.value?.status }] : []
+})
+const mayAddResources = computed(() => !props.event?.recurring || props.scope === 'this')
+const offered = computed(() =>
+  mayAddResources.value
+    ? bookable.value.filter((item) => item.id !== String(marks.value?.resourceId))
+    : [],
+)
+const resourceNote = computed(() =>
+  !mayAddResources.value && bookable.value.length > 0
+    ? 'To book a resource for a repeating event, edit one occurrence ("This event").'
+    : '',
+)
 
 const calendarList = computed(() => (props.calendar ? [props.calendar] : []))
 const errors = computed(() =>
@@ -130,6 +170,8 @@ watch(
     original.value = eventFormFromEvent(props.event)
     form.value = eventFormFromEvent(props.event)
     submitted.value = false
+    chosenResources.value = []
+    bookNow.value = true
   },
   { immediate: true },
 )
@@ -160,6 +202,11 @@ async function onSubmit() {
     formElement.value?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
     return
   }
-  emit('submit', diffEventForm(original.value, form.value))
+  const changes = diffEventForm(original.value, form.value)
+  const chosen = bookNow.value
+    ? offered.value.filter((item) => chosenResources.value.includes(item.id))
+    : []
+  if (chosen.length > 0) emit('submit', changes, chosen)
+  else emit('submit', changes)
 }
 </script>

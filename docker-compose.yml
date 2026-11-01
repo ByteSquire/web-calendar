@@ -93,9 +93,10 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    # Healthy means the server is up AND its token verifier and CalDAV gateway are wired: the public
-    # config answers 200, and /caldav/ without credentials answers 401 (a bad configuration would
-    # answer 500 there, or the process would not be running at all).
+    # Healthy means the server is up AND its CalDAV gateway answers: the public config answers 200,
+    # and /caldav/ without credentials answers 401 (a bad configuration would answer 500 there, or
+    # the process would not be running at all). It never calls the identity provider on purpose: an
+    # outage there must not make the container unhealthy and restart a working app.
     healthcheck:
       test:
         - CMD

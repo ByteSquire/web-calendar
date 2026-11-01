@@ -258,7 +258,9 @@ minimum:
   sharing writer, the public endpoint), each with its own tests, and the backend is
   reachable from nothing else. _(Audit scope and controls: `docs/security-review.md`.)_
 - **NFR-3 (Accessibility)** The web UI meets **WCAG 2.1 AA**.
-- **NFR-4 (Reliability)** Defined availability target and graceful degradation
+- **NFR-4 (Reliability)** **Best effort**: one instance of the app and one of the
+  CalDAV store, restarted automatically by the container runtime; there is no uptime
+  figure to promise or measure. Graceful degradation
   when an external source (iCal/CalDAV) is unreachable: that calendar shows an
   error with a retry while the others keep working. **No stale data is served**:
   the app keeps no copy of calendar data beyond 30 s in the browser's memory. (The
@@ -270,7 +272,10 @@ minimum:
 - **NFR-7 (Operability and secure defaults)** The server refuses to start with an
   invalid or missing security setting; a settings error is never discovered at the first
   request. All security settings are listed in `.env.example` with their defaults, and
-  the container's health check exercises the token verifier.
+  the container's health check shows that the server is up and its gateway answers
+  (the public config returns 200 and the CalDAV gateway returns 401 without
+  credentials). It does not call the identity provider, so an outage there never
+  restarts the app.
 
 ---
 

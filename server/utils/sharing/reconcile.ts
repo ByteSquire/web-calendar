@@ -221,8 +221,8 @@ export function createSharingReconciler(options: ReconcileOptions): SharingRecon
     ): Promise<SharingResult<{ maps: RadicaleShare[]; tokens: RadicaleShare[] }>> {
       const maps = await client.listShares(owner, 'map')
       if (!maps.ok) return maps
-      // Token shares are not ours to create, so any of them is unknown. If the API does not answer
-      // for tokens, there is nothing to list.
+      // Token shares are not ours to create, so any of them is unknown. Radicale answers 404 to
+      // every token call unless collection_by_token is on; then there is nothing to list.
       const tokens = await client.listShares(owner, 'token')
       if (!tokens.ok && tokens.failure.kind === 'unreachable') return tokens
       return { ok: true, value: { maps: maps.value, tokens: tokens.ok ? tokens.value : [] } }

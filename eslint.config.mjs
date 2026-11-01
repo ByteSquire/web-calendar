@@ -8,6 +8,7 @@ export default withNuxt(
   {
     ignores: [
       '.claude/**',
+      '.gg/**',
       '.data/**',
       '.npm-cache/**',
       'dev/spike-s1/.local/**',

@@ -49,3 +49,6 @@ test-results-live/
 /.config/
 /.vscode
 /.claude
+
+# GG Coder working folder (plans, commands, uploads)
+/.gg

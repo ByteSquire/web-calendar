@@ -32,6 +32,7 @@ docker-compose*.yml
 
 # Developer tooling and personal files that live in the dev-container workspace
 .claude
+.gg
 .mcp.json
 .gitconfig
 .bashrc

@@ -122,6 +122,9 @@ export function serverEnv(settings) {
     NUXT_RADICALE_URL: settings.radicaleUrl,
     NUXT_TOKEN_HASH_KEY: settings.hashKey,
     NUXT_DB_PATH: settings.dbPath,
+    // Production refuses an empty host list (security review 2026-11-01, finding 1). The suites do
+    // not make outbound requests; this is the setting a deployment is expected to have.
+    NUXT_OUTBOUND_ALLOWED_HOSTS: 'example.org',
   }
 }
 

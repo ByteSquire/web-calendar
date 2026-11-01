@@ -19,7 +19,7 @@ interface TestConfig {
   tokenHashKeys?: string
   radicale: { url: string }
   icalProxy: Record<string, unknown>
-  outbound: { allowedHosts: string }
+  outbound: { allowedHosts: string; allowAnyHost: string }
   external: { sealKey: string }
   gateway: Record<string, unknown>
   groupSync: { file: string }
@@ -45,7 +45,7 @@ function goodConfig(): TestConfig {
       timeoutMs: '10000',
       allowPrivate: 'false',
     },
-    outbound: { allowedHosts: '' },
+    outbound: { allowedHosts: '', allowAnyHost: 'false' },
     external: { sealKey: '' },
     gateway: { corsOrigins: '', maxBodyBytes: '10485760', trustForwardedFor: 'false' },
     groupSync: { file: '' },
@@ -186,13 +186,34 @@ describe('startup checks with the real glue modules', () => {
     expect((await failuresFor((c) => (c.icalProxy.allowPrivate = 'true'))).exited).toBe(false)
   })
 
+  it('lets an empty outbound host list through outside production', async () => {
+    expect((await failuresFor()).exited).toBe(false)
+  })
+
+  it('refuses an empty outbound host list in production, accepts a list or the switch', async () => {
+    vi.stubEnv('NODE_ENV', 'production')
+    const refused = await failuresFor()
+    expect(refused.exited).toBe(true)
+    expect(refused.message).toContain('NUXT_OUTBOUND_ALLOW_ANY_HOST=true')
+
+    expect((await failuresFor((c) => (c.outbound.allowedHosts = 'cal.example.org'))).exited).toBe(
+      false,
+    )
+    expect((await failuresFor((c) => (c.outbound.allowAnyHost = 'true'))).exited).toBe(false)
+  })
+
   it('refuses allowPrivate in production without the second switch, accepts it with it', async () => {
     vi.stubEnv('NODE_ENV', 'production')
-    const refused = await failuresFor((c) => (c.icalProxy.allowPrivate = 'true'))
+    // A host list, so that production does not also refuse the open outbound scope.
+    const privateOn = (c: TestConfig) => {
+      c.icalProxy.allowPrivate = 'true'
+      c.outbound.allowedHosts = 'cal.example.org'
+    }
+    const refused = await failuresFor(privateOn)
     expect(refused.exited).toBe(true)
     expect(refused.message).toContain('SSRF guard')
 
     vi.stubEnv('NUXT_ICAL_PROXY_ALLOW_PRIVATE_I_UNDERSTAND_THE_RISK', 'true')
-    expect((await failuresFor((c) => (c.icalProxy.allowPrivate = 'true'))).exited).toBe(false)
+    expect((await failuresFor(privateOn)).exited).toBe(false)
   })
 })

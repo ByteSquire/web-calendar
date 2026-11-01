@@ -33,6 +33,27 @@ function integer(name: string, envName: string, value: unknown, min: number): nu
 /** The name of the second switch that production needs before `allowPrivate` is honoured. */
 export const ALLOW_PRIVATE_ACK_VARIABLE = 'NUXT_ICAL_PROXY_ALLOW_PRIVATE_I_UNDERSTAND_THE_RISK'
 
+/**
+ * Why the server must not start with the outbound settings as they are, or null (security review
+ * 2026-11-01, finding 1). No host list means every public host may be contacted for the users. In
+ * production that is an open channel to a host anyone who can sign in may choose, so it has to be
+ * switched on knowingly with `allowAnyHost` (NUXT_OUTBOUND_ALLOW_ANY_HOST=true).
+ */
+export function outboundScopeError(options: {
+  production: boolean
+  /** Entries in NUXT_OUTBOUND_ALLOWED_HOSTS. */
+  hostCount: number
+  allowAnyHost: boolean
+}): string | null {
+  if (!options.production || options.hostCount > 0 || options.allowAnyHost) return null
+  return (
+    'NUXT_OUTBOUND_ALLOWED_HOSTS is empty, which lets the server contact every public host for ' +
+    'its users (iCal subscriptions, external CalDAV accounts). In production, list the hosts ' +
+    'users may use (cal.example.org, *.example.org), or knowingly set ' +
+    'NUXT_OUTBOUND_ALLOW_ANY_HOST=true.'
+  )
+}
+
 export interface IcalProxyEnvironment {
   /** `NODE_ENV=production`. */
   production: boolean

@@ -93,11 +93,19 @@ export default defineNuxtConfig({
       /**
        * Comma-separated host names the server may contact for its users, case-insensitive: exact
        * (`cal.example.org`) or below a domain (`*.example.org`, not `example.org` itself)
-       * (NUXT_OUTBOUND_ALLOWED_HOSTS). Empty means every public host. A listed host may live in a
-       * private range; loopback, link-local and the CalDAV store's host never. The server refuses
-       * to start with a malformed list.
+       * (NUXT_OUTBOUND_ALLOWED_HOSTS). Empty means every public host, which in production needs
+       * `allowAnyHost` as well (below). A listed host may live in a private range; loopback,
+       * link-local and the CalDAV store's host never. The server refuses to start with a
+       * malformed list.
        */
       allowedHosts: '',
+      /**
+       * NUXT_OUTBOUND_ALLOW_ANY_HOST: with no list, production starts only when this is `true`
+       * (security review 2026-11-01, finding 1). An open list is a channel to a host chosen by
+       * whoever can sign in, or by a script injected into the page: it must be a decision, not a
+       * default. Ignored when a list is set, and outside production.
+       */
+      allowAnyHost: 'false',
     },
     /** External CalDAV accounts (FR-8). */
     external: {

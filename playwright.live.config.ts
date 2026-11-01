@@ -46,6 +46,8 @@ export default defineConfig({
     env: {
       HOST: '127.0.0.1',
       PORT: String(PORT),
+      // Production refuses an empty host list unless this is true (security review 2026-11-01).
+      NUXT_OUTBOUND_ALLOW_ANY_HOST: 'true',
       NUXT_DB_PATH: '/tmp/e2e-live.db',
       NUXT_OIDC_ISSUER: 'https://idm.localhost:8443/oauth2/openid/web-calendar',
       NUXT_RADICALE_URL: 'http://radicale:5232',

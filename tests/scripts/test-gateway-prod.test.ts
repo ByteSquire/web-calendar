@@ -81,6 +81,7 @@ describe('serverEnv', () => {
       NUXT_RADICALE_URL: settings.radicaleUrl,
       NUXT_TOKEN_HASH_KEY: settings.hashKey,
       NUXT_DB_PATH: settings.dbPath,
+      NUXT_OUTBOUND_ALLOWED_HOSTS: 'example.org',
     })
   })
 
@@ -94,7 +95,12 @@ describe('serverEnv', () => {
         Object.keys(env)
           .filter((name) => name !== 'NUXT_OIDC_ISSUER' && name.startsWith('NUXT_'))
           .sort(),
-      ).toEqual(['NUXT_DB_PATH', 'NUXT_RADICALE_URL', 'NUXT_TOKEN_HASH_KEY'])
+      ).toEqual([
+        'NUXT_DB_PATH',
+        'NUXT_OUTBOUND_ALLOWED_HOSTS',
+        'NUXT_RADICALE_URL',
+        'NUXT_TOKEN_HASH_KEY',
+      ])
     } finally {
       vi.unstubAllEnvs()
     }

@@ -458,9 +458,10 @@ only accounts with no login work. Why not call the server from the browser: CORS
 by browsers, so most CalDAV servers (which only serve native clients) do not send CORS headers;
 native clients reach any server. Controls (details in §7 and the security review): authenticated
 users only; the target origin comes only from the stored account; the SSRF guard of the iCal
-proxy plus an **optional** administrator host list, `NUXT_OUTBOUND_ALLOWED_HOSTS` (it also gates
+proxy plus an administrator host list, `NUXT_OUTBOUND_ALLOWED_HOSTS` (it also gates
 iCal subscriptions, which closes the channel through which a script could send data to a host of
-its choosing; empty means any public host); method, header and size allow-lists; same-origin
+its choosing; empty means any public host, which production refuses to start with unless
+`NUXT_OUTBOUND_ALLOW_ANY_HOST=true`, review 2026-11-01); method, header and size allow-lists; same-origin
 redirects only; per-user rate limits; the page's `connect-src` stays `'self'`.
 
 **Server-side token check** (SPA and bearer clients) — decided: **local JWT
@@ -672,8 +673,10 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
   public (IPv6 only `2000::/3`), checked again when the socket connects so DNS rebinding
   does not help; at most 3 redirects, each re-checked; size and time limits while streaming;
   no stale copy is served after an error. `NUXT_ICAL_PROXY_ALLOW_PRIVATE=true` is for tests.
-  The optional host list (`NUXT_OUTBOUND_ALLOWED_HOSTS`: exact names and `*.suffix`) is enforced on
+  The host list (`NUXT_OUTBOUND_ALLOWED_HOSTS`: exact names and `*.suffix`) is enforced on
   create, update, every fetch and every redirect hop, for subscriptions and external accounts alike.
+  An empty list is refused in production unless `NUXT_OUTBOUND_ALLOW_ANY_HOST=true` (the server
+  does not start; outside production an empty list still means every public host).
   Listed hosts may be private, but loopback, link-local, unspecified, multicast and the Radicale
   host are always refused.
 - **External accounts** (FR-8) — server: `GET/POST /api/external-accounts`,
@@ -1081,8 +1084,8 @@ volumes:
   `server/validate-config.mjs` use the names above. The container refuses to start without
   `NUXT_OIDC_ISSUER` (https, last segment = the client id), `NUXT_TOKEN_HASH_KEY` or
   `NUXT_TOKEN_HASH_KEYS` (each key ≥ 32 characters) and `NUXT_RADICALE_URL`; `NUXT_GROUP_SYNC_TOKEN`
-  only warns until group sync exists. Optional security settings: `NUXT_OUTBOUND_ALLOWED_HOSTS`,
-  `NUXT_EXTERNAL_SEAL_KEY` (64 hex characters or base64 of 32 bytes); a malformed value stops the server.
+  only warns until group sync exists. Security settings: `NUXT_OUTBOUND_ALLOWED_HOSTS` (required in production, or
+  `NUXT_OUTBOUND_ALLOW_ANY_HOST=true`), `NUXT_EXTERNAL_SEAL_KEY` (optional) (64 hex characters or base64 of 32 bytes); a malformed value stops the server.
 - **Persistence and backup** — the SQLite file and Radicale's data are the two things
   to back up. The SQLite file is in WAL mode, so it is copied with `VACUUM INTO`
   (`scripts/backup-db.mjs`, `npm run backup`; it checks the copy and never changes the

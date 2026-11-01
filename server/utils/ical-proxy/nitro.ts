@@ -1,6 +1,6 @@
 import { createError } from 'h3'
 import { createIcalProxy, type IcalProxy } from './cache'
-import { ALLOW_PRIVATE_ACK_VARIABLE, parseIcalProxyConfig } from './config'
+import { ALLOW_PRIVATE_ACK_VARIABLE, outboundScopeError, parseIcalProxyConfig } from './config'
 import { IcalFetchError } from './errors'
 import { parseHostList } from './host-list'
 import { createAddressPolicy, hostnameOf, type AddressPolicy } from './ssrf'
@@ -42,8 +42,17 @@ function getRuntime() {
     if (problems.length > 0) {
       throw new Error(`NUXT_OUTBOUND_ALLOWED_HOSTS cannot be used: ${problems.join('; ')}`)
     }
+    const production = process.env.NODE_ENV === 'production'
+    const allowAnyHost = String(outbound.allowAnyHost) === 'true'
+    const open = outboundScopeError({ production, hostCount: list.size, allowAnyHost })
+    if (open) throw new Error(open)
     if (list.size > 0) {
       console.info(`[outbound] only ${list.size} listed host entries may be contacted`)
+    } else if (production) {
+      console.warn(
+        '[outbound] WARNING: NUXT_OUTBOUND_ALLOW_ANY_HOST=true and no host list: the server ' +
+          'contacts any public host its users name.',
+      )
     }
     const store = radicaleHost(radicale.url)
     const policy = createAddressPolicy({

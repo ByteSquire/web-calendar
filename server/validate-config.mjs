@@ -13,6 +13,14 @@ const MAX_TOKEN_HASH_KEYS = 10
 // runs before the server; a test keeps the two equal).
 const ALLOW_PRIVATE_ACK = 'NUXT_ICAL_PROXY_ALLOW_PRIVATE_I_UNDERSTAND_THE_RISK'
 
+// The refusal for an open outbound host list in production: the same text as `outboundScopeError`
+// in utils/ical-proxy/config.ts (equality is tested).
+export const OUTBOUND_OPEN_MESSAGE =
+  'NUXT_OUTBOUND_ALLOWED_HOSTS is empty, which lets the server contact every public host for ' +
+  'its users (iCal subscriptions, external CalDAV accounts). In production, list the hosts ' +
+  'users may use (cal.example.org, *.example.org), or knowingly set ' +
+  'NUXT_OUTBOUND_ALLOW_ANY_HOST=true.'
+
 /** @param {string} value */
 function parseUrl(value) {
   try {
@@ -289,6 +297,7 @@ export function validateEnv(env) {
   checkInteger('NUXT_ICAL_PROXY_MAX_BYTES', 1)
   checkInteger('NUXT_ICAL_PROXY_TIMEOUT_MS', 1)
   checkBoolean('NUXT_ICAL_PROXY_ALLOW_PRIVATE')
+  checkBoolean('NUXT_OUTBOUND_ALLOW_ANY_HOST')
   checkBoolean('NUXT_DEMO')
 
   // Empty means unset for both: Compose passes them on even when .env leaves them empty.
@@ -298,6 +307,30 @@ export function validateEnv(env) {
       `NUXT_OUTBOUND_ALLOWED_HOSTS cannot be used (comma-separated host names such as ` +
         `cal.example.org or *.example.org): ${hostProblems.join('; ')}`,
     )
+  }
+  // An empty list means every public host. In production that has to be a decision (security review
+  // 2026-11-01, finding 1). Mirrors outboundScopeError in utils/ical-proxy/config.ts (this script is
+  // plain JS and runs before the server; tests/validate-config.test.ts keeps the two messages equal).
+  if (hostProblems.length === 0) {
+    const hostCount = (env.NUXT_OUTBOUND_ALLOWED_HOSTS ?? '')
+      .split(',')
+      .filter((entry) => entry.trim() !== '').length
+    const allowAnyHost = env.NUXT_OUTBOUND_ALLOW_ANY_HOST === 'true'
+    if (env.NODE_ENV === 'production' && hostCount === 0) {
+      if (allowAnyHost) {
+        warnings.push(
+          'NUXT_OUTBOUND_ALLOW_ANY_HOST=true and no NUXT_OUTBOUND_ALLOWED_HOSTS: the server ' +
+            'contacts any public host its users name. A list of the hosts you expect is safer.',
+        )
+      } else {
+        errors.push(OUTBOUND_OPEN_MESSAGE)
+      }
+    } else if (hostCount > 0 && allowAnyHost) {
+      warnings.push(
+        'NUXT_OUTBOUND_ALLOW_ANY_HOST=true has no effect: NUXT_OUTBOUND_ALLOWED_HOSTS is set, ' +
+          'and only those hosts may be contacted.',
+      )
+    }
   }
   const sealKey = get('NUXT_EXTERNAL_SEAL_KEY')
   if (sealKey !== '' && !isSealKey(sealKey)) {

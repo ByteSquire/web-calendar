@@ -56,6 +56,9 @@ export default defineConfig({
       HOST: '127.0.0.1',
       PORT: String(PORT),
       NUXT_DEMO: 'true',
+      // The build runs in production, which refuses an empty host list unless this is true; the
+      // browser tests keep what an empty list always meant (security review 2026-11-01).
+      NUXT_OUTBOUND_ALLOW_ANY_HOST: 'true',
       NUXT_DB_PATH: '.data/e2e.db',
       NUXT_OIDC_ISSUER: 'https://idm.example.org/oauth2/openid/web-calendar',
       NUXT_TOKEN_HASH_KEY: 'e2e-test-key-e2e-test-key-e2e-test-key',

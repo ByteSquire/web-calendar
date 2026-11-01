@@ -3,8 +3,8 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { validateEnv } from '../server/validate-config.mjs'
-import { ALLOW_PRIVATE_ACK_VARIABLE } from '../server/utils/ical-proxy/config'
+import { OUTBOUND_OPEN_MESSAGE, validateEnv } from '../server/validate-config.mjs'
+import { ALLOW_PRIVATE_ACK_VARIABLE, outboundScopeError } from '../server/utils/ical-proxy/config'
 
 const script = fileURLToPath(new URL('../server/validate-config.mjs', import.meta.url))
 
@@ -187,7 +187,12 @@ describe('validateEnv', () => {
   })
 
   describe('optional booleans (only the exact text counts)', () => {
-    const names = ['NUXT_GATEWAY_TRUST_FORWARDED_FOR', 'NUXT_ICAL_PROXY_ALLOW_PRIVATE', 'NUXT_DEMO']
+    const names = [
+      'NUXT_GATEWAY_TRUST_FORWARDED_FOR',
+      'NUXT_ICAL_PROXY_ALLOW_PRIVATE',
+      'NUXT_OUTBOUND_ALLOW_ANY_HOST',
+      'NUXT_DEMO',
+    ]
     const check = (name: string, value: string) => validateEnv({ ...valid, [name]: value }).errors
 
     it.each(names)('%s accepts true and false', (name) => {
@@ -236,7 +241,9 @@ describe('validateEnv', () => {
   })
 
   describe('NUXT_ICAL_PROXY_ALLOW_PRIVATE in production (L3)', () => {
-    const run = (env: Record<string, string>) => validateEnv({ ...valid, ...env })
+    // A host list, so that production does not also complain about an open outbound scope.
+    const run = (env: Record<string, string>) =>
+      validateEnv({ ...valid, NUXT_OUTBOUND_ALLOWED_HOSTS: 'cal.example.org', ...env })
 
     it('is an error, and names the second switch', () => {
       const { errors } = run({ NUXT_ICAL_PROXY_ALLOW_PRIVATE: 'true', NODE_ENV: 'production' })
@@ -286,6 +293,72 @@ describe('validateEnv', () => {
         errors: [],
         warnings: [],
       })
+    })
+  })
+
+  describe('an open outbound scope in production (security review 2026-11-01, finding 1)', () => {
+    const run = (env: Record<string, string>) => validateEnv({ ...valid, ...env })
+
+    it('is an error: production with no host list and no NUXT_OUTBOUND_ALLOW_ANY_HOST', () => {
+      const { errors } = run({ NODE_ENV: 'production' })
+      expect(errors).toEqual([OUTBOUND_OPEN_MESSAGE])
+      expect(errors[0]).toContain('NUXT_OUTBOUND_ALLOW_ANY_HOST=true')
+    })
+
+    it('uses the same words as the server does when it starts', () => {
+      expect(outboundScopeError({ production: true, hostCount: 0, allowAnyHost: false })).toBe(
+        OUTBOUND_OPEN_MESSAGE,
+      )
+    })
+
+    it.each(['', 'false', 'TRUE', 'yes', '1', ' true'])(
+      'stays an error when NUXT_OUTBOUND_ALLOW_ANY_HOST is %j',
+      (value) => {
+        const { errors } = run({ NODE_ENV: 'production', NUXT_OUTBOUND_ALLOW_ANY_HOST: value })
+        expect(errors.length).toBeGreaterThan(0)
+        if (value !== '' && value !== 'false') {
+          expect(errors.join('\n')).toContain('must be exactly "true" or "false"')
+        }
+      },
+    )
+
+    it('is a warning, not an error, once it is allowed knowingly', () => {
+      const { errors, warnings } = run({
+        NODE_ENV: 'production',
+        NUXT_OUTBOUND_ALLOW_ANY_HOST: 'true',
+      })
+      expect(errors).toEqual([])
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('any public host')
+    })
+
+    it('is quiet with a host list, and says the switch does nothing next to a list', () => {
+      expect(
+        run({ NODE_ENV: 'production', NUXT_OUTBOUND_ALLOWED_HOSTS: 'cal.example.org' }),
+      ).toEqual({
+        errors: [],
+        warnings: [],
+      })
+      const both = run({
+        NODE_ENV: 'production',
+        NUXT_OUTBOUND_ALLOWED_HOSTS: 'cal.example.org',
+        NUXT_OUTBOUND_ALLOW_ANY_HOST: 'true',
+      })
+      expect(both.errors).toEqual([])
+      expect(both.warnings.join('\n')).toContain('has no effect')
+    })
+
+    it('does not apply outside production, where development and tests run', () => {
+      for (const NODE_ENV of ['development', 'test', '']) {
+        expect(run({ NODE_ENV })).toEqual({ errors: [], warnings: [] })
+      }
+      expect(run({})).toEqual({ errors: [], warnings: [] })
+    })
+
+    it('does not add its own error to a list that cannot be used', () => {
+      const { errors } = run({ NODE_ENV: 'production', NUXT_OUTBOUND_ALLOWED_HOSTS: '*' })
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('cannot be used')
     })
   })
 
@@ -532,7 +605,12 @@ describe('validate-config.mjs as a script', () => {
   })
 
   it('refuses allowPrivate in production and passes it with the second switch', () => {
-    const env = { ...valid, NUXT_ICAL_PROXY_ALLOW_PRIVATE: 'true', NODE_ENV: 'production' }
+    const env = {
+      ...valid,
+      NUXT_OUTBOUND_ALLOWED_HOSTS: 'cal.example.org',
+      NUXT_ICAL_PROXY_ALLOW_PRIVATE: 'true',
+      NODE_ENV: 'production',
+    }
     const refused = run(env)
     expect(refused.status).toBe(1)
     expect(refused.stderr).toContain('SSRF guard')
@@ -540,6 +618,18 @@ describe('validate-config.mjs as a script', () => {
     const knowing = run({ ...env, [ALLOW_PRIVATE_ACK_VARIABLE]: 'true' })
     expect(knowing.status).toBe(0)
     expect(knowing.stderr).toContain('IN PRODUCTION')
+  })
+
+  it('refuses an open outbound scope in production and passes it with the switch or a list', () => {
+    const env = { ...valid, NODE_ENV: 'production' }
+    const refused = run(env)
+    expect(refused.status).toBe(1)
+    expect(refused.stderr).toContain('NUXT_OUTBOUND_ALLOW_ANY_HOST=true')
+
+    expect(run({ ...env, NUXT_OUTBOUND_ALLOWED_HOSTS: 'cal.example.org' }).status).toBe(0)
+    const knowing = run({ ...env, NUXT_OUTBOUND_ALLOW_ANY_HOST: 'true' })
+    expect(knowing.status).toBe(0)
+    expect(knowing.stderr).toContain('any public host')
   })
 
   it('prints the demo warning and still exits 0', () => {
@@ -576,6 +666,7 @@ describe('the examples list what the validator knows (L2)', () => {
     'NUXT_ICAL_PROXY_MAX_BYTES',
     'NUXT_ICAL_PROXY_TIMEOUT_MS',
     'NUXT_ICAL_PROXY_ALLOW_PRIVATE',
+    'NUXT_OUTBOUND_ALLOW_ANY_HOST',
     'NUXT_DEMO',
   ]
 

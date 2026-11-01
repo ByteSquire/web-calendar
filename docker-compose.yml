@@ -66,8 +66,11 @@ services:
       # (NODE_ENV=production in this image).
       NUXT_ICAL_PROXY_ALLOW_PRIVATE: '${NUXT_ICAL_PROXY_ALLOW_PRIVATE:-false}'
       # Hosts the server may contact for its users (iCal subscriptions, external CalDAV accounts):
-      # comma-separated names, `*.example.org` for a domain; empty means every public host.
+      # comma-separated names, `*.example.org` for a domain. This image runs in production, where an
+      # empty list is refused (the server does not start) unless NUXT_OUTBOUND_ALLOW_ANY_HOST is true.
       NUXT_OUTBOUND_ALLOWED_HOSTS: '${NUXT_OUTBOUND_ALLOWED_HOSTS:-}'
+      # true: with no list above, any public host may be contacted. Ignored when a list is set.
+      NUXT_OUTBOUND_ALLOW_ANY_HOST: '${NUXT_OUTBOUND_ALLOW_ANY_HOST:-false}'
       # Seals the passwords of external CalDAV accounts: 32 random bytes as base64 or hex, for
       # example `openssl rand -base64 32`. Empty means accounts with a login are off.
       NUXT_EXTERNAL_SEAL_KEY: '${NUXT_EXTERNAL_SEAL_KEY:-}'

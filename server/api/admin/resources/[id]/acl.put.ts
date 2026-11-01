@@ -10,14 +10,16 @@ import { parseResourceAcl } from '../../../../utils/resources/input'
 
 // Replaces all rules of the resource. Only read, book and manage exist here; write-style rights
 // and `public` are refused by the validation.
-export default defineAdminHandler(async (event, { db, audit }) => {
+export default defineAdminHandler(async (event, { db, audit, atomic }) => {
   const id = parseId(getRouterParam(event, 'id'))
   found(getResource(db, id))
   const rules = expectValid(parseResourceAcl(await readBody(event)))
   try {
-    const saved = replaceResourceAcl(db, id, rules)
-    audit('resource.acl_replaced', `resource:${id}`, { resourceId: id, rules: saved.length })
-    return { rules: saved.map(aclDto) }
+    return atomic(() => {
+      const saved = replaceResourceAcl(db, id, rules)
+      audit('resource.acl_replaced', `resource:${id}`, { resourceId: id, rules: saved.length })
+      return { rules: saved.map(aclDto) }
+    })
   } catch (error) {
     if (error instanceof AclError) throw toBadRequest([{ field: 'rules', message: error.message }])
     throw error

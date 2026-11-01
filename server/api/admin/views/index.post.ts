@@ -6,10 +6,13 @@ import { parseViewInput } from '../../../utils/api/views'
 
 // Creates a shared view. Calendars are not looked up: a ref the viewer cannot read is simply
 // empty for them (Radicale answers 403), so nothing is revealed or guessed here.
-export default defineAdminHandler(async (event, { db, audit }) => {
+export default defineAdminHandler(async (event, { db, audit, atomic }) => {
   const input = expectValid(parseViewInput(await readBody(event), { allowExternal: false }))
-  const view = createAdminView(db, input)
-  audit('admin_view.created', String(view.id), { name: view.name })
+  const view = atomic(() => {
+    const created = createAdminView(db, input)
+    audit('admin_view.created', String(created.id), { name: created.name })
+    return created
+  })
   setResponseStatus(event, 201)
   return view
 })

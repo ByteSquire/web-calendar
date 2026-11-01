@@ -6,9 +6,11 @@ import { parseId } from '../../../../utils/api/validation'
 import { resourceDto } from '../../../../utils/resources/dto'
 
 // New bookings stop; existing ones and their blocks stay (the resource is not deleted).
-export default defineAdminHandler((event, { db, audit }) => {
+export default defineAdminHandler((event, { db, audit, atomic }) => {
   const id = parseId(getRouterParam(event, 'id'))
-  const resource = found(deactivateResource(db, id))
-  audit('resource.deactivated', `resource:${id}`, { resourceId: id })
-  return resourceDto(resource)
+  return atomic(() => {
+    const resource = found(deactivateResource(db, id))
+    audit('resource.deactivated', `resource:${id}`, { resourceId: id })
+    return resourceDto(resource)
+  })
 })

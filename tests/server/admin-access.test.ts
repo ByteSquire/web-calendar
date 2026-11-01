@@ -132,6 +132,14 @@ const put = (id: number | string, rules: unknown, who = 'alice') =>
 
 const read = (who = 'alice') => call('GET', '/api/admin/access/calendars', undefined, who)
 
+/** Makes every audit insert fail, as a full disk or a locked file would. */
+function breakAudit(db: Database) {
+  db.exec(
+    `CREATE TRIGGER audit_down BEFORE INSERT ON audit_log
+     BEGIN SELECT RAISE(ABORT, 'audit down'); END`,
+  )
+}
+
 describe('who may call it', () => {
   it('refuses a user who is not in the admin group, on every route', async () => {
     userinfoGroups = ['staff']
@@ -262,6 +270,17 @@ describe('replacing the rules', () => {
     })
     expect(entry?.details).not.toContain(BOB)
     expect(entry?.details).not.toContain(SYNC_TOKEN)
+  })
+
+  it('stores no rule, and asks for no reconcile, when the audit entry cannot be written (finding 10)', async () => {
+    const id = addCalendar('Team')
+    addCalendarAcl(db, id, { principalType: 'user', principal: BOB, permission: 'read' })
+    const before = listCalendarAcl(db, id)
+    breakAudit(db)
+    const response = await put(id, [{ principalType: 'authenticated', permission: 'free_busy' }])
+    expect(response.status).toBe(500)
+    expect(listCalendarAcl(db, id)).toEqual(before)
+    expect(changed).not.toHaveBeenCalled()
   })
 
   it('keeps applied_at of a rule that stays and unapplies a changed one', async () => {

@@ -5,10 +5,13 @@ import { expectValid } from '../../../utils/api/validation'
 import { resourceDto } from '../../../utils/resources/dto'
 import { parseResourceCreate } from '../../../utils/resources/input'
 
-export default defineAdminHandler(async (event, { db, audit }) => {
+export default defineAdminHandler(async (event, { db, audit, atomic }) => {
   const fields = expectValid(parseResourceCreate(await readBody(event)))
-  const resource = createResource(db, fields)
-  audit('resource.created', `resource:${resource.id}`, { resourceId: resource.id })
+  const resource = atomic(() => {
+    const created = createResource(db, fields)
+    audit('resource.created', `resource:${created.id}`, { resourceId: created.id })
+    return created
+  })
   setResponseStatus(event, 201)
   return resourceDto(resource)
 })

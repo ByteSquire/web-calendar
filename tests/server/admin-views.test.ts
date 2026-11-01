@@ -36,6 +36,12 @@ vi.mock('../../server/utils/api/config', () => ({
   }),
 }))
 
+// The per-actor limit has its own tests (admin-guard.test.ts); this file makes more calls than it
+// allows in a minute.
+vi.mock('../../server/utils/api/admin-limit', () => ({
+  createAdminLimiter: () => ({ take: () => null }),
+}))
+
 const WORK = 'dav:/caldav/sub-alice/work/'
 const EXTERNAL = 'ext:acc:https://x.example/c/'
 
@@ -101,6 +107,14 @@ async function createShared(name = 'All staff'): Promise<number> {
 const audit = () => listAuditEntries(db).reverse()
 const rows = () => db.prepare('SELECT * FROM views ORDER BY id').all()
 
+/** Makes every audit insert fail, as a full disk or a locked file would. */
+function breakAudit(db: Database) {
+  db.exec(
+    `CREATE TRIGGER audit_down BEFORE INSERT ON audit_log
+     BEGIN SELECT RAISE(ABORT, 'audit down'); END`,
+  )
+}
+
 describe('admin view routes', () => {
   it('creates a shared view without owner and audits it with the name only', async () => {
     const response = await call('POST', '/api/admin/views', valid())
@@ -156,6 +170,37 @@ describe('admin view routes', () => {
       { name: 'Everyone' },
       { name: 'Everyone' },
     ])
+  })
+
+  describe('a change and its audit row are one transaction (security review 2026-11-01, finding 10)', () => {
+    it('creates nothing when the audit entry cannot be written', async () => {
+      breakAudit(db)
+      const response = await call('POST', '/api/admin/views', valid())
+      expect(response.status).toBe(500)
+      expect(rows()).toEqual([])
+    })
+
+    it('changes nothing on an update whose audit entry cannot be written', async () => {
+      const id = await createShared()
+      const before = rows()
+      breakAudit(db)
+      const response = await call('PUT', `/api/admin/views/${id}`, valid('Renamed'))
+      expect(response.status).toBe(500)
+      expect(rows()).toEqual(before)
+    })
+
+    it('deletes nothing when the audit entry cannot be written', async () => {
+      const id = await createShared()
+      const before = rows()
+      breakAudit(db)
+      expect((await call('DELETE', `/api/admin/views/${id}`)).status).toBe(500)
+      expect(rows()).toEqual(before)
+    })
+
+    it('still answers 404 for a missing view, with no audit row', async () => {
+      expect((await call('DELETE', '/api/admin/views/999')).status).toBe(404)
+      expect(audit()).toEqual([])
+    })
   })
 
   it('answers 403 to a non-admin on every route and changes nothing', async () => {

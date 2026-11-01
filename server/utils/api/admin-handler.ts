@@ -15,6 +15,13 @@ export interface AdminContext {
   identity: Identity
   /** Writes one audit entry as the caller; `details` is redacted before it is stored. */
   audit(action: string, target?: string, details?: Record<string, unknown>): void
+  /**
+   * Runs `work` in one database transaction: a change and its `audit()` entry are stored together
+   * or not at all, so no change can exist without its audit row (security review 2026-11-01,
+   * finding 10). Anything thrown inside, an audit failure included, undoes the change. Keep
+   * side effects outside the database (a reconcile request) for after it returns.
+   */
+  atomic<T>(work: () => T): T
 }
 
 export interface AdminHandlerOptions {
@@ -52,6 +59,7 @@ export function defineAdminHandler<T>(
       identity,
       audit: (action, target, details) =>
         recordAudit(db, { actorSub: identity.sub, action, target, details, requestId }),
+      atomic: (work) => db.transaction(work)(),
     })
   })
 }

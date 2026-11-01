@@ -10,7 +10,7 @@ import { ApiError, found, toBadRequest } from '../../../../utils/api/errors'
 import { expectValid, parseId } from '../../../../utils/api/validation'
 
 // Sets the complete rule list of one calendar (FR-14). Radicale follows through the port.
-export default defineAdminHandler(async (event, { db, audit }) => {
+export default defineAdminHandler(async (event, { db, audit, atomic }) => {
   const id = parseId(getRouterParam(event, 'id'))
   found(getCalendarRow(db, id))
   const rules = expectValid(parseRulesBody(await readBody(event)))
@@ -41,7 +41,11 @@ export default defineAdminHandler(async (event, { db, audit }) => {
 
   let outcome
   try {
-    outcome = applyRules(db, id, rules)
+    outcome = atomic(() => {
+      const applied = applyRules(db, id, rules)
+      if (applied.changed) audit('acl.replaced', `calendar:${id}`, applied.details)
+      return applied
+    })
   } catch (error) {
     if (error instanceof AclError) {
       throw toBadRequest([{ field: 'rules', message: error.message }])
@@ -49,7 +53,7 @@ export default defineAdminHandler(async (event, { db, audit }) => {
     throw error
   }
   if (outcome.changed) {
-    audit('acl.replaced', `calendar:${id}`, outcome.details)
+    // After the commit: the reconcile reads what was just saved.
     try {
       getAccessPorts().onAclChanged()
     } catch (error) {

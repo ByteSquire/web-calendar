@@ -6,10 +6,12 @@ import { expectValid, parseId } from '../../../utils/api/validation'
 import { parseViewInput } from '../../../utils/api/views'
 
 // Replaces a shared view; a user's view is 404 here.
-export default defineAdminHandler(async (event, { db, audit }) => {
+export default defineAdminHandler(async (event, { db, audit, atomic }) => {
   const id = parseId(getRouterParam(event, 'id'))
   const input = expectValid(parseViewInput(await readBody(event), { allowExternal: false }))
-  const view = found(updateAdminView(db, id, input))
-  audit('admin_view.updated', String(view.id), { name: view.name })
-  return view
+  return atomic(() => {
+    const view = found(updateAdminView(db, id, input))
+    audit('admin_view.updated', String(view.id), { name: view.name })
+    return view
+  })
 })

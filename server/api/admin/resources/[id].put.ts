@@ -6,10 +6,15 @@ import { expectValid, parseId } from '../../../utils/api/validation'
 import { resourceDto } from '../../../utils/resources/dto'
 import { parseResourceUpdate } from '../../../utils/resources/input'
 
-export default defineAdminHandler(async (event, { db, audit }) => {
+export default defineAdminHandler(async (event, { db, audit, atomic }) => {
   const id = parseId(getRouterParam(event, 'id'))
   const patch = expectValid(parseResourceUpdate(await readBody(event)))
-  const resource = found(updateResource(db, id, patch))
-  audit('resource.updated', `resource:${id}`, { resourceId: id, fields: Object.keys(patch).sort() })
-  return resourceDto(resource)
+  return atomic(() => {
+    const resource = found(updateResource(db, id, patch))
+    audit('resource.updated', `resource:${id}`, {
+      resourceId: id,
+      fields: Object.keys(patch).sort(),
+    })
+    return resourceDto(resource)
+  })
 })

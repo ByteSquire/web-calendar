@@ -265,8 +265,9 @@ and Radicale's CSV is a silent authorization error in either direction.
 - **Reconcile, do not patch:** desired shares from `calendar_acl`, Radicale's actual list, apply
   the diff, re-read, compare, alarm on any difference; on every ACL change and every 5 minutes. A
   share SQLite does not know is **removed** and the removal audited.
-- Closed permission table: `read → r`, `write → rw`, `free_busy → f` (only once `f` is confirmed
-  for map shares), `admin` never reaches Radicale.
+- Closed permission table: `read → r`, `write → rw`, `free_busy → f` (confirmed for map shares of
+  a calendar in S5: free/busy only, `GET`/`calendar-query`/writes 403; Radicale also accepts `''` and
+  free-form strings, so the writer sends only these three values), `admin` never reaches Radicale.
 - Radicale unreachable: retry with backoff, `503` for ACL writes, `calendar_acl.applied_at` set only
   after Radicale confirmed.
 - **Second opinion for Radicale:** the gateway pre-checks from SQLite that the collection's owner

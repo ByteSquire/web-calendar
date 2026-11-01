@@ -25,9 +25,18 @@ describe('parseBookingInput', () => {
         startAt: ok.startAt,
         endAt: '2026-11-05T10:00:00Z',
         eventCalendarId: null,
+        eventCalendarPath: null,
         eventUid: 'abc',
       },
     })
+  })
+
+  it.each([
+    ['with its slash', '/caldav/sub-1/cal%20a/', '/sub-1/cal a/'],
+    ['without it', '/caldav/sub-1/cal', '/sub-1/cal/'],
+  ])('turns the public path of the calendar into the stored one, %s', (_name, given, stored) => {
+    const parsed = parseBookingInput({ ...ok, eventCalendarPath: given }, 3)
+    expect(parsed.ok && parsed.value.eventCalendarPath).toBe(stored)
   })
 
   it.each([
@@ -36,6 +45,20 @@ describe('parseBookingInput', () => {
     ['an end before the start', { ...ok, endAt: '2026-11-05T07:00:00Z' }],
     ['no uid', { ...ok, eventUid: ' ' }],
     ['a calendar id that is a string', { ...ok, eventCalendarId: '3' }],
+    ['a calendar path that is not a string', { ...ok, eventCalendarPath: 5 }],
+    ['a calendar path outside /caldav/', { ...ok, eventCalendarPath: '/dav/sub-1/cal/' }],
+    ['the home of a user as the calendar path', { ...ok, eventCalendarPath: '/caldav/sub-1/' }],
+    ['a calendar path in a deeper place', { ...ok, eventCalendarPath: '/caldav/a/b/c.ics' }],
+    ['a calendar path with a dot segment', { ...ok, eventCalendarPath: '/caldav/a/../b/' }],
+    ['a calendar path with a query', { ...ok, eventCalendarPath: '/caldav/a/b/?x=1' }],
+    [
+      'a calendar path that is a full URL',
+      { ...ok, eventCalendarPath: 'https://x.test/caldav/a/b/' },
+    ],
+    [
+      'a calendar by id and by path',
+      { ...ok, eventCalendarId: 3, eventCalendarPath: '/caldav/a/b/' },
+    ],
   ])('refuses %s', (_name, body) => {
     expect(parseBookingInput(body, 3).ok).toBe(false)
   })

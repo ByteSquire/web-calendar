@@ -43,7 +43,8 @@ export type ApiBooking = ApiOwnBooking | ApiManagedBooking
 export interface NewBookingBody {
   startAt: string
   endAt: string
-  eventCalendarId: number | null
+  /** The event's calendar by its CalDAV path; the server finds its own id. Null when not the built-in service's. */
+  eventCalendarPath: string | null
   eventUid: string
 }
 

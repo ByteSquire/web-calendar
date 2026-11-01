@@ -12,7 +12,9 @@ import {
   readText,
   type Parsed,
 } from '../api/validation'
+import { PathRejection, resolvePublicPath } from '../gateway/paths'
 import { isGroupName } from '../group-sync/format'
+import { splitCollectionPath } from '../sharing/names'
 import type { NewBookingRequest } from './service'
 
 export const RESOURCE_TYPES = ['room', 'car', 'equipment'] as const satisfies ResourceType[]
@@ -67,6 +69,20 @@ function readCapacity(value: unknown, errors: FieldErrors): { value: number | nu
   return { value: undefined }
 }
 
+/** `/caldav/<owner>/<name>/` as the stored `/owner/name/`, or null when it is no calendar path. */
+function storedCollectionPath(value: string): string | null {
+  try {
+    const { upstreamPath } = resolvePublicPath(value.endsWith('/') ? value : `${value}/`, {
+      allowQuery: false,
+    })
+    const path = decodeURIComponent(upstreamPath)
+    return splitCollectionPath(path) ? path : null
+  } catch (error) {
+    if (error instanceof PathRejection) return null
+    throw error
+  }
+}
+
 export function parseBookingInput(body: unknown, resourceId: number): Parsed<NewBookingRequest> {
   const errors = new FieldErrors()
   const input = readObject(body, errors)
@@ -79,6 +95,20 @@ export function parseBookingInput(body: unknown, resourceId: number): Parsed<New
     if (typeof id === 'number' && Number.isSafeInteger(id) && id > 0) eventCalendarId = id
     else errors.add('eventCalendarId', 'must be a calendar id or null')
   }
+  let eventCalendarPath: string | null = null
+  if (input.eventCalendarPath !== undefined && input.eventCalendarPath !== null) {
+    const path =
+      typeof input.eventCalendarPath === 'string' && input.eventCalendarPath.length <= 500
+        ? storedCollectionPath(input.eventCalendarPath)
+        : null
+    if (path === null) {
+      errors.add('eventCalendarPath', 'must be a calendar path like /caldav/<owner>/<name>/')
+    } else if (eventCalendarId !== null) {
+      errors.add('eventCalendarPath', 'give the calendar by id or by path, not both')
+    } else {
+      eventCalendarPath = path
+    }
+  }
   if (startAt && endAt && Date.parse(endAt) <= Date.parse(startAt)) {
     errors.add('endAt', 'must be after startAt')
   }
@@ -87,6 +117,7 @@ export function parseBookingInput(body: unknown, resourceId: number): Parsed<New
     startAt: startAt!,
     endAt: endAt!,
     eventCalendarId,
+    eventCalendarPath,
     eventUid: eventUid!,
   }))
 }

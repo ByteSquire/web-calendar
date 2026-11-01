@@ -194,6 +194,21 @@ describe('requestBooking', () => {
     const ok = await requestBooking(deps, alice, { ...slot(5), eventCalendarId: alices })
     expect(ok.ok).toBe(true)
   })
+
+  it('finds the calendar of the booker by its path and leaves any other unlinked', async () => {
+    const insert = db.prepare(
+      "INSERT INTO calendars (name, kind, owner_id, collection_path) VALUES ('c', 'personal', ?, ?) RETURNING id",
+    )
+    insert.get(bob.id, '/bob/c/')
+    const alices = (insert.get(alice.id, '/alice/c/') as { id: number }).id
+    const linked = await book(alice, { ...slot(5), eventCalendarPath: '/alice/c/' })
+    expect(linked.event_calendar_id).toBe(alices)
+    // A calendar of someone else and a path nobody has: the booking works, the event is not followed.
+    const strangers = await book(alice, { ...slot(6), eventCalendarPath: '/bob/c/' })
+    expect(strangers.event_calendar_id).toBeNull()
+    const unknown = await book(alice, { ...slot(7), eventCalendarPath: '/alice/none/' })
+    expect(unknown.event_calendar_id).toBeNull()
+  })
 })
 
 describe('the block', () => {
@@ -269,6 +284,18 @@ describe('who may change a booking', () => {
       'resource_booking.cancelled',
       'resource_booking.declined',
     ])
+  })
+
+  it('stops a manager cancelling the booking of someone else when the setting is off', async () => {
+    const strict: ServiceDeps = { ...deps, managerCancel: false }
+    const one = await book(alice, slot(5))
+    const two = await book(manager, slot(6))
+    expect(await cancelBooking(strict, manager, one.id)).toEqual({ ok: false, code: 'forbidden' })
+    expect(getBooking(db, one.id)?.status).toBe('pending')
+    // Declining is still the manager's decision, and nobody loses the right to cancel their own.
+    expect((await declineBooking(strict, manager, one.id)).ok).toBe(true)
+    expect((await cancelBooking(strict, alice, (await book(alice, slot(7))).id)).ok).toBe(true)
+    expect((await cancelBooking(strict, manager, two.id)).ok).toBe(true)
   })
 
   it('does not change a final booking', async () => {

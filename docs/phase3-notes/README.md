@@ -13,5 +13,9 @@ not executed.
 - [`sharing-writer.md`](sharing-writer.md) — `calendar_acl` to Radicale map shares, gateway pre-check, nightly audit job, block store.
 - [`access-ui.md`](access-ui.md) — access administration (FR-14/15): API, the `/admin/access` page and its decisions.
 - [`resources-core.md`](resources-core.md) — resources part 1: entities, bookings, availability blocks (server side).
+- [`resources-availability.md`](resources-availability.md) — resources part 2, server: availability, manager queue and updates routes.
+- [`resources-ui.md`](resources-ui.md) — resources part 2, client: availability display, booking flow, requests page, update toast.
+- [`booking-reconcile.md`](booking-reconcile.md) — resources part 3: reconcile of moved or deleted events, `booking_sync`.
+- [`sharing-verify.md`](sharing-verify.md) — the sharing writer's Radicale assumptions checked against Radicale 3.9.0.
 
 This folder is working material. The project owner may delete it once the docs are merged.

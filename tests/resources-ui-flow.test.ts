@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   bookResources,
+  calendarPathOf,
   describeBooked,
   describeFailures,
   type BookingFlowDeps,
@@ -43,6 +44,22 @@ function deps(post: BookingFlowDeps['post']) {
   }
 }
 
+describe('calendarPathOf', () => {
+  it.each([
+    ['a path of the built-in service', '/caldav/sub-1/work/', '/caldav/sub-1/work/'],
+    ['one without the closing slash', '/caldav/sub-1/work', '/caldav/sub-1/work/'],
+    [
+      'an absolute URL of the app',
+      'https://cal.test/caldav/sub-1/work/?x=1',
+      '/caldav/sub-1/work/',
+    ],
+    ['a calendar of another server', 'https://dav.example.org/dav/cal/', null],
+    ['nothing', '  ', null],
+  ])('reads %s', (_name, href, path) => {
+    expect(calendarPathOf(href)).toBe(path)
+  })
+})
+
 describe('bookResources', () => {
   it('books each resource with the event uid and marks the event with the first booking', async () => {
     const post = vi.fn(async (path: string) => ({
@@ -54,11 +71,12 @@ describe('bookResources', () => {
       resources: [a, b],
       slot,
       eventUid: 'e1',
+      calendarHref: '/caldav/sub-1/work/',
       markUrl: '/c/e1.ics',
     })
     expect(post).toHaveBeenNthCalledWith(1, '/api/resources/5/bookings', {
       ...slot,
-      eventCalendarId: null,
+      eventCalendarPath: '/caldav/sub-1/work/',
       eventUid: 'e1',
     })
     expect(result.booked.map((item) => item.bookingId)).toEqual([11, 12])
@@ -78,6 +96,7 @@ describe('bookResources', () => {
       resources: [a, b],
       slot,
       eventUid: 'e1',
+      calendarHref: '/caldav/sub-1/work/',
       markUrl: null,
     })
     expect(describeFailures(result)).toEqual([
@@ -88,7 +107,13 @@ describe('bookResources', () => {
 
   it('writes no marks without a url or when nothing was booked, and flags a failed marking', async () => {
     const none = deps(vi.fn(async () => ({ id: 1, status: 'approved' as const })))
-    await bookResources(none.deps, { resources: [a], slot, eventUid: 'e1', markUrl: null })
+    await bookResources(none.deps, {
+      resources: [a],
+      slot,
+      eventUid: 'e1',
+      calendarHref: '/caldav/sub-1/work/',
+      markUrl: null,
+    })
     expect(none.getObject).not.toHaveBeenCalled()
 
     const refused = deps(
@@ -100,6 +125,7 @@ describe('bookResources', () => {
       resources: [a],
       slot,
       eventUid: 'e1',
+      calendarHref: '/caldav/sub-1/work/',
       markUrl: '/c/e1.ics',
     })
     expect(refused.getObject).not.toHaveBeenCalled()
@@ -112,6 +138,7 @@ describe('bookResources', () => {
       resources: [a],
       slot,
       eventUid: 'e1',
+      calendarHref: '/caldav/sub-1/work/',
       markUrl: '/c/e1.ics',
     })
     expect(m.marksFailed).toBe(true)
@@ -127,6 +154,7 @@ describe('bookResources', () => {
       resources: [a, b],
       slot,
       eventUid: 'e1',
+      calendarHref: '/caldav/sub-1/work/',
       markUrl: null,
     })
     expect(describeBooked(result)).toBe('Van booked; Room 1 requested, waiting for approval.')

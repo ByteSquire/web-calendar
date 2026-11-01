@@ -30,11 +30,14 @@ vi.mock('../../server/utils/auth/nitro', async () => {
   }
 })
 
+const settings = vi.hoisted(() => ({ managerCancel: true }))
+
 vi.mock('../../server/utils/api/config', () => ({
   apiConfig: () => ({
     tokenHashKey: 'test-hash-key',
     oidcIssuer: 'https://idm.test/oauth2/openid/web-calendar',
     adminGroup: 'calendar_admins',
+    managerCancel: settings.managerCancel,
   }),
 }))
 
@@ -66,6 +69,7 @@ function mount() {
 }
 
 beforeEach(() => {
+  settings.managerCancel = true
   db = openTestDb()
   setDb(db)
   blocks = new Map()
@@ -232,6 +236,62 @@ describe('user routes', () => {
       (await call('alice', 'POST', `/api/resources/${id}/bookings`, { startAt: 'x' })).status,
     ).toBe(400)
     expect((await call('alice', 'GET', '/api/resources/abc')).status).toBe(404)
+  })
+
+  it('link the booking to the calendar named by its path, and refuse a malformed path', async () => {
+    const id = await createRoom()
+    await call('admin', 'PUT', `/api/admin/resources/${id}/acl`, {
+      rules: [{ principalType: 'authenticated', right: 'book' }],
+    })
+    await call('alice', 'GET', '/api/resources')
+    const owner = db.prepare("SELECT id FROM users WHERE oidc_sub = 'sub-alice'").get() as {
+      id: number
+    }
+    const calendarId = (
+      db
+        .prepare(
+          "INSERT INTO calendars (name, kind, owner_id, collection_path) VALUES ('c', 'personal', ?, '/sub-alice/c/') RETURNING id",
+        )
+        .get(owner.id) as { id: number }
+    ).id
+    const linked = await call('alice', 'POST', `/api/resources/${id}/bookings`, {
+      ...slotBody(),
+      eventCalendarPath: '/caldav/sub-alice/c/',
+    })
+    expect(linked.status).toBe(201)
+    expect(await linked.json()).toMatchObject({ eventCalendarId: calendarId })
+    const bad = await call('alice', 'POST', `/api/resources/${id}/bookings`, {
+      ...slotBody(1),
+      eventCalendarPath: '/caldav/sub-alice/',
+    })
+    expect(bad.status).toBe(400)
+  })
+
+  it('let a manager cancel the booking of someone else only while the setting allows it', async () => {
+    const id = await createRoom()
+    await call('admin', 'PUT', `/api/admin/resources/${id}/acl`, {
+      rules: [
+        { principalType: 'authenticated', right: 'book' },
+        { principalType: 'group', principal: 'facility', right: 'manage' },
+      ],
+    })
+    const first = (await (
+      await call('alice', 'POST', `/api/resources/${id}/bookings`, slotBody())
+    ).json()) as { id: number }
+    const second = (await (
+      await call('alice', 'POST', `/api/resources/${id}/bookings`, slotBody(2))
+    ).json()) as { id: number }
+    settings.managerCancel = false
+    expect(
+      (await call('manager', 'POST', `/api/resources/${id}/bookings/${first.id}/cancel`)).status,
+    ).toBe(403)
+    expect(
+      (await call('alice', 'POST', `/api/resources/${id}/bookings/${first.id}/cancel`)).status,
+    ).toBe(200)
+    settings.managerCancel = true
+    expect(
+      (await call('manager', 'POST', `/api/resources/${id}/bookings/${second.id}/cancel`)).status,
+    ).toBe(200)
   })
 
   it('need a signed-in caller', async () => {

@@ -28,7 +28,7 @@ export function useResourceBooking() {
   const { refresh } = useLiveStatus()
 
   /** `calendarHref` is dropped from the reader's cache so the marks show after the reload. */
-  async function book(args: BookingFlowArgs & { calendarHref: string }): Promise<BookingReport> {
+  async function book(args: BookingFlowArgs): Promise<BookingReport> {
     const client = caldav?.client
     const result = await bookResources(
       {

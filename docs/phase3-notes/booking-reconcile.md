@@ -37,7 +37,7 @@
 
 ## Needs integration
 
-- `managerCancel`: the service (`service.ts` `move`) already lets a manager cancel any booking, unconditionally. I
+- DONE at integration (default on, as design §5 says): `managerCancel` is read by `depsOf` through `apiConfig()` and checked in `move` in service.ts. Original note: the service (`service.ts` `move`) already lets a manager cancel any booking, unconditionally. I
   could not gate it there (frozen). Decision for integration: in `server/api/resources/[id]/bookings/[bookingId]/cancel.post.ts`
   (or `move`), refuse (403) a cancel by a non-requester manager unless `useRuntimeConfig().resources.managerCancel === 'true'`.
   Note this changes today's behaviour with the default off; if that is unwanted, flip the default.

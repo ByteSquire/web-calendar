@@ -377,8 +377,10 @@ any leak from the block defeats FR-18.
   `CLASS:CONFIDENTIAL` and an opaque back-reference id, never the booking calendar's path or UID.
   Details come from an API that checks the caller's access to the booking calendar first. _Built:_
   the block also carries `X-WEB-CALENDAR-BLOCK:<block_ref>` and `STATUS:TENTATIVE` while pending
-  (the block reference is random and unique, not the booking id); the detail API is part of
-  resources part 2 and **not built yet**.
+  (the block reference is random and unique, not the booking id); the detail API is
+  `GET /api/resources/availability` (built, not run): a caller who cannot read the event's calendar
+  gets exactly `bookingId, start, end, status, blocked, mine`, and an event without a calendar is
+  blocked. Residual: the check also takes `free_busy` grants and is imprecise for mixed grants.
 - Users get `f` (or `r`) on resource calendars; the API refuses `write` ACLs on resources.
 - Accept/decline is app-side state with an audit trail (CalDAV scheduling would admit arbitrary
   iTIP input). Limit bookings per user per day, duration and look-ahead. _Built:_ 24 h, 10 per
@@ -386,15 +388,26 @@ any leak from the block defeats FR-18.
   booking rate limit of 10 burst and one per 2 s per user (per process); the resource ACL routes
   accept only `read`, `book`, `manage` for user, group, authenticated, never `public`. Event-level
   `X-` properties are stripped on import and booking marks are trusted only from the built-in
-  service. Audit actions: `resource_booking.created|approved|declined|cancelled|block_failed`,
+  service. Audit actions: `resource_booking.created|approved|declined|cancelled|orphaned|block_failed`,
   `resource.created|updated|deactivated|acl_replaced`, ids only; an automatic decline carries
-  `automatic: true`. Residual: a removed group right lingers up to the 60 s userinfo cache.
+  `automatic: true` and `reason: 'overlap'`. Residual: a removed group right lingers up to the 60 s userinfo cache.
+- The reconcile of moved or deleted events runs as the booker through the internal client, with the
+  same principal and path guards as the sharing client. It never cancels because an event changed,
+  lost its marks or could not be read: those go to the manager queue. Only an event that is
+  definitively gone cancels, after 3 looks, audited as `system:resources` with
+  `reason: 'event_removed'`. A manager cancels the booking of someone else only while
+  `NUXT_RESOURCES_MANAGER_CANCEL` is not `false` (on by default); the requester always may. The
+  booking names its event calendar by path; the server accepts only a calendar the booker owns and
+  otherwise leaves the booking unlinked, so a booking cannot point into a stranger's calendar.
 - Tests: the block contains nothing else; a user with `f` cannot `GET` it; two concurrent bookings
   → one wins; a booker cannot delete another's block; a non-reader gets "blocked". _Written, not run:_
   `tests/server/access-schema.test.ts`, `tests/server/resources-service.test.ts`,
-  `resources-input.test.ts`, `resources-routes.test.ts`, `tests/ical-x-properties.test.ts`,
+  `resources-input.test.ts`, `resources-routes.test.ts`, `resources-availability.test.ts`,
+  `resources-availability-routes.test.ts`, `resources-reconcile.test.ts`,
+  `resources-reconcile-reader.test.ts`, `tests/resources-ui-*.test.ts`,
+  `e2e/resources-requests.spec.ts`, `tests/ical-x-properties.test.ts`,
   `tests/ical-split.test.ts` (changed). Not covered yet: the "contains nothing else" and "user with
-  `f` cannot `GET`" checks against a real Radicale, and the detail API.
+  `f` cannot `GET`" checks against a real Radicale, and the detail API against one.
 
 ### 7.5 Public view (FR-26/27)
 

@@ -33,6 +33,8 @@ export interface ServiceDeps {
   store: BlockStore
   now?: () => Date
   limits?: Partial<BookingLimits>
+  /** False stops a manager cancelling the bookings of others; the requester always may. */
+  managerCancel?: boolean
   log?: (message: string) => void
   requestId?: string
 }
@@ -46,6 +48,11 @@ export interface NewBookingRequest {
   endAt: string
   /** The booker's own calendar holding the event; null when the event is not saved yet. */
   eventCalendarId: number | null
+  /**
+   * The same calendar by its stored path (`/owner/name/`), for a caller that does not know ids.
+   * One that is not the booker's own (a share) leaves the booking unlinked instead of refusing it.
+   */
+  eventCalendarPath?: string | null
   eventUid: string
 }
 
@@ -126,6 +133,15 @@ export async function repairBlocks(deps: ServiceDeps): Promise<{ synced: number;
   return { synced, failed }
 }
 
+function ownCalendarIdByPath(db: Database, actor: Actor, path: string): number | null {
+  const row = db
+    .prepare<[string, number], { id: number }>(
+      'SELECT id FROM calendars WHERE collection_path = ? AND owner_id = ?',
+    )
+    .get(path, actor.id)
+  return row?.id ?? null
+}
+
 function ownsCalendar(db: Database, actor: Actor, calendarId: number): boolean {
   return (
     db
@@ -148,12 +164,22 @@ export async function requestBooking(
     if (!getResource(db, input.resourceId) || right === null) return fail('not_found')
     if (!rightAtLeast(right, 'book')) return fail('forbidden')
     // Only the booker's own calendar may be named, so a booking cannot point into a stranger's.
-    if (input.eventCalendarId !== null && !ownsCalendar(db, actor, input.eventCalendarId)) {
+    let eventCalendarId = input.eventCalendarId
+    if (input.eventCalendarPath) {
+      eventCalendarId = ownCalendarIdByPath(db, actor, input.eventCalendarPath)
+    } else if (eventCalendarId !== null && !ownsCalendar(db, actor, eventCalendarId)) {
       return fail('invalid_event')
     }
     const result = createBooking(
       db,
-      { ...input, requesterId: actor.id },
+      {
+        resourceId: input.resourceId,
+        requesterId: actor.id,
+        startAt: input.startAt,
+        endAt: input.endAt,
+        eventCalendarId,
+        eventUid: input.eventUid,
+      },
       { now: deps.now?.(), limits: deps.limits },
     )
     if (!result.ok) return result
@@ -239,8 +265,11 @@ async function move(
   const run = deps.db.transaction((): ServiceResult<{ booking: BookingRow }> => {
     const loaded = load(deps, actor, id)
     if (!loaded) return fail('not_found')
-    // Declining is the manager's decision; cancelling also belongs to the one who asked.
-    const allowed = loaded.right === 'manage' || (to === 'cancelled' && loaded.isRequester)
+    // Declining is the manager's decision; cancelling also belongs to the one who asked, and a
+    // manager cancels the bookings of others only while the setting allows it.
+    const manages = loaded.right === 'manage'
+    const allowed =
+      to === 'declined' ? manages : loaded.isRequester || (manages && deps.managerCancel !== false)
     if (!allowed) return fail('forbidden')
     const result = transitionBooking(deps.db, id, to, actor.id, deps.now?.())
     if (!result.ok) return result

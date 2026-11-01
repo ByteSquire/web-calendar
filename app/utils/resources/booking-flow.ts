@@ -2,6 +2,7 @@
 // resource, then copy the booking onto the event as X-WEB-CALENDAR-* marks. The event is already
 // saved when this runs and stays saved whatever happens here; a refusal is reported by resource
 // and never throws. Injected services, no Vue.
+import { ensureTrailingSlash, toDavPath } from '../caldav/urls'
 import { setBookingMarks } from '../ical/booking-marks'
 import { describeBookingRefusal } from './errors'
 import type { BookableResource, BookingStatus, NewBookingBody } from './types'
@@ -21,6 +22,8 @@ export interface BookingFlowArgs {
   resources: readonly BookableResource[]
   slot: BookingSlot
   eventUid: string
+  /** URL of the collection that holds the event (`Calendar.href`). */
+  calendarHref: string
   /**
    * URL of the event's `.ics` for the marks, or null to write none (a single occurrence of a
    * series: the marks of a resource cover the whole series).
@@ -41,6 +44,12 @@ export interface BookingFlowResult {
   marksFailed: boolean
 }
 
+/** The path the server finds the booker's calendar by; null for a calendar of another service. */
+export function calendarPathOf(href: string): string | null {
+  const path = toDavPath(href.trim()).replace(/[?#].*$/, '')
+  return path.startsWith('/caldav/') ? ensureTrailingSlash(path) : null
+}
+
 /**
  * Requests the resources one after the other (the route is rate limited and the first refusal
  * says nothing about the next). The marks carry ONE resource, so with several only the first
@@ -56,8 +65,8 @@ export async function bookResources(
       const booking = await deps.post(`/api/resources/${resource.id}/bookings`, {
         startAt: args.slot.startAt,
         endAt: args.slot.endAt,
-        // The browser knows the calendar by its ref only; the server accepts null here.
-        eventCalendarId: null,
+        // The server turns the path into its own calendar id, so the reconcile can follow the event.
+        eventCalendarPath: calendarPathOf(args.calendarHref),
         eventUid: args.eventUid,
       })
       result.booked.push({ resource, bookingId: booking.id, status: booking.status })

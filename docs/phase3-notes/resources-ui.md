@@ -19,13 +19,13 @@
 
 - Recurring events: new repeating events and edits with scope other than "this" are saved WITHOUT booking, with a message (marks cover a
   series). An occurrence ("This event") can get a booking; marks are not written for it.
-- Booking sends `eventCalendarId: null` (the browser knows calendars by ref, not by DB id). Several resources: only the first booked one is marked.
+- Booking sends `eventCalendarPath` (`/caldav/<owner>/<name>/`; the browser knows calendars by path, not by DB id) and the server resolves the id. Several resources: only the first booked one is marked.
 - Refused booking: event stays saved; quick add shows the reasons and switches to a Close button (saving again would duplicate the event).
 - Own bookings are collected from `GET /api/resources/:id/bookings` for resources with book/manage right (N requests); a managed list is filtered to own requester id.
 
 ## Needs integration
 
-- A route listing all own bookings in one call would replace the N requests; and `eventCalendarId` could be resolved if `/api/calendar-prefs`/calendars exposed DB ids.
+- A route listing all own bookings in one call would replace the N requests. DONE at integration: the body sends `eventCalendarPath` (not `eventCalendarId: null`) and the server resolves the booker's calendar by it.
 - design.md §5/§9: describe the page, availability display and the series rule. README: add `/resources/requests`.
 
 ## Tests (written, NOT run)

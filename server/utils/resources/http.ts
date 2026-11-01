@@ -4,6 +4,7 @@ import { createError, setResponseHeader, type H3Event } from 'h3'
 import type { Database } from 'better-sqlite3'
 import { getBooking } from '../../db/bookings'
 import { createAdminLimiter, type AdminLimiter } from '../api/admin-limit'
+import { apiConfig } from '../api/config'
 import { ApiError, notFound } from '../api/errors'
 import { requestIdOf } from '../api/admin-handler'
 import type { ServiceDeps, ServiceErrorCode, ServiceResult } from './service'
@@ -42,7 +43,12 @@ export function takeBookingToken(event: H3Event, sub: string): void {
 }
 
 export function depsOf(event: H3Event, db: Database): ServiceDeps {
-  return { db, store: getBlockStore(), requestId: requestIdOf(event) }
+  return {
+    db,
+    store: getBlockStore(),
+    requestId: requestIdOf(event),
+    managerCancel: apiConfig().managerCancel,
+  }
 }
 
 /** The booking of the URL, 404 when it belongs to another resource (or does not exist). */

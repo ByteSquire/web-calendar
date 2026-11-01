@@ -228,7 +228,7 @@ Compared with v1.1, `sessions` is gone (no server-side tokens) and `calendars`,
 mock data still follow the v1.0 model (local ids, `etag`, `isBlocked`) and are
 adapted in Phase 2.
 
-**Built** (`server/db`, migrations `001_init.sql` to `006_access_and_resources.sql`): every table above except `published_calendars`. Beyond
+**Built** (`server/db`, migrations `001_init.sql` to `006_access_and_resources.sql`, then `008_booking_sync.sql`; there is no 007): every table above except `published_calendars`. Beyond
 the list: ids are `AUTOINCREMENT` (views refer to calendar ids in JSON, so ids are never reused);
 `users.username` is unique case-insensitively; `updated_at` is kept by triggers; `calendar_acl` has CHECKs
 tying `principal` to `principal_type`; a personal calendar needs an owner; deleting a user cascades to
@@ -320,7 +320,8 @@ they don't own" problem.
   State change, audit entry and rights check are one transaction; the store call comes after.
   Rights: no right on the resource gives 404; `read` only gives 403 on booking; a booking is
   visible to its requester and to managers (others get 404); accept and decline need `manage`;
-  cancel is for the requester or a manager; the booking's event calendar must belong to the
+  cancel is for the requester, or for a manager while `NUXT_RESOURCES_MANAGER_CANCEL` is not
+  `false` (on by default); the booking's event calendar must belong to the
   booker. Routes: `GET /api/resources`, `GET /api/resources/:id`,
   `GET|POST /api/resources/:id/bookings`, `POST /api/resources/:id/bookings/:bookingId/{accept,decline,cancel}`
   (booking rate limit 10 burst, one more per 2 s per user); admin (`defineAdminHandler`):
@@ -329,6 +330,51 @@ they don't own" problem.
   are audited as `declined` with `automatic: true`. Known limits: a managers' group right removed in
   Kanidm lingers up to the 60 s userinfo cache; managers of a deactivated resource cannot list its
   bookings (they can act by id).
+- **Built (part 2, server half; tests written, not yet run).** `GET /api/resources/availability`
+  gives the booked slots of the resources a caller may see in a range. Details (title, requester)
+  go only to a caller who can read the event's calendar, decided by the sharing module's path
+  pre-check with the caller's userinfo groups; everyone else gets exactly `bookingId, start, end,
+status, blocked, mine`, and an event without a calendar counts as blocked. `GET
+/api/resources/requests` is the manager queue (pending, or orphaned and pending or approved, of
+  resources with `manage`; oldest first). `GET /api/resources/updates` lists the caller's bookings
+  changed after a given time (at most 200), each with the reason `decision`, `overlap`,
+  `event_removed` or `event_moved` from the latest audit entry. All three are `no-store`; the
+  shapes are in `shared/types/resources-api.ts`. Known limits: the pre-check also accepts
+  `free_busy` grants, so a calendar outside the caller's own home must have one non-`free_busy`
+  rule, which is imprecise for mixed grants; groups come from userinfo (60 s cache) while the
+  pre-check normally reads the htgroup file, so the two can disagree briefly.
+- **Built (part 2, client; tests written, not yet run).** Each resource becomes a read-only
+  calendar `res:<id>`, hidden by default. For the visible ones the loader asks the availability
+  route in pieces of at most 62 days and shows approved and blocked slots as hatched "Busy",
+  pending ones as tentative "Busy (pending)", the rest as "Booked by <name>" or the event's title.
+  Quick add and the event edit form have the resource fields and the "book right away" checkbox;
+  the booking is requested after the save, and a refusal keeps the saved event and says why.
+  **Series rule:** a new repeating event, or an edit with a scope other than "This event", is
+  saved without booking (the marks would cover the whole series); one occurrence can be booked.
+  The page `/resources/requests` (menu entry "Resource bookings", managers only) lists pending
+  requests with accept and decline, an overlap hint and an orphaned note, and "My bookings" with
+  cancel. One toast on sign-in reports bookings that changed (seen-state in `localStorage`). Known
+  limits: "My bookings" takes one request per resource; with several resources only the first
+  booked one is marked on the event; a pending, blocked slot has no hatched tentative look.
+  The booking body carries the event's calendar by its path (`eventCalendarPath`, only for the
+  built-in service); the server finds the booker's own calendar by it and stores its id, which is
+  what lets the reconcile follow a booking made in the app. A path that is not the booker's own
+  (a calendar shared with them) leaves the booking unlinked, and the reconcile skips it.
+- **Built (part 3, reconcile; tests written, not yet run).** `server/plugins/resources.ts` runs it
+  90 s after start and then every `NUXT_RESOURCES_RECONCILE_INTERVAL_SEC` (300 s, at most 900 s;
+  off in demo mode and without Radicale). It reads the event of each active booking (pending or
+  approved, not ended, with an event calendar the booker owns) as the booker, through the
+  internal client with the sharing client's principal and path guards. Per calendar it compares
+  `ctag|sync-token` with the table `booking_sync` (migration 008) and reads events only when it
+  changed or a booking is in retry. An unchanged event clears the orphaned state. An event that
+  cannot be read, or is gone, marks the booking orphaned for up to 3 looks and never cancels on
+  an unreadable one; at the third look a definitively deleted event cancels the booking, removes
+  its block and is audited as `resource_booking.cancelled` with `reason: 'event_removed'`, actor
+  `system:resources`. The same UID in another calendar of the booker with the same slot and marks
+  is followed. A changed slot or resource, stripped marks, or a move to a calendar the app has no
+  row for goes straight to the manager queue (`resource_booking.orphaned`, `reason:
+'event_moved'`) and is never cancelled. A booking younger than 10 minutes with missing marks is
+  left alone, because the client writes the marks after the booking.
 - **Booking creation UX.** Booking is attempted automatically when an event with a
   resource attached is first saved, gated by a checkbox next to the save/booking
   control that is checked by default ("book right away"). Explicit add/remove of a
@@ -1051,36 +1097,44 @@ this is the **order**):
 
 ### Phase 3 status (2026-11-01)
 
-**Nothing built in Phase 3 has been run yet:** no unit test, no e2e test, no migration. Every
+**Nothing built in Phase 3 has been run yet:** no unit test, no e2e test, no migration. The only
+runs were against a real Radicale 3.9.0 (the S5 measurements and the shape check below). Every
 item below is _built; tests written, not yet run_. Details are in §5 (schema, resources), §8
 (audit log, sharing, groups, access administration, shared views) and the notes in
 `docs/phase3-notes/` (index there; working material the project owner may delete once the docs are
 merged).
 
-| Task                                                       | State                                                                                             |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Audit log and admin guard                                  | built (migration 005, `defineAdminHandler`, rate limit)                                           |
-| Schema rework (access rules, resources, bookings)          | built (migration 006, DB modules)                                                                 |
-| S5 follow-ups (`f` on map shares, many shares)             | done by measurement against Radicale 3.9.0                                                        |
-| Group sync                                                 | built, wired to the audit log and to the groups of the access rules                               |
-| Sharing writer, gateway pre-check, nightly audit job       | built; plugin `server/plugins/sharing.ts`                                                         |
-| Admin views (FR-2)                                         | built (routes and sidebar controls)                                                               |
-| Access administration (FR-14/15)                           | built (API and `/admin/access`), wired to the sharing writer by `server/plugins/access-wiring.ts` |
-| Resources part 1 (entities, bookings, availability blocks) | built; blocks written through the sharing writer's store by `server/plugins/resources.ts`         |
+| Task                                                            | State                                                                                             |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Audit log and admin guard                                       | built (migration 005, `defineAdminHandler`, rate limit)                                           |
+| Schema rework (access rules, resources, bookings)               | built (migration 006, DB modules)                                                                 |
+| S5 follow-ups (`f` on map shares, many shares)                  | done by measurement against Radicale 3.9.0                                                        |
+| Group sync                                                      | built, wired to the audit log and to the groups of the access rules                               |
+| Sharing writer, gateway pre-check, nightly audit job            | built; plugin `server/plugins/sharing.ts`                                                         |
+| Admin views (FR-2)                                              | built (routes and sidebar controls)                                                               |
+| Access administration (FR-14/15)                                | built (API and `/admin/access`), wired to the sharing writer by `server/plugins/access-wiring.ts` |
+| Resources part 1 (entities, bookings, availability blocks)      | built; blocks written through the sharing writer's store by `server/plugins/resources.ts`         |
+| Resources part 2, server (availability, manager queue, updates) | built; routes `GET /api/resources/availability`, `requests`, `updates`                            |
+| Resources part 2, client (booking form, requests page, toast)   | built; page `/resources/requests`                                                                 |
+| Resources part 3 (reconcile of moved or deleted events)         | built (migration 008, `booking_sync`); loop in `server/plugins/resources.ts`                      |
+| Sharing writer: Radicale assumptions                            | checked against Radicale 3.9.0 (`dev/spike-s1/tools/verify_sharing_shapes.py`); one bug fixed     |
 
-**Open for Phase 3 — placeholder, to be replaced when the notes of these tasks arrive** (being
-finished in parallel):
+**Open for Phase 3** (found at integration):
 
-- Resources part 2: availability reads, the booking UI, the manager queue (FR-17 to FR-19).
-- Resources part 3: reconciling moved or deleted booking events (orphaned state, retries, the
-  consolidated toast).
-- Verification of the sharing writer's Radicale API assumptions (see the risks in §12).
+- The reconcile's own Radicale requests (PROPFIND `getctag` and `sync-token`, REPORT by UID,
+  quoting of `calendar-data`) are unverified against a real Radicale; its tests use a fake reader.
+- Group membership resolving a share for a member was not checked (the spike stack's group file
+  must stay empty); see `docs/phase3-notes/sharing-verify.md`.
+- The manager queue cannot tell a moved from a missing or unreadable event except by the audit
+  entry; the `free_busy` narrowing of the detail check is imprecise for mixed grants (§5, part 2).
 
-**Before the first run** (then run the unit suite, the e2e suite and migrations 005 and 006 on a
-copy of a real database, and the first live reconcile; check its log): the reconcile may
-churn if the share list output differs from what the writer expects (a group share's `User` as
-`:group`, the `{user}` placeholder echoed back, `token/list` and `token/delete`); a calendar owned by
-a member and named like `shared-<digits>` is treated as a share by the pre-check.
+**Before the first run** (then run the unit suite, the e2e suite and migrations 005, 006 and 008 on
+a copy of a real database, and the first live reconcile; check its log): the sharing writer's list
+shapes are now checked against Radicale 3.9.0 (a group share's `User` as `:group`, the `{user}`
+placeholder echoed back; the flags are `EnabledByUser` and so on, which the writer misread until
+the check), and `token/list` and `token/delete` answer 404 there because `collection_by_token` is
+off, which the reconcile already ignores; a calendar owned by a member and named like
+`shared-<digits>` is treated as a share by the pre-check.
 
 ---
 

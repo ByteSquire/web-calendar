@@ -10,9 +10,16 @@ export interface ApiConfig {
   oidcIssuer: string
   /** Kanidm group whose members are admins (NUXT_OIDC_ADMIN_GROUP). */
   adminGroup: string
+  /** A manager of a resource may cancel the bookings of others (NUXT_RESOURCES_MANAGER_CANCEL). */
+  managerCancel: boolean
 }
 
 export function apiConfig(): ApiConfig {
-  const { oidc } = useRuntimeConfig()
-  return { tokenHashKey: getTokenKeyring(), oidcIssuer: oidc.issuer, adminGroup: oidc.adminGroup }
+  const { oidc, resources } = useRuntimeConfig()
+  return {
+    tokenHashKey: getTokenKeyring(),
+    oidcIssuer: oidc.issuer,
+    adminGroup: oidc.adminGroup,
+    managerCancel: String(resources.managerCancel) !== 'false',
+  }
 }

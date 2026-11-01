@@ -4,6 +4,7 @@ import type { CalendarEvent } from '../../../shared/types/calendar'
 import type { DavObject } from '../caldav/types'
 import { readCalendarObject } from '../ical/read'
 import type { ReadIssue, ReadOptions } from '../ical/read-types'
+import { isExternalRef } from './calendars'
 import { describeLoadError, isAborted, isPasswordError } from './errors'
 
 export interface ReadContext {
@@ -117,6 +118,9 @@ export function readCalendarEvents(
           href: object.url,
           ...(object.etag !== '' ? { etag: object.etag } : {}),
           expandRecurrence: outcome.expandRecurrence ?? false,
+          // Only the built-in service may claim a booking: an external server or a feed could not
+          // be trusted with one.
+          trustBookingProperties: !isExternalRef(calendarId),
         },
         object.data,
       )

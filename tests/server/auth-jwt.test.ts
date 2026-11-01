@@ -247,6 +247,14 @@ describe('createTokenVerifier: signature and claims', () => {
     ).toBe('wrong-audience')
   })
 
+  it('requires a client_id (security review 2026-11-01): a token without one is refused', async () => {
+    const { verifier } = setup()
+    const withoutClientId = await mintAccessToken(key, { claims: { client_id: undefined } })
+    expect(await reasonOf(verifier, withoutClientId)).toBe('wrong-audience')
+    // The same token with the claim set to the right client passes, so only the claim differs.
+    await expect(verifier.verify(await mintAccessToken(key))).resolves.toBeDefined()
+  })
+
   it('applies exp with a 60 s tolerance', async () => {
     const { verifier } = setup()
     const expiredAt = (seconds: number) => mintAccessToken(key, { claims: { exp: NOW - seconds } })

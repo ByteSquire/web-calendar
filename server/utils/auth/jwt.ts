@@ -281,8 +281,10 @@ export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifie
         throw claimFailure(error)
       }
 
-      if (payload.client_id !== undefined && payload.client_id !== client.clientId) {
-        throw new AuthError('wrong-audience', { message: 'client_id does not match' })
+      // Required (security review 2026-11-01, finding 9): `aud` already names the client, and Kanidm
+      // sets `client_id` to the same value; a token without it is not one Kanidm issued for us.
+      if (payload.client_id !== client.clientId) {
+        throw new AuthError('wrong-audience', { message: 'client_id is missing or does not match' })
       }
       if (typeof payload.sub !== 'string' || payload.sub === '') {
         throw new AuthError('invalid-claims', { message: 'sub must be a non-empty string' })

@@ -128,6 +128,7 @@ describe('validateEnv', () => {
     it.each([
       ['NUXT_OIDC_KEY_MAX_AGE_SEC', 1],
       ['NUXT_GATEWAY_MAX_BODY_BYTES', 1],
+      ['NUXT_GATEWAY_MAX_CONCURRENT_PER_USER', 1],
       ['NUXT_ICAL_PROXY_CACHE_TTL_SEC', 0],
       ['NUXT_ICAL_PROXY_MAX_BYTES', 1],
       ['NUXT_ICAL_PROXY_TIMEOUT_MS', 1],
@@ -141,6 +142,7 @@ describe('validateEnv', () => {
     it.each([
       ['NUXT_OIDC_KEY_MAX_AGE_SEC', 1, '0'],
       ['NUXT_GATEWAY_MAX_BODY_BYTES', 1, '0'],
+      ['NUXT_GATEWAY_MAX_CONCURRENT_PER_USER', 1, '0'],
       ['NUXT_ICAL_PROXY_CACHE_TTL_SEC', 0, '-1'],
       ['NUXT_ICAL_PROXY_MAX_BYTES', 1, '0'],
       ['NUXT_ICAL_PROXY_TIMEOUT_MS', 1, '0'],
@@ -172,6 +174,7 @@ describe('validateEnv', () => {
       for (const name of [
         'NUXT_OIDC_KEY_MAX_AGE_SEC',
         'NUXT_GATEWAY_MAX_BODY_BYTES',
+        'NUXT_GATEWAY_MAX_CONCURRENT_PER_USER',
         'NUXT_ICAL_PROXY_CACHE_TTL_SEC',
         'NUXT_ICAL_PROXY_MAX_BYTES',
         'NUXT_ICAL_PROXY_TIMEOUT_MS',
@@ -661,6 +664,7 @@ describe('the examples list what the validator knows (L2)', () => {
     'NUXT_OIDC_ADMIN_GROUP',
     'NUXT_OIDC_KEY_MAX_AGE_SEC',
     'NUXT_GATEWAY_MAX_BODY_BYTES',
+    'NUXT_GATEWAY_MAX_CONCURRENT_PER_USER',
     'NUXT_GATEWAY_TRUST_FORWARDED_FOR',
     'NUXT_ICAL_PROXY_CACHE_TTL_SEC',
     'NUXT_ICAL_PROXY_MAX_BYTES',

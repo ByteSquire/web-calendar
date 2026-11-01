@@ -30,6 +30,12 @@ function getGateway() {
         `NUXT_GATEWAY_MAX_BODY_BYTES must be a positive integer, got "${config.maxBodyBytes}"`,
       )
     }
+    const maxConcurrentPerUser = Number(config.maxConcurrentPerUser)
+    if (!Number.isSafeInteger(maxConcurrentPerUser) || maxConcurrentPerUser <= 0) {
+      throw new Error(
+        `NUXT_GATEWAY_MAX_CONCURRENT_PER_USER must be a positive integer, got "${config.maxConcurrentPerUser}"`,
+      )
+    }
     // Env overrides are parsed like `icalProxy.allowPrivate`: only the text "true" turns it on.
     trustForwardedFor = String(config.trustForwardedFor) === 'true'
     const precheckMembership = createFileMembership(
@@ -40,6 +46,7 @@ function getGateway() {
       upstream: radicale.url,
       corsOrigins: origins,
       maxBodyBytes,
+      maxConcurrentPerUser,
       authenticate: authenticateCalDav,
       // Group membership comes from the file Radicale reads, so both agree. Demo mode has no
       // database (and no Radicale behind the gateway).

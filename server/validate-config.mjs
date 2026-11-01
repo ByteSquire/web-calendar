@@ -292,6 +292,7 @@ export function validateEnv(env) {
   // Optional knobs with defaults in nuxt.config.ts; the names are the runtimeConfig keys in env form.
   checkInteger('NUXT_OIDC_KEY_MAX_AGE_SEC', 1)
   checkInteger('NUXT_GATEWAY_MAX_BODY_BYTES', 1)
+  checkInteger('NUXT_GATEWAY_MAX_CONCURRENT_PER_USER', 1)
   checkBoolean('NUXT_GATEWAY_TRUST_FORWARDED_FOR')
   checkInteger('NUXT_ICAL_PROXY_CACHE_TTL_SEC', 0)
   checkInteger('NUXT_ICAL_PROXY_MAX_BYTES', 1)

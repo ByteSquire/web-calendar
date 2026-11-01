@@ -57,6 +57,7 @@ function setup(
     return respond(entry)
   })
   const authenticate = vi.fn(async (headers: Headers) => {
+    if (headers.get('authorization') === 'Bearer other') return { sub: 'sub-someone-else' }
     if (headers.get('authorization') !== 'Bearer good') {
       throw new AuthError('no-credentials', {
         challenges: ['Basic realm="Web Calendar"', 'Bearer realm="Web Calendar"'],
@@ -486,6 +487,117 @@ describe('gateway: responses', () => {
     expect(response.status).toBe(502)
     expect(await response.text()).not.toContain('fetch failed')
     expect(log).toHaveBeenCalled()
+  })
+
+  describe('requests in flight per user (security review 2026-11-01, finding 9)', () => {
+    /** An upstream whose answers are held back until the test lets them go. */
+    function held() {
+      const waiting: ((response: Response) => void)[] = []
+      const respond = () => new Promise<Response>((resolve) => waiting.push(resolve))
+      return { respond, waiting, letGo: (n = 0, body = 'ok') => waiting[n]!(new Response(body)) }
+    }
+    const started = (seen: Seen[], n: number) => vi.waitFor(() => expect(seen).toHaveLength(n))
+
+    it('answers 429 with Retry-After once a user has the maximum in flight, and logs it once', async () => {
+      const upstream = held()
+      const { call, seen, log } = setup(upstream.respond, { maxConcurrentPerUser: 2 })
+      const first = call('REPORT', '/caldav/a/')
+      const second = call('REPORT', '/caldav/b/')
+      await started(seen, 2)
+
+      const refused = await call('REPORT', '/caldav/c/')
+      expect(refused.status).toBe(429)
+      expect(refused.headers.get('retry-after')).toBe('1')
+      expect((await call('REPORT', '/caldav/d/')).status).toBe(429)
+      expect(seen).toHaveLength(2) // the refused ones never reached Radicale
+      expect(log.mock.calls.filter(([message]) => /limit of requests/.test(message))).toHaveLength(
+        1,
+      )
+
+      upstream.letGo(0)
+      upstream.letGo(1)
+      expect((await first).status).toBe(200)
+      expect((await second).status).toBe(200)
+    })
+
+    it('keeps the slot until the answer has been read to its end', async () => {
+      const answerBody = () =>
+        new ReadableStream<Uint8Array>({
+          pull(controller) {
+            controller.enqueue(new TextEncoder().encode('data'))
+            controller.close()
+          },
+        })
+      const { call } = setup(() => new Response(answerBody()), { maxConcurrentPerUser: 1 })
+      const answer = await call('REPORT', '/caldav/a/')
+      expect(answer.status).toBe(200)
+      // Headers are in, the body is not read: the request is still in flight.
+      expect((await call('REPORT', '/caldav/b/')).status).toBe(429)
+      expect(await answer.text()).toBe('data')
+      expect((await call('REPORT', '/caldav/b/')).status).toBe(200)
+    })
+
+    it('gives the slot back when the client drops the answer', async () => {
+      const { call } = setup(() => new Response('a large answer'), { maxConcurrentPerUser: 1 })
+      const answer = await call('REPORT', '/caldav/a/')
+      expect((await call('REPORT', '/caldav/b/')).status).toBe(429)
+      await answer.body!.cancel()
+      expect((await call('REPORT', '/caldav/b/')).status).toBe(200)
+    })
+
+    it('gives the slot back at once for an answer without a body', async () => {
+      const { call } = setup(() => new Response(null, { status: 204 }), { maxConcurrentPerUser: 1 })
+      for (let i = 0; i < 4; i += 1) {
+        expect((await call('DELETE', `/caldav/a/${i}.ics`)).status).toBe(204)
+      }
+    })
+
+    it('gives the slot back when Radicale fails, times out, or the path is refused', async () => {
+      let mode: 'fail' | 'ok' = 'fail'
+      const { call } = setup(
+        () => {
+          if (mode === 'fail') throw new Error('connection refused')
+          return new Response('ok')
+        },
+        { maxConcurrentPerUser: 1 },
+      )
+      for (let i = 0; i < 3; i += 1) expect((await call('GET', '/caldav/a/')).status).toBe(502)
+      for (let i = 0; i < 3; i += 1) expect((await call('GET', '/elsewhere/')).status).toBe(404)
+      mode = 'ok'
+      expect(await (await call('GET', '/caldav/a/')).text()).toBe('ok')
+    })
+
+    it('counts every user on their own', async () => {
+      const upstream = held()
+      const { call, seen } = setup(upstream.respond, { maxConcurrentPerUser: 1 })
+      const mine = call('REPORT', '/caldav/a/')
+      await started(seen, 1)
+      expect((await call('REPORT', '/caldav/b/')).status).toBe(429)
+      const theirs = call('REPORT', '/caldav/c/', { headers: { authorization: 'Bearer other' } })
+      await started(seen, 2)
+      upstream.letGo(0)
+      upstream.letGo(1)
+      expect((await mine).status).toBe(200)
+      expect((await theirs).status).toBe(200)
+    })
+
+    it('does not use up a slot for a request that is not authenticated', async () => {
+      const { call } = setup(undefined, { maxConcurrentPerUser: 1 })
+      for (let i = 0; i < 5; i += 1) {
+        expect((await call('PROPFIND', '/caldav/', { authorized: false })).status).toBe(401)
+      }
+      expect((await call('PROPFIND', '/caldav/')).status).toBe(200)
+    })
+
+    it('allows 8 at once by default and refuses the 9th', async () => {
+      const upstream = held()
+      const { call, seen } = setup(upstream.respond)
+      const running = Array.from({ length: 8 }, (_, i) => call('REPORT', `/caldav/a/${i}/`))
+      await started(seen, 8)
+      expect((await call('REPORT', '/caldav/a/9/')).status).toBe(429)
+      upstream.waiting.forEach((resolve) => resolve(new Response('ok')))
+      for (const response of await Promise.all(running)) expect(response.status).toBe(200)
+    })
   })
 
   describe('upstream timeout (security review 2026-11-01, finding 9)', () => {

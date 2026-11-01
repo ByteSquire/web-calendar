@@ -10,6 +10,11 @@ import {
 } from './headers'
 import type { PathPrecheck } from '../sharing/precheck'
 import { GATEWAY_PREFIX, PathRejection, resolvePublicPath, rewriteDestination } from './paths'
+import {
+  createConcurrencyLimiter,
+  DEFAULT_GATEWAY_MAX_CONCURRENT_PER_USER,
+  releaseWhenDone,
+} from './concurrency'
 
 export interface GatewayRequest {
   method: string
@@ -52,6 +57,12 @@ export interface GatewayOptions {
    * pile up (security review 2026-11-01, finding 9).
    */
   upstreamTimeoutMs?: number
+  /**
+   * Requests one user may have in flight at once, from the moment they are authenticated until the
+   * answer has been read to its end. The next one gets 429 with `Retry-After: 1`. Default
+   * `DEFAULT_GATEWAY_MAX_CONCURRENT_PER_USER`.
+   */
+  maxConcurrentPerUser?: number
 }
 
 export const DEFAULT_UPSTREAM_TIMEOUT_MS = 30_000
@@ -91,6 +102,10 @@ export function createGateway(
   const doFetch = options.fetch ?? globalThis.fetch
   const log = options.log ?? (() => undefined)
   const upstreamTimeoutMs = options.upstreamTimeoutMs ?? DEFAULT_UPSTREAM_TIMEOUT_MS
+  const limiter = createConcurrencyLimiter(
+    options.maxConcurrentPerUser ?? DEFAULT_GATEWAY_MAX_CONCURRENT_PER_USER,
+    () => log('a user reached the limit of requests in flight; the next ones get 429'),
+  )
 
   function authFailure(error: AuthError): Response {
     // Every client's first request has no credentials, by design; that is not worth a log line. A
@@ -136,6 +151,36 @@ export function createGateway(
       throw error
     }
 
+    // A slot per request in flight, taken once the caller is known (an unauthenticated request must
+    // not use one up) and given back when the answer has been read to its end.
+    const release = limiter.acquire(identity.sub)
+    if (release === null) return text(429, 'Too Many Requests', { 'retry-after': '1' })
+    let response: Response
+    try {
+      response = await forward(request, identity, release)
+    } catch (error) {
+      release()
+      throw error
+    }
+    // Only Radicale's answer, which streams, holds the slot on; every reply the gateway made itself
+    // (an error, a refusal) is complete and gives it back now.
+    if (!holdsSlot.has(response)) release()
+    return response
+  }
+
+  /** Answers that carry a stream from Radicale: the slot goes back when the stream is done. */
+  const holdsSlot = new WeakSet<Response>()
+
+  /**
+   * The rest of a request once its caller is known and has a slot. `release` gives the slot back; a
+   * response that streams Radicale's answer takes it over (see `holdsSlot`).
+   */
+  async function forward(
+    request: GatewayRequest,
+    identity: { sub: string },
+    release: () => void,
+  ): Promise<Response> {
+    const { method, headers } = request
     let upstreamPath: string
     try {
       upstreamPath = resolvePublicPath(request.target).upstreamPath
@@ -242,11 +287,14 @@ export function createGateway(
     }
     const hasBody = method !== 'HEAD' && ![204, 205, 304].includes(upstream.status)
     if (!hasBody) await upstream.body?.cancel().catch(() => undefined)
-    return new Response(hasBody ? upstream.body : null, {
+    const streamed = hasBody && upstream.body !== null
+    const answer = new Response(streamed ? releaseWhenDone(upstream.body!, release) : null, {
       status: upstream.status,
       statusText: upstream.statusText,
       headers: filterResponseHeaders(upstream.headers),
     })
+    if (streamed) holdsSlot.add(answer)
+    return answer
   }
 
   return async function handle(request) {

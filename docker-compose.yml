@@ -53,6 +53,8 @@ services:
       # CalDAV gateway
       NUXT_GATEWAY_CORS_ORIGINS: '${NUXT_GATEWAY_CORS_ORIGINS:-}'
       NUXT_GATEWAY_MAX_BODY_BYTES: '${NUXT_GATEWAY_MAX_BODY_BYTES:-10485760}'
+      # Requests one user may have in flight at once; the next ones get 429 until one finishes.
+      NUXT_GATEWAY_MAX_CONCURRENT_PER_USER: '${NUXT_GATEWAY_MAX_CONCURRENT_PER_USER:-8}'
       # true: the client address of the failed-login throttle is the last entry of X-Forwarded-For
       # (the address the reverse proxy in front of this service appended), not the socket's. Set it
       # only when that proxy is the one way to reach this service and writes the header; otherwise a

@@ -122,6 +122,11 @@ export default defineNuxtConfig({
       /** Largest request body the gateway forwards, in bytes. */
       maxBodyBytes: '10485760',
       /**
+       * Requests one signed-in user may have in flight at once (NUXT_GATEWAY_MAX_CONCURRENT_PER_USER);
+       * the next ones get 429 until one finishes (security review 2026-11-01, finding 9).
+       */
+      maxConcurrentPerUser: '8',
+      /**
        * 'true' takes the client address from the last entry of X-Forwarded-For instead of the socket
        * (NUXT_GATEWAY_TRUST_FORWARDED_FOR), for the throttle of failed Basic logins. Only behind a
        * reverse proxy that is the sole way to reach the app and overwrites that header; otherwise a

@@ -47,7 +47,12 @@ function goodConfig(): TestConfig {
     },
     outbound: { allowedHosts: '', allowAnyHost: 'false' },
     external: { sealKey: '' },
-    gateway: { corsOrigins: '', maxBodyBytes: '10485760', trustForwardedFor: 'false' },
+    gateway: {
+      corsOrigins: '',
+      maxBodyBytes: '10485760',
+      maxConcurrentPerUser: '8',
+      trustForwardedFor: 'false',
+    },
     groupSync: { file: '' },
   }
 }
@@ -104,6 +109,16 @@ describe('startup checks with the real glue modules', () => {
     [
       'NUXT_GATEWAY_MAX_BODY_BYTES',
       (c: TestConfig) => (c.gateway.maxBodyBytes = '-5'),
+      'positive integer',
+    ],
+    [
+      'NUXT_GATEWAY_MAX_CONCURRENT_PER_USER',
+      (c: TestConfig) => (c.gateway.maxConcurrentPerUser = 'many'),
+      'positive integer',
+    ],
+    [
+      'NUXT_GATEWAY_MAX_CONCURRENT_PER_USER',
+      (c: TestConfig) => (c.gateway.maxConcurrentPerUser = '0'),
       'positive integer',
     ],
     [

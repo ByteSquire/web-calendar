@@ -1,7 +1,7 @@
 <!--
   Overflow (⋮) menu (FR-25). Nuxt UI closes it on Escape and on a click outside, moves focus into
   the menu and returns it to the trigger. Signed in (live mode): the user, the time zone the times
-  are shown in, Refresh (FR-10), Settings, Full screen, Dark mode, Help and Sign out. The demo mode
+  are shown in, Refresh (FR-10), Settings, Calendar access (admins only), Full screen, Dark mode, Help and Sign out. The demo mode
   keeps the placeholder items of the mock-up. "Full screen" is only offered where the browser has
   one for pages (not on iPhone Safari): on a phone it hides the address bar. "Dark mode" is a
   switch: it shows the scheme in use, which is the system's until it is flipped, and from then on
@@ -48,6 +48,7 @@
 
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
+import { useAdminFlag } from '~/composables/useAdminAccess'
 import { useAuth } from '~/composables/useAuth'
 import { useLiveStatus } from '~/composables/useLiveCalendar'
 import { useServerConfigState } from '~/composables/useServerConfigState'
@@ -62,6 +63,16 @@ const orgTimeZone = useOrgTimeZone()
 const live = isLiveConfig(useServerConfigState().value)
 const fullscreen = useFullscreen()
 const colorMode = useColorMode()
+const adminFlag = useAdminFlag()
+
+// Only to show the entry for the access administration; the admin routes check on the server.
+watch(
+  () => auth.status.value,
+  (status) => {
+    if (live && status === 'authenticated') void adminFlag.ensure()
+  },
+  { immediate: true },
+)
 
 const FOLLOW_SYSTEM = 'Follow system'
 
@@ -164,6 +175,9 @@ const items = computed<DropdownMenuItem[][]>(() => {
     ],
     [
       { label: 'Settings', icon: 'i-lucide-settings', to: '/settings' },
+      ...(adminFlag.admin.value === true
+        ? [{ label: 'Calendar access', icon: 'i-lucide-shield-check', to: '/admin/access' }]
+        : []),
       ...fullScreenItems,
       darkMode,
       ...followSystem,

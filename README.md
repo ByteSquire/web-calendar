@@ -168,7 +168,12 @@ and client renders match.
 - Radicale's group file is in the `radicale-groups` volume. Radicale refuses to start
   without it, so the app creates an empty one at `/groups/htgroup` when it starts, and
   Radicale starts only after the app is healthy. Radicale mounts the volume read-only; the
-  app's group sync will rewrite the file (Phase 3).
+  app's group sync rewrites the file every `NUXT_GROUP_SYNC_INTERVAL_SEC` seconds (60 by
+  default, 300 at most) and keeps the previous version as `htgroup.prev`. The members are
+  Kanidm `sub` UUIDs, which the app knows from the users' sign-ins: a group member who has
+  never signed in makes the run fail (the file stays as it was, and the log says who) until
+  they do. A group change seen in `/api/me` triggers a run at once. See
+  [`docs/kanidm-setup.md`](docs/kanidm-setup.md) section 3 for the token.
 
 Set up:
 
@@ -203,8 +208,9 @@ in `nuxt.config.ts`; an empty value in `.env` falls back to them.
 | `NUXT_RADICALE_URL`                | yes      | `http://radicale:5232`   | Internal URL of Radicale; set by the compose file                                                                                                                                  |
 | `NUXT_OIDC_CLIENT_ID`              | no       | `web-calendar`           | The app's own public client; the issuer must end with it                                                                                                                           |
 | `NUXT_OIDC_ALLOWED_CLIENTS`        | no       | empty (the client above) | Further Kanidm clients whose tokens the CalDAV gateway accepts, comma-separated                                                                                                    |
-| `NUXT_GROUP_SYNC_TOKEN`            | no       |                          | Read-only Kanidm API token for the group sync (arrives in Phase 3; the container warns and starts without it)                                                                      |
-| `NUXT_GROUP_SYNC_INTERVAL_SEC`     | no       | `60`                     | Seconds between group syncs; a removed member keeps access for up to this long                                                                                                     |
+| `NUXT_GROUP_SYNC_TOKEN`            | no       |                          | Read-only Kanidm API token for the group sync (the container warns and starts without it; then the group file stays empty). Expires within 90 days: rotate it                      |
+| `NUXT_GROUP_SYNC_INTERVAL_SEC`     | no       | `60`                     | Seconds between group syncs, at most `300`; a removed member keeps access for up to this long                                                                                      |
+| `NUXT_GROUP_SYNC_FILE`             | no       | `/groups/htgroup`        | Radicale's group file (`.data/htgroup` outside production)                                                                                                                         |
 | `NUXT_GATEWAY_CORS_ORIGINS`        | no       | empty (no CORS)          | Origins of external browser apps that may call `/caldav/`, comma-separated                                                                                                         |
 | `NUXT_GATEWAY_TRUST_FORWARDED_FOR` | no       | `false`                  | `true` behind a reverse proxy that overwrites `X-Forwarded-For`: its last hop is the client address for the login throttle. Leave it off without a proxy                           |
 | `NUXT_OIDC_KEY_MAX_AGE_SEC`        | no       | `3600`                   | Age after which the cached Kanidm signing keys are refetched in the background                                                                                                     |

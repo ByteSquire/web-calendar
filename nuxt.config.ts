@@ -49,7 +49,13 @@ export default defineNuxtConfig({
     groupSync: {
       /** Read-only Kanidm API token of the group-sync service account. */
       token: '',
+      /** Seconds between runs (NUXT_GROUP_SYNC_INTERVAL_SEC); at most 300, larger values are clamped. */
       intervalSec: '60',
+      /**
+       * Radicale's group file (NUXT_GROUP_SYNC_FILE). Empty means /groups/htgroup in production and
+       * .data/htgroup in development.
+       */
+      file: '',
     },
     /** The iCal proxy that fetches .ics subscriptions for the browser (design §4, FR-7). */
     icalProxy: {

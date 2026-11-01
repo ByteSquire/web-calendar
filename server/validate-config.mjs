@@ -327,9 +327,20 @@ export function validateEnv(env) {
 
   if (!get('NUXT_GROUP_SYNC_TOKEN')) {
     warnings.push(
-      "NUXT_GROUP_SYNC_TOKEN is not set: Radicale's group file is not filled from Kanidm " +
-        '(group sync arrives in Phase 3)',
+      "NUXT_GROUP_SYNC_TOKEN is not set: Radicale's group file is not filled from Kanidm, so " +
+        'group changes never reach it',
     )
+  }
+  // The interval is a security setting: a removed member keeps access for up to this long.
+  checkInteger('NUXT_GROUP_SYNC_INTERVAL_SEC', 1)
+  const syncInterval = env.NUXT_GROUP_SYNC_INTERVAL_SEC
+  if (syncInterval !== undefined && /^\d{1,15}$/.test(syncInterval) && Number(syncInterval) > 300) {
+    errors.push(
+      `NUXT_GROUP_SYNC_INTERVAL_SEC must be at most 300 (a removed member keeps access that long), not ${show(syncInterval)}`,
+    )
+  }
+  if (env.NUXT_GROUP_SYNC_FILE !== undefined && !get('NUXT_GROUP_SYNC_FILE')) {
+    errors.push('NUXT_GROUP_SYNC_FILE must be a file path; leave it unset for the default')
   }
 
   return { errors, warnings }

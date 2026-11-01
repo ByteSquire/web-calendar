@@ -19,7 +19,11 @@ import {
 
 export const MAX_VIEW_NAME_LENGTH = 80
 
-function readCalendars(value: unknown, errors: FieldErrors): ViewCalendar[] {
+function readCalendars(
+  value: unknown,
+  errors: FieldErrors,
+  allowExternal: boolean,
+): ViewCalendar[] {
   if (value === undefined || value === null) {
     errors.add('calendars', 'is required')
     return []
@@ -44,6 +48,9 @@ function readCalendars(value: unknown, errors: FieldErrors): ViewCalendar[] {
     }
     const ref = readCalendarRef(entry.ref, `${path}.ref`, errors)
     // An omitted color and `null` both mean "the calendar's own color".
+    if (ref?.startsWith('ext:') && !allowExternal) {
+      errors.add(`${path}.ref`, 'external calendars are not allowed in shared views')
+    }
     const color = readOptionalColor(entry.color, `${path}.color`, errors)
     if (ref === undefined) return
     if (seen.has(ref)) {
@@ -56,12 +63,18 @@ function readCalendars(value: unknown, errors: FieldErrors): ViewCalendar[] {
   return calendars
 }
 
-/** `{ name, icon?, calendars }`. A missing icon becomes `calendar`. */
-export function parseViewInput(body: unknown): Parsed<ViewInput> {
+/**
+ * `{ name, icon?, calendars }`. A missing icon becomes `calendar`. Shared (admin) views pass
+ * `{ allowExternal: false }`: an admin must not steer users' external accounts (FR-8).
+ */
+export function parseViewInput(
+  body: unknown,
+  options: { allowExternal?: boolean } = {},
+): Parsed<ViewInput> {
   const errors = new FieldErrors()
   const source = readObject(body, errors)
   const name = readText(source.name, 'name', MAX_VIEW_NAME_LENGTH, errors)
   const icon = readChoice(source.icon, 'icon', VIEW_ICONS, errors, 'calendar')
-  const calendars = readCalendars(source.calendars, errors)
+  const calendars = readCalendars(source.calendars, errors, options.allowExternal ?? true)
   return finish(errors, () => ({ name: name!, icon: icon!, calendars }))
 }

@@ -23,7 +23,7 @@ const props = defineProps<{
   /** What is added, in lower case: names the input and the button for assistive technology. */
   noun: string
   /** Receives the trimmed text. Returns an error message, or nothing when it was accepted. */
-  submit: (value: string) => string | undefined
+  submit: (value: string) => string | undefined | Promise<string | undefined>
 }>()
 
 const value = ref('')
@@ -33,10 +33,10 @@ watch(value, () => {
   error.value = undefined
 })
 
-function onSubmit() {
+async function onSubmit() {
   const text = value.value.trim()
   if (!text) return
-  error.value = props.submit(text)
+  error.value = await props.submit(text)
   if (!error.value) value.value = ''
 }
 </script>

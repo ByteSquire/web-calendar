@@ -1,5 +1,6 @@
 import { Temporal } from 'temporal-polyfill'
 import { createMockData } from '~/data/mock'
+import { BUSY_QUERY, BUSY_VALUE, addBusyCalendars } from '~/data/mock-busy'
 import { convertEventTimes } from '~/utils/time-zone'
 
 /**
@@ -10,7 +11,13 @@ import { convertEventTimes } from '~/utils/time-zone'
 export function useMockData() {
   const orgTimeZone = useOrgTimeZone().value
   const displayTimeZone = useDisplayTimeZone().value
-  const data = createMockData(Temporal.Now.plainDateISO(orgTimeZone))
+  const today = Temporal.Now.plainDateISO(orgTimeZone)
+  const plain = createMockData(today)
+  // `?demo-load=busy` adds 8 calendars and a busy day (NFR-1) to the mock data; see mock-busy.ts.
+  const data =
+    useRoute().query[BUSY_QUERY] === BUSY_VALUE
+      ? addBusyCalendars(plain, today.add({ days: 3 - (today.dayOfWeek - 1) }))
+      : plain
   return {
     ...data,
     events: data.events.map((event) => convertEventTimes(event, orgTimeZone, displayTimeZone)),

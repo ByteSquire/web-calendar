@@ -154,7 +154,7 @@ describe('admin view routes', () => {
     expect(audit().map((entry) => JSON.parse(entry.details!))).toEqual([
       { name: 'All staff' },
       { name: 'Everyone' },
-      { name: 'All staff' },
+      { name: 'Everyone' },
     ])
   })
 

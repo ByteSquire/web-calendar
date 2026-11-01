@@ -22,6 +22,7 @@ interface TestConfig {
   outbound: { allowedHosts: string }
   external: { sealKey: string }
   gateway: Record<string, unknown>
+  groupSync: { file: string }
 }
 
 function goodConfig(): TestConfig {
@@ -47,6 +48,7 @@ function goodConfig(): TestConfig {
     outbound: { allowedHosts: '' },
     external: { sealKey: '' },
     gateway: { corsOrigins: '', maxBodyBytes: '10485760', trustForwardedFor: 'false' },
+    groupSync: { file: '' },
   }
 }
 

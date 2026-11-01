@@ -172,7 +172,10 @@ describe('tampering and malformed input', () => {
       sealer.open('', context),
       sealer.open('AAAA', context),
       sealer.open(sealed, { ...context, accountId: 99 }),
-      sealer.open(`${sealed.slice(0, -2)}AA`, context),
+      sealer.open(
+        `${sealed.slice(0, 20)}${sealed[20] === 'A' ? 'B' : 'A'}${sealed.slice(21)}`,
+        context,
+      ),
       sealer.open(7, context),
     ]
     expect(outcomes).toEqual([null, null, null, null, null])

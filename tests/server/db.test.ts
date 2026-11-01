@@ -67,6 +67,7 @@ describe('runMigrations', () => {
     expect(tableNames()).toEqual([
       'app_tokens',
       'audit_log',
+      'booking_sync',
       'calendar_acl',
       'calendar_bookings',
       'calendar_prefs',

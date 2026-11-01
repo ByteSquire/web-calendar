@@ -10,6 +10,15 @@ import DefaultLayout from '~/layouts/default.vue'
 import { useServerConfigState } from '~/composables/useServerConfigState'
 import type { AuthStatus } from '~/utils/auth/types'
 
+// There is no session here: a real authenticated request would set the status to
+// "unauthenticated" and the layout would hide the app (the sidebar asks `/api/me` on mount).
+vi.mock('~/composables/useAuthFetch', () => ({
+  useAuthFetch: () => async (path: string) => {
+    if (path === '/api/me') return { isAdmin: false }
+    throw new Error('offline')
+  },
+}))
+
 const BROWSER_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone
 const OTHER_ZONE = BROWSER_ZONE === 'Australia/Sydney' ? 'Pacific/Auckland' : 'Australia/Sydney'
 

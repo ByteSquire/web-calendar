@@ -23,7 +23,17 @@ const shared: CalendarView = {
   isAdmin: true,
 }
 
+const mounted: { unmount: () => void }[] = []
+
+// Mounted components must go before the state is cleared, or they recompute on missing state.
+const mount = async (...args: Parameters<typeof mountSuspended>) => {
+  const wrapper = await mountSuspended(...args)
+  mounted.push(wrapper)
+  return wrapper
+}
+
 afterEach(() => {
+  for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.innerHTML = ''
   clearNuxtState((key) => key !== 'color-mode')
 })
@@ -76,7 +86,7 @@ describe('SidebarViewItem', () => {
   const actions = () => document.querySelector('[aria-label="Actions for view All staff"]')
 
   it('gives a shared view no actions to a non-admin', async () => {
-    await mountSuspended(SidebarViewItem, {
+    await mount(SidebarViewItem, {
       props: { view: shared, selected: false },
       attachTo: document.body,
     })
@@ -85,7 +95,7 @@ describe('SidebarViewItem', () => {
   })
 
   it('gives an admin the actions of a shared view', async () => {
-    await mountSuspended(SidebarViewItem, {
+    await mount(SidebarViewItem, {
       props: { view: shared, selected: false, canManage: true },
       attachTo: document.body,
     })
@@ -93,7 +103,7 @@ describe('SidebarViewItem', () => {
   })
 
   it('still gives a user view its (mock) actions', async () => {
-    await mountSuspended(SidebarViewItem, {
+    await mount(SidebarViewItem, {
       props: { view: { ...shared, isAdmin: false, ownerId: 'u' }, selected: false },
       attachTo: document.body,
     })
@@ -107,7 +117,7 @@ describe('SidebarContent without a server (mock data)', () => {
   })
 
   it('offers to create a shared view from the selection', async () => {
-    await mountSuspended(Shell, { attachTo: document.body })
+    await mount(Shell, { attachTo: document.body })
     const { views, visibleCalendarIds } = useCalendarState()
     const input = document.querySelector<HTMLInputElement>('input[placeholder="Add shared view"]')
     expect(input).not.toBeNull()

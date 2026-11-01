@@ -137,6 +137,8 @@ describe('who sees the page', () => {
       throw new TypeError('Failed to fetch')
     }
     await mountPage()
+    // mountSuspended itself navigates to '/' while it sets the route up.
+    replace.mockClear()
     await vi.waitFor(() => expect(document.querySelector('[role="alert"]')).not.toBeNull())
     expect(replace).not.toHaveBeenCalled()
     expect(button(/^Retry$/)).toBeDefined()

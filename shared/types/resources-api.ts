@@ -24,13 +24,14 @@ export interface AvailabilityEntry {
   /** `approved` blocks the slot; `pending` is only a hint (design section 5). */
   status: AvailabilityStatus
   /**
-   * True when the caller may not see who booked and why: `title` and `requesterName` are then
+   * True when the caller may not see who booked and why: `requesterName` and `eventUid` are then
    * absent. The caller sees the details of their own bookings and of events in calendars they can
-   * read.
+   * read. The title of the event is not known to the server (it lives in Radicale); the browser
+   * matches `eventUid` with the events it has already loaded.
    */
   blocked: boolean
-  title?: string
   requesterName?: string
+  eventUid?: string
   /** The caller made this booking. */
   mine: boolean
 }

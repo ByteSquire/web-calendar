@@ -254,8 +254,9 @@ every admin mutation, the sharing writer and the group sync, never containing to
 path pre-check below.
 
 _Status (2026-11-01):_ all of these are **built; unit and e2e tests pass**, and migrations 005, 006
-and 008 ran on a copy of the dev database (which held no rows). Not yet run: the app as a whole
-against a real Kanidm and Radicale. `requireAdmin` is reached only through
+and 008 ran on a copy of the dev database (which held no rows). The built app also ran against the
+test stack's Kanidm and Radicale (the live e2e passes; a booking, the reconcile and a share revoke
+were driven with real tokens, design §11). Not yet run: production, or a database with data. `requireAdmin` is reached only through
 `defineAdminHandler` (`server/utils/api/admin-handler.ts`), which adds a per-`sub` rate limit of
 about 60 a minute before the userinfo call and an `audit()` helper. `audit_log` (migration 005) is
 append-only (a trigger aborts `UPDATE`; `DELETE` stays for a retention job), redacts keys that look

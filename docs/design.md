@@ -1110,9 +1110,10 @@ this is the **order**):
 
 **Phase 3 was first run on 2026-11-01:** the unit suite and the e2e suite (demo mode, mocked
 answers, seven browser projects) pass; migrations 005, 006 and 008 ran on a copy of the dev database
-(§5); and the reconcile's reader and the share behaviour it relies on were checked against a real
-Radicale 3.9.0 (below). Not run: the real-login e2e (`npm run test:e2e:live`), and the app as a whole
-against a real Kanidm, a real Radicale and a database with data. Details are in §5 (schema, resources), §8
+(§5); the real-login e2e (`npm run test:e2e:live`, 20 tests) passes with the Phase 3 build against
+the test stack's Kanidm and Radicale; and the built app ran against that stack with a throwaway
+database, driven as alice and bob with real tokens (below). Not run: the app against a production
+Kanidm and Radicale, or a database that holds data. Details are in §5 (schema, resources), §8
 (audit log, sharing, groups, access administration, shared views) and the notes in
 `docs/phase3-notes/` (index there; working material the project owner may delete once the docs are
 merged).
@@ -1145,7 +1146,50 @@ merged).
   moved event in a hidden share is not found by `searchElsewhere`. Group membership resolves the
   share (a member reads it; a non-member gets 404 and does not see it). The text match of the UID
   query is a substring match; `matchEvent` already compares the exact UID line.
-- Still unchecked: the reconcile loop inside the running app (the plugin, its timers and log).
+- The reconcile loop in the running app (2026-11-01; the built app on port 3401, reconcile interval
+  10 s, sharing interval 900 s, a throwaway database, real Kanidm tokens for alice and bob, one
+  scripted run of 73 checks after 10 setup checks, all passed). **Verified live:**
+  - A booking from an own calendar the discovery had not seen yet is accepted and stored by its path
+    (201); the first reconcile read came about 90 s after start, and a log line
+    `[resources] booking reconcile: …` appears when a run cancels or loses something.
+  - An event moved to another own calendar is followed (the stored path changes, no orphan mark).
+  - A deleted event: the first and second look mark the booking orphaned (attempts 1 and 2, one
+    `resource_booking.orphaned` audit entry, `event_missing`), the third look cancels it
+    (`resource_booking.cancelled`, `event_removed`, actor `system:resources`, attempts 3), and its
+    availability block leaves Radicale.
+  - An unchanged event clears the orphaned state: a deleted event that comes back with the same UID,
+    slot and marks after the first look gets `orphaned_at` and the attempts reset by the next look,
+    and the booking is not cancelled.
+  - A booking from a share (`/<bob>/shared-<id>/`, made by the sharing writer after an admin granted
+    `read`) is stored by that path, read as the booker, and left alone while the event is there.
+    After the share is revoked, disabled by the member, or disabled by the owner, the next run sends
+    the booking to the manager queue (attempts at the limit, one `resource_booking.orphaned` entry
+    with `calendar_unavailable` and `cause: missing`, because Radicale answers 404 in all three
+    cases), the stored stamp of the share path is deleted, the booking appears in
+    `GET /api/resources/requests` with `orphanedAt`, and it is never cancelled, also over three more
+    runs. A booking from an unknown share is refused with 403 `calendar_not_readable`, one from
+    another user's home with 400 `invalid_event`. SIGTERM stops the app in about 2 s.
+  - After a revoke, the writer's run re-accepts a share the member disabled, and the next look clears
+    that booking's orphan state; a share the owner disabled stays disabled (the writer accepts only
+    as the member), so its booking stays in the queue.
+
+  **Not verified live** (unit tests only, or not at all): a soft orphan from an unreadable event (5xx
+  or timeout; no way to make Radicale do that on the test stack); a 403 on a collection (only the
+  reader was checked, for another user's unshared calendar); a share hidden by the member, or a
+  booking made from one; a share with only `free_busy`; a group share booked from through the app
+  (the reader reads one); an event moved into a share; a home with more than 20 calendars; the
+  block repair timers (60 s, then 10 min); the default interval of 300 s and its clamp; a database
+  that holds data or a production Radicale and Kanidm.
+
+- **Found live, not fixed:** the sharing writer treats a member's received shares as shares the
+  member owns. It runs `map/list` for every known user, and Radicale answers a member's list with
+  the shares mapped to them, the same rows as the owner's list. The writer plans to delete those as
+  "unknown", acts as the member, and Radicale answers 403. Every run after a user holds a received
+  share logs `Radicale differs from the access rules after reconcile … cannot remove … map/delete
+answered 403 … unexpected …` and writes a `sharing.mismatch` audit entry. Access itself works and
+  a revoke works (the owner's delete succeeds), so nothing is lost; the alarm never goes quiet.
+  Reproduced in two runs on 2026-11-01. A side effect of the test runs: the writer also removes
+  shares the app's database does not know (the stack's `/{user}/team/`), as designed.
 - The manager queue cannot tell a moved from a missing or unreadable event except by the audit
   entry; the `free_busy` narrowing of the detail check is imprecise for mixed grants (§5, part 2).
 

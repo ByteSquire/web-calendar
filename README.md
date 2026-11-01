@@ -135,8 +135,9 @@ and client renders match.
   with recurrence and time zones (organization zone, the browser's, or a per-user setting),
   creating, editing and deleting events, a settings page (app tokens, preferences, iCal
   subscriptions, `.ics` file import, external CalDAV accounts), the token verifier and CalDAV
-  gateway (`/caldav/`), and the security headers. Phase 3 is built; its unit and e2e tests pass and its migrations ran on a copy of the dev database
-  (not yet run: the whole app against a real Kanidm and Radicale): the audit log, access
+  gateway (`/caldav/`), and the security headers. Phase 3 is built; its unit and e2e tests pass, its migrations ran on a copy of the dev database,
+  and the built app ran against the test stack's Kanidm and Radicale (the live e2e, and a booking
+  and reconcile drive; not yet run: production, or a database with data): the audit log, access
   administration (`/admin/access`, menu entry "Calendar access", admins only), shared views managed
   by admins from the sidebar, the sharing writer, the group sync and resources
   (bookings and availability blocks, availability reads, the booking form, the requests page

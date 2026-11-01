@@ -89,8 +89,9 @@ function parseShares(text: string): SharingResult<RadicaleShare[]> {
       pathOrToken,
       user,
       permissions,
-      enabled: row.Enabled !== false,
-      hidden: row.Hidden === true,
+      // Radicale 3.9 lists four flags; a share is live for the member only if nobody switched it off.
+      enabled: row.EnabledByOwner !== false && row.EnabledByUser !== false,
+      hidden: row.HiddenByOwner === true || row.HiddenByUser === true,
     })
   }
   return { ok: true, value: shares }
@@ -202,6 +203,8 @@ export function createRadicaleClient(options: RadicaleClientOptions): RadicaleCl
     },
     async deleteShare(owner, type, pathOrToken) {
       const result = await api(owner, type, 'delete', { PathOrToken: pathOrToken })
+      // 404 means it is gone already (or, for tokens, that Radicale has token shares switched off).
+      if (!result.ok && result.failure.status === 404) return ok
       return result.ok ? ok : result
     },
     async acceptShare(member, pathOrToken) {

@@ -90,7 +90,9 @@ export async function startFakeRadicale(): Promise<FakeRadicale> {
     if (api) {
       const [, type, action] = api
       const payload = body ? (JSON.parse(body) as Record<string, unknown>) : {}
-      if (type === 'token') return { status: 200, text: JSON.stringify({ Content: [] }) }
+      // The test stack has collection_by_token off: every token call is a 404 (observed).
+      if (type === 'token')
+        return { status: 404, text: 'The requested resource could not be found.' }
       if (action === 'list') {
         const content = fake.shares
           .filter((share) => share.owner === user)
@@ -98,11 +100,13 @@ export async function startFakeRadicale(): Promise<FakeRadicale> {
             PathMapped: share.pathMapped,
             PathOrToken: share.pathOrToken,
             User: share.user,
-            Permissions: share.user.startsWith(':') ? `u${share.permissions}ep` : share.permissions,
-            Enabled: share.enabled,
-            Hidden: share.hidden,
+            Permissions: share.user.startsWith(':') ? `eup${share.permissions}` : share.permissions,
+            EnabledByOwner: true,
+            EnabledByUser: share.user.startsWith(':') || share.enabled,
+            HiddenByOwner: false,
+            HiddenByUser: !share.user.startsWith(':') && share.hidden,
           }))
-        return { status: 200, text: JSON.stringify({ Content: content }) }
+        return { status: 200, text: JSON.stringify({ ApiVersion: 1, Content: content }) }
       }
       if (action === 'create') {
         const clash = fake.shares.some(
@@ -116,8 +120,9 @@ export async function startFakeRadicale(): Promise<FakeRadicale> {
           pathOrToken: String(payload.PathOrToken),
           user: String(payload.User),
           permissions: String(payload.Permissions),
-          enabled: payload.Enabled !== false,
-          hidden: false,
+          // A user share starts disabled and hidden for the member, whatever the owner sends.
+          enabled: false,
+          hidden: true,
           accepted: false,
         })
         return { status: 200, text: '{}' }
@@ -159,7 +164,7 @@ export async function startFakeRadicale(): Promise<FakeRadicale> {
     if (method === 'MKCALENDAR') {
       const [home, name] = parts
       if (!fake.calendars.has(home!)) fake.calendars.set(home!, new Set())
-      if (fake.calendars.get(home!)!.has(name!)) return { status: 405, text: '' }
+      if (fake.calendars.get(home!)!.has(name!)) return { status: 409, text: '' }
       fake.calendars.get(home!)!.add(name!)
       return { status: 201, text: '' }
     }

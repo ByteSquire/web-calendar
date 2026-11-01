@@ -1477,7 +1477,8 @@ off, which the reconcile already ignores; a calendar owned by a member and named
   dialog, so that scan leaves the rule out and a test checks that Tab cannot leave the menu. Tests:
   `e2e/contrast.spec.ts`, `e2e/a11y.spec.ts`. Margins are thin in one place: muted text on the
   sidebar is 4.55:1 in the light scheme. Not covered: hover and disabled states, and a high-contrast mode.
-- **Security backlog** (audit scope: `docs/security-review.md`) — done: the first review's
+- **Security backlog** (audit scope: `docs/security-review.md`; latest dated review:
+  `docs/security-review-2026-11-01.md`) — done: the first review's
   findings, a key id on app-token hashes with rotation, IPv6 /64 grouping in the login throttle,
   the Radicale usage report, gateway tests against the production build
   (`npm run test:gateway:prod`), `npm run audit:prod` (three known advisories allowed) and a

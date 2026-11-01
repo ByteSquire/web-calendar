@@ -55,10 +55,9 @@ const auth = useAuth()
 const live = isLiveConfig(useServerConfigState().value)
 const ready = computed(() => !live || auth.status.value === 'authenticated')
 
-// Open by default on desktop, closed (slideover) on mobile, also after resizing across 768 px.
-watch(isDesktop, (desktop) => {
-  sidebarOpen.value = desktop
-})
+// Open by default on desktop, closed on a phone (slideover, or the column of a phone turned
+// sideways). Turning the phone keeps what the person chose: the state is not reset when the width
+// crosses 768 px, the column and the slideover share it.
 
 // The slideover has no trigger element, so Reka UI cannot return focus to the toggle by itself
 // (same as QuickAddModal): remember what had focus when it opened.

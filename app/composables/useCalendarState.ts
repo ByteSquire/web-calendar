@@ -90,8 +90,9 @@
  *
  * Layout
  * - `sidebarOpen: Ref<boolean>`, `toggleSidebar()`. Desktop (>= 768 px): the sidebar column is
- *   shown or collapsed. Below 768 px: the slideover is open or closed. The layout resets it to
- *   "open on desktop, closed on mobile" when the viewport crosses the breakpoint.
+ *   shown or collapsed. Below 768 px: the slideover is open or closed. It starts open on a desktop
+ *   and closed on a phone, in either orientation (`sidebarStartsOpen`), and keeps its value when
+ *   the viewport crosses the breakpoint (a phone turned sideways).
  */
 import { Temporal } from 'temporal-polyfill'
 import { useAuthFetch } from '~/composables/useAuthFetch'
@@ -104,7 +105,7 @@ import {
 import type { ApiRequest } from '~/utils/live/api-types'
 import { createLiveHooks } from '~/utils/live/hooks'
 import { emptySeed, isLiveConfig } from '~/utils/live/seed'
-import { matchesDesktop } from '~/utils/viewport'
+import { sidebarStartsOpen } from '~/utils/viewport'
 
 // One set of hooks per app: they hold the pending (debounced) preference saves.
 const liveHooks = new WeakMap<object, CalendarStateHooks>()
@@ -136,7 +137,7 @@ export function useCalendarState(): CalendarState {
     seed: live ? emptySeed : useMockData,
     // "Today" is the date in the viewer's display zone (FR-29).
     today: () => Temporal.Now.plainDateISO(timeZone.value),
-    sidebarOpen: matchesDesktop,
+    sidebarOpen: sidebarStartsOpen,
     ...(live ? { hooks: useLiveHooks() } : {}),
   })
 }

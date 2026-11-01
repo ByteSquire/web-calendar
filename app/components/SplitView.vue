@@ -6,7 +6,7 @@
   The main area scrolls, not this component.
 -->
 <template>
-  <section class="flex min-h-full flex-col" :aria-label="`Split view, ${rangeLabel}`">
+  <section class="split-view flex min-h-full flex-col" :aria-label="`Split view, ${rangeLabel}`">
     <div class="flex flex-wrap items-center gap-2 px-3 py-2" role="group" aria-label="Period">
       <UButton
         v-for="span in SPLIT_SPANS"

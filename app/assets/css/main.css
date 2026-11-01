@@ -260,11 +260,15 @@
   );
 }
 
-/* No motion inside the calendar for people who ask for less. */
+/* No motion inside the calendar for people who ask for less. The split view is not inside
+   .calendar-main: its period buttons need the same rule (e2e/reduced-motion.spec.ts). */
 @media (prefers-reduced-motion: reduce) {
   .calendar-main *,
   .calendar-main *::before,
-  .calendar-main *::after {
+  .calendar-main *::after,
+  .split-view *,
+  .split-view *::before,
+  .split-view *::after {
     animation: none !important;
     transition: none !important;
     scroll-behavior: auto !important;

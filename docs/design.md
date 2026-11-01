@@ -1102,6 +1102,20 @@ this is the **order**):
   `e2e/a11y.spec.ts`: time-grid day headers named with the long date, the year view's month titles
   and lists, and the aria-owns rows of the pannable grid and the resource timeline. Not covered:
   real devices, screen readers, drag and long-press (editing is off), and login (Phase 2).
+- **Colour contrast** — reviewed 2026-11-01 beyond the event colours: text 4.5:1 and the edge of a
+  control 3:1 (WCAG 1.4.3, 1.4.11), in both schemes, from the tokens and from what was painted. The
+  axe scan reports no violation but skips placeholders and the edges of controls, and sets aside what
+  it cannot decide ("incomplete": text over the hatched "Busy" entries, labels another element
+  overlaps). Those 112 elements were measured from pixels: all read at 5.0:1 or better, the hatch
+  lowest. Found and fixed in `main.css`: the dimmed text tier, where Nuxt UI puts placeholders and
+  faint icons, was 2.6:1 (light) and 3.7:1 (dark) and is now the muted colour (4.8:1 and 6.8:1); the
+  edge of fields, selects, checkboxes, radios and of a switch that is off was 1.2 to 1.7:1 and is now
+  `--app-control-border` (3.4 to 4.6:1 on the three surfaces). The lines of the calendar keep Nuxt
+  UI's border colours, they are decoration. An open ⋮ menu hides the page with `aria-hidden` and
+  keeps the focus inside; axe reports that (`aria-hidden-focus`) because it accepts it only behind a
+  dialog, so that scan leaves the rule out and a test checks that Tab cannot leave the menu. Tests:
+  `e2e/contrast.spec.ts`, `e2e/a11y.spec.ts`. Margins are thin in one place: muted text on the
+  sidebar is 4.55:1 in the light scheme. Not covered: hover and disabled states, and a high-contrast mode.
 - **Security backlog** (audit scope: `docs/security-review.md`) — done: the first review's
   findings, a key id on app-token hashes with rotation, IPv6 /64 grouping in the login throttle,
   the Radicale usage report, gateway tests against the production build
@@ -1145,9 +1159,9 @@ Phase 1 is the **UI shell / mock-up**: a working mock-up of **all** the UI
 Trials **S3** (Nuxt UI) and **S2** (Premium split view) are done and adopted (§12).
 
 **Status (2026-10-29):** Steps 1–7 are built and were checked by hand at 360×640, 640×360, 768×1024 and
-1280×800 in light and dark. Steps 8 and 9 are open: touch behaviour on a real device, the colour-contrast
-review (event colours in both schemes are tested; the rest of the UI is not), screen readers, and the
-landscape top bar (two rows take 113 of 360 px). Quick-add adds to an in-memory store; the `⋯` and `⋮`
+1280×800 in light and dark. Steps 8 and 9: touch behaviour and the landscape top bar (two rows take 113
+of 360 px) were checked on a phone (2026-11-01) and the colour-contrast review is done (§12, "Colour
+contrast"); screen readers are open. Quick-add adds to an in-memory store; the `⋯` and `⋮`
 menu items and Edit and Delete only show a toast.
 
 | Step | What                       | Requirements               |

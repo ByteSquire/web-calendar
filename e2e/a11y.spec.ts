@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
-import { VIEW_TYPES, isTouch, openApp, press, switchView } from './helpers'
+import { TODAY, VIEW_TYPES, isTouch, openApp, press, switchView } from './helpers'
 
 // Problems inside FullCalendar's own markup that no option reaches. axe reports them by selector;
 // each entry names the rule, the selectors it applies to and why. Anything else fails the test.
@@ -33,7 +33,7 @@ const UPSTREAM: { rule: string; target: RegExp; why: string }[] = [
 ]
 
 // WCAG 2.1 A and AA (NFR-3), as far as an automated scan can tell.
-async function scan(page: Page) {
+async function scan(page: Page, allow: string[] = []) {
   // Dialogs fade in; axe would measure the colours of a half-transparent dialog. Endless animations
   // (spinners) are skipped, they never finish.
   await page.evaluate(() =>
@@ -48,6 +48,7 @@ async function scan(page: Page) {
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
   return violations
+    .filter((violation) => !allow.includes(violation.id))
     .map((violation) => ({
       rule: violation.id,
       impact: violation.impact,
@@ -83,6 +84,45 @@ test.describe('accessibility scan', () => {
     await switchView(page, 'Week')
     await press(page.locator('[data-calendar-main]').getByText('Sprint planning').first())
     await expect(page.getByRole('dialog', { name: 'Sprint planning' })).toBeVisible()
+    expect(await scan(page)).toEqual([])
+  })
+
+  test('the overflow menu has none, with the dark mode switch off and on', async ({ page }) => {
+    await openApp(page)
+    await page.clock.setSystemTime(TODAY)
+    // An open menu hides the page from assistive technology with aria-hidden, as a dialog does, and
+    // keeps the focus inside. axe accepts focusable controls under aria-hidden only behind a
+    // dialog, so the rule is left out here and what it is after is tested: Tab cannot leave.
+    const menu = page.getByRole('menu')
+    async function expectFocusStaysInMenu() {
+      for (const key of ['Tab', 'Tab', 'Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab', 'Shift+Tab']) {
+        await page.keyboard.press(key)
+        await expect(menu).toBeVisible()
+        expect(
+          await page.evaluate(() => document.activeElement?.closest('[role="menu"]') !== null),
+        ).toBe(true)
+      }
+    }
+
+    await press(page.getByRole('button', { name: 'More options' }))
+    await expect(page.getByRole('menuitemcheckbox', { name: 'Dark mode' })).toBeVisible()
+    expect(await scan(page, ['aria-hidden-focus'])).toEqual([])
+    await expectFocusStaysInMenu()
+
+    // The first flip changes the scheme, shows the reset arrow and keeps the menu open.
+    await press(page.getByRole('menuitemcheckbox', { name: 'Dark mode' }))
+    await expect(page.getByRole('menuitem', { name: 'Follow system' })).toBeVisible()
+    await page.waitForTimeout(400)
+    expect(await scan(page, ['aria-hidden-focus'])).toEqual([])
+    await expectFocusStaysInMenu()
+  })
+
+  test('the sidebar has none where it is a drawer', async ({ page }) => {
+    await openApp(page)
+    const open = page.getByRole('button', { name: 'Open sidebar' })
+    test.skip(!(await open.isVisible()), 'the sidebar is part of the page here, scanned above')
+    await press(open)
+    await expect(page.getByRole('dialog')).toBeVisible()
     expect(await scan(page)).toEqual([])
   })
 

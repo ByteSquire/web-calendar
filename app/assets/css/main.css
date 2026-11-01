@@ -21,11 +21,27 @@
 
   :root.dark {
     color-scheme: dark;
+    /* The dimmed text tier is 3.7:1 here and 2.6:1 in the light scheme, which is where Nuxt UI puts
+     * the placeholders of fields and the faint icons; text needs 4.5:1. Dimmed is muted. */
+    --ui-text-dimmed: var(--ui-text-muted);
+    --app-control-border: color-mix(
+      in oklab,
+      var(--ui-color-neutral-400) 35%,
+      var(--ui-color-neutral-500)
+    );
   }
 
   /* White text on Nuxt UI's default primary (blue 500) is 3.7:1, below WCAG AA; shade 600 is 5.2:1.
    * The dark scheme keeps the lighter shade, which carries dark text. */
   :root:not(.dark) {
+    --ui-text-dimmed: var(--ui-text-muted);
+    /* The edge of a field, checkbox or switch has to stand out 3:1 from what is behind it (WCAG
+     * 1.4.11). Nuxt UI's border colours are 1.5:1 and stay for the decorative lines. */
+    --app-control-border: color-mix(
+      in oklab,
+      var(--ui-color-neutral-400) 40%,
+      var(--ui-color-neutral-500)
+    );
     --ui-primary: var(--ui-color-primary-600);
     /* The same for the status colours: with white text, error 500, success 600 and warning 600
      * are below 4.5:1; the shades chosen here are 4.8:1 (red 600), 5.0:1 (green 700, amber 700)
@@ -258,4 +274,16 @@
 /* The container takes focus when an entry it had focused is gone (event sheet closes); no ring. */
 .calendar-main:focus {
   outline: none;
+}
+
+/* Form controls: the ring of an input, select, checkbox or radio and the outline of a switch that
+ * is off use the colour above. The variable is set on the control itself, so Nuxt UI's `ring-accented`
+ * picks it up, while the same token stays light for the lines of the calendar. Unlayered, because
+ * the switch's own `border-transparent` utility has to lose. */
+[data-slot='base']:is(input, textarea, [role='combobox'], [role='checkbox'], [role='radio']) {
+  --ui-border-accented: var(--app-control-border);
+}
+
+[data-slot='base'][role='switch'][data-state='unchecked'] {
+  border-color: var(--app-control-border);
 }

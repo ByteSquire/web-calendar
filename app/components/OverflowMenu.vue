@@ -27,7 +27,11 @@
         data-dark-mode-switch
         aria-hidden="true"
         class="inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 motion-safe:transition-colors"
-        :class="dark ? 'bg-primary' : 'bg-accented'"
+        :class="
+          dark
+            ? 'bg-primary'
+            : 'bg-accented ring-2 ring-[color:var(--app-control-border)] ring-inset'
+        "
       >
         <span
           class="size-4 rounded-full bg-default shadow-xs motion-safe:transition-transform"

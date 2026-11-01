@@ -179,6 +179,11 @@ class MockApi {
         body: { id, label, token: SECRET, expiresAt: '2027-10-29T09:00:00.000Z' },
       }
     }
+    if (method === 'DELETE' && path === '/api/app-tokens') {
+      const revoked = this.tokens.length
+      this.tokens = []
+      return { status: 200, body: { revoked } }
+    }
     if (method === 'DELETE' && tokenId) {
       const id = Number(tokenId[1])
       if (!this.tokens.some((item) => item.id === id)) return failure(404, 'Not found')
@@ -450,6 +455,75 @@ test.describe('settings: app tokens', () => {
     )
     expect(api.callsTo('DELETE', '/api/app-tokens/1')).toHaveLength(1)
     expect(errors).toEqual([])
+  })
+
+  test('revokes all tokens after a confirmation (FR-31)', async ({ page }) => {
+    const api = await mockApi(page)
+    const { errors } = await openSettings(page)
+    const section = tokensSection(page)
+
+    await press(section.getByRole('button', { name: 'Revoke all' }))
+    const dialog = page.getByRole('dialog', { name: 'Revoke all app tokens?' })
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('This cannot be undone.')
+    await press(dialog.getByRole('button', { name: 'Cancel' }))
+    await expect(dialog).toBeHidden()
+    await expect(tokenRow(page, 'DAVx5')).toBeVisible()
+    await expect(tokenRow(page, 'Thunderbird')).toBeVisible()
+    expect(api.callsTo('DELETE', '/api/app-tokens')).toHaveLength(0)
+
+    await press(section.getByRole('button', { name: 'Revoke all' }))
+    await press(dialog.getByRole('button', { name: 'Revoke all', exact: true }))
+    await expect(dialog).toBeHidden()
+    await expect(section.getByRole('list', { name: 'Your app tokens' })).toHaveCount(0)
+    await expect(section.getByRole('status').filter({ hasText: 'revoked' })).toHaveText(
+      'All app tokens revoked.',
+    )
+    // nothing is left to revoke, so the button is gone
+    await expect(section.getByRole('button', { name: 'Revoke all' })).toHaveCount(0)
+    expect(api.callsTo('DELETE', '/api/app-tokens')).toHaveLength(1)
+    expect(errors).toEqual([])
+  })
+
+  test('keeps the tokens and the dialog open, with the reason, when revoking all fails', async ({
+    page,
+  }) => {
+    const api = await mockApi(page, (mock) => {
+      mock.forced.set('DELETE /api/app-tokens', failure(500, 'boom'))
+    })
+    await openSettings(page)
+    const section = tokensSection(page)
+
+    await press(section.getByRole('button', { name: 'Revoke all' }))
+    const dialog = page.getByRole('dialog', { name: 'Revoke all app tokens?' })
+    await press(dialog.getByRole('button', { name: 'Revoke all', exact: true }))
+    await expect(dialog.getByRole('alert')).toContainText('Could not revoke your app tokens.')
+    await expect(dialog).toBeVisible()
+    expect(api.callsTo('DELETE', '/api/app-tokens')).toHaveLength(1)
+
+    // cancelling shows that nothing was revoked
+    await press(dialog.getByRole('button', { name: 'Cancel' }))
+    await expect(dialog).toBeHidden()
+    await expect(tokenRow(page, 'DAVx5')).toBeVisible()
+    await expect(tokenRow(page, 'Thunderbird')).toBeVisible()
+
+    // the person can try again, and the old error is not shown again
+    api.forced.clear()
+    await press(section.getByRole('button', { name: 'Revoke all' }))
+    await expect(dialog.getByRole('alert')).toHaveCount(0)
+    await press(dialog.getByRole('button', { name: 'Revoke all', exact: true }))
+    await expect(dialog).toBeHidden()
+    await expect(section.getByRole('list', { name: 'Your app tokens' })).toHaveCount(0)
+    expect(api.callsTo('DELETE', '/api/app-tokens')).toHaveLength(2)
+  })
+
+  test('offers no "Revoke all" while there are no tokens', async ({ page }) => {
+    await mockApi(page, (mock) => {
+      mock.tokens = []
+    })
+    await openSettings(page)
+    await expect(tokensSection(page).getByRole('button', { name: 'Create token' })).toBeVisible()
+    await expect(tokensSection(page).getByRole('button', { name: 'Revoke all' })).toHaveCount(0)
   })
 
   test('the revoke dialog works with the keyboard: focus, Tab, Escape, confirm', async ({

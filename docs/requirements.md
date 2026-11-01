@@ -155,14 +155,15 @@ out). Views appear at the **top of the sidebar**.
 ### 4.5 Resources
 
 - **FR-16** **Resources** are first-class entities (e.g. physical locations,
-  cars, or other bookable things). A resource **is its own calendar** — it can
-  hold events that book it for a time range — yet it is **not owned by a single
-  calendar** and must be **easily referenced by events in other calendars**.
+  cars, or other bookable things) with their own data (name, type, location,
+  capacity). A resource is **not a calendar** and is not owned by one: its
+  availability is derived from **bookings**, and it must be **easily referenced by
+  events in other calendars**.
 - **FR-17** An event from a calendar can **block / reserve** a resource, marking
   it unavailable for the event's time range.
 - **FR-18** Resources can be viewed for **availability** (free/busy) across the
-  calendar. A resource calendar shows **full event details only to users who
-  have access to the calendar that booked the event**; to everyone else the
+  calendar. The availability of a resource shows **full booking details only to
+  users who have access to the calendar that booked it**; to everyone else the
   booking appears as a **"blocked"** (free/busy-only) entry with no details.
 - **FR-19** Bookings of a resource can be **accepted or declined** (per
   GroupOffice).
@@ -317,12 +318,13 @@ the **order** of delivery):
   decided yet; we **assume a suiting backend has been found**. C-4 still holds —
   use an **existing CalDAV backend** (OIDC support preferred) rather than
   implementing CalDAV from scratch. The concrete choice is left to design.
-- **Q12 — Resources model.** _Resolved — hybrid._ A resource **is its own
-  calendar** (it can hold events that book it for a time range) **and** must be
-  **easily referenced by events in other calendars**. **ACL:** a resource
-  calendar shows **full details only to users with access to the calendar that
-  booked the event**; otherwise the booking shows as a **"blocked"** (free/busy)
-  entry. (Captured in FR-16 and FR-18.)
+- **Q12 — Resources model.** _Resolved — revised 2026-10-31._ A resource is a
+  **first-class entity, not a calendar**: a thing with metadata whose availability
+  is **derived from bookings** kept by the app (design §5, "Resource model"). Events
+  in other calendars **reference** it, and the app also writes an opaque
+  availability block for third-party clients. **ACL:** full details only for users
+  with access to the calendar that booked it; otherwise the booking shows as a
+  **"blocked"** (free/busy) entry. (Captured in FR-16 and FR-18.)
 - **Q13 — Split view scope.** _Resolved._ **Every** calendar in the selected view
   gets its **own band**; a band that is **empty for the current view** may be
   **hidden** to save space. Extending the split view to **all** view types is a

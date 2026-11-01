@@ -11,6 +11,8 @@ import type { UserRow } from '../../server/db/types'
 import { findUserBySub, findUserByUsername, upsertUser } from '../../server/db/users'
 
 const migrationsDir = fileURLToPath(new URL('../../server/db/migrations', import.meta.url))
+const SUB_BOB = '8f1c2b0e-4d51-4c7e-9a52-0b6f3c1d2e77'
+const GROUP_STAFF = 'c0a8e2d4-77f1-4b0a-8d3e-5b1f9a6c4e10'
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
 
 let db: Database
@@ -64,13 +66,16 @@ describe('runMigrations', () => {
     migrated()
     expect(tableNames()).toEqual([
       'app_tokens',
+      'audit_log',
       'calendar_acl',
+      'calendar_bookings',
       'calendar_prefs',
       'calendars',
       'categories',
       'external_accounts',
       'filters',
       'ical_subscriptions',
+      'resource_acl',
       'resources',
       'schema_migrations',
       'users',
@@ -198,16 +203,13 @@ describe('schema', () => {
       ],
       [
         'INSERT INTO calendar_acl (calendar_id, principal_type, principal, permission) VALUES (?, ?, ?, ?)',
-        [calendarId, 'user', 'bob', 'owner'],
+        [calendarId, 'user', SUB_BOB, 'owner'],
       ],
       [
         'INSERT INTO filters (owner_id, name, kind, value) VALUES (?, ?, ?, ?)',
         [userId, 'f', 'regex', 'x'],
       ],
-      [
-        'INSERT INTO resources (calendar_id, name, type) VALUES (?, ?, ?)',
-        [calendarId, 'r', 'boat'],
-      ],
+      ['INSERT INTO resources (name, type) VALUES (?, ?)', ['r', 'boat']],
       ['INSERT INTO users (oidc_sub, is_admin) VALUES (?, ?)', ['sub-2', 2]],
       ['INSERT INTO views (name, is_admin) VALUES (?, ?)', ['v', 2]],
       ['INSERT INTO views (name, definition) VALUES (?, ?)', ['v', 'not json']],
@@ -226,12 +228,12 @@ describe('schema', () => {
     for (const permission of ['free_busy', 'read', 'write', 'admin']) {
       db.prepare(
         "INSERT INTO calendar_acl (calendar_id, principal_type, principal, permission) VALUES (?, 'user', ?, ?)",
-      ).run(calendarId, `u-${permission}`, permission)
+      ).run(calendarId, `${SUB_BOB}-${permission}`, permission)
     }
     for (const type of ['group']) {
       db.prepare(
         'INSERT INTO calendar_acl (calendar_id, principal_type, principal, permission) VALUES (?, ?, ?, ?)',
-      ).run(calendarId, type, 'staff', 'read')
+      ).run(calendarId, type, GROUP_STAFF, 'read')
     }
     for (const type of ['authenticated', 'public']) {
       db.prepare(
@@ -257,6 +259,13 @@ describe('schema', () => {
     expect(() => insert.run(calendarId, 'user', null, 'read')).toThrow(/CHECK constraint/)
     expect(() => insert.run(calendarId, 'group', '', 'read')).toThrow(/CHECK constraint/)
     expect(() => insert.run(calendarId, 'public', 'someone', 'read')).toThrow(/CHECK constraint/)
+    expect(() => insert.run(calendarId, 'user', 'a/b', 'read')).toThrow(/CHECK constraint/)
+    expect(() => insert.run(calendarId, 'user', 'a b', 'read')).toThrow(/CHECK constraint/)
+    expect(() => insert.run(calendarId, 'group', 'a\\b', 'read')).toThrow(/CHECK constraint/)
+    expect(() => insert.run(calendarId, 'user', 'x'.repeat(256), 'read')).toThrow(
+      /CHECK constraint/,
+    )
+    expect(() => insert.run(calendarId, 'group', 'staff@idm.example.org', 'read')).not.toThrow()
   })
 
   it('rejects duplicate ACL entries, also for principals without a name', () => {
@@ -266,8 +275,8 @@ describe('schema', () => {
     )
     insert.run(calendarId, 'public', null, 'free_busy')
     expect(() => insert.run(calendarId, 'public', null, 'read')).toThrow(/UNIQUE constraint/)
-    insert.run(calendarId, 'user', 'bob', 'read')
-    expect(() => insert.run(calendarId, 'user', 'bob', 'write')).toThrow(/UNIQUE constraint/)
+    insert.run(calendarId, 'user', SUB_BOB, 'read')
+    expect(() => insert.run(calendarId, 'user', SUB_BOB, 'write')).toThrow(/UNIQUE constraint/)
   })
 
   it('needs an owner for a personal calendar only', () => {
@@ -304,17 +313,16 @@ describe('schema', () => {
     }
   })
 
-  it('keeps a resource to one calendar and removes it with the calendar', () => {
-    const calendarId = addCalendar('/room/', null, 'resource')
+  it('keeps a resource apart from calendars and checks its columns', () => {
     const insert = db.prepare(
-      "INSERT INTO resources (calendar_id, name, type, capacity) VALUES (?, 'Room 1', 'room', ?)",
+      "INSERT INTO resources (name, type, capacity) VALUES ('Room 1', 'room', ?)",
     )
-    insert.run(calendarId, 8)
-    expect(() => insert.run(calendarId, 8)).toThrow(/UNIQUE constraint/)
-    db.prepare('DELETE FROM calendars WHERE id = ?').run(calendarId)
-    expect(db.prepare('SELECT COUNT(*) FROM resources').pluck().get()).toBe(0)
-    const other = addCalendar('/room2/', null, 'resource')
-    expect(() => insert.run(other, 0)).toThrow(/CHECK constraint/)
+    insert.run(8)
+    insert.run(8)
+    expect(() => insert.run(0)).toThrow(/CHECK constraint/)
+    const columns = db.pragma('table_info(resources)') as { name: string }[]
+    expect(columns.map((column) => column.name)).not.toContain('calendar_id')
+    expect(db.prepare('SELECT active FROM resources').pluck().get()).toBe(1)
   })
 
   it('keeps usernames and collection paths unique', () => {

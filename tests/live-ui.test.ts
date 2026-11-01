@@ -167,6 +167,59 @@ describe('overflow menu', () => {
     expect(text(document.querySelector('[role="menu"]'))).not.toContain('Times in')
   })
 
+  describe('full screen', () => {
+    const request = vi.fn(() => Promise.resolve())
+    const exit = vi.fn(() => Promise.resolve())
+
+    function browserWithFullscreen(enabled: boolean) {
+      Object.defineProperty(document, 'fullscreenEnabled', { value: enabled, configurable: true })
+      Object.defineProperty(document, 'fullscreenElement', { value: null, configurable: true })
+      document.documentElement.requestFullscreen = request
+      document.exitFullscreen = exit
+    }
+
+    afterEach(() => {
+      Reflect.deleteProperty(document, 'fullscreenEnabled')
+      Reflect.deleteProperty(document, 'fullscreenElement')
+      request.mockClear()
+      exit.mockClear()
+    })
+
+    it('is offered where the browser has it and asks for the whole page', async () => {
+      browserWithFullscreen(true)
+      await open()
+      expect(menuItems()).toEqual(['Refresh', 'Settings', 'Full screen', 'Help', 'Sign out'])
+
+      const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+        (candidate) => text(candidate) === 'Full screen',
+      )!
+      item.click()
+      await vi.waitFor(() => expect(request).toHaveBeenCalledWith({ navigationUI: 'hide' }))
+    })
+
+    it('says so when full screen is on, and leaves it with the same entry', async () => {
+      browserWithFullscreen(true)
+      Object.defineProperty(document, 'fullscreenElement', {
+        value: document.documentElement,
+        configurable: true,
+      })
+      await open()
+      expect(menuItems()).toContain('Exit full screen')
+
+      const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+        (candidate) => text(candidate) === 'Exit full screen',
+      )!
+      item.click()
+      await vi.waitFor(() => expect(exit).toHaveBeenCalledTimes(1))
+    })
+
+    it('is not offered where the browser has no full screen for pages', async () => {
+      browserWithFullscreen(false)
+      await open()
+      expect(menuItems()).not.toContain('Full screen')
+    })
+  })
+
   it('marks the trigger busy while data loads', async () => {
     useState('live-loading').value = true
     app = await mountSuspended(shell(OverflowMenu), { attachTo: document.body })

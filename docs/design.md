@@ -710,11 +710,24 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   phone with `slotMinWidth` 100–110 and a 100 px label column. Extending split to **all** view types is a **planned experiment**
   (post-initial-release), not a requirement.
 
-- **PWA / "Add to Home Screen" (post-initial-release).** The app shell scrolls internally, so
-  the mobile browser's address bar stays visible while using the site. A web app manifest (and,
-  if needed, a service worker) would let the installed app run fullscreen without the address
-  bar, giving the app-like feel without giving up the fixed top bar. Keep the manifest optional
-  and the app fully usable in the browser either way.
+- **PWA / "Add to Home Screen" (backlog, after the initial release).** The app shell scrolls
+  internally, so the mobile browser's address bar stays visible while using the site. Stopgap, done:
+  "Full screen" in the ⋮ menu (Fullscreen API) hides the bar on request on Android; iPhone Safari
+  has no such API. The installed app is the real fix and the only one on iPhone: it runs without
+  the address bar and keeps the fixed top bar. Keep it optional; the app stays fully usable in the
+  browser. The files are small, the acceptance is not, so it waits for a deployment with HTTPS and
+  two real phones. Work list:
+  - A web app manifest (`display: standalone`, `start_url` and `scope` `/`, name, colours) with
+    icons (192 and 512 px, one maskable), an `apple-touch-icon` and `theme-color` for both
+    schemes. The icon artwork is a design decision. No service worker (security review: none).
+  - HTTPS: browsers only install a site over HTTPS; over plain HTTP, as in a LAN test, "Add to
+    Home Screen" makes a shortcut that still opens a tab.
+  - Safe areas: `viewport-fit=cover` and `env(safe-area-inset-*)` padding on the top bar and the
+    bottom sheet, for notched phones in the installed app.
+  - Sign-in: the OIDC redirect leaves the app's origin. Check the round trip inside the installed
+    app on Android and iPhone (an installed iPhone app has its own storage: a fresh sign-in).
+  - Tests: manifest and icons served with the right types, no request leaves the origin, CSP
+    unchanged (`manifest-src` falls back to `default-src 'self'`).
 - **Mobile** — responsive layout; the sidebar collapses; the split view stacks
   bands vertically.
 - **Editability (Phase 1)** — the mock-up is **read-only rendering plus

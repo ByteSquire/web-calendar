@@ -1,12 +1,12 @@
 <!--
-  Renames a shared view (FR-2). It reports the new name; the caller saves it and closes the dialog,
-  or sets `error` to keep it open.
+  Renames a view (FR-2): a shared one by default, a user's own with `shared` false. It reports the
+  new name; the caller saves it and closes the dialog, or sets `error` to keep it open.
 -->
 <template>
   <UModal
     :open="open"
-    title="Rename shared view"
-    description="Everybody sees the new name."
+    :title="shared ? 'Rename shared view' : 'Rename view'"
+    :description="shared ? 'Everybody sees the new name.' : 'Only you see this view.'"
     @update:open="emit('update:open', $event)"
   >
     <template #body>
@@ -38,8 +38,14 @@
 
 <script setup lang="ts">
 const props = withDefaults(
-  defineProps<{ open: boolean; viewName: string; pending?: boolean; error?: string }>(),
-  { pending: false, error: undefined },
+  defineProps<{
+    open: boolean
+    viewName: string
+    shared?: boolean
+    pending?: boolean
+    error?: string
+  }>(),
+  { shared: true, pending: false, error: undefined },
 )
 const emit = defineEmits<{ 'update:open': [open: boolean]; save: [name: string] }>()
 

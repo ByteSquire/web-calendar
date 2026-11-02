@@ -17,9 +17,11 @@
             @rename="startRename(view)"
             @update="updateFromSelection(view)"
             @delete="startDelete(view)"
+            @copy="copyView(view)"
           />
         </li>
       </ul>
+      <SidebarAddInput noun="view" :submit="submitOwnView" />
       <SidebarAddInput v-if="isAdmin" noun="shared view" :submit="submitSharedView" />
     </SidebarSection>
 
@@ -87,6 +89,7 @@
     <AdminViewRenameModal
       :open="renaming !== null"
       :view-name="renaming?.name ?? ''"
+      :shared="renaming?.isAdmin ?? true"
       :pending="pending"
       :error="dialogError"
       @update:open="closeDialogs"
@@ -95,7 +98,11 @@
     <ConfirmDeleteDialog
       :open="deleting !== null"
       :event-title="deleting?.name ?? ''"
-      detail="The shared view disappears for everybody."
+      :detail="
+        deleting?.isAdmin
+          ? 'The shared view disappears for everybody.'
+          : 'Only this view is deleted; the calendars stay.'
+      "
       :pending="pending"
       :error="dialogError"
       @update:open="closeDialogs"
@@ -117,7 +124,15 @@ import {
   type AdminViewsApi,
 } from '~/utils/live/admin-views'
 import { isLiveConfig } from '~/utils/live/seed'
-import type { CalendarView } from '../../shared/types/calendar'
+import {
+  copyName,
+  createOwnView,
+  deleteOwnView,
+  describeOwnViewError,
+  ownViewBody,
+  updateOwnView,
+} from '~/utils/live/user-views'
+import type { CalendarView, ViewIcon } from '../../shared/types/calendar'
 
 const {
   views,
@@ -140,8 +155,9 @@ const {
   addFilter,
 } = useCalendarState()
 
-// Shared views are changed through `/api/admin/views` in live mode. The controls show for admins
-// only (the server checks again); without a server (demo, mock data) they change the local list.
+// Shared views are changed through `/api/admin/views` in live mode, a user's own views through
+// `/api/views`. The shared-view controls show for admins only (the server checks again); without a
+// server (demo, mock data) both kinds change the local list.
 const live = isLiveConfig(useServerConfigState().value)
 const api = live ? (useAuthFetch() as unknown as AdminViewsApi) : null
 const isAdmin = ref(!live)
@@ -154,12 +170,28 @@ onMounted(async () => {
   }
 })
 
+/** The requests and the wording of failures for each kind of view. */
+const SHARED = {
+  body: sharedViewBody,
+  update: updateSharedView,
+  remove: deleteSharedView,
+  describe: describeSharedViewError,
+}
+const OWN = {
+  body: ownViewBody,
+  update: updateOwnView,
+  remove: deleteOwnView,
+  describe: describeOwnViewError,
+}
+const requestsFor = (view: CalendarView) => (view.isAdmin ? SHARED : OWN)
+
 const toast = useToast()
 const renaming = ref<CalendarView | null>(null)
 const deleting = ref<CalendarView | null>(null)
 const pending = ref(false)
 const dialogError = ref('')
 let localCounter = 0
+let ownCounter = 0
 
 function replaceView(next: CalendarView) {
   views.value = views.value.map((view) => (view.id === next.id ? next : view))
@@ -189,6 +221,47 @@ async function submitSharedView(name: string): Promise<string | undefined> {
     return undefined
   } catch (error) {
     return describeSharedViewError(error)
+  }
+}
+
+/** A new view of the user's own with these calendars; on the server, or in the local list (demo). */
+async function createOwn(
+  name: string,
+  icon: ViewIcon,
+  calendarIds: readonly string[],
+): Promise<CalendarView> {
+  const body = ownViewBody(name, icon, calendarIds)
+  if (api) return createOwnView(api, body)
+  ownCounter += 1
+  return {
+    id: `view-own-${ownCounter}`,
+    name,
+    icon,
+    calendarIds: body.calendars.map((calendar) => calendar.ref),
+    isAdmin: false,
+  }
+}
+
+const ownNames = () => views.value.filter((view) => !view.isAdmin).map((view) => view.name)
+
+async function submitOwnView(name: string): Promise<string | undefined> {
+  if (ownNames().includes(name)) return 'A view with this name already exists.'
+  try {
+    views.value = [...views.value, await createOwn(name, 'calendar', visibleCalendarIds.value)]
+    return undefined
+  } catch (error) {
+    return describeOwnViewError(error)
+  }
+}
+
+/** "Duplicate" on an own view and "Copy to my views" on a shared one: a copy of the user's own. */
+async function copyView(view: CalendarView) {
+  try {
+    const created = await createOwn(copyName(view.name, ownNames()), view.icon, view.calendarIds)
+    views.value = [...views.value, created]
+    toast.add({ title: `Added ${created.name} to your views`, icon: 'i-lucide-check' })
+  } catch (error) {
+    toast.add({ title: describeOwnViewError(error), color: 'error', icon: 'i-lucide-x' })
   }
 }
 
@@ -227,11 +300,12 @@ async function saveRename(name: string) {
   dialogError.value = ''
   try {
     // Renaming keeps the calendars the view has: the request repeats them.
-    const body = sharedViewBody(name, view.icon, view.calendarIds)
-    replaceView(api ? await updateSharedView(api, view.id, body) : { ...view, name })
+    const requests = requestsFor(view)
+    const body = requests.body(name, view.icon, view.calendarIds)
+    replaceView(api ? await requests.update(api, view.id, body) : { ...view, name })
     closeDialogs()
   } catch (error) {
-    dialogError.value = describeSharedViewError(error)
+    dialogError.value = requestsFor(view).describe(error)
   } finally {
     pending.value = false
   }
@@ -243,12 +317,12 @@ async function confirmDelete() {
   pending.value = true
   dialogError.value = ''
   try {
-    if (api) await deleteSharedView(api, view.id)
+    if (api) await requestsFor(view).remove(api, view.id)
     views.value = views.value.filter((item) => item.id !== view.id)
     if (selectedViewId.value === view.id) selectView(null)
     closeDialogs()
   } catch (error) {
-    dialogError.value = describeSharedViewError(error)
+    dialogError.value = requestsFor(view).describe(error)
   } finally {
     pending.value = false
   }

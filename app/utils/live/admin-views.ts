@@ -34,7 +34,7 @@ export async function fetchIsAdmin(api: AdminViewsApi): Promise<boolean> {
   return me?.isAdmin === true
 }
 
-function oneView(answer: unknown): CalendarView {
+export function oneView(answer: unknown): CalendarView {
   const [view] = toViews([answer as ApiView])
   if (!view) throw new Error('The server sent no view')
   return view

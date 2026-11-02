@@ -85,12 +85,12 @@ describe('the requests', () => {
 describe('SidebarViewItem', () => {
   const actions = () => document.querySelector('[aria-label="Actions for view All staff"]')
 
-  it('gives a shared view no actions to a non-admin', async () => {
+  it('gives a shared view a menu to a non-admin too (FR-21), and the badge', async () => {
     await mount(SidebarViewItem, {
       props: { view: shared, selected: false },
       attachTo: document.body,
     })
-    expect(actions()).toBeNull()
+    expect(actions()).not.toBeNull()
     expect(document.body.textContent).toContain('Shared')
   })
 
@@ -102,7 +102,7 @@ describe('SidebarViewItem', () => {
     expect(actions()).not.toBeNull()
   })
 
-  it('still gives a user view its (mock) actions', async () => {
+  it('gives a user view its actions', async () => {
     await mount(SidebarViewItem, {
       props: { view: { ...shared, isAdmin: false, ownerId: 'u' }, selected: false },
       attachTo: document.body,

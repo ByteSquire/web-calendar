@@ -45,6 +45,7 @@ import type {
 import {
   buildCalendars,
   externalAccountIdOf,
+  isAvailabilityCollection,
   isExternalRef,
   reconcileVisibleCalendars,
   subscriptionIdOf,
@@ -272,7 +273,7 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
           attempt(() =>
             deps.api<{ subscriptions: ApiIcalSubscription[] }>('/api/ical-subscriptions'),
           ),
-          attempt(() => deps.client.listCalendars()),
+          attempt(() => listOwnCalendars()),
           deps.resources
             ? attempt(() => deps.api<{ resources: ApiResource[] }>('/api/resources'))
             : Promise.resolve(null),
@@ -454,6 +455,17 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
     }
   }
 
+  /**
+   * The collections of the user's home that are calendars to show. The availability collection is
+   * left out (see `isAvailabilityCollection`): it is not the user's calendar, and counting it would
+   * also keep a user with no calendar of their own from getting the first one.
+   */
+  async function listOwnCalendars(): Promise<DavCalendar[]> {
+    return (await deps.client.listCalendars()).filter(
+      (calendar) => !isAvailabilityCollection(calendar.url),
+    )
+  }
+
   /** The user has no calendar at all: make one. A failure is reported and retried on the next load. */
   async function createDefaultCalendar(problems: Record<string, string>): Promise<DavCalendar[]> {
     try {
@@ -461,7 +473,7 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
     } catch (error) {
       if (error instanceof DavError && error.kind === 'exists') {
         // Another tab was faster: use what is there now.
-        const listed = await attempt(() => deps.client.listCalendars())
+        const listed = await attempt(() => listOwnCalendars())
         if (listed.status === 'fulfilled' && listed.value.length > 0) return listed.value
       }
       defaultChecked = false

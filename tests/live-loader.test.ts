@@ -412,6 +412,30 @@ describe('the time zone of the user (FR-32)', () => {
   })
 })
 
+describe('the availability collection of the resources', () => {
+  const AVAILABILITY = '/caldav/u/resource-availability/'
+
+  it('is no calendar of the sidebar, and is neither read nor reported as a problem', async () => {
+    const h = harness({
+      collections: [collection(A, 'Alpha'), collection(AVAILABILITY, 'Availability')],
+    })
+    await h.loader.start()
+    expect(h.store.calendars.value.map((c) => c.name)).toEqual(['Alpha'])
+    expect(h.status.errors.value).toEqual({})
+    const read = h.read.mock.calls.flatMap(([calendars]) =>
+      (calendars as ReadCalendar[]).map((c) => c.url),
+    )
+    expect(read).not.toContain(AVAILABILITY)
+  })
+
+  it('does not stop a user with no calendar of their own from getting the first one', async () => {
+    const h = harness({ collections: [collection(AVAILABILITY, 'Availability')] })
+    await h.loader.start()
+    expect(h.createCalendar).toHaveBeenCalledTimes(1)
+    expect(h.store.calendars.value.map((c) => c.name)).toEqual(['Personal'])
+  })
+})
+
 describe('the first calendar', () => {
   it('creates "Personal" when the first listing worked and is empty', async () => {
     const h = harness({ collections: [] })

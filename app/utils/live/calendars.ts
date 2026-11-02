@@ -8,6 +8,33 @@ import { ensureTrailingSlash, toDavPath } from '../caldav/urls'
 import type { ApiCalendarPref, ApiIcalSubscription } from './api-types'
 import { normalizeHexColor, paletteColor } from './palette'
 
+/**
+ * The collection every member of `web_calendar_users` finds in their home once the group sync works:
+ * the booked times of the resources, shared free/busy only (design §5, §8). Third-party CalDAV
+ * clients may list it; the web app reads availability through its own API, so it is no calendar of
+ * the sidebar, and a full read of it is refused by Radicale (403).
+ */
+export const AVAILABILITY_COLLECTION = 'resource-availability'
+
+/** True for `<home>/resource-availability/`, as a path or an absolute URL. */
+export function isAvailabilityCollection(collectionUrl: string): boolean {
+  const path = toDavPath(collectionUrl.trim()).split(/[?#]/, 1)[0] ?? ''
+  const segments = path.split('/').filter((segment) => segment !== '')
+  // `/caldav/<home>/resource-availability/`: the gateway prefix, the home, the collection.
+  const last = segments.at(-1)
+  return (
+    segments.length >= 2 && last !== undefined && decodeSegment(last) === AVAILABILITY_COLLECTION
+  )
+}
+
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return segment
+  }
+}
+
 /** The calendar ref (`Calendar.id`, `calendar_prefs.calendar_ref`) of a CalDAV collection. */
 export function davRef(collectionUrl: string): string {
   return `dav:${ensureTrailingSlash(toDavPath(collectionUrl.trim()))}`

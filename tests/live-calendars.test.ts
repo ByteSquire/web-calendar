@@ -3,12 +3,45 @@ import type { Calendar } from '../shared/types/calendar'
 import type { DavCalendar } from '../app/utils/caldav/types'
 import type { ApiCalendarPref, ApiIcalSubscription } from '../app/utils/live/api-types'
 import {
+  AVAILABILITY_COLLECTION,
   buildCalendars,
   davRef,
+  isAvailabilityCollection,
   reconcileVisibleCalendars,
   subscriptionIdOf,
 } from '../app/utils/live/calendars'
 import { colorForName, normalizeHexColor, PALETTE, paletteColor } from '../app/utils/live/palette'
+
+describe('isAvailabilityCollection', () => {
+  it('recognises the shared availability collection of a home, as a path or a URL', () => {
+    expect(AVAILABILITY_COLLECTION).toBe('resource-availability')
+    for (const url of [
+      '/caldav/189c6a24-f9cb-437b-8f58-b5cc8d7f909e/resource-availability/',
+      '/caldav/u/resource-availability',
+      'https://cal.example.org/caldav/u/resource-availability/',
+      ' /caldav/u/resource-availability/ ',
+      '/caldav/u/resource%2Davailability/',
+      '/caldav/u/resource-availability/?x=1',
+    ]) {
+      expect(isAvailabilityCollection(url), url).toBe(true)
+    }
+  })
+
+  it('leaves every other collection alone', () => {
+    for (const url of [
+      '/caldav/u/def-calendar/',
+      '/caldav/u/shared-12/',
+      '/caldav/u/resource-availability-2/',
+      '/caldav/u/my-resource-availability/',
+      '/caldav/u/resource-availability/sub/',
+      '/resource-availability/',
+      '/caldav/resource-availability/x.ics',
+      '',
+    ]) {
+      expect(isAvailabilityCollection(url), url).toBe(false)
+    }
+  })
+})
 
 function collection(path: string, extra: Partial<DavCalendar> = {}): DavCalendar {
   return {

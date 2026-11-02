@@ -43,8 +43,37 @@ test.describe('shared views', () => {
       'Rename',
       'Update from selection',
       'Copy to my views',
+      'Unshare',
       'Delete',
     ])
+    await page.keyboard.press('Escape')
+
+    // and back: unsharing makes it a view of the administrator's own again, without the badge
+    await press(page.getByRole('button', { name: 'Actions for view Ops' }).first())
+    await page.getByRole('menuitem', { name: 'Unshare', exact: true }).click()
+    await expect(page.getByText('Unshared Ops').first()).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Ops', exact: true })).toHaveCount(1)
+    await expect(row).not.toContainText('Shared')
+    await press(page.getByRole('button', { name: 'Actions for view Ops' }).first())
+    await expect(page.getByRole('menuitem')).toHaveText([
+      'Rename',
+      'Duplicate',
+      'Share with everybody',
+      'Delete',
+    ])
+  })
+
+  test('refuses to unshare a view while an own view has the same name', async ({ page }) => {
+    await openApp(page)
+    await showSidebar(page)
+    await page.getByLabel('New view name', { exact: true }).first().fill('All staff')
+    await press(page.getByRole('button', { name: 'Add view', exact: true }).first())
+    await press(page.getByRole('button', { name: 'Actions for view All staff' }).first())
+    await page.getByRole('menuitem', { name: 'Unshare', exact: true }).click()
+    await expect(
+      page.getByText('You already have a view with this name. Rename one of them first.').first(),
+    ).toBeVisible()
+    await expect(page.getByRole('button', { name: 'All staff', exact: true })).toHaveCount(2)
   })
 
   test('renames and deletes a shared view', async ({ page }) => {

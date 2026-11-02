@@ -2,7 +2,13 @@
 // Shared views have their own routes (admin-views.ts). The server decides who owns what: another
 // user's view, and a shared one, answer 404 on these routes.
 import type { CalendarView, ViewIcon } from '../../../shared/types/calendar'
-import { createSharedView, oneView, sharedViewBody, type AdminViewsApi } from './admin-views'
+import {
+  createSharedView,
+  deleteSharedView,
+  oneView,
+  sharedViewBody,
+  type AdminViewsApi,
+} from './admin-views'
 
 /** The longest view name the server accepts (`MAX_VIEW_NAME_LENGTH` in server/utils/api/views.ts). */
 export const VIEW_NAME_MAX = 80
@@ -73,6 +79,29 @@ export async function shareOwnView(api: AdminViewsApi, view: CalendarView): Prom
     return { shared, leftOut, removeError }
   }
   return { shared, leftOut }
+}
+
+export interface UnsharedView {
+  /** The view of the user's own that now exists. */
+  own: CalendarView
+  /** Set when the shared view could not be deleted after the copy: both exist then. */
+  removeError?: unknown
+}
+
+/**
+ * Takes a shared view back from everybody, the way "Share with everybody" gave it: an own view
+ * of the administrator with the same name, icon and calendars is made first (it throws when that
+ * fails, and nothing has changed), then the shared view is deleted. A failing delete does not
+ * throw: the shared view stays, `removeError` says why, so a view is never lost.
+ */
+export async function unshareView(api: AdminViewsApi, view: CalendarView): Promise<UnsharedView> {
+  const own = await createOwnView(api, ownViewBody(view.name, view.icon, view.calendarIds))
+  try {
+    await deleteSharedView(api, view.id)
+  } catch (removeError) {
+    return { own, removeError }
+  }
+  return { own }
 }
 
 /** A sentence for people from a failed request (an ofetch error or anything else). */

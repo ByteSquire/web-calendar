@@ -28,9 +28,9 @@ import type { DropdownMenuItem } from '@nuxt/ui'
 import type { CalendarView } from '../../shared/types/calendar'
 
 // Every view has a menu (FR-21). A shared view offers "Copy to my views" to everyone; its own
-// actions (Rename, Update from selection, Delete) need `canManage`: the viewer is an administrator
-// (a convenience; the server enforces). A user's own view offers Rename, Duplicate and Delete, and
-// an administrator may also share it with everybody.
+// actions (Rename, Update from selection, Unshare, Delete) need `canManage`: the viewer is an
+// administrator (a convenience; the server enforces). A user's own view offers Rename, Duplicate
+// and Delete, and an administrator may also share it with everybody; Unshare takes it back.
 const props = defineProps<{ view: CalendarView; selected: boolean; canManage?: boolean }>()
 const emit = defineEmits<{
   select: []
@@ -39,6 +39,7 @@ const emit = defineEmits<{
   delete: []
   copy: []
   share: []
+  unshare: []
 }>()
 
 const copy: DropdownMenuItem = {
@@ -70,6 +71,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
               onSelect: () => emit('update'),
             },
             copy,
+            { label: 'Unshare', icon: 'i-lucide-lock', onSelect: () => emit('unshare') },
           ],
           [remove],
         ]

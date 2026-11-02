@@ -13,6 +13,7 @@ import {
   describeOwnViewError,
   ownViewBody,
   shareOwnView,
+  unshareView,
   updateOwnView,
 } from '~/utils/live/user-views'
 
@@ -125,6 +126,61 @@ describe('shareOwnView', () => {
     })
     const result = await shareOwnView(api, own)
     expect(result.shared).toMatchObject({ id: '9' })
+    expect(result.removeError).toBe(failure)
+  })
+})
+
+describe('unshareView', () => {
+  const shared = {
+    id: '9',
+    name: 'Team',
+    icon: 'star' as const,
+    calendarIds: ['dav:/a/', 'ics:2', 'dav:/a/'],
+    isAdmin: true,
+    ownerId: null,
+  }
+  const made = { id: 4, name: 'Team', icon: 'star', calendars: [], isAdmin: false, ownerId: 3 }
+
+  it('makes the own view first, then deletes the shared one', async () => {
+    const api = vi.fn(async () => made)
+    const result = await unshareView(api, shared)
+    expect(api.mock.calls).toEqual([
+      [
+        '/api/views',
+        {
+          method: 'POST',
+          body: {
+            name: 'Team',
+            icon: 'star',
+            calendars: [
+              { ref: 'dav:/a/', color: null },
+              { ref: 'ics:2', color: null },
+            ],
+          },
+        },
+      ],
+      ['/api/admin/views/9', { method: 'DELETE' }],
+    ])
+    expect(result.own).toMatchObject({ id: '4', isAdmin: false })
+    expect(result.removeError).toBeUndefined()
+  })
+
+  it('throws, and deletes nothing, when the own view cannot be made', async () => {
+    const api = vi.fn(async () => {
+      throw { statusCode: 409 }
+    })
+    await expect(unshareView(api, shared)).rejects.toMatchObject({ statusCode: 409 })
+    expect(api).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the shared view and reports why when it cannot be deleted', async () => {
+    const failure = { statusCode: 500 }
+    const api = vi.fn(async (_path: string, init?: { method?: string }) => {
+      if (init?.method === 'DELETE') throw failure
+      return made
+    })
+    const result = await unshareView(api, shared)
+    expect(result.own).toMatchObject({ id: '4' })
     expect(result.removeError).toBe(failure)
   })
 })

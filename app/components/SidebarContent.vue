@@ -19,6 +19,7 @@
             @delete="startDelete(view)"
             @copy="copyView(view)"
             @share="shareView(view)"
+            @unshare="unshareSharedView(view)"
           />
         </li>
       </ul>
@@ -130,8 +131,10 @@ import {
   describeOwnViewError,
   ownViewBody,
   shareOwnView,
+  unshareView,
   updateOwnView,
   type SharedOwnView,
+  type UnsharedView,
 } from '~/utils/live/user-views'
 import type { CalendarView, ViewIcon } from '../../shared/types/calendar'
 
@@ -290,6 +293,61 @@ async function shareView(view: CalendarView) {
   toast.add({
     title: `Shared ${view.name} with everybody`,
     description: leftOut > 0 ? 'External calendars are not shared.' : undefined,
+    icon: 'i-lucide-check',
+  })
+}
+
+/**
+ * "Unshare" on a shared view: it becomes a view of the administrator's own and disappears for
+ * everybody else (see `unshareView`). If the shared view could not be deleted both are listed and
+ * the toast says so.
+ */
+async function unshareSharedView(view: CalendarView) {
+  if (ownNames().includes(view.name)) {
+    toast.add({
+      title: 'You already have a view with this name. Rename one of them first.',
+      color: 'error',
+      icon: 'i-lucide-x',
+    })
+    return
+  }
+  let result: UnsharedView
+  try {
+    if (api) {
+      result = await unshareView(api, view)
+    } else {
+      ownCounter += 1
+      const body = ownViewBody(view.name, view.icon, view.calendarIds)
+      result = {
+        own: {
+          id: `view-own-${ownCounter}`,
+          name: view.name,
+          icon: view.icon,
+          calendarIds: body.calendars.map((calendar) => calendar.ref),
+          isAdmin: false,
+        },
+      }
+    }
+  } catch (error) {
+    toast.add({ title: describeOwnViewError(error), color: 'error', icon: 'i-lucide-x' })
+    return
+  }
+  const { own, removeError } = result
+  if (removeError !== undefined) {
+    views.value = [...views.value, own]
+    toast.add({
+      title: `Copied ${view.name} to your views, but the shared view could not be removed.`,
+      description: describeSharedViewError(removeError),
+      color: 'error',
+      icon: 'i-lucide-x',
+    })
+    return
+  }
+  views.value = views.value.map((item) => (item.id === view.id ? own : item))
+  if (selectedViewId.value === view.id) selectView(own.id)
+  toast.add({
+    title: `Unshared ${view.name}`,
+    description: 'It is one of your own views now; other people no longer see it.',
     icon: 'i-lucide-check',
   })
 }

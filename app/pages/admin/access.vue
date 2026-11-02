@@ -9,27 +9,30 @@
     <header class="flex flex-col gap-1">
       <NuxtLink to="/" class="inline-flex min-h-11 items-center gap-1.5 self-start underline">
         <UIcon name="i-lucide-arrow-left" class="size-4" />
-        Back to calendar
+        {{ t('Back to calendar') }}
       </NuxtLink>
-      <h1 class="text-2xl font-semibold">Calendar access</h1>
+      <h1 class="text-2xl font-semibold">{{ t('Calendar access') }}</h1>
     </header>
 
     <div v-if="checking" role="status" class="flex flex-col gap-2">
-      <span class="sr-only">Checking your permissions</span>
+      <span class="sr-only">{{ t('Checking your permissions') }}</span>
       <USkeleton class="h-11 w-full max-w-md" aria-hidden="true" />
     </div>
 
     <SettingsErrorAlert
       v-else-if="admin === null"
-      message="Could not check whether you may manage access. Try again."
+      :message="t('Could not check whether you may manage access. Try again.')"
       retryable
       @retry="start()"
     />
 
     <template v-else-if="admin">
       <p>
-        Choose who may see or change each calendar. The calendar server enforces these rules for
-        every app, not only this one.
+        {{
+          t(
+            'Choose who may see or change each calendar. The calendar server enforces these rules for every app, not only this one.',
+          )
+        }}
       </p>
 
       <SettingsErrorAlert
@@ -41,11 +44,11 @@
       <SettingsErrorAlert v-if="access.users.error.value" :message="access.users.error.value" />
 
       <p v-if="loaded && calendarItems.length === 0" data-access-none class="text-toned">
-        There are no calendars to manage yet.
+        {{ t('There are no calendars to manage yet.') }}
       </p>
 
       <template v-if="current">
-        <UFormField label="Calendar">
+        <UFormField :label="t('Calendar')">
           <USelectMenu
             v-model="selectedId"
             :items="calendarItems"
@@ -58,10 +61,10 @@
 
         <section aria-labelledby="access-rules-heading" class="flex flex-col gap-3">
           <h2 id="access-rules-heading" class="text-lg font-semibold">
-            Who has access to {{ current.name }}
+            {{ t('Who has access to {name}', { name: current.name }) }}
           </h2>
           <p v-if="current.owner" class="text-toned">
-            Owner: {{ current.owner }} (always has full access).
+            {{ t('Owner: {name} (always has full access).', { name: current.owner }) }}
           </p>
           <SettingsErrorAlert v-if="problem" :message="problem" />
           <AdminAccessRuleList
@@ -71,8 +74,12 @@
             @remove="remove"
           />
           <p v-if="pendingCount > 0" class="text-sm text-toned">
-            {{ pendingCount }} {{ pendingCount === 1 ? 'rule is' : 'rules are' }} pending. They are
-            sent to the calendar server shortly; reload to see when they are applied.
+            {{
+              tc(
+                '{count} rule is pending. They are sent to the calendar server shortly; reload to see when they are applied. | {count} rules are pending. They are sent to the calendar server shortly; reload to see when they are applied.',
+                pendingCount,
+              )
+            }}
           </p>
           <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
         </section>
@@ -94,10 +101,14 @@
 import { useAdminAccess, useAdminFlag } from '~/composables/useAdminAccess'
 import type { AccessRule, AccessRuleInput } from '~/utils/admin/access'
 import { ACCESS_LEVELS, levelLabel, withRule, withoutRule } from '~/utils/admin/access'
+import { t, tc } from '~/utils/i18n'
 
-useHead({ title: 'Calendar access' })
+useHead({ title: () => t('Calendar access') })
 
-const SEARCH_CALENDARS = { placeholder: 'Search calendars', 'aria-label': 'Search calendars' }
+const SEARCH_CALENDARS = computed(() => ({
+  placeholder: t('Search calendars'),
+  'aria-label': t('Search calendars'),
+}))
 
 const router = useRouter()
 const { admin, ensure } = useAdminFlag()
@@ -146,10 +157,10 @@ watch(selectedId, () => {
 })
 
 function labelOf(rule: AccessRuleInput): string {
-  if (rule.principalType === 'authenticated') return 'Everyone signed in'
-  if (rule.principalType === 'group') return `Group ${rule.principal}`
+  if (rule.principalType === 'authenticated') return t('Everyone signed in')
+  if (rule.principalType === 'group') return t('Group {name}', { name: rule.principal ?? '' })
   const known = current.value?.rules.find((item) => item.principal === rule.principal)
-  return known?.label ?? 'This person'
+  return known?.label ?? t('This person')
 }
 
 async function change(rules: AccessRuleInput[], done: string): Promise<boolean> {
@@ -170,13 +181,16 @@ function add(rule: AccessRuleInput, label: string): Promise<boolean> {
   if (!calendar) return Promise.resolve(false)
   return change(
     withRule(calendar.rules, rule),
-    `Access for ${label} is now: ${levelLabel(rule.permission)}.`,
+    t('Access for {label} is now: {level}.', { label, level: levelLabel(rule.permission) }),
   )
 }
 
 function remove(rule: AccessRule) {
   const calendar = current.value
   if (!calendar) return
-  void change(withoutRule(calendar.rules, rule.id), `${rule.label} no longer has access.`)
+  void change(
+    withoutRule(calendar.rules, rule.id),
+    t('{label} no longer has access.', { label: rule.label }),
+  )
 }
 </script>

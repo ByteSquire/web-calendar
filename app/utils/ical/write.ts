@@ -25,6 +25,7 @@ import {
   type Comp,
   type Prop,
 } from './write-lines'
+import { t } from '../i18n'
 import { X_BOOKING, X_BOOKING_STATUS, X_RESOURCE } from './x-properties'
 import {
   editRule,
@@ -106,29 +107,34 @@ function checkContext(ctx: WriteContext): void {
     ['orgTimeZone', ctx.orgTimeZone],
   ] as const) {
     if (!isValidTimeZone(zone))
-      throw new EditError('invalid-input', `${name} is not a time zone: ${zone}`)
+      throw new EditError(
+        'invalid-input',
+        name === 'displayTimeZone'
+          ? t('The display time zone is not a time zone: {zone}', { zone })
+          : t('The organisation time zone is not a time zone: {zone}', { zone }),
+      )
   }
 }
 
 /** A range with both ends checked: dates for all-day, date-times otherwise, end not before start. */
 function parseRange(range: WallClockRange): WallClockRange {
-  const start = normalizeWall(range.start, 'The start')
-  const end = normalizeWall(range.end, 'The end')
+  const start = normalizeWall(range.start, 'start')
+  const end = normalizeWall(range.end, 'end')
   if (range.allDay) {
     if (!isDateWall(start) || !isDateWall(end)) {
-      throw new EditError('invalid-input', 'An all-day event needs dates, not times.')
+      throw new EditError('invalid-input', t('An all-day event needs dates, not times.'))
     }
     if (end <= start) {
       throw new EditError(
         'invalid-input',
-        'An all-day event ends (exclusive) after the day it starts.',
+        t('An all-day event ends (exclusive) after the day it starts.'),
       )
     }
   } else {
     if (isDateWall(start) || isDateWall(end)) {
-      throw new EditError('invalid-input', 'A timed event needs a start and an end time.')
+      throw new EditError('invalid-input', t('A timed event needs a start and an end time.'))
     }
-    if (end < start) throw new EditError('invalid-input', 'The event ends before it starts.')
+    if (end < start) throw new EditError('invalid-input', t('The event ends before it starts.'))
   }
   return { start, end, allDay: range.allDay }
 }
@@ -141,10 +147,13 @@ const STATUS_TEXT: Record<EventStatusValue, string> = {
 
 function checkChanges(changes: EventChanges): void {
   if (changes.title !== undefined && !changes.title.trim()) {
-    throw new EditError('invalid-input', 'The title is empty.')
+    throw new EditError('invalid-input', t('The title is empty.'))
   }
   if (changes.status !== undefined && !(changes.status in STATUS_TEXT)) {
-    throw new EditError('invalid-input', `Unknown status: ${String(changes.status)}`)
+    throw new EditError(
+      'invalid-input',
+      t('Unknown status: {status}', { status: String(changes.status) }),
+    )
   }
 }
 
@@ -152,7 +161,10 @@ const RECURRENCE_ID_RE = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}:\d{2}Z)?$/
 
 function checkRecurrenceId(id: string): string {
   if (!RECURRENCE_ID_RE.test(id)) {
-    throw new EditError('invalid-input', `The recurrence id is not a date or a UTC instant: ${id}`)
+    throw new EditError(
+      'invalid-input',
+      t('The recurrence id is not a date or a UTC instant: {id}', { id }),
+    )
   }
   return id
 }
@@ -558,7 +570,9 @@ function editSeries(
 function moveRefused(): EditError {
   return new EditError(
     'unsupported',
-    'The recurrence rule does not follow a move to another day; edit single occurrences instead.',
+    t(
+      'The recurrence rule does not follow a move to another day; edit single occurrences instead.',
+    ),
   )
 }
 
@@ -935,7 +949,7 @@ const WEEKDAY_RE = /^[+-]?\d{0,2}(MO|TU|WE|TH|FR|SA|SU)$/
 
 function integerList(
   values: number[] | undefined,
-  what: string,
+  what: 'monthDay' | 'setPos',
   min: number,
   max: number,
 ): number[] {
@@ -944,7 +958,20 @@ function integerList(
     if (!Number.isInteger(n) || n === 0 || Math.abs(n) < min || Math.abs(n) > max) {
       throw new EditError(
         'invalid-input',
-        `${what} must be whole numbers from ${min} to ${max} (or negative): ${n}`,
+        what === 'monthDay'
+          ? t(
+              'Days of the month must be whole numbers from {min} to {max} (or negative): {value}',
+              {
+                min,
+                max,
+                value: n,
+              },
+            )
+          : t('Set positions must be whole numbers from {min} to {max} (or negative): {value}', {
+              min,
+              max,
+              value: n,
+            }),
       )
     }
   }
@@ -958,14 +985,17 @@ function buildRule(
   ctx: WriteContext,
 ): string {
   if (!['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(rule.freq)) {
-    throw new EditError('invalid-input', `Unknown frequency: ${String(rule.freq)}`)
+    throw new EditError(
+      'invalid-input',
+      t('Unknown frequency: {freq}', { freq: String(rule.freq) }),
+    )
   }
   const parts = [`FREQ=${rule.freq}`]
   if (rule.interval !== undefined) {
     if (!Number.isInteger(rule.interval) || rule.interval < 1) {
       throw new EditError(
         'invalid-input',
-        `The interval must be a whole number of 1 or more: ${rule.interval}`,
+        t('The interval must be a whole number of 1 or more: {value}', { value: rule.interval }),
       )
     }
     if (rule.interval > 1) parts.push(`INTERVAL=${rule.interval}`)
@@ -973,25 +1003,26 @@ function buildRule(
   const byMonth = rule.byMonth ?? []
   for (const m of byMonth) {
     if (!Number.isInteger(m) || m < 1 || m > 12) {
-      throw new EditError('invalid-input', `A month must be 1 to 12: ${m}`)
+      throw new EditError('invalid-input', t('A month must be 1 to 12: {value}', { value: m }))
     }
   }
-  const byMonthDay = integerList(rule.byMonthDay, 'Days of the month', 1, 31)
-  const bySetPos = integerList(rule.bySetPos, 'Set positions', 1, 366)
+  const byMonthDay = integerList(rule.byMonthDay, 'monthDay', 1, 31)
+  const bySetPos = integerList(rule.bySetPos, 'setPos', 1, 366)
   const byDay = rule.byDay ?? []
   for (const day of byDay) {
-    if (!WEEKDAY_RE.test(day)) throw new EditError('invalid-input', `Not a weekday: ${day}`)
+    if (!WEEKDAY_RE.test(day))
+      throw new EditError('invalid-input', t('Not a weekday: {day}', { day }))
     if (/\d/.test(day) && rule.freq !== 'MONTHLY' && rule.freq !== 'YEARLY') {
       throw new EditError(
         'invalid-input',
-        `A numbered weekday (${day}) needs a monthly or yearly rule.`,
+        t('A numbered weekday ({day}) needs a monthly or yearly rule.', { day }),
       )
     }
   }
   if (bySetPos.length > 0 && byDay.length + byMonthDay.length + byMonth.length === 0) {
     throw new EditError(
       'invalid-input',
-      'BYSETPOS needs another BY part (a weekday, day of month or month).',
+      t('BYSETPOS needs another BY part (a weekday, day of month or month).'),
     )
   }
   if (byMonth.length) parts.push(`BYMONTH=${byMonth.join(',')}`)
@@ -999,27 +1030,27 @@ function buildRule(
   if (byDay.length) parts.push(`BYDAY=${byDay.join(',')}`)
   if (bySetPos.length) parts.push(`BYSETPOS=${bySetPos.join(',')}`)
   if (rule.count !== undefined && rule.until !== undefined) {
-    throw new EditError('invalid-input', 'A rule has a count or an end date, not both.')
+    throw new EditError('invalid-input', t('A rule has a count or an end date, not both.'))
   }
   if (rule.count !== undefined) {
     if (!Number.isInteger(rule.count) || rule.count < 1) {
       throw new EditError(
         'invalid-input',
-        `The count must be a whole number of 1 or more: ${rule.count}`,
+        t('The count must be a whole number of 1 or more: {value}', { value: rule.count }),
       )
     }
     parts.push(`COUNT=${rule.count}`)
   }
   if (rule.until !== undefined) {
-    const until = normalizeWall(rule.until, 'The end of the series')
+    const until = normalizeWall(rule.until, 'until')
     if (info.kind === 'date') {
       if (until < range.start)
-        throw new EditError('invalid-input', 'The series ends before it starts.')
+        throw new EditError('invalid-input', t('The series ends before it starts.'))
       parts.push(`UNTIL=${toBasic(until.slice(0, 10))}`)
     } else {
       const wall = isDateWall(until) ? `${until}T23:59:59` : until
       if (wall < range.start)
-        throw new EditError('invalid-input', 'The series ends before it starts.')
+        throw new EditError('invalid-input', t('The series ends before it starts.'))
       parts.push(`UNTIL=${toBasicUtc(zoneNamed(ctx.displayTimeZone).toInstant(wall))}`)
     }
   }
@@ -1033,7 +1064,7 @@ function buildRule(
  */
 export function createEventResource(input: NewEventInput, ctx: WriteContext): NewEventResource {
   checkContext(ctx)
-  if (!input.title.trim()) throw new EditError('invalid-input', 'The title is empty.')
+  if (!input.title.trim()) throw new EditError('invalid-input', t('The title is empty.'))
   checkChanges({ status: input.status })
   const range = parseRange(input.when)
   const info: TimeInfo = range.allDay ? { kind: 'date' } : displayInfo(ctx)

@@ -3,7 +3,9 @@
 import { Temporal } from 'temporal-polyfill'
 import type { Calendar, CalendarEvent, EventStatus } from '../../shared/types/calendar'
 import { SPLIT_SPANS, type SplitBand, type SplitSpan } from './calendar-state'
+import { STATUS_LABELS } from './event-display'
 import { BASE_CALENDAR_OPTIONS } from './fullcalendar'
+import { t, tv } from './i18n'
 
 // ---- Colour ----
 
@@ -136,7 +138,7 @@ export function toTimelineEvent(
   return {
     id: event.id,
     resourceId: calendar.id,
-    title: blocked ? 'Busy' : event.title,
+    title: blocked ? t('Busy') : event.title,
     start: event.start,
     end: event.end,
     allDay: event.allDay,
@@ -166,8 +168,8 @@ export function toTimelineData(bands: readonly SplitBand[], scheme: SplitColorSc
 export function timelineEventSrText(props: TimelineEvent['extendedProps']): string {
   return [
     props.calendarName,
-    props.status !== 'confirmed' && props.status,
-    props.blocked && 'details hidden',
+    props.status !== 'confirmed' && tv(STATUS_LABELS[props.status]).toLowerCase(),
+    props.blocked && t('details hidden'),
   ]
     .filter(Boolean)
     .join(', ')

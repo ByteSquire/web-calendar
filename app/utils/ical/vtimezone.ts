@@ -11,6 +11,7 @@
 //   one is DAYLIGHT, everything else STANDARD. TZNAME is omitted (it is optional).
 import { Temporal } from 'temporal-polyfill'
 import { isValidTimeZone } from '../../../shared/utils/time-zone'
+import { t } from '../i18n'
 import { EditError } from './write-types'
 
 /** Years before and after the anchor year that the generated block covers. */
@@ -74,7 +75,7 @@ function transitionsBetween(zone: string, fromYear: number, toYear: number) {
  */
 export function generateVTimezone(zone: string, anchorYear: number): string[] {
   if (!isValidTimeZone(zone)) {
-    throw new EditError('invalid-input', `Unknown time zone: ${zone}`)
+    throw new EditError('invalid-input', t('Unknown time zone: {zone}', { zone }))
   }
   const fromYear = anchorYear - VTIMEZONE_YEARS_BEFORE
   const toYear = anchorYear + VTIMEZONE_YEARS_AFTER

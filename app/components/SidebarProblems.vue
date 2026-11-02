@@ -19,7 +19,7 @@
       :id="headingId"
       class="px-2 pt-2 pb-1 text-xs font-semibold tracking-wide text-muted uppercase"
     >
-      Problems
+      {{ t('Problems') }}
     </h2>
     <ul class="flex flex-col gap-2">
       <li
@@ -47,10 +47,10 @@
           variant="outline"
           class="min-h-11 shrink-0"
           icon="i-lucide-key-round"
-          :aria-label="`Enter password again for ${entry.name}`"
+          :aria-label="t('Enter password again for {name}', { name: entry.name })"
           @click="askPassword(entry.passwordAccountId)"
         >
-          Enter password again
+          {{ t('Enter password again') }}
         </UButton>
         <UButton
           v-if="entry.retryKey"
@@ -59,10 +59,10 @@
           variant="outline"
           class="min-h-11 shrink-0"
           :loading="retrying.has(entry.retryKey)"
-          :aria-label="`Retry ${entry.name}`"
+          :aria-label="t('Retry {name}', { name: entry.name })"
           @click="retryEntry(entry.retryKey)"
         >
-          Retry
+          {{ t('Retry') }}
         </UButton>
       </li>
     </ul>
@@ -86,6 +86,7 @@ import { useExternalAccess } from '~/composables/useExternalAccess'
 import { useCalendarSourcesVersion, useLiveStatus } from '~/composables/useLiveCalendar'
 import { enterPassword } from '~/utils/external/credentials'
 import { rememberNote } from '~/utils/external/status'
+import { t, tc } from '~/utils/i18n'
 import { isSourceKey, sourceLabel } from '~/utils/live/errors'
 
 interface Entry {
@@ -112,7 +113,7 @@ const section = ref<HTMLElement | null>(null)
 const nameOf = (key: string) =>
   isSourceKey(key)
     ? sourceLabel(key, (id) => externalAccounts.value.find((account) => account.id === id)?.name)
-    : (calendarById.value.get(key)?.name ?? 'Calendar')
+    : (calendarById.value.get(key)?.name ?? t('Calendar'))
 
 const entries = computed<Entry[]>(() => {
   const failures = Object.entries(errors.value).map(([key, message]) => ({
@@ -129,10 +130,10 @@ const entries = computed<Entry[]>(() => {
     .map(([key, count]) => ({
       id: `note:${key}`,
       name: nameOf(key),
-      message:
-        count === 1
-          ? '1 entry could not be read and is not shown'
-          : `${count} entries could not be read and are not shown`,
+      message: tc(
+        '{count} entry could not be read and is not shown | {count} entries could not be read and are not shown',
+        count,
+      ),
       retryKey: null,
       passwordAccountId: null,
       signature: `note:${key}:${count}`,
@@ -198,7 +199,7 @@ async function savePassword(input: { password: string; remember: boolean }) {
   passwordTarget.value = null
   if (input.remember && !outcome.remembered) {
     toast.add({
-      title: 'Password saved',
+      title: t('Password saved'),
       description: rememberNote(true, false).trim(),
       icon: 'i-lucide-info',
     })

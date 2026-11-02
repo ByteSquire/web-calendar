@@ -16,6 +16,7 @@ import {
   type Comp,
   type Prop,
 } from './write-lines'
+import { t } from '../i18n'
 import { EditError } from './write-types'
 
 export type TimeInfo =
@@ -44,13 +45,27 @@ export function sameInfo(a: TimeInfo, b: TimeInfo): boolean {
 
 const WALL_RE = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?$/
 
+export type WallPart = 'start' | 'end' | 'until'
+
+/** The words for a wall clock that is not a date or time (`invalid`: it has the form but not a real value). */
+function wallProblem(what: WallPart, value: string, invalid: boolean): string {
+  if (invalid) {
+    if (what === 'start') return t('The start is not a valid date or time: {value}', { value })
+    if (what === 'end') return t('The end is not a valid date or time: {value}', { value })
+    return t('The end of the series is not a valid date or time: {value}', { value })
+  }
+  if (what === 'start') return t('The start is not a date or date-time: {value}', { value })
+  if (what === 'end') return t('The end is not a date or date-time: {value}', { value })
+  return t('The end of the series is not a date or date-time: {value}', { value })
+}
+
 /**
  * Checks and normalizes a wall clock: `YYYY-MM-DD` stays a date, `YYYY-MM-DDTHH:mm[:ss]` becomes
  * `YYYY-MM-DDTHH:mm:ss`. Throws an `invalid-input` error for anything else, including 30 February.
  */
-export function normalizeWall(value: string, what: string): string {
+export function normalizeWall(value: string, what: WallPart): string {
   const match = WALL_RE.exec(value)
-  if (!match) throw new EditError('invalid-input', `${what} is not a date or date-time: ${value}`)
+  if (!match) throw new EditError('invalid-input', wallProblem(what, value, false))
   try {
     if (match[4] === undefined)
       return Temporal.PlainDate.from(value, { overflow: 'reject' }).toString()
@@ -58,7 +73,7 @@ export function normalizeWall(value: string, what: string): string {
       overflow: 'reject',
     }).toString({ smallestUnit: 'second' })
   } catch {
-    throw new EditError('invalid-input', `${what} is not a valid date or time: ${value}`)
+    throw new EditError('invalid-input', wallProblem(what, value, true))
   }
 }
 
@@ -294,7 +309,10 @@ export class ZoneResolver {
     if (!zone) {
       throw new EditError(
         'unsupported',
-        `The time zone ${tzid} is not an IANA zone and the calendar has no usable VTIMEZONE for it.`,
+        t(
+          'The time zone {tzid} is not an IANA zone and the calendar has no usable VTIMEZONE for it.',
+          { tzid },
+        ),
       )
     }
     this.cache.set(`tzid:${tzid}`, zone)

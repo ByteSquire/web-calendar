@@ -1,5 +1,6 @@
 // Shared shapes of the write path (FR-9): what the dialogs hand to the orchestration in
 // orchestrate.ts and what comes back. Plain types, no Vue and no Nuxt.
+import { N_ } from '../i18n'
 import type { CalDavClient } from '../caldav/client'
 import type { CalendarReader } from '../caldav/reader'
 
@@ -12,9 +13,9 @@ export type ScopeChoice = 'this' | 'following' | 'all'
 export const SCOPE_CHOICES: readonly ScopeChoice[] = ['this', 'following', 'all']
 
 export const SCOPE_LABELS: Record<ScopeChoice, string> = {
-  this: 'This event',
-  following: 'This and following events',
-  all: 'All events',
+  this: N_('This event'),
+  following: N_('This and following events'),
+  all: N_('All events'),
 }
 
 /** What the event is, as far as the write path needs: where it lives and which occurrence it is. */

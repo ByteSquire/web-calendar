@@ -6,6 +6,7 @@
 // "writable" means a `dav:` calendar of type caldav that the server did not mark read-only.
 // External accounts (`ext:`) and subscriptions (`ics:`) are read-only here.
 import type { Calendar, CalendarEvent } from '../../../shared/types/calendar'
+import { t } from '../i18n'
 import type { EventTarget } from './types'
 
 /** A calendar events can be created in. */
@@ -31,20 +32,23 @@ export function eventWriteAccess(
   calendarById: ReadonlyMap<string, Calendar>,
 ): EventAccess {
   if (event.isBlocked) {
-    return { allowed: false, reason: 'You can only see that you are busy, not the event itself.' }
+    return {
+      allowed: false,
+      reason: t('You can only see that you are busy, not the event itself.'),
+    }
   }
   const calendar = calendarById.get(event.calendarId)
-  if (!calendar) return { allowed: false, reason: "This event's calendar is not available." }
+  if (!calendar) return { allowed: false, reason: t("This event's calendar is not available.") }
   if (calendar.type === 'ical') {
-    return { allowed: false, reason: 'This calendar is a subscription and is read-only.' }
+    return { allowed: false, reason: t('This calendar is a subscription and is read-only.') }
   }
   if (calendar.readOnly === true) {
-    return { allowed: false, reason: 'This calendar is read-only for you.' }
+    return { allowed: false, reason: t('This calendar is read-only for you.') }
   }
   if (!isWritableCalendar(calendar)) {
-    return { allowed: false, reason: "Events in this calendar can't be changed here." }
+    return { allowed: false, reason: t("Events in this calendar can't be changed here.") }
   }
-  if (!event.href) return { allowed: false, reason: "This event can't be changed here." }
+  if (!event.href) return { allowed: false, reason: t("This event can't be changed here.") }
   return { allowed: true }
 }
 

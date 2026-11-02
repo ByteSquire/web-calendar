@@ -13,7 +13,7 @@
     data-calendar-main
     tabindex="-1"
     role="region"
-    :aria-label="`Calendar, ${rangeLabel}`"
+    :aria-label="t('Calendar, {range}', { range: rangeLabel })"
     @pointerdown.capture="dateTap.start"
     @click="dateTap.click"
   >
@@ -39,6 +39,7 @@ import FullCalendar from '@fullcalendar/vue3'
 import dayGridPlugin from '@fullcalendar/vue3/daygrid'
 import interactionPlugin from '@fullcalendar/vue3/interaction'
 import listPlugin from '@fullcalendar/vue3/list'
+import deLocale from '@fullcalendar/vue3/locales/de'
 import enGbLocale from '@fullcalendar/vue3/locales/en-gb'
 import multiMonthPlugin from '@fullcalendar/vue3/multimonth'
 import classicTheme from '@fullcalendar/vue3/themes/classic'
@@ -50,6 +51,7 @@ import type {
   EventClickInfo,
   EventDisplayInfo,
 } from '@fullcalendar/vue3'
+import { locale, t } from '~/utils/i18n'
 import {
   BASE_CALENDAR_OPTIONS,
   calendarLayoutOptions,
@@ -125,12 +127,16 @@ const events = computed(() =>
 const initialView = fullCalendarViewName(viewType.value, splitSpan.value)
 const initialDate = anchorDate.value.toString()
 
+// Month and day names, "all-day" and the other words of the grids follow the language.
+const calendarLocale = computed(() => (locale.value === 'de' ? 'de' : 'en-gb'))
+
 const options = computed<CalendarOptions>(() => ({
   ...BASE_CALENDAR_OPTIONS,
   timeZone: timeZone.value,
   ...calendarLayoutOptions(compact.value),
   plugins: PLUGINS,
-  locales: [enGbLocale],
+  locales: [enGbLocale, deLocale],
+  locale: calendarLocale.value,
   initialView,
   initialDate,
   colorScheme: scheme.value,

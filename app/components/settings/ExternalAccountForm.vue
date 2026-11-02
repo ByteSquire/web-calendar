@@ -7,15 +7,19 @@
 -->
 <template>
   <form novalidate class="flex flex-col gap-4" @submit.prevent="onSubmit">
-    <UFormField label="Name" name="name" required :error="shownErrors.name" :ui="FIELD_UI">
+    <UFormField :label="t('Name')" name="name" required :error="shownErrors.name" :ui="FIELD_UI">
       <UInput ref="nameInput" v-model="name" autocomplete="off" class="w-full" />
     </UFormField>
 
     <UFormField
-      label="Address of the CalDAV server"
+      :label="t('Address of the CalDAV server')"
       name="url"
       required
-      help="A calendar, a folder of calendars or the account's start address, for example https://dav.example.org/."
+      :help="
+        t(
+          'A calendar, a folder of calendars or the account\'s start address, for example https://dav.example.org/.',
+        )
+      "
       :error="shownErrors.url"
       :ui="FIELD_UI"
     >
@@ -33,7 +37,7 @@
     <div ref="loginGroup" class="flex flex-col gap-2">
       <URadioGroup
         v-model="authMode"
-        legend="Login"
+        :legend="t('Login')"
         :items="authItems"
         :ui="RADIO_UI"
         :aria-describedby="loginsEnabled ? undefined : 'external-logins-disabled'"
@@ -45,14 +49,17 @@
         class="text-sm"
         :class="shownErrors.authMode ? ERROR_TEXT : 'text-toned'"
       >
-        The administrator has not enabled logins for external accounts, so only accounts without a
-        login can be added.
+        {{
+          t(
+            'The administrator has not enabled logins for external accounts, so only accounts without a login can be added.',
+          )
+        }}
       </p>
     </div>
 
     <template v-if="authMode === 'basic'">
       <UFormField
-        label="User name"
+        :label="t('User name')"
         name="username"
         required
         :error="shownErrors.username"
@@ -68,13 +75,13 @@
       </UFormField>
 
       <UFormField
-        label="Password"
+        :label="t('Password')"
         name="password"
         :required="mustEnterPassword"
         :help="
           mustEnterPassword
-            ? 'It is sent to this app’s server once, which seals it. Only the seal is kept.'
-            : 'Leave it empty to keep the password you entered before.'
+            ? t('It is sent to this app’s server once, which seals it. Only the seal is kept.')
+            : t('Leave it empty to keep the password you entered before.')
         "
         :error="shownErrors.password"
         :ui="FIELD_UI"
@@ -91,8 +98,12 @@
 
       <UCheckbox
         v-model="remember"
-        label="Remember on this device"
-        description="What is kept is a sealed credential, not your password. It works only through this app and only for this server. Leave this off on a shared computer."
+        :label="t('Remember on this device')"
+        :description="
+          t(
+            'What is kept is a sealed credential, not your password. It works only through this app and only for this server. Leave this off on a shared computer.',
+          )
+        "
       />
     </template>
 
@@ -101,18 +112,19 @@
     <div class="flex flex-wrap justify-end gap-2">
       <UButton
         v-if="cancelable"
-        label="Cancel"
+        :label="t('Cancel')"
         color="neutral"
         variant="outline"
         :disabled="busy"
         @click="emit('cancel')"
       />
-      <UButton type="submit" :label="busy ? 'Saving…' : submitLabel" :aria-busy="busy" />
+      <UButton type="submit" :label="busy ? t('Saving…') : submitLabel" :aria-busy="busy" />
     </div>
   </form>
 </template>
 
 <script setup lang="ts">
+import { t } from '~/utils/i18n'
 import type { ExternalAccount } from '../../../shared/types/external'
 import type { ExternalFormInput } from '~/utils/external/form'
 import { passwordRequired, validateExternalForm } from '~/utils/external/validation'
@@ -146,9 +158,9 @@ const RADIO_UI = {
 const loginsAllowed = computed(() => props.loginsEnabled || props.account?.authMode === 'basic')
 
 const authItems = computed(() => [
-  { label: 'No login', value: 'none' },
+  { label: t('No login'), value: 'none' },
   {
-    label: 'User name and password',
+    label: t('User name and password'),
     value: 'basic',
     disabled: !loginsAllowed.value,
   },

@@ -10,7 +10,7 @@
 <template>
   <UModal
     :open="open"
-    title="Edit event"
+    :title="t('Edit event')"
     :description="scopeSummary"
     :content="{ onOpenAutoFocus: focusTitle, onCloseAutoFocus: restoreFocus }"
     @update:open="onOpenChange"
@@ -57,12 +57,12 @@
           class="me-auto"
         />
         <UButton
-          label="Cancel"
+          :label="t('Cancel')"
           color="neutral"
           variant="outline"
           @click="emit('update:open', false)"
         />
-        <UButton type="submit" form="edit-event-form" label="Save" :loading="pending" />
+        <UButton type="submit" form="edit-event-form" :label="t('Save')" :loading="pending" />
       </div>
     </template>
   </UModal>
@@ -72,6 +72,7 @@
 import type { Calendar, CalendarEvent } from '../../shared/types/calendar'
 import type { BookableResource } from '~/utils/resources/types'
 import type { ReadEvent } from '~/utils/ical/x-properties'
+import { N_, t, tv } from '~/utils/i18n'
 import { keepFocusOffControlsOnTouch, pickFocusTarget } from '~/utils/focus'
 import type { EventChanges } from '~/utils/ical/write-types'
 import {
@@ -142,7 +143,7 @@ const offered = computed(() =>
 )
 const resourceNote = computed(() =>
   !mayAddResources.value && bookable.value.length > 0
-    ? 'To book a resource for a repeating event, edit one occurrence ("This event").'
+    ? t('To book a resource for a repeating event, edit one occurrence ("This event").')
     : '',
 )
 
@@ -156,12 +157,12 @@ const errors = computed(() =>
 )
 
 const SCOPE_SUMMARIES: Record<ScopeChoice, string> = {
-  this: 'Changing this event only.',
-  following: 'Changing this and the following events.',
-  all: 'Changing all events of the series.',
+  this: N_('Changing this event only.'),
+  following: N_('Changing this and the following events.'),
+  all: N_('Changing all events of the series.'),
 }
 const scopeSummary = computed(() =>
-  props.scope ? SCOPE_SUMMARIES[props.scope] : 'Change the details of this event.',
+  props.scope ? tv(SCOPE_SUMMARIES[props.scope]) : t('Change the details of this event.'),
 )
 
 watch(

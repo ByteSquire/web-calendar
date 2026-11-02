@@ -44,6 +44,7 @@
 
 <script setup lang="ts">
 import type { CalendarEvent } from '../../shared/types/calendar'
+import { N_, t, tv } from '~/utils/i18n'
 import type { EventChanges } from '~/utils/ical/write-types'
 import type { ReadEvent } from '~/utils/ical/x-properties'
 import { slotOf } from '~/utils/resources/slot'
@@ -82,12 +83,12 @@ const calendar = computed(() =>
 const categoryNames = computed(() => categories.value.map((category) => category.name))
 
 const DELETE_DETAILS: Record<ScopeChoice, string> = {
-  this: 'Only this event is deleted; the rest of the series stays.',
-  following: 'This event and all the events after it are deleted.',
-  all: 'The whole series is deleted.',
+  this: N_('Only this event is deleted; the rest of the series stays.'),
+  following: N_('This event and all the events after it are deleted.'),
+  all: N_('The whole series is deleted.'),
 }
 const deleteDetail = computed(() =>
-  scope.value ? DELETE_DETAILS[scope.value] : 'The event is removed from the calendar.',
+  scope.value ? tv(DELETE_DETAILS[scope.value]) : t('The event is removed from the calendar.'),
 )
 
 const hasMarks = (chosen: CalendarEvent) => (chosen as ReadEvent).bookingMarks !== undefined
@@ -97,7 +98,7 @@ function begin(kind: 'edit' | 'delete', chosen: CalendarEvent) {
   if (!found) {
     const access = eventWriteAccess(chosen, calendarById.value)
     toast.add({
-      title: "This event can't be changed",
+      title: t("This event can't be changed"),
       description: access.allowed ? undefined : access.reason,
       icon: 'i-lucide-info',
       color: 'neutral',
@@ -157,7 +158,7 @@ async function bookFor(
   })
   const failures = [...report.failures]
   if (report.result.marksFailed) {
-    failures.push('The booking was made, but the event could not be marked with it.')
+    failures.push(t('The booking was made, but the event could not be marked with it.'))
   }
   return { failures, summary: report.booked ?? '', anyBooked: report.result.booked.length > 0 }
 }
@@ -178,7 +179,7 @@ async function onEditSubmit(changes: EventChanges, resources: BookableResource[]
         return
       }
       if (open) finish(true)
-      failureToast('The event could not be saved', outcome.failure.message)
+      failureToast(t('The event could not be saved'), outcome.failure.message)
       return
     }
     const booking =
@@ -193,19 +194,22 @@ async function onEditSubmit(changes: EventChanges, resources: BookableResource[]
     if (booking && booking.failures.length > 0) {
       // Nothing changed in the event itself and nothing was booked: the form can try again.
       if (open && outcome.unchanged && !booking.anyBooked) {
-        error.value = `Nothing was booked. ${booking.failures.join(' ')}`
+        error.value = t('Nothing was booked. {reasons}', { reasons: booking.failures.join(' ') })
         return
       }
       if (open) {
         finish(false)
         emit('done')
       }
-      failureToast('The event was saved, but not everything was booked', booking.failures.join(' '))
+      failureToast(
+        t('The event was saved, but not everything was booked'),
+        booking.failures.join(' '),
+      )
       return
     }
     if (outcome.unchanged && !booking) {
       if (open) finish(true)
-      toast.add({ title: SUCCESS_TITLES.unchanged, icon: 'i-lucide-info', color: 'neutral' })
+      toast.add({ title: tv(SUCCESS_TITLES.unchanged), icon: 'i-lucide-info', color: 'neutral' })
       return
     }
     if (open) {
@@ -213,7 +217,7 @@ async function onEditSubmit(changes: EventChanges, resources: BookableResource[]
       emit('done')
     }
     toast.add({
-      title: SUCCESS_TITLES.updated,
+      title: tv(SUCCESS_TITLES.updated),
       description: [title, booking?.summary].filter(Boolean).join('. '),
       icon: 'i-lucide-check',
     })
@@ -223,9 +227,9 @@ async function onEditSubmit(changes: EventChanges, resources: BookableResource[]
 }
 
 const DELETED_TEXT: Record<ScopeChoice, (title: string) => string> = {
-  this: (title) => `"${title}" was deleted.`,
-  following: (title) => `"${title}" and the events after it were deleted.`,
-  all: (title) => `All events of "${title}" were deleted.`,
+  this: (title) => t('"{title}" was deleted.', { title }),
+  following: (title) => t('"{title}" and the events after it were deleted.', { title }),
+  all: (title) => t('All events of "{title}" were deleted.', { title }),
 }
 
 async function onConfirmDelete() {
@@ -244,7 +248,7 @@ async function onConfirmDelete() {
         return
       }
       if (open) finish(true)
-      failureToast('The event could not be deleted', outcome.failure.message)
+      failureToast(t('The event could not be deleted'), outcome.failure.message)
       return
     }
     if (open) {
@@ -254,13 +258,13 @@ async function onConfirmDelete() {
     toast.add(
       outcome.alreadyGone
         ? {
-            title: SUCCESS_TITLES.alreadyDeleted,
-            description: 'The calendar has been reloaded.',
+            title: tv(SUCCESS_TITLES.alreadyDeleted),
+            description: t('The calendar has been reloaded.'),
             icon: 'i-lucide-info',
             color: 'neutral',
           }
         : {
-            title: SUCCESS_TITLES.deleted,
+            title: tv(SUCCESS_TITLES.deleted),
             description: DELETED_TEXT[chosen ?? 'this'](title),
             icon: 'i-lucide-check',
           },

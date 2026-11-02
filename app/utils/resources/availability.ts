@@ -8,6 +8,8 @@ import {
   type AvailabilityEntry,
   type AvailabilityResponse,
 } from '../../../shared/types/resources-api'
+import { BUSY_TITLE } from '../event-display'
+import { N_, t, tv } from '../i18n'
 import { paletteColor } from '../live/palette'
 import { wallClockOf } from './slot'
 import type { ApiResource } from './types'
@@ -81,13 +83,17 @@ export interface AvailabilityContext {
   titleOf: (eventUid: string) => string | undefined
 }
 
-export const BUSY_PENDING_TITLE = 'Busy (pending)'
+export const BUSY_PENDING_TITLE = N_('Busy (pending)')
 
 function entryTitle(entry: AvailabilityEntry, context: AvailabilityContext) {
   const known = entry.eventUid ? context.titleOf(entry.eventUid) : undefined
   const name = entry.requesterName
-  if (known) return { title: known, description: name ? `Booked by ${name}` : undefined }
-  return { title: name ? `Booked by ${name}` : 'Booked', description: undefined }
+  if (known)
+    return { title: known, description: name ? t('Booked by {name}', { name }) : undefined }
+  return {
+    title: name ? t('Booked by {name}', { name }) : t('Booked'),
+    description: undefined,
+  }
 }
 
 /**
@@ -118,8 +124,8 @@ export function availabilityToEvents(
       if (entry.blocked) {
         events.push(
           pending
-            ? { ...base, title: BUSY_PENDING_TITLE, status: 'tentative' }
-            : { ...base, title: 'Busy', status: 'confirmed', isBlocked: true },
+            ? { ...base, title: tv(BUSY_PENDING_TITLE), status: 'tentative' }
+            : { ...base, title: tv(BUSY_TITLE), status: 'confirmed', isBlocked: true },
         )
         continue
       }

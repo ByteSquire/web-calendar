@@ -14,7 +14,7 @@
     <template #body>
       <div :aria-busy="pending">
         <FormAlert :message="error" />
-        <p v-if="!error" class="text-sm text-muted">This cannot be undone.</p>
+        <p v-if="!error" class="text-sm text-muted">{{ t('This cannot be undone.') }}</p>
       </div>
     </template>
 
@@ -22,13 +22,13 @@
       <div class="flex w-full justify-end gap-2">
         <UButton
           ref="cancelButton"
-          label="Cancel"
+          :label="t('Cancel')"
           color="neutral"
           variant="outline"
           @click="emit('update:open', false)"
         />
         <UButton
-          label="Delete"
+          :label="t('Delete')"
           color="error"
           icon="i-lucide-trash-2"
           :loading="pending"
@@ -40,6 +40,7 @@
 </template>
 
 <script setup lang="ts">
+import { t } from '~/utils/i18n'
 import { keepFocusOffControlsOnTouch, pickFocusTarget } from '~/utils/focus'
 
 const props = withDefaults(
@@ -62,7 +63,7 @@ const emit = defineEmits<{
 }>()
 useBackDismiss(toRef(props, 'open'), () => emit('update:open', false))
 
-const title = computed(() => `Delete "${props.eventTitle}"?`)
+const title = computed(() => t('Delete "{title}"?', { title: props.eventTitle }))
 const cancelButton = useTemplateRef<{ $el: HTMLElement }>('cancelButton')
 
 function onOpenChange(open: boolean) {

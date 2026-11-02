@@ -8,6 +8,7 @@ import {
   type AccessRuleInput,
   type AccessUser,
 } from '~/utils/admin/access'
+import { N_ } from '~/utils/i18n'
 import { createResource } from '~/utils/settings/resource'
 import type { MeResponse } from '~/utils/settings/types'
 
@@ -36,11 +37,11 @@ export function useAdminAccess() {
   const api = useAuthFetch()
   const calendars = createResource(
     () => api<AccessCalendarsResponse>('/api/admin/access/calendars'),
-    'load the calendars',
+    N_('load the calendars'),
   )
   const users = createResource(
     async () => (await api<{ users: AccessUser[] }>('/api/admin/access/users')).users,
-    'load the people',
+    N_('load the people'),
   )
 
   /** Sets the complete rule list of a calendar and shows the server's answer. */

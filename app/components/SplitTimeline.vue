@@ -44,9 +44,11 @@
 import { Temporal } from 'temporal-polyfill'
 import FullCalendar, { type CalendarOptions, type DateClickInfo } from '@fullcalendar/vue3'
 import interactionPlugin from '@fullcalendar/vue3/interaction'
+import deLocale from '@fullcalendar/vue3/locales/de'
 import enGbLocale from '@fullcalendar/vue3/locales/en-gb'
 import classicTheme from '@fullcalendar/vue3/themes/classic'
 import resourceTimeline from '@fullcalendar/vue3-scheduler/resource-timeline'
+import { locale, t } from '~/utils/i18n'
 import type { NewEventInput, SplitBand, SplitSpan } from '~/utils/calendar-state'
 import {
   BASE_CALENDAR_OPTIONS,
@@ -122,8 +124,8 @@ const options = computed<CalendarOptions>(() => ({
   schedulerLicenseKey: SCHEDULER_LICENSE_KEY,
   // Same time zone, locale and 24-hour times as the standard views.
   timeZone: props.timeZone,
-  locales: [enGbLocale],
-  locale: BASE_CALENDAR_OPTIONS.locale,
+  locales: [enGbLocale, deLocale],
+  locale: locale.value === 'de' ? 'de' : BASE_CALENDAR_OPTIONS.locale,
   eventTimeFormat: BASE_CALENDAR_OPTIONS.eventTimeFormat,
   colorScheme: props.scheme,
   initialView,
@@ -138,7 +140,7 @@ const options = computed<CalendarOptions>(() => ({
   events: data.value.events,
   // Rows follow the sidebar's calendar order, not FullCalendar's default order by id.
   resourceOrder: 'sortIndex',
-  resourceColumns: [{ field: 'title', headerContent: 'Calendar' }],
+  resourceColumns: [{ field: 'title', headerContent: t('Calendar') }],
   resourceColumnsWidth: layout.value.resourceColumnsWidth,
   // A tap target is at least 44 px wide, also for a short event.
   eventMinWidth: 44,

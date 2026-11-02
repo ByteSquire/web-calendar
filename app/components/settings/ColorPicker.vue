@@ -6,7 +6,7 @@
 -->
 <template>
   <fieldset class="min-w-0">
-    <legend class="mb-1 text-sm font-medium text-default">Colour</legend>
+    <legend class="mb-1 text-sm font-medium text-default">{{ t('Colour') }}</legend>
     <div class="grid grid-cols-4 gap-1">
       <label
         v-for="choice in choices"
@@ -34,13 +34,14 @@
             :class="choice.value === '' ? 'text-default' : 'text-white'"
           />
         </span>
-        <span>{{ choice.name }}</span>
+        <span>{{ tv(choice.name) }}</span>
       </label>
     </div>
   </fieldset>
 </template>
 
 <script setup lang="ts">
+import { tv } from '~/utils/i18n'
 import type { ColorChoice } from '~/utils/settings/palette'
 
 defineProps<{

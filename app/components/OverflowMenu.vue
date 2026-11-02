@@ -18,7 +18,7 @@
       :ui="{ leadingIcon: loading ? 'motion-safe:animate-spin' : '' }"
       color="neutral"
       variant="ghost"
-      aria-label="More options"
+      :aria-label="t('More options')"
       :aria-busy="loading"
     />
     <template #dark-mode-trailing>
@@ -40,8 +40,13 @@
       </span>
     </template>
     <template #follow-system>
-      <UIcon name="i-lucide-rotate-ccw" class="size-5" :title="FOLLOW_SYSTEM" aria-hidden="true" />
-      <span class="sr-only">{{ FOLLOW_SYSTEM }}</span>
+      <UIcon
+        name="i-lucide-rotate-ccw"
+        class="size-5"
+        :title="followSystemLabel"
+        aria-hidden="true"
+      />
+      <span class="sr-only">{{ followSystemLabel }}</span>
     </template>
   </UDropdownMenu>
 </template>
@@ -52,6 +57,7 @@ import { useAdminFlag } from '~/composables/useAdminAccess'
 import { useAuth } from '~/composables/useAuth'
 import { useLiveStatus } from '~/composables/useLiveCalendar'
 import { useServerConfigState } from '~/composables/useServerConfigState'
+import { t } from '~/utils/i18n'
 import { isLiveConfig } from '~/utils/live/seed'
 
 const toast = useToast()
@@ -74,7 +80,7 @@ watch(
   { immediate: true },
 )
 
-const FOLLOW_SYSTEM = 'Follow system'
+const followSystemLabel = computed(() => t('Follow system'))
 
 // The scheme in use (the system's, or the one the switch chose), not the stored preference.
 const dark = computed(() => colorMode.value === 'dark')
@@ -82,7 +88,7 @@ const dark = computed(() => colorMode.value === 'dark')
 function mockAction(action: string) {
   toast.add({
     title: action,
-    description: 'Not available in the mock-up yet.',
+    description: t('Not available in the mock-up yet.'),
     icon: 'i-lucide-info',
   })
 }
@@ -90,20 +96,20 @@ function mockAction(action: string) {
 function signOut() {
   auth.logout().catch((cause: unknown) => {
     console.error('Sign-out failed', cause)
-    toast.add({ title: 'Signing out failed', color: 'error', icon: 'i-lucide-triangle-alert' })
+    toast.add({ title: t('Signing out failed'), color: 'error', icon: 'i-lucide-triangle-alert' })
   })
 }
 
 const items = computed<DropdownMenuItem[][]>(() => {
   const help: DropdownMenuItem = {
-    label: 'Help',
+    label: t('Help'),
     icon: 'i-lucide-circle-help',
-    onSelect: () => mockAction('Help'),
+    onSelect: () => mockAction(t('Help')),
   }
   // Flipping it stores an explicit choice (the colour mode module keeps it in the browser's storage).
   const schemeChosen = colorMode.preference !== 'system'
   const darkMode: DropdownMenuItem = {
-    label: 'Dark mode',
+    label: t('Dark mode'),
     icon: 'i-lucide-moon',
     slot: 'dark-mode',
     type: 'checkbox',
@@ -121,7 +127,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
   const followSystem: DropdownMenuItem[] = schemeChosen
     ? [
         {
-          label: FOLLOW_SYSTEM,
+          label: followSystemLabel.value,
           slot: 'follow-system',
           class: '-mt-11 ms-auto w-11 justify-center px-0',
           onSelect: () => {
@@ -133,7 +139,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
   const fullScreenItems: DropdownMenuItem[] = fullscreen.supported.value
     ? [
         {
-          label: fullscreen.active.value ? 'Exit full screen' : 'Full screen',
+          label: fullscreen.active.value ? t('Exit full screen') : t('Full screen'),
           icon: fullscreen.active.value ? 'i-lucide-minimize' : 'i-lucide-maximize',
           onSelect: () => void fullscreen.toggle(),
         },
@@ -141,9 +147,19 @@ const items = computed<DropdownMenuItem[][]>(() => {
     : []
   if (!live) {
     return [
-      [{ label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => mockAction('Refresh') }],
       [
-        { label: 'Settings', icon: 'i-lucide-settings', onSelect: () => mockAction('Settings') },
+        {
+          label: t('Refresh'),
+          icon: 'i-lucide-refresh-cw',
+          onSelect: () => mockAction(t('Refresh')),
+        },
+      ],
+      [
+        {
+          label: t('Settings'),
+          icon: 'i-lucide-settings',
+          onSelect: () => mockAction(t('Settings')),
+        },
         ...fullScreenItems,
         darkMode,
         ...followSystem,
@@ -157,16 +173,21 @@ const items = computed<DropdownMenuItem[][]>(() => {
   const email = currentUser.value.email || auth.user.value?.email || ''
   // The times a viewer sees are in their own zone; say so, and name the organization's zone when
   // it differs because floating times and the "organization time" label refer to it (FR-29).
-  const zones: DropdownMenuItem[] = [{ label: `Times in ${displayTimeZone.value}`, type: 'label' }]
+  const zones: DropdownMenuItem[] = [
+    { label: t('Times in {zone}', { zone: displayTimeZone.value }), type: 'label' },
+  ]
   if (orgTimeZone.value !== displayTimeZone.value) {
-    zones.push({ label: `Organization time: ${orgTimeZone.value}`, type: 'label' })
+    zones.push({
+      label: t('Organization time: {zone}', { zone: orgTimeZone.value }),
+      type: 'label',
+    })
   }
   return [
-    [{ label: name || 'Signed in', ...(email ? { description: email } : {}), type: 'label' }],
+    [{ label: name || t('Signed in'), ...(email ? { description: email } : {}), type: 'label' }],
     zones,
     [
       {
-        label: 'Refresh',
+        label: t('Refresh'),
         icon: 'i-lucide-refresh-cw',
         // The menu closes; the trigger shows the progress (spinner, aria-busy).
         loading: loading.value,
@@ -174,20 +195,20 @@ const items = computed<DropdownMenuItem[][]>(() => {
       },
     ],
     [
-      { label: 'Settings', icon: 'i-lucide-settings', to: '/settings' },
+      { label: t('Settings'), icon: 'i-lucide-settings', to: '/settings' },
       ...(adminFlag.admin.value === true
-        ? [{ label: 'Calendar access', icon: 'i-lucide-shield-check', to: '/admin/access' }]
+        ? [{ label: t('Calendar access'), icon: 'i-lucide-shield-check', to: '/admin/access' }]
         : []),
       // Resources administration: admins only, beside Calendar access.
       ...(adminFlag.admin.value === true
-        ? [{ label: 'Resources', icon: 'i-lucide-door-open', to: '/admin/resources' }]
+        ? [{ label: t('Resources'), icon: 'i-lucide-door-open', to: '/admin/resources' }]
         : []),
       ...fullScreenItems,
       darkMode,
       ...followSystem,
       help,
     ],
-    [{ label: 'Sign out', icon: 'i-lucide-log-out', onSelect: signOut }],
+    [{ label: t('Sign out'), icon: 'i-lucide-log-out', onSelect: signOut }],
   ]
 })
 </script>

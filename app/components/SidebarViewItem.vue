@@ -11,13 +11,13 @@
       class="min-w-0 flex-1 justify-start"
       @click="emit('select')"
     />
-    <UBadge v-if="view.isAdmin" label="Shared" color="neutral" variant="subtle" size="sm" />
+    <UBadge v-if="view.isAdmin" :label="t('Shared')" color="neutral" variant="subtle" size="sm" />
     <UDropdownMenu :items="items" :content="{ align: 'end' }">
       <UButton
         icon="i-lucide-ellipsis"
         color="neutral"
         variant="ghost"
-        :aria-label="`Actions for view ${view.name}`"
+        :aria-label="t('Actions for view {name}', { name: view.name })"
       />
     </UDropdownMenu>
   </div>
@@ -25,6 +25,7 @@
 
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
+import { t } from '~/utils/i18n'
 import type { CalendarView } from '../../shared/types/calendar'
 
 // Every view has a menu (FR-21). A shared view offers "Copy to my views" to everyone; its own
@@ -42,36 +43,36 @@ const emit = defineEmits<{
   unshare: []
 }>()
 
-const copy: DropdownMenuItem = {
-  label: 'Copy to my views',
-  icon: 'i-lucide-copy-plus',
-  onSelect: () => emit('copy'),
-}
-const rename: DropdownMenuItem = {
-  label: 'Rename',
-  icon: 'i-lucide-pencil',
-  onSelect: () => emit('rename'),
-}
-const remove: DropdownMenuItem = {
-  label: 'Delete',
-  icon: 'i-lucide-trash-2',
-  color: 'error',
-  onSelect: () => emit('delete'),
-}
-
 const items = computed<DropdownMenuItem[][]>(() => {
+  // Made here, while rendering, so that the labels follow a change of language.
+  const copy: DropdownMenuItem = {
+    label: t('Copy to my views'),
+    icon: 'i-lucide-copy-plus',
+    onSelect: () => emit('copy'),
+  }
+  const rename: DropdownMenuItem = {
+    label: t('Rename'),
+    icon: 'i-lucide-pencil',
+    onSelect: () => emit('rename'),
+  }
+  const remove: DropdownMenuItem = {
+    label: t('Delete'),
+    icon: 'i-lucide-trash-2',
+    color: 'error',
+    onSelect: () => emit('delete'),
+  }
   if (props.view.isAdmin) {
     return props.canManage
       ? [
           [
             rename,
             {
-              label: 'Update from selection',
+              label: t('Update from selection'),
               icon: 'i-lucide-refresh-cw',
               onSelect: () => emit('update'),
             },
             copy,
-            { label: 'Unshare', icon: 'i-lucide-lock', onSelect: () => emit('unshare') },
+            { label: t('Unshare'), icon: 'i-lucide-lock', onSelect: () => emit('unshare') },
           ],
           [remove],
         ]
@@ -79,11 +80,11 @@ const items = computed<DropdownMenuItem[][]>(() => {
   }
   const own: DropdownMenuItem[] = [
     rename,
-    { label: 'Duplicate', icon: 'i-lucide-copy', onSelect: () => emit('copy') },
+    { label: t('Duplicate'), icon: 'i-lucide-copy', onSelect: () => emit('copy') },
   ]
   if (props.canManage) {
     own.push({
-      label: 'Share with everybody',
+      label: t('Share with everybody'),
       icon: 'i-lucide-users',
       onSelect: () => emit('share'),
     })

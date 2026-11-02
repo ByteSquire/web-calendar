@@ -9,30 +9,42 @@
 <template>
   <section aria-labelledby="settings-external" class="flex flex-col gap-4">
     <h2 id="settings-external" ref="heading" tabindex="-1" class="text-lg font-semibold">
-      External CalDAV accounts
+      {{ t('External CalDAV accounts') }}
     </h2>
     <p>
-      Show the calendars of another CalDAV server next to your own, for example from your company or
-      a hosting provider. They are read-only: changes have to be made on their server.
+      {{
+        t(
+          'Show the calendars of another CalDAV server next to your own, for example from your company or a hosting provider. They are read-only: changes have to be made on their server.',
+        )
+      }}
     </p>
     <p class="text-sm text-toned">
-      Your browser cannot talk to other servers directly, so this app's server passes each request
-      on. It does not keep your password. An account with a login needs an
-      <code>https://</code> address.
+      <template
+        v-for="(part, i) in tparts(
+          'Your browser cannot talk to other servers directly, so this app\'s server passes each request on. It does not keep your password. An account with a login needs an {https} address.',
+        )"
+        :key="i"
+      >
+        <code v-if="'name' in part">https://</code>
+        <template v-else>{{ part.text }}</template>
+      </template>
     </p>
 
     <div class="flex flex-col gap-3 rounded-lg border border-default p-4">
-      <h3 class="font-semibold">Add an account</h3>
+      <h3 class="font-semibold">{{ t('Add an account') }}</h3>
       <p v-if="limitReached" id="settings-external-limit" class="text-sm font-medium">
         <UIcon name="i-lucide-info" class="mr-1 inline size-4 align-text-bottom" />
-        You have reached the limit of {{ MAX_EXTERNAL_ACCOUNTS }} external accounts. Delete one to
-        add another.
+        {{
+          t('You have reached the limit of {max} external accounts. Delete one to add another.', {
+            max: MAX_EXTERNAL_ACCOUNTS,
+          })
+        }}
       </p>
       <template v-else>
         <SettingsErrorAlert v-if="addAlert" :message="addAlert" />
         <SettingsExternalAccountForm
           ref="addForm"
-          submit-label="Add account"
+          :submit-label="t('Add account')"
           :busy="adding"
           :logins-enabled="loginsEnabled"
           :server-errors="addErrors"
@@ -53,7 +65,7 @@
     <template v-if="list">
       <ul
         v-if="list.accounts.length > 0"
-        aria-label="Your external accounts"
+        :aria-label="t('Your external accounts')"
         class="flex flex-col gap-2"
       >
         <li
@@ -71,14 +83,23 @@
             <div class="min-w-0 flex-1">
               <p class="font-medium wrap-anywhere">{{ account.name }}</p>
               <p class="truncate text-sm text-toned" :title="account.url">
-                <span class="sr-only">Address: </span>{{ account.url }}
+                <span class="sr-only">{{ t('Address: ') }}</span
+                >{{ account.url }}
               </p>
               <p class="text-sm text-toned wrap-anywhere">
-                <span class="sr-only">Login: </span
-                >{{ account.authMode === 'basic' ? `User name ${account.username}` : 'No login' }}
+                <span class="sr-only">{{ t('Login: ') }}</span
+                >{{
+                  account.authMode === 'basic'
+                    ? t('User name {name}', { name: account.username ?? '' })
+                    : t('No login')
+                }}
               </p>
               <p class="sr-only">
-                Colour: {{ account.color ? colorName(account.color) : 'from the server' }}
+                {{
+                  t('Colour: {colour}', {
+                    colour: account.color ? colorName(account.color) : t('from the server'),
+                  })
+                }}
               </p>
             </div>
           </div>
@@ -104,55 +125,59 @@
           <div class="flex flex-wrap gap-2">
             <UButton
               :label="
-                checks.get(account.id)?.state === 'checking' ? 'Checking…' : 'Check connection'
+                checks.get(account.id)?.state === 'checking'
+                  ? t('Checking…')
+                  : t('Check connection')
               "
               icon="i-lucide-activity"
               color="neutral"
               variant="outline"
-              :aria-label="`Check connection of ${account.name}`"
+              :aria-label="t('Check connection of {name}', { name: account.name })"
               :aria-busy="checks.get(account.id)?.state === 'checking'"
               @click="checkAccount(account)"
             />
             <UButton
               v-if="needsPassword(account)"
-              label="Enter password"
+              :label="t('Enter password')"
               icon="i-lucide-key-round"
               color="neutral"
               variant="outline"
-              :aria-label="`Enter the password of ${account.name}`"
+              :aria-label="t('Enter the password of {name}', { name: account.name })"
               @click="askPassword(account)"
             />
             <UButton
-              label="Edit"
+              :label="t('Edit')"
               icon="i-lucide-pencil"
               color="neutral"
               variant="outline"
-              :aria-label="`Edit ${account.name}`"
+              :aria-label="t('Edit {name}', { name: account.name })"
               @click="askEdit(account)"
             />
             <UButton
-              label="Delete"
+              :label="t('Delete')"
               icon="i-lucide-trash-2"
               color="neutral"
               variant="outline"
               :class="ERROR_TEXT"
-              :aria-label="`Delete ${account.name}`"
+              :aria-label="t('Delete {name}', { name: account.name })"
               @click="askDelete(account)"
             />
           </div>
         </li>
       </ul>
-      <p v-else>You have no external accounts yet.</p>
+      <p v-else>{{ t('You have no external accounts yet.') }}</p>
     </template>
     <div v-else-if="!accounts.error.value" class="flex flex-col gap-2" role="status">
-      <span class="sr-only">Loading external accounts</span>
+      <span class="sr-only">{{ t('Loading external accounts') }}</span>
       <USkeleton v-for="row in 2" :key="row" class="h-32 w-full" aria-hidden="true" />
     </div>
 
     <UModal
       :open="editTarget !== null"
-      title="Edit account"
-      :description="`Change the name, address, login or colour of ${shownEditName}`"
+      :title="t('Edit account')"
+      :description="
+        t('Change the name, address, login or colour of {name}', { name: shownEditName })
+      "
       :content="{ onOpenAutoFocus: focusEditForm, onCloseAutoFocus: editFocus.restore }"
       :ui="{ title: 'wrap-anywhere', description: 'wrap-anywhere' }"
       @update:open="closeEdit"
@@ -165,7 +190,7 @@
             v-if="editTarget"
             :key="editTarget.id"
             ref="editForm"
-            submit-label="Save changes"
+            :submit-label="t('Save changes')"
             cancelable
             :account="editTarget"
             :busy="saving"
@@ -181,9 +206,13 @@
 
     <SettingsConfirmModal
       :open="deleteTarget !== null"
-      :title="`Delete “${shownDeleteName}”?`"
-      description="The account is removed from this app, together with the sealed password this browser keeps for it. The calendars on its server are not affected."
-      confirm-label="Delete account"
+      :title="t('Delete “{name}”?', { name: shownDeleteName })"
+      :description="
+        t(
+          'The account is removed from this app, together with the sealed password this browser keeps for it. The calendars on its server are not affected.',
+        )
+      "
+      :confirm-label="t('Delete account')"
       :busy="deleting"
       :error="deleteError"
       :fallback="heading"
@@ -206,6 +235,7 @@
 </template>
 
 <script setup lang="ts">
+import { N_, t, tc, tparts } from '~/utils/i18n'
 import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { MAX_EXTERNAL_ACCOUNTS, type ExternalAccount } from '../../../shared/types/external'
 import { useExternalAccess } from '~/composables/useExternalAccess'
@@ -217,7 +247,6 @@ import { describeCheckFailure, describeCheckOk, rememberNote } from '~/utils/ext
 import { externalAccountKey, isPasswordError } from '~/utils/live/errors'
 import { describeError, parseApiError } from '~/utils/settings/api-errors'
 import { createFocusReturn } from '~/utils/settings/focus-return'
-import { pluralize } from '~/utils/settings/format'
 import { colorName } from '~/utils/settings/palette'
 import { createResource } from '~/utils/settings/resource'
 import { ERROR_TEXT, SUCCESS_TEXT } from '~/utils/settings/ui'
@@ -258,7 +287,7 @@ const accounts = createResource(async () => {
   // Copies on this device of accounts that are gone are removed; the others are loaded.
   seals.sync(loaded.accounts.map((account) => account.id))
   return loaded
-}, 'load your external accounts')
+}, N_('load your external accounts'))
 const list = accounts.data
 onMounted(() => accounts.reload())
 
@@ -292,10 +321,12 @@ async function addAccount(input: ExternalFormInput) {
     accounts.update((current) => ({ ...current, accounts: [...current.accounts, result.account] }))
     sourcesChanged()
     addForm.value?.reset()
-    notice.value = `Account “${result.account.name}” added.${rememberNote(input.remember && seals.has(result.account.id), kept)}`
+    notice.value =
+      t('Account “{name}” added.', { name: result.account.name }) +
+      rememberNote(input.remember && seals.has(result.account.id), kept)
   } catch (cause) {
     // Not logged: the error holds the request, and the request holds the password.
-    const failure = describeExternalSaveError(cause, 'add the account')
+    const failure = describeExternalSaveError(cause, N_('add the account'))
     addErrors.value = failure.byField
     addAlert.value = failure.alert ?? null
   } finally {
@@ -349,10 +380,12 @@ async function saveAccount(input: ExternalFormInput) {
     // What was checked belonged to the old address and login.
     checks.delete(saved.id)
     sourcesChanged()
-    notice.value = `Account “${saved.name}” saved.${rememberNote(input.remember && seals.has(saved.id), kept)}`
+    notice.value =
+      t('Account “{name}” saved.', { name: saved.name }) +
+      rememberNote(input.remember && seals.has(saved.id), kept)
     editTarget.value = null
   } catch (cause) {
-    const failure = describeExternalSaveError(cause, 'save the account')
+    const failure = describeExternalSaveError(cause, N_('save the account'))
     editErrors.value = failure.byField
     editAlert.value = failure.alert ?? null
   } finally {
@@ -387,7 +420,7 @@ async function deleteAccount() {
   } catch (cause) {
     // Already gone is what the person wanted.
     if (parseApiError(cause).kind !== 'not-found') {
-      deleteError.value = describeError(cause, 'delete the account')
+      deleteError.value = describeError(cause, N_('delete the account'))
       deleting.value = false
       return
     }
@@ -399,7 +432,7 @@ async function deleteAccount() {
   }))
   checks.delete(target.id)
   sourcesChanged()
-  notice.value = `Account “${target.name}” deleted.`
+  notice.value = t('Account “{name}” deleted.', { name: target.name })
   deleteTarget.value = null
   deleting.value = false
 }
@@ -438,7 +471,9 @@ async function savePassword(input: { password: string; remember: boolean }) {
   }
   checks.delete(target.id)
   sourcesChanged()
-  notice.value = `Password of “${target.name}” saved.${rememberNote(input.remember, outcome.remembered)}`
+  notice.value =
+    t('Password of “{name}” saved.', { name: target.name }) +
+    rememberNote(input.remember, outcome.remembered)
   passwordTarget.value = null
 }
 
@@ -448,7 +483,7 @@ const checks = reactive(new Map<number, Status>())
 
 async function checkAccount(account: ExternalAccount) {
   if (checks.get(account.id)?.state === 'checking') return
-  checks.set(account.id, { state: 'checking', text: 'Checking the connection…' })
+  checks.set(account.id, { state: 'checking', text: t('Checking the connection…') })
   try {
     const found = await source.listCalendars(account)
     checks.set(account.id, {
@@ -458,7 +493,7 @@ async function checkAccount(account: ExternalAccount) {
   } catch (cause) {
     checks.set(account.id, {
       state: 'failed',
-      text: `Check failed: ${describeCheckFailure(cause)}`,
+      text: t('Check failed: {reason}', { reason: describeCheckFailure(cause) }),
       password: isPasswordError(cause),
     })
   }
@@ -470,15 +505,21 @@ function statusOf(account: ExternalAccount): Status {
   if (check) return check
   const problem = errors.value[externalAccountKey(account.id)]
   if (problem) {
-    return { state: 'failed', text: `${problem}. The problems list in the sidebar has more.` }
+    return {
+      state: 'failed',
+      text: t('{problem}. The problems list in the sidebar has more.', { problem }),
+    }
   }
   if (account.authMode === 'basic' && !seals.has(account.id)) {
-    return { state: 'info', text: 'This browser has no password for the account yet.' }
+    return { state: 'info', text: t('This browser has no password for the account yet.') }
   }
   const shown = calendars.value.filter((c) => c.caldavAccountId === String(account.id)).length
   return shown > 0
-    ? { state: 'ok', text: `Connected: ${pluralize(shown, 'calendar')} shown.` }
-    : { state: 'info', text: 'Not checked yet.' }
+    ? {
+        state: 'ok',
+        text: tc('Connected: {count} calendar shown. | Connected: {count} calendars shown.', shown),
+      }
+    : { state: 'info', text: t('Not checked yet.') }
 }
 
 /** A password is missing, or the server refused the one that was used. */

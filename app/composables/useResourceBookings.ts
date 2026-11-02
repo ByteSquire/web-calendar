@@ -5,6 +5,7 @@ import { Temporal } from 'temporal-polyfill'
 import type { BookingRequestsResponse } from '../../shared/types/resources-api'
 import { useAuthFetch } from '~/composables/useAuthFetch'
 import { useLiveStatus } from '~/composables/useLiveCalendar'
+import { N_, t, tc } from '~/utils/i18n'
 import { useServerConfigState } from '~/composables/useServerConfigState'
 import { isLiveConfig } from '~/utils/live/seed'
 import { describeDecisionFailure } from '~/utils/resources/errors'
@@ -81,7 +82,7 @@ export function useResourceBookings() {
       liveRows.value = [...requestAnswer.requests.map(fromRequest), ...own.flat()]
       loaded.value = true
     } catch (cause) {
-      error.value = describeError(cause, 'load the bookings')
+      error.value = describeError(cause, N_('load the bookings'))
     } finally {
       loading.value = false
     }
@@ -123,7 +124,10 @@ export function useResourceBookings() {
 
   async function decide(row: BookingRow, action: 'decline' | 'cancel'): Promise<DecisionResult> {
     const done = action === 'decline' ? 'declined' : 'cancelled'
-    const message = `Booking of ${row.resourceName} ${done}.`
+    const message =
+      action === 'decline'
+        ? t('Booking of {name} declined.', { name: row.resourceName })
+        : t('Booking of {name} cancelled.', { name: row.resourceName })
     if (!live) {
       demoRows.value = setStatusLocal(demoRows.value ?? [], row.id, done)
       return { ok: true, message }
@@ -180,7 +184,11 @@ export function useResourceBookings() {
 }
 
 function acceptMessage(row: BookingRow, declined: number): string {
-  const base = `Booking of ${row.resourceName} approved.`
-  if (declined === 0) return base
-  return `${base} ${declined === 1 ? '1 overlapping request was' : `${declined} overlapping requests were`} declined and the requesters were told.`
+  const name = row.resourceName
+  if (declined === 0) return t('Booking of {name} approved.', { name })
+  return tc(
+    'Booking of {name} approved. {count} overlapping request was declined and the requesters were told. | Booking of {name} approved. {count} overlapping requests were declined and the requesters were told.',
+    declined,
+    { name },
+  )
 }

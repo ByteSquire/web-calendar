@@ -9,7 +9,7 @@
 <template>
   <UModal
     :open="open"
-    :title="`Password for “${accountName}”`"
+    :title="t('Password for “{name}”', { name: accountName })"
     :description="description"
     :content="{ onOpenAutoFocus: focusPassword, onCloseAutoFocus: focusReturn.restore }"
     :ui="{ title: 'wrap-anywhere', description: 'wrap-anywhere' }"
@@ -24,10 +24,10 @@
       >
         <SettingsErrorAlert v-if="error" :message="error" />
         <UFormField
-          label="Password"
+          :label="t('Password')"
           name="external-password"
           required
-          :error="missing ? 'Enter the password of the account.' : undefined"
+          :error="missing ? t('Enter the password of the account.') : undefined"
           :ui="FIELD_UI"
         >
           <UInput
@@ -41,8 +41,12 @@
         </UFormField>
         <UCheckbox
           v-model="rememberChoice"
-          label="Remember on this device"
-          description="What is kept is a sealed credential, not your password. It works only through this app and only for this server. Leave this off on a shared computer."
+          :label="t('Remember on this device')"
+          :description="
+            t(
+              'What is kept is a sealed credential, not your password. It works only through this app and only for this server. Leave this off on a shared computer.',
+            )
+          "
         />
       </form>
     </template>
@@ -50,7 +54,7 @@
     <template #footer>
       <div class="flex w-full justify-end gap-2">
         <UButton
-          label="Cancel"
+          :label="t('Cancel')"
           color="neutral"
           variant="outline"
           :disabled="busy"
@@ -59,7 +63,7 @@
         <UButton
           type="submit"
           form="external-password-form"
-          :label="busy ? 'Saving…' : 'Save password'"
+          :label="busy ? t('Saving…') : t('Save password')"
           icon="i-lucide-key-round"
           :aria-busy="busy"
         />
@@ -69,6 +73,7 @@
 </template>
 
 <script setup lang="ts">
+import { t } from '~/utils/i18n'
 import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { createFocusReturn } from '~/utils/settings/focus-return'
 import { FIELD_UI } from '~/utils/settings/ui'
@@ -93,8 +98,10 @@ const emit = defineEmits<{
 
 const description = computed(() =>
   props.username
-    ? `Enter the password of ${props.username}. It is sent to your calendar server through this app.`
-    : 'Enter the password of the account. It is sent to your calendar server through this app.',
+    ? t('Enter the password of {username}. It is sent to your calendar server through this app.', {
+        username: props.username,
+      })
+    : t('Enter the password of the account. It is sent to your calendar server through this app.'),
 )
 
 const password = ref('')

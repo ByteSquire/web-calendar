@@ -4,6 +4,7 @@
 import type { CalendarStateHooks } from '../calendar-state'
 import type { ApiCategory, ApiFilter, ApiRequest } from './api-types'
 import { toCategories } from './categories'
+import { locale, t } from '../i18n'
 import { describeLoadError } from './errors'
 import { toFilters } from './views'
 
@@ -76,7 +77,9 @@ export function createKeyedDebouncer<V>(options: {
 export function describeSaveError(error: unknown): string {
   const text = describeLoadError(error)
   // `describeLoadError` words reads; for saves the generic fallback reads better as this.
-  return text === 'Could not be loaded' ? 'the server did not accept it' : text.toLowerCase()
+  if (text === describeLoadError(undefined)) return t('the server did not accept it')
+  // English continues the sentence in lower case; German nouns keep their capital.
+  return locale.value === 'en' ? text.toLowerCase() : text
 }
 
 export interface LiveHooksDeps {
@@ -96,7 +99,11 @@ export function createLiveHooks(deps: LiveHooksDeps): CalendarStateHooks {
       await deps.api('/api/calendar-prefs', { method: 'PUT', body: { ref, visible } })
     },
     onError: (_ref, error) =>
-      deps.notify(`The calendar setting could not be saved: ${describeSaveError(error)}.`),
+      deps.notify(
+        t('The calendar setting could not be saved: {reason}.', {
+          reason: describeSaveError(error),
+        }),
+      ),
   })
 
   return {
@@ -119,7 +126,12 @@ export function createLiveHooks(deps: LiveHooksDeps): CalendarStateHooks {
       return toFilters([saved])[0]!
     },
     onPersistError(what, name, error) {
-      deps.notify(`The ${what} "${name}" could not be saved: ${describeSaveError(error)}.`)
+      const reason = describeSaveError(error)
+      deps.notify(
+        what === 'category'
+          ? t('The category "{name}" could not be saved: {reason}.', { name, reason })
+          : t('The filter "{name}" could not be saved: {reason}.', { name, reason }),
+      )
     },
   }
 }

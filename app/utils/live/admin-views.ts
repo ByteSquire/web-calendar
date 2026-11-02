@@ -1,6 +1,7 @@
 // Shared (admin) views: the requests of `/api/admin/views` and the wording of their failures.
 // Hiding the controls from non-admins is a convenience; the server decides (403).
 import type { CalendarView, ViewIcon } from '../../../shared/types/calendar'
+import { t } from '../i18n'
 import type { ApiMe, ApiView } from './api-types'
 import { toViews } from './views'
 
@@ -63,10 +64,10 @@ export async function deleteSharedView(api: AdminViewsApi, id: string): Promise<
 export function describeSharedViewError(error: unknown): string {
   const status = (error as { statusCode?: unknown; status?: unknown } | null) ?? {}
   const code = status.statusCode ?? status.status
-  if (code === 403) return 'Only administrators can change shared views.'
-  if (code === 404) return 'This shared view no longer exists. Reload the page.'
-  if (code === 409) return 'There are too many shared views.'
-  if (code === 429) return 'Too many changes in a short time. Try again in a moment.'
-  if (code === 400) return 'The server did not accept this shared view.'
-  return 'The shared view could not be saved. Check your connection and try again.'
+  if (code === 403) return t('Only administrators can change shared views.')
+  if (code === 404) return t('This shared view no longer exists. Reload the page.')
+  if (code === 409) return t('There are too many shared views.')
+  if (code === 429) return t('Too many changes in a short time. Try again in a moment.')
+  if (code === 400) return t('The server did not accept this shared view.')
+  return t('The shared view could not be saved. Check your connection and try again.')
 }

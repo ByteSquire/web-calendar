@@ -15,8 +15,8 @@
 <template>
   <UModal
     :open="quickAddOpen"
-    :title="quickAddFull ? 'Add event' : 'Quick add'"
-    description="Create an event"
+    :title="quickAddFull ? t('Add event') : t('Quick add')"
+    :description="t('Create an event')"
     :content="{ onOpenAutoFocus: focusTitle, onCloseAutoFocus: restoreFocus }"
     @update:open="onOpenChange"
   >
@@ -35,7 +35,9 @@
           v-if="noWritableCalendar"
           class="rounded-lg border border-default bg-elevated p-3 text-sm"
         >
-          None of your calendars can take new events. Ask for a calendar you can write to.
+          {{
+            t('None of your calendars can take new events. Ask for a calendar you can write to.')
+          }}
         </p>
 
         <EventFormFields
@@ -52,7 +54,7 @@
           v-if="quickAddFull"
           v-model="chosenResources"
           :offered="bookable"
-          :note="isSeries && chosenResources.length > 0 ? SERIES_NOTE : ''"
+          :note="isSeries && chosenResources.length > 0 ? tv(SERIES_NOTE) : ''"
           :disabled="pending"
         />
       </form>
@@ -60,7 +62,7 @@
 
     <template #footer>
       <div v-if="saved" class="flex w-full justify-end gap-2">
-        <UButton label="Close" @click="closeQuickAdd()" />
+        <UButton :label="t('Close')" @click="closeQuickAdd()" />
       </div>
       <div v-else class="flex w-full flex-wrap items-center justify-end gap-2">
         <BookRightAwayCheckbox
@@ -69,11 +71,11 @@
           :disabled="pending"
           class="me-auto"
         />
-        <UButton label="Cancel" color="neutral" variant="outline" @click="closeQuickAdd()" />
+        <UButton :label="t('Cancel')" color="neutral" variant="outline" @click="closeQuickAdd()" />
         <UButton
           type="submit"
           form="quick-add-form"
-          label="Add event"
+          :label="t('Add event')"
           :loading="pending"
           :disabled="noWritableCalendar"
         />
@@ -84,6 +86,7 @@
 
 <script setup lang="ts">
 import { keepFocusOffControlsOnTouch } from '~/utils/focus'
+import { N_, t, tv } from '~/utils/i18n'
 import { Temporal } from 'temporal-polyfill'
 import type { CalendarEvent } from '../../shared/types/calendar'
 import { eventOverlapsRange } from '~/utils/calendar-state'
@@ -120,8 +123,9 @@ const { bookable } = useResourceRights()
 const { book } = useResourceBooking()
 const resourceBookings = useResourceBookings()
 
-const SERIES_NOTE =
-  'This event repeats, so it is saved without booking. Open one occurrence afterwards and add the resource there.'
+const SERIES_NOTE = N_(
+  'This event repeats, so it is saved without booking. Open one occurrence afterwards and add the resource there.',
+)
 
 const fields = useTemplateRef('fields')
 const formElement = useTemplateRef('formElement')
@@ -202,11 +206,14 @@ function restoreFocus(event: Event) {
 
 /** The toast after an event was added: where it is, and a way to it when it is out of view. */
 function announceAdded(event: CalendarEvent, extra = '') {
-  const calendarName = calendarById.value.get(event.calendarId)?.name ?? 'The calendar'
+  const calendarName = calendarById.value.get(event.calendarId)?.name ?? t('The calendar')
   if (!visibleCalendarIds.value.includes(event.calendarId)) {
     toast.add({
-      title: SUCCESS_TITLES.created,
-      description: [`${calendarName} is hidden, so the new event is not shown.`, extra]
+      title: tv(SUCCESS_TITLES.created),
+      description: [
+        t('{name} is hidden, so the new event is not shown.', { name: calendarName }),
+        extra,
+      ]
         .filter(Boolean)
         .join(' '),
       icon: 'i-lucide-check',
@@ -216,14 +223,16 @@ function announceAdded(event: CalendarEvent, extra = '') {
   // An event outside the shown period would look as if nothing happened: offer to jump to it.
   const shown = eventOverlapsRange(event, visibleRange.value)
   toast.add({
-    title: SUCCESS_TITLES.created,
-    description: [`${event.title} in ${calendarName}.`, extra].filter(Boolean).join(' '),
+    title: tv(SUCCESS_TITLES.created),
+    description: [t('{title} in {name}.', { title: event.title, name: calendarName }), extra]
+      .filter(Boolean)
+      .join(' '),
     icon: 'i-lucide-check',
     actions: shown
       ? undefined
       : [
           {
-            label: 'Show',
+            label: t('Show'),
             onClick: () => {
               anchorDate.value = Temporal.PlainDate.from(event.start.slice(0, 10))
             },
@@ -256,8 +265,9 @@ async function bookChosen(
 ): Promise<{ failures: string[]; summary: string }> {
   const chosen = bookable.value.filter((item) => chosenResources.value.includes(item.id))
   if (chosen.length === 0) return { failures: [], summary: '' }
-  if (isSeries.value) return { failures: [SERIES_NOTE], summary: '' }
-  if (!bookNow.value) return { failures: [], summary: 'Saved as a draft: nothing is booked yet.' }
+  if (isSeries.value) return { failures: [tv(SERIES_NOTE)], summary: '' }
+  if (!bookNow.value)
+    return { failures: [], summary: t('Saved as a draft: nothing is booked yet.') }
   const report = await book({
     resources: chosen,
     slot: slotOf(toWallClockRange(values), timeZone.value),
@@ -267,7 +277,7 @@ async function bookChosen(
   })
   const failures = [...report.failures]
   if (report.result.marksFailed) {
-    failures.push('The booking was made, but the event could not be marked with it.')
+    failures.push(t('The booking was made, but the event could not be marked with it.'))
   }
   return { failures, summary: report.booked ?? '' }
 }
@@ -276,8 +286,8 @@ async function bookChosen(
 function bookChosenInDemo(values: EventForm): string {
   const chosen = bookable.value.filter((item) => chosenResources.value.includes(item.id))
   if (chosen.length === 0) return ''
-  if (isSeries.value) return SERIES_NOTE
-  if (!bookNow.value) return 'Saved as a draft: nothing is booked yet.'
+  if (isSeries.value) return tv(SERIES_NOTE)
+  if (!bookNow.value) return t('Saved as a draft: nothing is booked yet.')
   const slot = slotOf(toWallClockRange(values), timeZone.value)
   for (const item of chosen) {
     resourceBookings.addDemoBooking({
@@ -288,13 +298,15 @@ function bookChosenInDemo(values: EventForm): string {
       requesterName: 'You',
     })
   }
-  return `${chosen.map((item) => item.name).join(', ')} requested, waiting for approval.`
+  return t('{names} requested, waiting for approval.', {
+    names: chosen.map((item) => item.name).join(', '),
+  })
 }
 
 async function submitLive() {
   const calendar = calendarById.value.get(form.value.calendarId)
   if (!calendar?.href) {
-    submitError.value = 'Choose a calendar you can write to.'
+    submitError.value = t('Choose a calendar you can write to.')
     return
   }
   const values = form.value
@@ -312,7 +324,7 @@ async function submitLive() {
       if (stale || outcome.failure.closeForm) {
         if (!stale) closeQuickAdd()
         toast.add({
-          title: 'The event could not be added',
+          title: t('The event could not be added'),
           description: outcome.failure.message,
           icon: 'i-lucide-triangle-alert',
           color: 'error',
@@ -324,7 +336,9 @@ async function submitLive() {
     }
     const booking = await bookChosen(values, outcome, calendar.href)
     if (booking.failures.length > 0 && !stale) {
-      submitError.value = `The event was saved. ${booking.failures.join(' ')}`
+      submitError.value = t('The event was saved. {reasons}', {
+        reasons: booking.failures.join(' '),
+      })
       saved.value = true
     } else if (!stale) closeQuickAdd()
     announceAdded(previewOf(values), booking.summary)

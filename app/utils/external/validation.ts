@@ -10,15 +10,16 @@ import {
   type ExternalAccount,
   type ExternalAuthMode,
 } from '../../../shared/types/external'
+import { t } from '~/utils/i18n'
 import { hasControlChars } from '../caldav/urls'
 
 const MAX_HOSTNAME_LENGTH = 253
 
 export function validateExternalName(value: string): string | undefined {
   const name = value.trim()
-  if (name === '') return 'Enter a name for the account.'
+  if (name === '') return t('Enter a name for the account.')
   if (name.length > EXTERNAL_NAME_MAX_LENGTH) {
-    return `The name can have at most ${EXTERNAL_NAME_MAX_LENGTH} characters.`
+    return t('The name can have at most {max} characters.', { max: EXTERNAL_NAME_MAX_LENGTH })
   }
   return undefined
 }
@@ -29,49 +30,55 @@ export function validateExternalName(value: string): string | undefined {
  */
 export function validateExternalUrl(value: string, authMode: ExternalAuthMode): string | undefined {
   const text = value.trim()
-  if (text === '') return 'Enter the address of the CalDAV server.'
+  if (text === '') return t('Enter the address of the CalDAV server.')
   if (text.length > EXTERNAL_URL_MAX_LENGTH) {
-    return `The address can have at most ${EXTERNAL_URL_MAX_LENGTH} characters.`
+    return t('The address can have at most {max} characters.', { max: EXTERNAL_URL_MAX_LENGTH })
   }
   let url: URL
   try {
     url = new URL(text)
   } catch {
-    return 'Enter a valid address, for example https://dav.example.org/calendars/me/.'
+    return t('Enter a valid address, for example https://dav.example.org/calendars/me/.')
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    return 'The address must start with http:// or https://.'
+    return t('The address must start with http:// or https://.')
   }
   if (url.username !== '' || url.password !== '') {
-    return 'The address must not contain a user name or password. Enter them below.'
+    return t('The address must not contain a user name or password. Enter them below.')
   }
   if (url.hostname === '' || url.hostname.length > MAX_HOSTNAME_LENGTH) {
-    return 'The address needs a valid host name.'
+    return t('The address needs a valid host name.')
   }
   if (authMode === 'basic' && url.protocol !== 'https:') {
-    return 'An account with a login needs an https:// address, so that the password is encrypted.'
+    return t(
+      'An account with a login needs an https:// address, so that the password is encrypted.',
+    )
   }
   return undefined
 }
 
 export function validateExternalUsername(value: string): string | undefined {
-  if (value.trim() === '') return 'Enter the user name of the account.'
+  if (value.trim() === '') return t('Enter the user name of the account.')
   if (value.length > EXTERNAL_USERNAME_MAX_LENGTH) {
-    return `The user name can have at most ${EXTERNAL_USERNAME_MAX_LENGTH} characters.`
+    return t('The user name can have at most {max} characters.', {
+      max: EXTERNAL_USERNAME_MAX_LENGTH,
+    })
   }
   // RFC 7617: the user name of Basic authentication cannot hold a colon.
-  if (value.includes(':')) return 'The user name must not contain a colon.'
-  if (hasControlChars(value)) return 'The user name must not contain control characters.'
+  if (value.includes(':')) return t('The user name must not contain a colon.')
+  if (hasControlChars(value)) return t('The user name must not contain control characters.')
   return undefined
 }
 
 /** `required`: the form has no sealed credential to keep (see `passwordRequired`). */
 export function validateExternalPassword(value: string, required: boolean): string | undefined {
-  if (value === '') return required ? 'Enter the password of the account.' : undefined
+  if (value === '') return required ? t('Enter the password of the account.') : undefined
   if (value.length > EXTERNAL_PASSWORD_MAX_LENGTH) {
-    return `The password can have at most ${EXTERNAL_PASSWORD_MAX_LENGTH} characters.`
+    return t('The password can have at most {max} characters.', {
+      max: EXTERNAL_PASSWORD_MAX_LENGTH,
+    })
   }
-  if (hasControlChars(value)) return 'The password must not contain control characters.'
+  if (hasControlChars(value)) return t('The password must not contain control characters.')
   return undefined
 }
 
@@ -105,7 +112,7 @@ export function validateExternalForm(
   if (url) errors.url = url
   if (values.authMode === 'basic') {
     if (!context.loginsEnabled) {
-      errors.authMode = 'The administrator has not enabled logins for external accounts.'
+      errors.authMode = t('The administrator has not enabled logins for external accounts.')
     }
     const username = validateExternalUsername(values.username)
     const password = validateExternalPassword(values.password, context.passwordRequired)

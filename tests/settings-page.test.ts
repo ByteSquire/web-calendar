@@ -69,7 +69,13 @@ describe('structure', () => {
 
   it('has one h1 and the sections as h2, each named by its heading', () => {
     expect(headings('h1')).toEqual(['Settings'])
-    expect(headings('h2')).toEqual(['Account', 'Time zone', 'App tokens', 'iCal subscriptions'])
+    expect(headings('h2')).toEqual([
+      'Account',
+      'Time zone',
+      'Language',
+      'App tokens',
+      'iCal subscriptions',
+    ])
     for (const section of document.querySelectorAll('section')) {
       const heading = document.getElementById(section.getAttribute('aria-labelledby')!)
       expect(heading?.tagName).toBe('H2')
@@ -198,7 +204,13 @@ describe('when the API fails', () => {
       expect(alert.textContent).toContain('You are signed out')
       expect(alert.textContent).toContain('Retry')
     }
-    expect(headings('h2')).toEqual(['Account', 'Time zone', 'App tokens', 'iCal subscriptions'])
+    expect(headings('h2')).toEqual([
+      'Account',
+      'Time zone',
+      'Language',
+      'App tokens',
+      'iCal subscriptions',
+    ])
     // the tokens form works as far as the client can tell
     expect(requireButton('Create token').disabled).toBe(false)
     expect(field('Label')).toBeDefined()

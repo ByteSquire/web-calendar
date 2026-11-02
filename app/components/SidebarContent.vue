@@ -6,7 +6,7 @@
   <div class="flex flex-col gap-3 p-2">
     <SidebarProblems />
 
-    <SidebarSection title="Views">
+    <SidebarSection :title="N_('Views')">
       <ul>
         <li v-for="view in views" :key="view.id">
           <SidebarViewItem
@@ -26,7 +26,7 @@
       <SidebarAddInput noun="view" :submit="submitOwnView" />
     </SidebarSection>
 
-    <SidebarSection title="Calendars">
+    <SidebarSection :title="N_('Calendars')">
       <ul>
         <li v-for="calendar in regularCalendars" :key="calendar.id">
           <SidebarToggleRow
@@ -39,7 +39,7 @@
       </ul>
     </SidebarSection>
 
-    <SidebarSection title="Resources">
+    <SidebarSection :title="N_('Resources')">
       <ul>
         <li v-for="resource in resources" :key="resource.id">
           <SidebarToggleRow
@@ -56,11 +56,11 @@
         class="inline-flex min-h-11 items-center gap-1.5 px-2 underline"
       >
         <UIcon name="i-lucide-inbox" class="size-4" aria-hidden="true" />
-        Resource bookings
+        {{ t('Resource bookings') }}
       </NuxtLink>
     </SidebarSection>
 
-    <SidebarSection title="Categories">
+    <SidebarSection :title="N_('Categories')">
       <ul>
         <li v-for="category in categories" :key="category.id">
           <SidebarToggleRow
@@ -74,7 +74,7 @@
       <SidebarAddInput noun="category" :submit="submitCategory" />
     </SidebarSection>
 
-    <SidebarSection title="Filters">
+    <SidebarSection :title="N_('Filters')">
       <ul>
         <li v-for="filter in filters" :key="filter.id">
           <SidebarToggleRow
@@ -101,8 +101,8 @@
       :event-title="deleting?.name ?? ''"
       :detail="
         deleting?.isAdmin
-          ? 'The shared view disappears for everybody.'
-          : 'Only this view is deleted; the calendars stay.'
+          ? t('The shared view disappears for everybody.')
+          : t('Only this view is deleted; the calendars stay.')
       "
       :pending="pending"
       :error="dialogError"
@@ -123,6 +123,7 @@ import {
   updateSharedView,
   type AdminViewsApi,
 } from '~/utils/live/admin-views'
+import { N_, t } from '~/utils/i18n'
 import { isLiveConfig } from '~/utils/live/seed'
 import {
   copyName,
@@ -222,7 +223,7 @@ async function createOwn(
 const ownNames = () => views.value.filter((view) => !view.isAdmin).map((view) => view.name)
 
 async function submitOwnView(name: string): Promise<string | undefined> {
-  if (ownNames().includes(name)) return 'A view with this name already exists.'
+  if (ownNames().includes(name)) return t('A view with this name already exists.')
   try {
     views.value = [...views.value, await createOwn(name, 'calendar', visibleCalendarIds.value)]
     return undefined
@@ -236,7 +237,10 @@ async function copyView(view: CalendarView) {
   try {
     const created = await createOwn(copyName(view.name, ownNames()), view.icon, view.calendarIds)
     views.value = [...views.value, created]
-    toast.add({ title: `Added ${created.name} to your views`, icon: 'i-lucide-check' })
+    toast.add({
+      title: t('Added {name} to your views', { name: created.name }),
+      icon: 'i-lucide-check',
+    })
   } catch (error) {
     toast.add({ title: describeOwnViewError(error), color: 'error', icon: 'i-lucide-x' })
   }
@@ -249,7 +253,7 @@ async function copyView(view: CalendarView) {
 async function shareView(view: CalendarView) {
   if (views.value.some((item) => item.isAdmin && item.name === view.name)) {
     toast.add({
-      title: 'A shared view with this name already exists. Rename this view first.',
+      title: t('A shared view with this name already exists. Rename this view first.'),
       color: 'error',
       icon: 'i-lucide-x',
     })
@@ -281,7 +285,7 @@ async function shareView(view: CalendarView) {
   if (removeError !== undefined) {
     views.value = [...views.value, shared]
     toast.add({
-      title: `Shared ${view.name}, but your own view could not be removed.`,
+      title: t('Shared {name}, but your own view could not be removed.', { name: view.name }),
       description: describeOwnViewError(removeError),
       color: 'error',
       icon: 'i-lucide-x',
@@ -291,8 +295,8 @@ async function shareView(view: CalendarView) {
   views.value = views.value.map((item) => (item.id === view.id ? shared : item))
   if (selectedViewId.value === view.id) selectView(shared.id)
   toast.add({
-    title: `Shared ${view.name} with everybody`,
-    description: leftOut > 0 ? 'External calendars are not shared.' : undefined,
+    title: t('Shared {name} with everybody', { name: view.name }),
+    description: leftOut > 0 ? t('External calendars are not shared.') : undefined,
     icon: 'i-lucide-check',
   })
 }
@@ -305,7 +309,7 @@ async function shareView(view: CalendarView) {
 async function unshareSharedView(view: CalendarView) {
   if (ownNames().includes(view.name)) {
     toast.add({
-      title: 'You already have a view with this name. Rename one of them first.',
+      title: t('You already have a view with this name. Rename one of them first.'),
       color: 'error',
       icon: 'i-lucide-x',
     })
@@ -336,7 +340,9 @@ async function unshareSharedView(view: CalendarView) {
   if (removeError !== undefined) {
     views.value = [...views.value, own]
     toast.add({
-      title: `Copied ${view.name} to your views, but the shared view could not be removed.`,
+      title: t('Copied {name} to your views, but the shared view could not be removed.', {
+        name: view.name,
+      }),
       description: describeSharedViewError(removeError),
       color: 'error',
       icon: 'i-lucide-x',
@@ -346,8 +352,8 @@ async function unshareSharedView(view: CalendarView) {
   views.value = views.value.map((item) => (item.id === view.id ? own : item))
   if (selectedViewId.value === view.id) selectView(own.id)
   toast.add({
-    title: `Unshared ${view.name}`,
-    description: 'It is one of your own views now; other people no longer see it.',
+    title: t('Unshared {name}', { name: view.name }),
+    description: t('It is one of your own views now; other people no longer see it.'),
     icon: 'i-lucide-check',
   })
 }
@@ -359,7 +365,10 @@ async function updateFromSelection(view: CalendarView) {
       ? await updateSharedView(api, view.id, body)
       : { ...view, calendarIds: body.calendars.map((calendar) => calendar.ref) }
     replaceView(next)
-    toast.add({ title: `Updated shared view ${view.name}`, icon: 'i-lucide-check' })
+    toast.add({
+      title: t('Updated shared view {name}', { name: view.name }),
+      icon: 'i-lucide-check',
+    })
   } catch (error) {
     toast.add({ title: describeSharedViewError(error), color: 'error', icon: 'i-lucide-x' })
   }
@@ -421,10 +430,10 @@ function toggleView(id: string) {
 }
 
 function submitCategory(name: string) {
-  return addCategory(name) ? undefined : 'A category with this name already exists.'
+  return addCategory(name) ? undefined : t('A category with this name already exists.')
 }
 
 function submitFilter(text: string) {
-  return addFilter(text) ? undefined : 'A filter with this name already exists.'
+  return addFilter(text) ? undefined : t('A filter with this name already exists.')
 }
 </script>

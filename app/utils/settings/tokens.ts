@@ -1,5 +1,6 @@
 // App tokens (FR-30, FR-31): what the screen tells people to enter in their calendar apps and how
 // many tokens count against the limit.
+import { t } from '~/utils/i18n'
 import type { TokenList, TokenListItem } from './types'
 
 /** The CalDAV address of the gateway for an origin such as `https://calendar.example.org`. */
@@ -34,7 +35,13 @@ export function tokenLimit(list: Pick<TokenList, 'tokens' | 'limit'> | null): To
     limit: list.limit,
     reached,
     message: reached
-      ? `You have ${used} of ${list.limit} app tokens, which is the limit. Revoke a token to create another one.`
-      : `${used} of ${list.limit} app tokens in use. Expired tokens do not count.`,
+      ? t(
+          'You have {used} of {limit} app tokens, which is the limit. Revoke a token to create another one.',
+          { used, limit: list.limit },
+        )
+      : t('{used} of {limit} app tokens in use. Expired tokens do not count.', {
+          used,
+          limit: list.limit,
+        }),
   }
 }

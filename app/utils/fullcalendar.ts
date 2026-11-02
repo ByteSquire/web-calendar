@@ -7,6 +7,7 @@ import type { CalendarOptions, EventInput } from '@fullcalendar/vue3'
 import type { Calendar, CalendarEvent } from '../../shared/types/calendar'
 import type { NewEventInput, SplitSpan, ViewType } from './calendar-state'
 import { BUSY_TITLE, eventAssistiveLabel } from './event-display'
+import { intlLocale, t, tv } from './i18n'
 
 // ---- Views ----
 
@@ -61,18 +62,19 @@ export const SCHEDULER_LICENSE_KEY = 'AGPL-My-Frontend-And-Backend-Are-Open-Sour
 // mounted. What is on screen does not change.
 
 const MONTH_ISO = /^(\d{4})-(\d{2})$/
-const MONTH_AND_YEAR = new Intl.DateTimeFormat('en-GB', {
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
+const monthAndYear = (first: Date) =>
+  new Intl.DateTimeFormat(intlLocale(), {
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(first)
 
 /** The name of a link to a date, from FullCalendar's text for it ("2026-09", "26 October 2026"). */
 export function navLinkName(dateStr: string): string {
   const month = MONTH_ISO.exec(dateStr)
-  if (!month) return `Go to ${dateStr}`
+  if (!month) return t('Go to {date}', { date: dateStr })
   const first = new Date(Date.UTC(Number(month[1]), Number(month[2]) - 1, 1))
-  return `Go to ${MONTH_AND_YEAR.format(first)}`
+  return t('Go to {date}', { date: monthAndYear(first) })
 }
 
 /**
@@ -284,7 +286,7 @@ export function toFullCalendarEvent(
   }
   return {
     id: event.id,
-    title: kind === 'blocked' ? BUSY_TITLE : event.title,
+    title: kind === 'blocked' ? tv(BUSY_TITLE) : event.title,
     start,
     ...(end > start ? { end } : {}),
     allDay: event.allDay,

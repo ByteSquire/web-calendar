@@ -1,5 +1,7 @@
 // Errors of the browser login and how to word them for the person looking at the screen.
 
+import { t } from '../i18n'
+
 /** There is no usable session: the user has to sign in again. */
 export class AuthRequiredError extends Error {
   readonly reason: 'signed-out' | 'renewal-failed'
@@ -56,8 +58,8 @@ export function describeAuthError(error: unknown): AuthFailure {
   if (error instanceof AuthConfigError) {
     return {
       kind: 'config',
-      title: 'Sign-in is not set up',
-      message: 'This server has no sign-in provider configured. Ask an administrator.',
+      title: t('Sign-in is not set up'),
+      message: t('This server has no sign-in provider configured. Ask an administrator.'),
       detail,
     }
   }
@@ -65,41 +67,44 @@ export function describeAuthError(error: unknown): AuthFailure {
     if (code === 'access_denied' || code === 'login_required' || code === 'consent_required') {
       return {
         kind: 'denied',
-        title: 'Sign-in was cancelled',
-        message:
+        title: t('Sign-in was cancelled'),
+        message: t(
           'The sign-in was cancelled or you do not have access to this app. You can try again.',
+        ),
         detail,
       }
     }
     return {
       kind: 'other',
-      title: 'Sign-in failed',
-      message: 'The sign-in server did not accept the request. Try again.',
+      title: t('Sign-in failed'),
+      message: t('The sign-in server did not accept the request. Try again.'),
       detail,
     }
   }
   if (STATE_MESSAGES.test(text)) {
     return {
       kind: 'state',
-      title: 'This sign-in has expired',
-      message:
+      title: t('This sign-in has expired'),
+      message: t(
         'The sign-in could not be matched to this browser tab. This happens when the page was reloaded, opened twice or left waiting for too long. Try again.',
+      ),
       detail,
     }
   }
   if (errorName(error) === 'ErrorTimeout' || NETWORK_MESSAGES.test(text)) {
     return {
       kind: 'network',
-      title: 'Cannot reach the sign-in server',
-      message: 'Check your connection and try again.',
+      title: t('Cannot reach the sign-in server'),
+      message: t('Check your connection and try again.'),
       detail,
     }
   }
   return {
     kind: 'other',
-    title: 'Sign-in failed',
-    message:
+    title: t('Sign-in failed'),
+    message: t(
       'Something went wrong while signing in. Try again; if it keeps happening, ask an administrator.',
+    ),
     detail,
   }
 }

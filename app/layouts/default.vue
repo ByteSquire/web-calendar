@@ -8,15 +8,20 @@
       <TopBar />
 
       <!-- Desktop: fixed column. Below 768 px the same content opens in a slideover. -->
-      <aside v-if="isDesktop" id="app-sidebar" class="sidebar" aria-label="Views and calendars">
+      <aside
+        v-if="isDesktop"
+        id="app-sidebar"
+        class="sidebar"
+        :aria-label="t('Views and calendars')"
+      >
         <SidebarContent />
       </aside>
       <USlideover
         v-else
         v-model:open="sidebarOpen"
         side="left"
-        title="Views and calendars"
-        description="Choose views, calendars, resources, categories and filters"
+        :title="t('Views and calendars')"
+        :description="t('Choose views, calendars, resources, categories and filters')"
         :ui="{ content: 'w-80 max-w-[85vw]', description: 'sr-only' }"
         :content="{ onOpenAutoFocus: keepFocusOffControlsOnTouch, onCloseAutoFocus: restoreFocus }"
       >
@@ -41,6 +46,7 @@ import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { useAuth } from '~/composables/useAuth'
 import { useLiveCalendar, useLiveStatus } from '~/composables/useLiveCalendar'
 import { useServerConfigState } from '~/composables/useServerConfigState'
+import { t } from '~/utils/i18n'
 import { isLiveConfig } from '~/utils/live/seed'
 
 const { sidebarOpen } = useCalendarState()

@@ -3,7 +3,7 @@
   a polite live region, so a screen reader announces the new period after each step.
 -->
 <template>
-  <div role="group" aria-label="Date navigation" class="flex items-center gap-1">
+  <div role="group" :aria-label="t('Date navigation')" class="flex items-center gap-1">
     <UButton
       icon="i-lucide-chevron-left"
       color="neutral"
@@ -11,7 +11,7 @@
       :aria-label="dateStepLabel('previous', rangeKind)"
       @click="prev"
     />
-    <UButton label="Today" color="neutral" variant="outline" @click="today" />
+    <UButton :label="t('Today')" color="neutral" variant="outline" @click="today" />
     <UButton
       icon="i-lucide-chevron-right"
       color="neutral"
@@ -32,6 +32,7 @@
 
 <script setup lang="ts">
 import { dateStepLabel } from '~/utils/date-nav'
+import { t } from '~/utils/i18n'
 
 const { rangeKind, rangeLabel, prev, next, today } = useCalendarState()
 </script>

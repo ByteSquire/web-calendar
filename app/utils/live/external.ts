@@ -10,6 +10,7 @@ import type { Ref } from 'vue'
 import type { Calendar } from '../../../shared/types/calendar'
 import type { ExternalAccount } from '../../../shared/types/external'
 import { DavError } from '../caldav/errors'
+import { t } from '../i18n'
 import { createLimiter } from '../caldav/flights'
 import type { DavCalendar, DavRange } from '../caldav/types'
 import type { ExternalSource } from '../external/source'
@@ -163,7 +164,7 @@ export function createExternalTrack(deps: ExternalTrackDeps): ExternalTrack {
     report(
       key,
       listed.value.length === 0
-        ? { message: 'No calendars found at this address', passwordFor: null }
+        ? { message: t('No calendars found at this address'), passwordFor: null }
         : null,
     )
     const ids = mergeCalendars().filter((ref) => externalAccountIdOf(ref) === account.id)

@@ -3,6 +3,7 @@
 // branches on `reload` / `closeForm`, never on message text.
 import { DavError } from '../caldav/errors'
 import { EditError } from '../ical/write-types'
+import { N_, t, tv } from '../i18n'
 import type { ScopeChoice, WriteFailure } from './types'
 
 export type WriteAction = 'create' | 'edit' | 'delete'
@@ -14,12 +15,13 @@ export interface DescribeOptions {
   partial?: boolean
 }
 
-export const CHANGED_BY_SOMEONE_ELSE =
-  'This event was changed by someone else. It has been reloaded — try again.'
+export const CHANGED_BY_SOMEONE_ELSE = N_(
+  'This event was changed by someone else. It has been reloaded — try again.',
+)
 
-const SERIES_NOT_CHANGEABLE =
-  "All events of this series can't be changed this way. Edit single occurrences, or choose " +
-  '"This and following events".'
+const SERIES_NOT_CHANGEABLE = N_(
+  'All events of this series can\'t be changed this way. Edit single occurrences, or choose "This and following events".',
+)
 
 function failure(
   kind: WriteFailure['kind'],
@@ -41,22 +43,22 @@ function failure(
 function describeDavError(error: DavError, action: WriteAction): WriteFailure {
   switch (error.kind) {
     case 'unauthorized':
-      return failure('unauthorized', 'Your sign-in expired. Sign in again.', {}, error)
+      return failure('unauthorized', t('Your sign-in expired. Sign in again.'), {}, error)
     case 'forbidden':
-      return failure('forbidden', "You can't write to this calendar.", {}, error)
+      return failure('forbidden', t("You can't write to this calendar."), {}, error)
     case 'not-found':
       return action === 'create'
         ? failure(
             'not-found',
-            'This calendar no longer exists. Reload the page and choose another calendar.',
+            t('This calendar no longer exists. Reload the page and choose another calendar.'),
             { reload: true },
             error,
           )
         : failure(
             'not-found',
             action === 'delete'
-              ? 'This event was already deleted. The calendar has been reloaded.'
-              : 'This event no longer exists. The calendar has been reloaded.',
+              ? t('This event was already deleted. The calendar has been reloaded.')
+              : t('This event no longer exists. The calendar has been reloaded.'),
             { reload: true, closeForm: true },
             error,
           )
@@ -64,41 +66,43 @@ function describeDavError(error: DavError, action: WriteAction): WriteFailure {
       return action === 'create'
         ? failure(
             'conflict',
-            'The calendar service could not save the event because of a conflict. Try again.',
+            t('The calendar service could not save the event because of a conflict. Try again.'),
             {},
             error,
           )
-        : failure('conflict', CHANGED_BY_SOMEONE_ELSE, { reload: true, closeForm: true }, error)
+        : failure('conflict', tv(CHANGED_BY_SOMEONE_ELSE), { reload: true, closeForm: true }, error)
     case 'exists':
-      return failure('exists', 'An event with this id already exists. Try again.', {}, error)
+      return failure('exists', t('An event with this id already exists. Try again.'), {}, error)
     case 'unavailable':
       return failure(
         'unavailable',
-        'The calendar service is busy or down. Try again in a moment.',
+        t('The calendar service is busy or down. Try again in a moment.'),
         {},
         error,
       )
     case 'network':
       return failure(
         'network',
-        'The calendar service is not reachable. Check your connection and try again.',
+        t('The calendar service is not reachable. Check your connection and try again.'),
         {},
         error,
       )
     case 'aborted':
-      return failure('aborted', 'The request was cancelled. Try again.', {}, error)
+      return failure('aborted', t('The request was cancelled. Try again.'), {}, error)
     case 'bad-response':
       // The write may have gone through: show what the server has.
       return failure(
         'bad-response',
-        'The calendar service gave an unexpected answer. The calendar has been reloaded; check whether the change was saved.',
+        t(
+          'The calendar service gave an unexpected answer. The calendar has been reloaded; check whether the change was saved.',
+        ),
         { reload: true, closeForm: true },
         error,
       )
     case 'rejected':
       return failure(
         'rejected',
-        'The calendar service did not accept this change. Check the details and try again.',
+        t('The calendar service did not accept this change. Check the details and try again.'),
         {},
         error,
       )
@@ -107,7 +111,7 @@ function describeDavError(error: DavError, action: WriteAction): WriteFailure {
     case 'credential-needed':
     case 'host-not-allowed':
     case 'rate-limited':
-      return failure('unknown', 'Something went wrong while saving. Try again.', {}, error)
+      return failure('unknown', t('Something went wrong while saving. Try again.'), {}, error)
   }
 }
 
@@ -118,14 +122,14 @@ function describeEditError(error: EditError, options: DescribeOptions): WriteFai
     case 'unknown-instance':
       return failure(
         'unknown-instance',
-        'This occurrence no longer exists. The calendar has been reloaded.',
+        t('This occurrence no longer exists. The calendar has been reloaded.'),
         { reload: true, closeForm: true },
         error,
       )
     case 'unparseable':
       return failure(
         'unparseable',
-        "This event is stored in a form this app can't read, so it can't be changed here.",
+        t("This event is stored in a form this app can't read, so it can't be changed here."),
         { closeForm: true },
         error,
       )
@@ -134,7 +138,7 @@ function describeEditError(error: EditError, options: DescribeOptions): WriteFai
         'unsupported',
         // The writer's words say why (a rule that does not follow a move to another day, a time
         // zone nobody can resolve); for the whole series they come with the way out.
-        options.scope === 'all' ? SERIES_NOT_CHANGEABLE : error.message,
+        options.scope === 'all' ? tv(SERIES_NOT_CHANGEABLE) : error.message,
         {},
         error,
       )
@@ -143,18 +147,22 @@ function describeEditError(error: EditError, options: DescribeOptions): WriteFai
 
 /** The part of a series split that is already saved when the old half could not be updated. */
 function describePartial(cause: WriteFailure): WriteFailure {
-  const reason =
+  const message =
     cause.kind === 'conflict'
-      ? ' because someone else changed it'
+      ? t(
+          'Part of this change was saved: the following events were copied into a new series, but the original could not be updated because someone else changed it. Some events may now appear twice. The calendar has been reloaded; delete the extra events.',
+        )
       : cause.kind === 'network' || cause.kind === 'unavailable'
-        ? ' because the calendar service could not be reached'
-        : ''
+        ? t(
+            'Part of this change was saved: the following events were copied into a new series, but the original could not be updated because the calendar service could not be reached. Some events may now appear twice. The calendar has been reloaded; delete the extra events.',
+          )
+        : t(
+            'Part of this change was saved: the following events were copied into a new series, but the original could not be updated. Some events may now appear twice. The calendar has been reloaded; delete the extra events.',
+          )
   return {
     ...cause,
     kind: 'partial',
-    message:
-      `Part of this change was saved: the following events were copied into a new series, but the original ` +
-      `could not be updated${reason}. Some events may now appear twice. The calendar has been reloaded; delete the extra events.`,
+    message,
     reload: true,
     closeForm: true,
   }
@@ -173,8 +181,8 @@ export function describeWriteError(
     result = failure(
       'unknown',
       action === 'delete'
-        ? 'Something went wrong while deleting the event. Try again.'
-        : 'Something went wrong while saving the event. Try again.',
+        ? t('Something went wrong while deleting the event. Try again.')
+        : t('Something went wrong while saving the event. Try again.'),
       {},
       error,
     )
@@ -187,9 +195,9 @@ export function isNotFoundError(error: unknown): boolean {
 }
 
 export const SUCCESS_TITLES = {
-  created: 'Event added',
-  updated: 'Event updated',
-  unchanged: 'Nothing to save',
-  deleted: 'Event deleted',
-  alreadyDeleted: 'Event was already deleted',
+  created: N_('Event added'),
+  updated: N_('Event updated'),
+  unchanged: N_('Nothing to save'),
+  deleted: N_('Event deleted'),
+  alreadyDeleted: N_('Event was already deleted'),
 } as const

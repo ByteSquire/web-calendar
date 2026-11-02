@@ -5,6 +5,7 @@
 import { computed } from 'vue'
 import { useCalDav } from '~/composables/useCalDav'
 import { useLiveStatus } from '~/composables/useLiveCalendar'
+import { t } from '~/utils/i18n'
 import { isLiveConfig } from '~/utils/live/seed'
 import {
   createEvent,
@@ -16,12 +17,12 @@ import {
 import type { NewEventInput } from '~/utils/ical/write'
 import type { WriteDeps, WriteFailure, WriteOutcome } from '~/utils/writes/types'
 
-const NOT_AVAILABLE: WriteFailure = {
+const notAvailable = (): WriteFailure => ({
   kind: 'unknown',
-  message: 'The calendar service is not available.',
+  message: t('The calendar service is not available.'),
   reload: false,
   closeForm: false,
-}
+})
 
 export function useEventWrites() {
   const config = useServerConfigState()
@@ -50,7 +51,7 @@ export function useEventWrites() {
   async function run<T extends object>(
     work: (deps: WriteDeps) => Promise<WriteOutcome<T>>,
   ): Promise<WriteOutcome<T>> {
-    if (!deps) return { ok: false, failure: NOT_AVAILABLE }
+    if (!deps) return { ok: false, failure: notAvailable() }
     const outcome = await work(deps)
     if (!outcome.ok && outcome.failure.detail) {
       console.warn(`Writing the event failed (${outcome.failure.kind}):`, outcome.failure.detail)

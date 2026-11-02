@@ -9,11 +9,11 @@ import {
   type SkipReason,
   type SplitResource,
 } from '../ical/split'
-import { pluralize } from '../settings/format'
+import { N_, t, tc, tv } from '~/utils/i18n'
 import { checkFile, looksBinary, MAX_EVENTS, SNIFF_BYTES, type PickedFile } from './limits'
 
 /** Shown for an event that has no title. */
-export const NO_TITLE = '(no title)'
+export const NO_TITLE = N_('(no title)')
 
 // C0 and C1 controls, line and paragraph separators, byte order mark and the bidirectional
 // controls (embeddings, overrides, isolates, marks): none of them has a place in a title.
@@ -63,26 +63,47 @@ export type PrepareResult = { ok: true; plan: ImportPlan } | { ok: false; messag
 
 const SAMPLE_SIZE = 5
 
-const OTHER_ITEM: [singular: string, plural: string] = ['other item', 'other items']
-const NOT_EVENTS = new Map<string, [singular: string, plural: string]>([
-  ['VTODO', ['to-do', 'to-dos']],
-  ['VJOURNAL', ['journal entry', 'journal entries']],
-  ['VFREEBUSY', ['free/busy block', 'free/busy blocks']],
-])
+const NOT_EVENTS = new Set(['VTODO', 'VJOURNAL', 'VFREEBUSY'])
 
 /** The words for a number of skipped components of one kind. */
 function skipText(reason: SkipReason, component: string, count: number): string {
   switch (reason) {
     case 'not-an-event': {
-      const [singular, plural] = NOT_EVENTS.get(component) ?? OTHER_ITEM
-      return `${pluralize(count, singular, plural)} (only events are imported)`
+      switch (component) {
+        case 'VTODO':
+          return tc(
+            '{count} to-do (only events are imported) | {count} to-dos (only events are imported)',
+            count,
+          )
+        case 'VJOURNAL':
+          return tc(
+            '{count} journal entry (only events are imported) | {count} journal entries (only events are imported)',
+            count,
+          )
+        case 'VFREEBUSY':
+          return tc(
+            '{count} free/busy block (only events are imported) | {count} free/busy blocks (only events are imported)',
+            count,
+          )
+        default:
+          return tc(
+            '{count} other item (only events are imported) | {count} other items (only events are imported)',
+            count,
+          )
+      }
     }
     case 'no-start':
-      return `${pluralize(count, 'event')} without a start time`
+      return tc('{count} event without a start time | {count} events without a start time', count)
     case 'damaged':
-      return `${pluralize(count, 'damaged item')} that could not be read`
+      return tc(
+        '{count} damaged item that could not be read | {count} damaged items that could not be read',
+        count,
+      )
     case 'duplicate':
-      return `${pluralize(count, 'repeated event')} (the same ID as an earlier one in the file)`
+      return tc(
+        '{count} repeated event (the same ID as an earlier one in the file) | {count} repeated events (the same ID as an earlier one in the file)',
+        count,
+      )
   }
 }
 
@@ -105,27 +126,30 @@ function groupSkipped(skipped: readonly SkippedComponent[]): SkippedGroup[] {
 
 /** The title of an event as it is shown. */
 export function titleOf(summary: string): string {
-  return displayText(summary) || NO_TITLE
+  return displayText(summary) || tv(NO_TITLE)
 }
 
 /** The plan for a file's text, or the words for why it cannot be imported. Pure. */
 export async function planImport(fileName: string, text: string): Promise<PrepareResult> {
   const split = await splitCalendar(text)
   if (split.problem === 'not-icalendar') {
-    return { ok: false, message: 'This is not an iCalendar (.ics) file.' }
+    return { ok: false, message: t('This is not an iCalendar (.ics) file.') }
   }
   if (split.problem === 'unsupported-version') {
     return {
       ok: false,
-      message: 'This file is in an old calendar format (vCalendar 1.0), which cannot be imported.',
+      message: t(
+        'This file is in an old calendar format (vCalendar 1.0), which cannot be imported.',
+      ),
     }
   }
   if (split.resources.length > MAX_EVENTS) {
     return {
       ok: false,
-      message:
-        `The file has ${split.resources.length} events, more than the ${MAX_EVENTS} that can be ` +
-        'imported at once. Split the calendar into smaller files.',
+      message: t(
+        'The file has {count} events, more than the {max} that can be imported at once. Split the calendar into smaller files.',
+        { count: split.resources.length, max: MAX_EVENTS },
+      ),
     }
   }
   const skipped = groupSkipped(split.skipped)
@@ -134,7 +158,7 @@ export async function planImport(fileName: string, text: string): Promise<Prepar
     plan: {
       resources: split.resources,
       preview: {
-        fileName: displayText(fileName, 80) || 'Calendar file',
+        fileName: displayText(fileName, 80) || t('Calendar file'),
         calendarName: displayText(split.calendarName ?? '') || null,
         events: split.resources.length,
         sample: split.resources.slice(0, SAMPLE_SIZE).map((resource) => titleOf(resource.summary)),
@@ -156,11 +180,11 @@ export async function prepareImport(file: PickedFile & Blob): Promise<PrepareRes
     if (looksBinary(await file.slice(0, SNIFF_BYTES).text())) {
       return {
         ok: false,
-        message: 'This is not a text file. Choose an .ics file saved as UTF-8 text.',
+        message: t('This is not a text file. Choose an .ics file saved as UTF-8 text.'),
       }
     }
     return await planImport(file.name, await file.text())
   } catch {
-    return { ok: false, message: 'The file could not be read.' }
+    return { ok: false, message: t('The file could not be read.') }
   }
 }

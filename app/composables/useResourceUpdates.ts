@@ -1,6 +1,7 @@
 // One toast on load for what happened to the viewer's own bookings since they last looked
 // (FR-19). The time of the last look is kept in localStorage per user. Live mode only.
 import type { BookingUpdatesResponse } from '../../shared/types/resources-api'
+import { t } from '~/utils/i18n'
 import { useAuth } from '~/composables/useAuth'
 import { useAuthFetch } from '~/composables/useAuthFetch'
 import {
@@ -49,7 +50,7 @@ export function useResourceUpdates() {
         toast.add({
           title: text,
           icon: 'i-lucide-info',
-          actions: [{ label: 'View', onClick: () => void router.push('/resources/requests') }],
+          actions: [{ label: t('View'), onClick: () => void router.push('/resources/requests') }],
         })
       }
     } catch {

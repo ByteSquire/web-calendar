@@ -6,7 +6,7 @@
 <template>
   <main class="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-6">
     <h1 ref="heading" tabindex="-1" class="text-xl font-semibold">
-      {{ failure ? failure.title : 'Signing in…' }}
+      {{ failure ? failure.title : t('Signing in…') }}
     </h1>
     <template v-if="failure">
       <UAlert
@@ -17,23 +17,26 @@
         :description="failure.message"
       />
       <p v-if="failure.detail" class="text-muted text-xs break-words">
-        Details: {{ failure.detail }}
+        {{ t('Details: {detail}', { detail: failure.detail }) }}
       </p>
       <div>
-        <UButton :loading="retrying" @click="retry">Try again</UButton>
+        <UButton :loading="retrying" @click="retry">{{ t('Try again') }}</UButton>
       </div>
     </template>
-    <p v-else role="status" class="text-muted">Finishing the sign-in. This takes a moment.</p>
+    <p v-else role="status" class="text-muted">
+      {{ t('Finishing the sign-in. This takes a moment.') }}
+    </p>
   </main>
 </template>
 
 <script setup lang="ts">
 import { useAuth } from '~/composables/useAuth'
 import { describeAuthError, type AuthFailure } from '~/utils/auth/errors'
+import { t } from '~/utils/i18n'
 import { looksLikeAuthResponse } from '~/utils/auth/state'
 
 definePageMeta({ layout: false })
-useHead({ title: 'Signing in' })
+useHead({ title: () => t('Signing in') })
 
 const auth = useAuth()
 const failure = ref<AuthFailure | null>(null)

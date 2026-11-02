@@ -1,5 +1,5 @@
 <!--
-  Settings: the account, the time zone (FR-32), the app tokens for calendar apps (FR-31), the
+  Settings: the account, the time zone (FR-32), the language, the app tokens for calendar apps (FR-31), the
   external CalDAV accounts (FR-8, not in demo mode), the iCal subscriptions and the import of an
   .ics file (FR-7). The layout provides the `<main>` that scrolls, so this page is a plain column
   inside it. `/api/me` is loaded here once; the account and time zone sections show it and the
@@ -11,9 +11,9 @@
     <header class="flex flex-col gap-1">
       <NuxtLink to="/" class="inline-flex min-h-11 items-center gap-1.5 self-start underline">
         <UIcon name="i-lucide-arrow-left" class="size-4" />
-        Back to calendar
+        {{ t('Back to calendar') }}
       </NuxtLink>
-      <h1 class="text-2xl font-semibold">Settings</h1>
+      <h1 class="text-2xl font-semibold">{{ t('Settings') }}</h1>
     </header>
 
     <UAlert
@@ -21,12 +21,13 @@
       color="neutral"
       variant="subtle"
       icon="i-lucide-info"
-      title="Demo mode"
-      description="Nothing is saved in demo mode. Changes you make here are not kept."
+      :title="t('Demo mode')"
+      :description="t('Nothing is saved in demo mode. Changes you make here are not kept.')"
     />
 
     <SettingsAccountSection :me="me.data.value" :error="me.error.value" @retry="me.reload()" />
     <SettingsTimeZoneSection :me="me.data.value" :error="me.error.value" />
+    <SettingsLanguageSection />
     <SettingsTokensSection :username="me.data.value?.username ?? null" />
     <!-- Needs the login and the server (FR-8): not in demo mode, which has no API behind it. -->
     <SettingsExternalAccountsSection v-if="live" />
@@ -37,17 +38,18 @@
 
 <script setup lang="ts">
 import { useAuthFetch } from '~/composables/useAuthFetch'
+import { N_, t } from '~/utils/i18n'
 import { isLiveConfig } from '~/utils/live/seed'
 import { createResource } from '~/utils/settings/resource'
 import type { MeResponse } from '~/utils/settings/types'
 
-useHead({ title: 'Settings' })
+useHead({ title: () => t('Settings') })
 
 const api = useAuthFetch()
 const config = useServerConfigState()
 const isDemo = computed(() => config.value?.demo === true)
 const live = computed(() => isLiveConfig(config.value))
 
-const me = createResource(() => api<MeResponse>('/api/me'), 'load your account')
+const me = createResource(() => api<MeResponse>('/api/me'), N_('load your account'))
 onMounted(() => me.reload())
 </script>

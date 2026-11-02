@@ -1,16 +1,16 @@
 // The time of a booking, or of an event being edited, as text, in the viewer's display zone.
-const LOCALE = 'en-GB'
+import { intlLocale } from '~/utils/i18n'
 
 function parts(iso: string, zone: string) {
   const date = new Date(iso)
   return {
-    day: new Intl.DateTimeFormat(LOCALE, {
+    day: new Intl.DateTimeFormat(intlLocale(), {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
       timeZone: zone,
     }).format(date),
-    time: new Intl.DateTimeFormat(LOCALE, {
+    time: new Intl.DateTimeFormat(intlLocale(), {
       hour: '2-digit',
       minute: '2-digit',
       hourCycle: 'h23',

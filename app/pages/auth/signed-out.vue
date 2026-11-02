@@ -5,10 +5,15 @@
 -->
 <template>
   <main class="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-4 p-6">
-    <h1 ref="heading" tabindex="-1" class="text-xl font-semibold">You are signed out</h1>
+    <h1 ref="heading" tabindex="-1" class="text-xl font-semibold">
+      {{ t('You are signed out') }}
+    </h1>
     <p class="text-muted">
-      You have signed out of Web Calendar in this browser tab. Your sign-in provider may still
-      remember you, so signing in again may not ask for your password.
+      {{
+        t(
+          'You have signed out of Web Calendar in this browser tab. Your sign-in provider may still remember you, so signing in again may not ask for your password.',
+        )
+      }}
     </p>
     <UAlert
       v-if="problem"
@@ -19,7 +24,7 @@
       :description="problem"
     />
     <div>
-      <UButton :loading="busy" @click="signIn">Sign in again</UButton>
+      <UButton :loading="busy" @click="signIn">{{ t('Sign in again') }}</UButton>
     </div>
   </main>
 </template>
@@ -27,9 +32,10 @@
 <script setup lang="ts">
 import { useAuth } from '~/composables/useAuth'
 import { describeAuthError } from '~/utils/auth/errors'
+import { t } from '~/utils/i18n'
 
 definePageMeta({ layout: false })
-useHead({ title: 'Signed out' })
+useHead({ title: () => t('Signed out') })
 
 const auth = useAuth()
 const busy = ref(false)

@@ -3,6 +3,7 @@
 // The form of the live calendar (description, repeat, ...) builds on this one in
 // writes/event-form.ts; the date handling below is shared by both.
 import { Temporal } from 'temporal-polyfill'
+import { t } from './i18n'
 import type { NewEventInput } from './calendar-state'
 
 const DEFAULT_START_TIME = '09:00'
@@ -171,18 +172,19 @@ export function validateQuickAdd(
   calendarIds: readonly string[],
 ): QuickAddErrors {
   const errors: QuickAddErrors = {}
-  if (!form.title.trim()) errors.title = 'Enter a title.'
-  if (!calendarIds.includes(form.calendarId)) errors.calendarId = 'Choose a calendar.'
+  if (!form.title.trim()) errors.title = t('Enter a title.')
+  if (!calendarIds.includes(form.calendarId)) errors.calendarId = t('Choose a calendar.')
 
   const start = parseBoundary(form.start, form.allDay)
   const end = parseBoundary(form.end, form.allDay)
-  if (!start) errors.start = form.allDay ? 'Enter a start date.' : 'Enter a start date and time.'
+  if (!start)
+    errors.start = form.allDay ? t('Enter a start date.') : t('Enter a start date and time.')
   if (!end) {
-    errors.end = form.allDay ? 'Enter an end date.' : 'Enter an end date and time.'
+    errors.end = form.allDay ? t('Enter an end date.') : t('Enter an end date and time.')
   } else if (start) {
     const order = compareBoundary(end, start)
-    if (form.allDay && order < 0) errors.end = 'The end date must not be before the start date.'
-    if (!form.allDay && order <= 0) errors.end = 'The end must be after the start.'
+    if (form.allDay && order < 0) errors.end = t('The end date must not be before the start date.')
+    if (!form.allDay && order <= 0) errors.end = t('The end must be after the start.')
   }
   return errors
 }

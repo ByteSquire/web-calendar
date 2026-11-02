@@ -6,6 +6,7 @@
 // Times are display-zone wall clock as in the rest of the app. In the form an all-day `end` is the
 // last day (inclusive); the writer wants the exclusive end, `toWallClockRange` converts.
 import { Temporal } from 'temporal-polyfill'
+import { N_, t } from '../i18n'
 import type { CalendarEvent, EventStatus } from '../../../shared/types/calendar'
 import type {
   EventChanges,
@@ -29,17 +30,17 @@ export type RepeatEnds = 'never' | 'on' | 'after'
 export const REPEAT_KINDS: readonly RepeatKind[] = ['none', 'daily', 'weekly', 'monthly', 'yearly']
 
 export const REPEAT_LABELS: Record<RepeatKind, string> = {
-  none: 'Does not repeat',
-  daily: 'Every day',
-  weekly: 'Every week',
-  monthly: 'Every month',
-  yearly: 'Every year',
+  none: N_('Does not repeat'),
+  daily: N_('Every day'),
+  weekly: N_('Every week'),
+  monthly: N_('Every month'),
+  yearly: N_('Every year'),
 }
 
 export const REPEAT_ENDS_LABELS: Record<RepeatEnds, string> = {
-  never: 'Never',
-  on: 'On a date',
-  after: 'After a number of times',
+  never: N_('Never'),
+  on: N_('On a date'),
+  after: N_('After a number of times'),
 }
 
 /** Most repeats the form accepts; a limit that keeps the expanded REPORT small. */
@@ -161,14 +162,14 @@ export function validateEventForm(
     const until = parseDate(form.repeatUntil)
     // The last day counts whole: a repeat that ends on the day of the start has that one event.
     const startDay = parseDate(form.start.slice(0, 10))
-    if (!until) errors.repeatUntil = 'Enter the last date of the repeat.'
+    if (!until) errors.repeatUntil = t('Enter the last date of the repeat.')
     else if (startDay && Temporal.PlainDate.compare(until, startDay) < 0) {
-      errors.repeatUntil = 'The repeat must not end before the event starts.'
+      errors.repeatUntil = t('The repeat must not end before the event starts.')
     }
   } else if (form.repeatEnds === 'after') {
     const count = /^\d{1,4}$/.test(form.repeatCount.trim()) ? Number(form.repeatCount) : NaN
     if (!Number.isInteger(count) || count < 1 || count > MAX_REPEAT_COUNT) {
-      errors.repeatCount = `Enter a number from 1 to ${MAX_REPEAT_COUNT}.`
+      errors.repeatCount = t('Enter a number from 1 to {max}.', { max: MAX_REPEAT_COUNT })
     }
   }
   return errors

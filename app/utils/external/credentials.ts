@@ -3,6 +3,7 @@
 // user, account and origin). The password is not kept anywhere here; the sealed text goes to the
 // seal store. Used by the settings form (create, update) and by the password dialog (the
 // credential route, for a new session or device or a refused login).
+import { N_, t } from '~/utils/i18n'
 import type { ExternalAccountResult } from '../../../shared/types/external'
 import type { ExternalApi } from './api'
 import { describeExternalSaveError } from './api-errors'
@@ -42,13 +43,13 @@ export async function enterPassword(
   try {
     const result = await deps.api.setCredential(accountId, password)
     if (result.account.authMode === 'basic' && result.sealed === null) {
-      return { ok: false, message: 'The server did not return a credential. Try again.' }
+      return { ok: false, message: t('The server did not return a credential. Try again.') }
     }
     return { ok: true, remembered: keepResult(deps.seals, result, remember) }
   } catch (cause) {
     // The error of the request carries the request, so only its words go on.
-    const failure = describeExternalSaveError(cause, 'save the password')
+    const failure = describeExternalSaveError(cause, N_('save the password'))
     const message = failure.alert ?? Object.values(failure.byField)[0]
-    return { ok: false, message: message ?? 'Could not save the password.' }
+    return { ok: false, message: message ?? t('Could not save the password.') }
   }
 }

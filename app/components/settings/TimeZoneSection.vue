@@ -8,41 +8,53 @@
 -->
 <template>
   <section aria-labelledby="settings-time-zone" class="flex flex-col gap-4">
-    <h2 id="settings-time-zone" tabindex="-1" class="text-lg font-semibold">Time zone</h2>
+    <h2 id="settings-time-zone" tabindex="-1" class="text-lg font-semibold">
+      {{ t('Time zone') }}
+    </h2>
     <p>
-      Times in the calendar are shown in the zone you choose here, by default your browser's zone.
-      All-day events stay on their dates.
+      {{
+        t(
+          "Times in the calendar are shown in the zone you choose here, by default your browser's zone. All-day events stay on their dates.",
+        )
+      }}
     </p>
 
     <SettingsErrorAlert v-if="alert" :message="alert" />
 
     <div v-if="ready" class="flex flex-col gap-2" :aria-busy="saving">
-      <UFormField label="Show times in">
+      <UFormField :label="t('Show times in')">
         <USelectMenu
           :model-value="selected"
           :items="items"
           value-key="value"
           :filter-fields="['search']"
-          :search-input="SEARCH_INPUT"
+          :search-input="searchInput"
           :loading="saving"
           class="w-full max-w-md"
           :ui="SELECT_UI"
           @update:model-value="choose"
         >
-          <template #empty>No time zone matches your search.</template>
+          <template #empty>{{ t('No time zone matches your search.') }}</template>
         </USelectMenu>
       </UFormField>
       <p class="text-sm text-toned">
-        Organization time zone: <strong>{{ orgZone }}</strong
-        >. Events without a zone use it.
+        <template
+          v-for="(part, i) in tparts(
+            'Organization time zone: {zone}. Events without a zone use it.',
+          )"
+          :key="i"
+        >
+          <strong v-if="'name' in part">{{ orgZone }}</strong>
+          <template v-else>{{ part.text }}</template>
+        </template>
       </p>
     </div>
     <p v-else-if="error" class="text-toned">
-      Your time zone setting is not available because your account could not be loaded.
+      {{ t('Your time zone setting is not available because your account could not be loaded.') }}
     </p>
     <!-- The room of the control, so nothing moves when the data arrives. -->
     <div v-else class="flex flex-col gap-2" role="status">
-      <span class="sr-only">Loading your time zone</span>
+      <span class="sr-only">{{ t('Loading your time zone') }}</span>
       <USkeleton class="h-11 w-full max-w-md" aria-hidden="true" />
     </div>
 
@@ -51,6 +63,7 @@
 </template>
 
 <script setup lang="ts">
+import { N_, t, tparts } from '~/utils/i18n'
 import { resolveDisplayTimeZone } from '../../../shared/utils/time-zone'
 import { useAuthFetch } from '~/composables/useAuthFetch'
 import { describeError } from '~/utils/settings/api-errors'
@@ -66,7 +79,12 @@ const props = defineProps<{
 // Nuxt UI sizes controls at about 32 px; the same 44 px as in the event form (EventFormFields.vue).
 const SELECT_UI = { base: 'min-h-11', item: 'min-h-11 items-center' }
 // The search field of the list is named; a placeholder is no name for assistive technology.
-const SEARCH_INPUT = { placeholder: 'Search time zones', 'aria-label': 'Search time zones' }
+
+// Called while rendering, so the text follows the language.
+const searchInput = computed(() => ({
+  placeholder: t('Search time zones'),
+  'aria-label': t('Search time zones'),
+}))
 
 const api = useAuthFetch()
 const config = useServerConfigState()
@@ -119,7 +137,7 @@ async function choose(value: unknown) {
     userZone.value = saved.timeZone
     notice.value = describeZoneChange(saved.timeZone, displayZone.value)
   } catch (cause) {
-    alert.value = describeError(cause, 'save your time zone')
+    alert.value = describeError(cause, N_('save your time zone'))
   } finally {
     saving.value = false
   }

@@ -7,31 +7,44 @@
 <template>
   <section aria-labelledby="settings-tokens" class="flex flex-col gap-4">
     <h2 id="settings-tokens" ref="heading" tabindex="-1" class="text-lg font-semibold">
-      App tokens
+      {{ t('App tokens') }}
     </h2>
 
     <div class="flex flex-col gap-2">
       <p>
-        Calendar apps such as Thunderbird, DAVx5 or iOS Calendar cannot use single sign-on. Create
-        an app token for each app and enter it as the <strong>password</strong>.
+        <template
+          v-for="(part, i) in tparts(
+            'Calendar apps such as Thunderbird, DAVx5 or iOS Calendar cannot use single sign-on. Create an app token for each app and enter it as the {password}.',
+          )"
+          :key="i"
+        >
+          <strong v-if="'name' in part">{{ t('password') }}</strong>
+          <template v-else>{{ part.text }}</template>
+        </template>
       </p>
       <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
-        <dt class="text-toned">Server address</dt>
+        <dt class="text-toned">{{ t('Server address') }}</dt>
         <dd>
           <code class="break-all select-all">{{ serverAddress }}</code>
           <span class="mt-1 block text-sm text-toned">
-            Apps that find the server themselves start from
-            <code class="break-all select-all">{{ discoveryAddress }}</code
-            >.
+            <template
+              v-for="(part, i) in tparts(
+                'Apps that find the server themselves start from {address}.',
+              )"
+              :key="i"
+            >
+              <code v-if="'name' in part" class="break-all select-all">{{ discoveryAddress }}</code>
+              <template v-else>{{ part.text }}</template>
+            </template>
           </span>
         </dd>
-        <dt class="text-toned">User name</dt>
+        <dt class="text-toned">{{ t('User name') }}</dt>
         <dd>
           <code v-if="username" class="break-all select-all">{{ username }}</code>
-          <span v-else>Your user name (see Account)</span>
+          <span v-else>{{ t('Your user name (see Account)') }}</span>
         </dd>
-        <dt class="text-toned">Password</dt>
-        <dd>An app token from this page</dd>
+        <dt class="text-toned">{{ t('Password') }}</dt>
+        <dd>{{ t('An app token from this page') }}</dd>
       </dl>
     </div>
 
@@ -43,16 +56,20 @@
       class="flex flex-col gap-3 rounded-lg border-2 border-accented p-4"
     >
       <h3 id="settings-token-created" class="font-semibold wrap-anywhere">
-        New token for “{{ created.label }}”
+        {{ t('New token for “{label}”', { label: created.label }) }}
       </h3>
       <UAlert
         color="neutral"
         variant="subtle"
         icon="i-lucide-triangle-alert"
-        title="Copy it now"
-        description="This token is shown only once. After you press Done it cannot be shown again; if you lose it, revoke it and create a new one."
+        :title="t('Copy it now')"
+        :description="
+          t(
+            'This token is shown only once. After you press Done it cannot be shown again; if you lose it, revoke it and create a new one.',
+          )
+        "
       />
-      <UFormField label="Token" name="new-token">
+      <UFormField :label="t('Token')" name="new-token">
         <div class="flex gap-2">
           <UInput
             ref="secretInput"
@@ -64,23 +81,25 @@
             :ui="{ base: 'font-mono' }"
             @focus="selectSecret"
           />
-          <UButton label="Copy" icon="i-lucide-copy" color="neutral" @click="copySecret" />
+          <UButton :label="t('Copy')" icon="i-lucide-copy" color="neutral" @click="copySecret" />
         </div>
       </UFormField>
       <!-- Present from the start and only its text changes, so screen readers announce it. -->
       <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ copyStatus }}</p>
-      <p class="text-sm text-toned">Expires on {{ formatDate(created.expiresAt, displayZone) }}.</p>
+      <p class="text-sm text-toned">
+        {{ t('Expires on {date}.', { date: formatDate(created.expiresAt, displayZone) }) }}
+      </p>
       <div>
-        <UButton label="Done" @click="dismissCreated" />
+        <UButton :label="t('Done')" @click="dismissCreated" />
       </div>
     </div>
 
     <form v-else novalidate class="flex flex-col gap-3" @submit.prevent="createToken">
       <UFormField
-        label="Label"
+        :label="t('Label')"
         name="label"
         required
-        :help="limit.reached ? undefined : 'Which app is this token for? Up to 64 characters.'"
+        :help="limit.reached ? undefined : t('Which app is this token for? Up to 64 characters.')"
         :error="labelError"
         :ui="FIELD_UI"
       >
@@ -100,7 +119,7 @@
       <div>
         <UButton
           type="submit"
-          :label="creating ? 'Creating…' : 'Create token'"
+          :label="creating ? t('Creating…') : t('Create token')"
           icon="i-lucide-key-round"
           :disabled="limit.reached"
           :aria-busy="creating"
@@ -124,7 +143,7 @@
         <p v-if="!limit.reached" class="text-sm text-toned">{{ limit.message }}</p>
         <UButton
           v-if="list.tokens.length > 0"
-          label="Revoke all"
+          :label="t('Revoke all')"
           icon="i-lucide-shield-off"
           color="neutral"
           variant="outline"
@@ -132,7 +151,11 @@
           @click="askRevokeAll"
         />
       </div>
-      <ul v-if="list.tokens.length > 0" aria-label="Your app tokens" class="flex flex-col gap-2">
+      <ul
+        v-if="list.tokens.length > 0"
+        :aria-label="t('Your app tokens')"
+        class="flex flex-col gap-2"
+      >
         <li
           v-for="token in list.tokens"
           :key="token.id"
@@ -143,57 +166,57 @@
               <span class="wrap-anywhere">{{ token.label }}</span>
               <UBadge
                 v-if="token.expired"
-                label="Expired"
+                :label="t('Expired')"
                 icon="i-lucide-clock-alert"
                 color="neutral"
                 variant="outline"
               />
             </p>
             <dl class="mt-1 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 text-sm text-toned">
-              <dt>Created</dt>
+              <dt>{{ t('Created') }}</dt>
               <dd>
                 <time :datetime="token.createdAt">{{
                   formatDateTime(token.createdAt, displayZone)
                 }}</time>
               </dd>
-              <dt>Expires</dt>
+              <dt>{{ t('Expires') }}</dt>
               <dd>
                 <time :datetime="token.expiresAt">{{
                   formatDateTime(token.expiresAt, displayZone)
                 }}</time>
               </dd>
-              <dt>Last used</dt>
+              <dt>{{ t('Last used') }}</dt>
               <dd>
                 <time v-if="token.lastUsedAt" :datetime="token.lastUsedAt">{{
                   formatDateTime(token.lastUsedAt, displayZone)
                 }}</time>
-                <template v-else>Never</template>
+                <template v-else>{{ t('Never') }}</template>
               </dd>
             </dl>
           </div>
           <UButton
-            label="Revoke"
+            :label="t('Revoke')"
             icon="i-lucide-trash-2"
             color="neutral"
             variant="outline"
-            :aria-label="`Revoke token ${token.label}`"
+            :aria-label="t('Revoke token {label}', { label: token.label })"
             :class="ERROR_TEXT"
             @click="askRevoke(token)"
           />
         </li>
       </ul>
-      <p v-else>You have no app tokens yet.</p>
+      <p v-else>{{ t('You have no app tokens yet.') }}</p>
     </template>
     <div v-else-if="!tokens.error.value" class="flex flex-col gap-2" role="status">
-      <span class="sr-only">Loading app tokens</span>
+      <span class="sr-only">{{ t('Loading app tokens') }}</span>
       <USkeleton v-for="row in 2" :key="row" class="h-24 w-full" aria-hidden="true" />
     </div>
 
     <SettingsConfirmModal
       :open="revokeTarget !== null"
-      :title="`Revoke token “${shownRevokeLabel}”?`"
-      description="Apps that use this token can no longer sign in. This cannot be undone."
-      confirm-label="Revoke token"
+      :title="t('Revoke token “{label}”?', { label: shownRevokeLabel })"
+      :description="t('Apps that use this token can no longer sign in. This cannot be undone.')"
+      :confirm-label="t('Revoke token')"
       :busy="revoking"
       :error="revokeError"
       :fallback="heading"
@@ -203,9 +226,13 @@
 
     <SettingsConfirmModal
       :open="revokeAllOpen"
-      title="Revoke all app tokens?"
-      description="Every calendar app that uses one of your tokens is signed out at once. This cannot be undone."
-      confirm-label="Revoke all"
+      :title="t('Revoke all app tokens?')"
+      :description="
+        t(
+          'Every calendar app that uses one of your tokens is signed out at once. This cannot be undone.',
+        )
+      "
+      :confirm-label="t('Revoke all')"
       :busy="revokingAll"
       :error="revokeAllError"
       :fallback="heading"
@@ -217,6 +244,7 @@
 
 <script setup lang="ts">
 import { useAuthFetch } from '~/composables/useAuthFetch'
+import { N_, t, tparts } from '~/utils/i18n'
 import { describeError, describeTokenCreateError, parseApiError } from '~/utils/settings/api-errors'
 import { formatDate, formatDateTime } from '~/utils/settings/format'
 import { createResource } from '~/utils/settings/resource'
@@ -236,7 +264,7 @@ const origin = useRequestURL().origin
 const serverAddress = caldavAddress(origin)
 const discoveryAddress = caldavDiscoveryAddress(origin)
 
-const tokens = createResource(() => api<TokenList>('/api/app-tokens'), 'load your app tokens')
+const tokens = createResource(() => api<TokenList>('/api/app-tokens'), N_('load your app tokens'))
 const list = tokens.data
 const limit = computed(() => tokenLimit(list.value))
 onMounted(() => tokens.reload())
@@ -314,12 +342,13 @@ async function copySecret() {
   await nextTick()
   try {
     await navigator.clipboard.writeText(secret)
-    copyStatus.value = 'Copied to the clipboard.'
+    copyStatus.value = t('Copied to the clipboard.')
   } catch {
     // No clipboard access (insecure page, denied): leave the token selected for the keyboard.
     input?.focus()
-    copyStatus.value =
-      'Could not copy automatically. The token is selected: press Ctrl+C to copy it.'
+    copyStatus.value = t(
+      'Could not copy automatically. The token is selected: press Ctrl+C to copy it.',
+    )
   }
 }
 
@@ -362,7 +391,7 @@ async function revokeToken() {
   } catch (cause) {
     // A token that is already gone is what the person wanted.
     if (parseApiError(cause).kind !== 'not-found') {
-      revokeError.value = describeError(cause, 'revoke the token')
+      revokeError.value = describeError(cause, N_('revoke the token'))
       revoking.value = false
       return
     }
@@ -371,7 +400,7 @@ async function revokeToken() {
     ...current,
     tokens: current.tokens.filter((token) => token.id !== target.id),
   }))
-  notice.value = `Token “${target.label}” revoked.`
+  notice.value = t('Token “{label}” revoked.', { label: target.label })
   revokeTarget.value = null
   revoking.value = false
 }
@@ -398,12 +427,12 @@ async function revokeAllTokens() {
   try {
     await api('/api/app-tokens', { method: 'DELETE' })
   } catch (cause) {
-    revokeAllError.value = describeError(cause, 'revoke your app tokens')
+    revokeAllError.value = describeError(cause, N_('revoke your app tokens'))
     revokingAll.value = false
     return
   }
   tokens.update((current) => ({ ...current, tokens: [] }))
-  notice.value = 'All app tokens revoked.'
+  notice.value = t('All app tokens revoked.')
   revokeAllOpen.value = false
   revokingAll.value = false
 }

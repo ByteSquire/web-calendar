@@ -5,7 +5,7 @@
 <template>
   <ul
     v-if="rules.length > 0"
-    :aria-label="`Access rules of ${calendarName}`"
+    :aria-label="t('Access rules of {name}', { name: calendarName })"
     class="flex flex-col gap-2"
   >
     <li
@@ -22,20 +22,20 @@
         </p>
       </div>
       <UBadge
-        :label="rule.applied ? 'Applied' : 'Pending'"
+        :label="rule.applied ? t('Applied') : t('Pending')"
         :icon="rule.applied ? 'i-lucide-check' : 'i-lucide-clock'"
         color="neutral"
         variant="outline"
         :title="
           rule.applied
-            ? 'The calendar server has this rule.'
-            : 'Saved, but the calendar server does not have it yet.'
+            ? t('The calendar server has this rule.')
+            : t('Saved, but the calendar server does not have it yet.')
         "
       />
       <UButton
-        :aria-label="`Remove ${rule.label} from ${calendarName}`"
+        :aria-label="t('Remove {who} from {name}', { who: rule.label, name: calendarName })"
         icon="i-lucide-trash-2"
-        label="Remove"
+        :label="t('Remove')"
         color="neutral"
         variant="outline"
         :disabled="busy"
@@ -44,11 +44,12 @@
     </li>
   </ul>
   <p v-else data-access-empty class="text-toned">
-    Nobody else has access to {{ calendarName }}. Only the owner can see it.
+    {{ t('Nobody else has access to {name}. Only the owner can see it.', { name: calendarName }) }}
   </p>
 </template>
 
 <script setup lang="ts">
+import { t } from '~/utils/i18n'
 import {
   levelLabel,
   principalKind,

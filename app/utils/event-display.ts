@@ -10,25 +10,29 @@ import type {
   EventStatus,
   ResourceType,
 } from '../../shared/types/calendar'
+import { monthShort, weekdayShort } from './date-names'
+import { N_, t, tv } from './i18n'
 import { convertEventTimes } from './time-zone'
 
 /** Title shown instead of the real one when the details are hidden by access rules (FR-18). */
-export const BUSY_TITLE = 'Busy'
+export const BUSY_TITLE = N_('Busy')
 
 export const STATUS_LABELS = {
-  confirmed: 'Confirmed',
-  tentative: 'Tentative',
-  cancelled: 'Cancelled',
+  confirmed: N_('Confirmed'),
+  tentative: N_('Tentative'),
+  cancelled: N_('Cancelled'),
 } satisfies Record<EventStatus, string>
-
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 const pad = (value: number) => String(value).padStart(2, '0')
 
 /** `Wed, 28 Oct 2026`. */
 export function formatEventDate(date: Temporal.PlainDate): string {
-  return `${WEEKDAYS[date.dayOfWeek - 1]}, ${date.day} ${MONTHS[date.month - 1]} ${date.year}`
+  return t('{weekday}, {day} {month} {year}', {
+    weekday: weekdayShort(date.dayOfWeek),
+    day: date.day,
+    month: monthShort(date.month),
+    year: date.year,
+  })
 }
 
 const formatTime = (time: Temporal.PlainDateTime) => `${pad(time.hour)}:${pad(time.minute)}`
@@ -58,7 +62,7 @@ export function describeEventWhen(
     const date = last.equals(first)
       ? formatEventDate(first)
       : `${formatEventDate(first)} ${joiner} ${formatEventDate(last)}`
-    return { date, time: 'All day' }
+    return { date, time: t('All day') }
   }
 
   const start = Temporal.PlainDateTime.from(event.start.slice(0, 19))
@@ -85,7 +89,7 @@ export function describeEventWhen(
 export function describeEventWhenInWords(
   event: Pick<CalendarEvent, 'start' | 'end' | 'allDay'>,
 ): string {
-  const when = describeEventWhen(event, 'to')
+  const when = describeEventWhen(event, t('to'))
   return `${when.date}, ${when.time}`
 }
 
@@ -97,10 +101,10 @@ export function eventAssistiveLabel(
   event: Pick<CalendarEvent, 'title' | 'start' | 'end' | 'allDay' | 'status' | 'isBlocked'>,
   calendarName: string | undefined,
 ): string {
-  const parts = [event.isBlocked ? BUSY_TITLE : event.title, describeEventWhenInWords(event)]
+  const parts = [event.isBlocked ? tv(BUSY_TITLE) : event.title, describeEventWhenInWords(event)]
   if (!event.isBlocked) {
-    if (calendarName) parts.push(`Calendar ${calendarName}`)
-    if (event.status !== 'confirmed') parts.push(STATUS_LABELS[event.status].toLowerCase())
+    if (calendarName) parts.push(t('Calendar {name}', { name: calendarName }))
+    if (event.status !== 'confirmed') parts.push(tv(STATUS_LABELS[event.status]).toLowerCase())
   }
   return parts.join(', ')
 }
@@ -156,12 +160,12 @@ export function buildEventDetails(
         ? describeEventWhen(convertEventTimes(event, zones.display, zones.org))
         : null,
     status: event.status,
-    statusLabel: STATUS_LABELS[event.status],
+    statusLabel: tv(STATUS_LABELS[event.status]),
   }
   if (event.isBlocked) {
     return {
       ...base,
-      title: BUSY_TITLE,
+      title: tv(BUSY_TITLE),
       blocked: true,
       calendar: null,
       location: null,

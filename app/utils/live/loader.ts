@@ -21,6 +21,7 @@ import type { Calendar, CalendarResource, CalendarUser } from '../../../shared/t
 import type { AvailabilityResponse } from '../../../shared/types/resources-api'
 import type { CalDavClient } from '../caldav/client'
 import { DavError } from '../caldav/errors'
+import { t } from '../i18n'
 import type { CalendarReader } from '../caldav/reader'
 import type { DavCalendar } from '../caldav/types'
 import type { CalendarState } from '../calendar-state'
@@ -477,8 +478,9 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
         if (listed.status === 'fulfilled' && listed.value.length > 0) return listed.value
       }
       defaultChecked = false
-      problems[SOURCE_KEYS.calendars] =
-        `Could not create the first calendar: ${describeLoadError(error)}`
+      problems[SOURCE_KEYS.calendars] = t('Could not create the first calendar: {problem}', {
+        problem: describeLoadError(error),
+      })
       return []
     }
   }

@@ -20,19 +20,24 @@
   >
     <template #body>
       <dl v-if="shown" class="flex flex-col gap-5">
-        <EventDetailRow icon="i-lucide-clock" label="When">
+        <EventDetailRow icon="i-lucide-clock" :label="t('When')">
           <p>{{ shown.when.date }}</p>
           <p>
             {{ shown.when.time }}
             <span v-if="!shown.allDay" class="text-muted">({{ timeZone }})</span>
           </p>
           <p v-if="shown.orgWhen" class="text-muted text-sm">
-            Organization time ({{ orgTimeZone }}): {{ shown.orgWhen.date }},
-            {{ shown.orgWhen.time }}
+            {{
+              t('Organization time ({zone}): {date}, {time}', {
+                zone: orgTimeZone,
+                date: shown.orgWhen.date,
+                time: shown.orgWhen.time,
+              })
+            }}
           </p>
         </EventDetailRow>
 
-        <EventDetailRow v-if="shown.calendar" icon="i-lucide-calendar" label="Calendar">
+        <EventDetailRow v-if="shown.calendar" icon="i-lucide-calendar" :label="t('Calendar')">
           <span class="inline-flex items-center gap-2">
             <span
               class="size-3 shrink-0 rounded-full"
@@ -43,25 +48,27 @@
           </span>
         </EventDetailRow>
 
-        <EventDetailRow v-if="shown.location" icon="i-lucide-map-pin" label="Location">
+        <EventDetailRow v-if="shown.location" icon="i-lucide-map-pin" :label="t('Location')">
           {{ shown.location }}
         </EventDetailRow>
 
         <EventDetailRow
           v-if="shown.resource"
           :icon="resourceIconName(shown.resource.type)"
-          label="Resource"
+          :label="t('Resource')"
         >
           <p>{{ shown.resource.name }}</p>
           <p v-if="shown.resource.location" class="text-muted">{{ shown.resource.location }}</p>
-          <p v-if="shown.bookedBy" class="text-muted">Booked by {{ shown.bookedBy }}</p>
+          <p v-if="shown.bookedBy" class="text-muted">
+            {{ t('Booked by {name}', { name: shown.bookedBy }) }}
+          </p>
         </EventDetailRow>
 
-        <EventDetailRow v-if="shown.description" icon="i-lucide-text" label="Description">
+        <EventDetailRow v-if="shown.description" icon="i-lucide-text" :label="t('Description')">
           <p class="whitespace-pre-line">{{ shown.description }}</p>
         </EventDetailRow>
 
-        <EventDetailRow v-if="shown.categories.length" icon="i-lucide-tag" label="Categories">
+        <EventDetailRow v-if="shown.categories.length" icon="i-lucide-tag" :label="t('Categories')">
           <ul class="flex flex-wrap gap-2">
             <li
               v-for="category in shown.categories"
@@ -78,7 +85,7 @@
           </ul>
         </EventDetailRow>
 
-        <EventDetailRow v-if="!shown.blocked" icon="i-lucide-circle-check" label="Status">
+        <EventDetailRow v-if="!shown.blocked" icon="i-lucide-circle-check" :label="t('Status')">
           <UBadge :label="shown.statusLabel" color="neutral" variant="subtle" size="lg" />
         </EventDetailRow>
       </dl>
@@ -91,7 +98,7 @@
         </p>
         <div class="flex w-full gap-2 sm:justify-end">
           <UButton
-            label="Edit"
+            :label="t('Edit')"
             icon="i-lucide-pencil"
             color="neutral"
             variant="outline"
@@ -102,7 +109,7 @@
             @click="onEdit"
           />
           <UButton
-            label="Delete"
+            :label="t('Delete')"
             icon="i-lucide-trash-2"
             color="neutral"
             variant="outline"
@@ -122,6 +129,7 @@
 <script setup lang="ts">
 import { UModal, USlideover } from '#components'
 import type { CalendarEvent } from '../../shared/types/calendar'
+import { t } from '~/utils/i18n'
 import { resourceIconName } from '~/utils/calendar-icons'
 import { buildEventDetails, type EventDetails } from '~/utils/event-display'
 import { keepFocusOffControlsOnTouch, pickFocusTarget } from '~/utils/focus'
@@ -237,8 +245,8 @@ function onDelete() {
 
 function showNotAvailable() {
   toast.add({
-    title: 'Editing arrives with the real calendar service',
-    description: 'Events are read-only in this preview.',
+    title: t('Editing arrives with the real calendar service'),
+    description: t('Events are read-only in this preview.'),
     icon: 'i-lucide-info',
     color: 'neutral',
   })

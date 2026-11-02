@@ -5,13 +5,13 @@
 <template>
   <UModal
     :open="open"
-    :title="shared ? 'Rename shared view' : 'Rename view'"
-    :description="shared ? 'Everybody sees the new name.' : 'Only you see this view.'"
+    :title="shared ? t('Rename shared view') : t('Rename view')"
+    :description="shared ? t('Everybody sees the new name.') : t('Only you see this view.')"
     @update:open="emit('update:open', $event)"
   >
     <template #body>
       <form id="admin-view-rename-form" @submit.prevent="onSubmit">
-        <UFormField label="Name" :error="error">
+        <UFormField :label="t('Name')" :error="error">
           <UInput v-model="name" autocomplete="off" class="w-full" />
         </UFormField>
       </form>
@@ -19,7 +19,7 @@
     <template #footer>
       <div class="flex w-full justify-end gap-2">
         <UButton
-          label="Cancel"
+          :label="t('Cancel')"
           color="neutral"
           variant="outline"
           @click="emit('update:open', false)"
@@ -27,7 +27,7 @@
         <UButton
           type="submit"
           form="admin-view-rename-form"
-          label="Save"
+          :label="t('Save')"
           :loading="pending"
           :disabled="name.trim() === ''"
         />
@@ -37,6 +37,8 @@
 </template>
 
 <script setup lang="ts">
+import { t } from '~/utils/i18n'
+
 const props = withDefaults(
   defineProps<{
     open: boolean

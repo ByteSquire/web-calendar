@@ -22,14 +22,14 @@
       <div class="flex w-full justify-end gap-2">
         <UButton
           ref="cancelButton"
-          label="Cancel"
+          :label="t('Cancel')"
           color="neutral"
           variant="outline"
           :disabled="busy"
           @click="onOpenChange(false)"
         />
         <UButton
-          :label="busy ? 'Working…' : confirmLabel"
+          :label="busy ? t('Working…') : confirmLabel"
           icon="i-lucide-trash-2"
           color="neutral"
           :aria-busy="busy"
@@ -41,6 +41,7 @@
 </template>
 
 <script setup lang="ts">
+import { t } from '~/utils/i18n'
 import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { createFocusReturn } from '~/utils/settings/focus-return'
 

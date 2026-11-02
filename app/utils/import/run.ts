@@ -8,6 +8,7 @@
 //
 // Pure orchestration with an injected client, like writes/orchestrate.ts; the settings section binds
 // it to the session's client, reloads the calendar afterwards and drives the progress and cancel.
+import { t, tv } from '~/utils/i18n'
 import { createLimiter } from '../caldav/flights'
 import { DavError } from '../caldav/errors'
 import type { CalDavClient } from '../caldav/client'
@@ -84,8 +85,9 @@ async function calendarProblem(
   const found = calendars.find(
     (calendar) => resourceKey(calendar.url) === resourceKey(calendarHref),
   )
-  if (!found) return 'This calendar no longer exists. Reload the page and choose another calendar.'
-  if (found.readOnly) return "You can't write to this calendar."
+  if (!found)
+    return t('This calendar no longer exists. Reload the page and choose another calendar.')
+  if (found.readOnly) return t("You can't write to this calendar.")
   return null
 }
 
@@ -133,7 +135,10 @@ export async function runImport(client: ImportClient, args: ImportArgs): Promise
           // An event the service refuses is its own problem; an outage will hit the next one too.
           streak = failure.systemic ? streak + 1 : 0
           if (streak >= MAX_CONSECUTIVE_FAILURES) {
-            stopped ??= `Stopped after ${streak} failures in a row. ${failure.message}`
+            stopped ??= t('Stopped after {count} failures in a row. {message}', {
+              count: streak,
+              message: failure.message,
+            })
           }
         }
         if (item.status === 'not-done' || item.status === 'interrupted') return
@@ -146,7 +151,7 @@ export async function runImport(client: ImportClient, args: ImportArgs): Promise
   const cancelled = signal?.aborted === true
   for (const item of items) {
     if (item.status !== 'not-done') continue
-    item.message = cancelled ? NOT_TRIED_CANCELLED : NOT_TRIED_STOPPED
+    item.message = tv(cancelled ? NOT_TRIED_CANCELLED : NOT_TRIED_STOPPED)
   }
   const count = (status: ItemStatus) => items.filter((item) => item.status === status).length
   return {

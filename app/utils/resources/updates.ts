@@ -1,5 +1,6 @@
 // "What changed for you since you last looked" (FR-19): the text of the one toast, and the time
 // of the last look, kept in the browser's storage. Pure, with the storage injected.
+import { t } from '~/utils/i18n'
 import type { BookingUpdate } from '../../../shared/types/resources-api'
 
 /** Namespaced like the other keys of the app; one per signed-in user, so accounts do not mix. */
@@ -38,23 +39,25 @@ export function firstSinceIso(now: Date): string {
 function single(update: BookingUpdate): string {
   const name = update.resourceName
   if (update.reason === 'event_moved') {
-    return `Your booking for ${name} moved, re-approval requested`
+    return t('Your booking for {name} moved, re-approval requested', { name })
   }
   if (update.reason === 'event_removed')
-    return `Your booking for ${name} was cancelled: the event is gone`
+    return t('Your booking for {name} was cancelled: the event is gone', { name })
   if (update.reason === 'overlap') {
-    return `Your booking for ${name} was declined: another request was approved for that time`
+    return t('Your booking for {name} was declined: another request was approved for that time', {
+      name,
+    })
   }
-  if (update.status === 'approved') return `Your booking for ${name} was approved`
-  if (update.status === 'declined') return `Your booking for ${name} was declined`
-  return `Your booking for ${name} was cancelled`
+  if (update.status === 'approved') return t('Your booking for {name} was approved', { name })
+  if (update.status === 'declined') return t('Your booking for {name} was declined', { name })
+  return t('Your booking for {name} was cancelled', { name })
 }
 
 /** One text for any number of updates; null when nothing changed. */
 export function updatesToastText(updates: readonly BookingUpdate[]): string | null {
   if (updates.length === 0) return null
   if (updates.length === 1) return single(updates[0]!)
-  return `${updates.length} bookings changed`
+  return t('{count} bookings changed', { count: updates.length })
 }
 
 /** The newest `decidedAt`, to remember as the last look; null for an empty list. */

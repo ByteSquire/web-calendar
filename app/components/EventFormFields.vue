@@ -12,7 +12,7 @@
 -->
 <template>
   <div class="flex flex-col gap-4">
-    <UFormField label="Title" name="title" required :error="errors.title">
+    <UFormField :label="t('Title')" name="title" required :error="errors.title">
       <UInput
         ref="titleInput"
         :model-value="form.title"
@@ -24,7 +24,7 @@
 
     <UFormField
       v-if="mode === 'create'"
-      label="Calendar"
+      :label="t('Calendar')"
       name="calendarId"
       required
       :error="errors.calendarId"
@@ -32,7 +32,7 @@
       <USelect
         :model-value="form.calendarId"
         :items="calendarItems"
-        placeholder="Choose a calendar"
+        :placeholder="t('Choose a calendar')"
         required
         class="w-full"
         :ui="SELECT_UI"
@@ -56,7 +56,7 @@
       </USelect>
     </UFormField>
     <!-- Moving an event to another calendar is not offered: the calendar is shown, not editable. -->
-    <UFormField v-else label="Calendar" name="calendarId">
+    <UFormField v-else :label="t('Calendar')" name="calendarId">
       <UInput :model-value="calendarName" readonly class="w-full">
         <template v-if="selectedCalendar" #leading>
           <span
@@ -68,10 +68,10 @@
       </UInput>
     </UFormField>
 
-    <FormRegion v-model:open="whenOpen" title="Start and end" :summary="whenSummary(form)">
+    <FormRegion v-model:open="whenOpen" :title="t('Start and end')" :summary="whenSummary(form)">
       <USwitch
         :model-value="form.allDay"
-        label="All day"
+        :label="t('All day')"
         class="min-h-11 items-center"
         :ui="{
           // The switch is small; the pseudo-element grows its hit area to 44 px.
@@ -83,7 +83,7 @@
 
       <!-- Keyed by the input type: the browser drops a value that does not fit a new type. -->
       <UFormField
-        :label="form.allDay ? 'Start date' : 'Start'"
+        :label="form.allDay ? t('Start date') : t('Start')"
         name="start"
         required
         :error="errors.start"
@@ -99,11 +99,15 @@
       </UFormField>
 
       <UFormField
-        :label="form.allDay ? 'End date' : 'End'"
+        :label="form.allDay ? t('End date') : t('End')"
         name="end"
         required
         :error="errors.end"
-        :help="extended && !form.allDay ? `Times are in your time zone (${timeZone}).` : undefined"
+        :help="
+          extended && !form.allDay
+            ? t('Times are in your time zone ({zone}).', { zone: timeZone })
+            : undefined
+        "
       >
         <UInput
           :key="inputType"
@@ -118,9 +122,13 @@
 
     <template v-if="extended && mode === 'create'">
       <UFormField
-        label="Repeat"
+        :label="t('Repeat')"
         name="repeat"
-        :help="monthlyDayWarning ? `Months without a day ${startDay} are skipped.` : undefined"
+        :help="
+          monthlyDayWarning
+            ? t('Months without a day {day} are skipped.', { day: startDay })
+            : undefined
+        "
       >
         <USelect
           :model-value="form.repeat"
@@ -132,7 +140,7 @@
       </UFormField>
 
       <template v-if="form.repeat !== 'none'">
-        <UFormField label="Ends" name="repeatEnds">
+        <UFormField :label="t('Ends')" name="repeatEnds">
           <USelect
             :model-value="form.repeatEnds"
             :items="repeatEndsItems"
@@ -144,7 +152,7 @@
 
         <UFormField
           v-if="form.repeatEnds === 'on'"
-          label="Last day of the repeat"
+          :label="t('Last day of the repeat')"
           name="repeatUntil"
           required
           :error="errors.repeatUntil"
@@ -160,7 +168,7 @@
 
         <UFormField
           v-if="form.repeatEnds === 'after'"
-          label="Number of times"
+          :label="t('Number of times')"
           name="repeatCount"
           required
           :error="errors.repeatCount"
@@ -183,10 +191,10 @@
       <FormRegion
         v-if="details"
         v-model:open="detailsOpen"
-        title="Details"
+        :title="t('Details')"
         :summary="detailsSummary"
       >
-        <UFormField label="Location" name="location">
+        <UFormField :label="t('Location')" name="location">
           <UInput
             :model-value="form.location"
             class="w-full"
@@ -194,7 +202,7 @@
           />
         </UFormField>
 
-        <UFormField label="Description" name="description">
+        <UFormField :label="t('Description')" name="description">
           <UTextarea
             :model-value="form.description"
             :rows="3"
@@ -207,10 +215,10 @@
       </FormRegion>
 
       <template v-if="mode === 'edit'">
-        <UFormField label="Status" name="status">
+        <UFormField :label="t('Status')" name="status">
           <USelect
             :model-value="form.status"
-            :items="STATUS_ITEMS"
+            :items="statusItems"
             class="w-full"
             :ui="SELECT_UI"
             @update:model-value="patch({ status: $event as EventStatus })"
@@ -221,7 +229,7 @@
           v-if="categoryOptions.length > 0"
           :model-value="form.categoryNames"
           :items="categoryOptions"
-          legend="Categories"
+          :legend="t('Categories')"
           :ui="CHECKBOX_UI"
           @update:model-value="patch({ categoryNames: toNames($event) })"
         />
@@ -232,6 +240,7 @@
 
 <script setup lang="ts">
 import { Temporal } from 'temporal-polyfill'
+import { t, tv } from '~/utils/i18n'
 import type { EventStatus } from '../../shared/types/calendar'
 import { setQuickAddAllDay, setQuickAddStart } from '~/utils/quick-add'
 import { whenSummary } from '~/utils/writes/when-summary'
@@ -295,16 +304,20 @@ const CHECKBOX_UI = {
   base: 'before:absolute before:inset-0',
   fieldset: 'gap-1',
 }
-const STATUS_ITEMS = [
-  { label: 'Confirmed', value: 'confirmed' },
-  { label: 'Tentative', value: 'tentative' },
-  { label: 'Cancelled', value: 'cancelled' },
-]
-const repeatItems = REPEAT_KINDS.map((kind) => ({ label: REPEAT_LABELS[kind], value: kind }))
-const repeatEndsItems = (Object.keys(REPEAT_ENDS_LABELS) as RepeatEnds[]).map((kind) => ({
-  label: REPEAT_ENDS_LABELS[kind],
-  value: kind,
-}))
+const statusItems = computed(() => [
+  { label: t('Confirmed'), value: 'confirmed' },
+  { label: t('Tentative'), value: 'tentative' },
+  { label: t('Cancelled'), value: 'cancelled' },
+])
+const repeatItems = computed(() =>
+  REPEAT_KINDS.map((kind) => ({ label: tv(REPEAT_LABELS[kind]), value: kind })),
+)
+const repeatEndsItems = computed(() =>
+  (Object.keys(REPEAT_ENDS_LABELS) as RepeatEnds[]).map((kind) => ({
+    label: tv(REPEAT_ENDS_LABELS[kind]),
+    value: kind,
+  })),
+)
 
 const calendarItems = computed(() =>
   props.calendars.map((calendar) => ({

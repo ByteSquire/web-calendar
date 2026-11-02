@@ -15,7 +15,7 @@
         variant="ghost"
         aria-controls="app-sidebar"
         :aria-expanded="sidebarOpen"
-        :aria-label="sidebarOpen ? 'Close sidebar' : 'Open sidebar'"
+        :aria-label="sidebarOpen ? t('Close sidebar') : t('Open sidebar')"
         @click="toggleSidebar"
       />
     </div>
@@ -35,17 +35,22 @@
       <ViewSwitcher class="shrink-0" />
     </div>
     <div class="top-bar-actions">
-      <UButton icon="i-lucide-zap" color="primary" aria-label="Quick add" @click="openQuickAdd()">
-        <span class="hidden sm:inline">Quick add</span>
+      <UButton
+        icon="i-lucide-zap"
+        color="primary"
+        :aria-label="t('Quick add')"
+        @click="openQuickAdd()"
+      >
+        <span class="hidden sm:inline">{{ t('Quick add') }}</span>
       </UButton>
       <UButton
         icon="i-lucide-plus"
         color="primary"
         variant="outline"
-        aria-label="Add"
+        :aria-label="t('Add')"
         @click="openAddEvent()"
       >
-        <span class="hidden sm:inline">Add</span>
+        <span class="hidden sm:inline">{{ t('Add') }}</span>
       </UButton>
       <OverflowMenu />
     </div>
@@ -54,13 +59,14 @@
       v-if="loading"
       class="top-bar-progress"
       role="progressbar"
-      aria-label="Loading calendars"
+      :aria-label="t('Loading calendars')"
     />
   </header>
 </template>
 
 <script setup lang="ts">
 import { useLiveStatus } from '~/composables/useLiveCalendar'
+import { t } from '~/utils/i18n'
 
 const { sidebarOpen, toggleSidebar, openQuickAdd, openAddEvent, rangeLabel } = useCalendarState()
 const { loading } = useLiveStatus()

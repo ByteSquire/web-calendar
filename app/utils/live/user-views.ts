@@ -2,6 +2,7 @@
 // Shared views have their own routes (admin-views.ts). The server decides who owns what: another
 // user's view, and a shared one, answer 404 on these routes.
 import type { CalendarView, ViewIcon } from '../../../shared/types/calendar'
+import { t } from '../i18n'
 import {
   createSharedView,
   deleteSharedView,
@@ -32,7 +33,7 @@ export function ownViewBody(
 export function copyName(name: string, taken: Iterable<string>): string {
   const used = new Set(taken)
   for (let number = 1; ; number += 1) {
-    const suffix = number === 1 ? ' (copy)' : ` (copy ${number})`
+    const suffix = ` ${number === 1 ? t('(copy)') : t('(copy {number})', { number })}`
     const candidate = `${name.slice(0, VIEW_NAME_MAX - suffix.length)}${suffix}`
     if (!used.has(candidate)) return candidate
   }
@@ -108,9 +109,9 @@ export async function unshareView(api: AdminViewsApi, view: CalendarView): Promi
 export function describeOwnViewError(error: unknown): string {
   const status = (error as { statusCode?: unknown; status?: unknown } | null) ?? {}
   const code = status.statusCode ?? status.status
-  if (code === 404) return 'This view no longer exists. Reload the page.'
-  if (code === 409) return 'You have too many views. Delete one first.'
-  if (code === 429) return 'Too many changes in a short time. Try again in a moment.'
-  if (code === 400) return 'The server did not accept this view.'
-  return 'The view could not be saved. Try again.'
+  if (code === 404) return t('This view no longer exists. Reload the page.')
+  if (code === 409) return t('You have too many views. Delete one first.')
+  if (code === 429) return t('Too many changes in a short time. Try again in a moment.')
+  if (code === 400) return t('The server did not accept this view.')
+  return t('The view could not be saved. Try again.')
 }

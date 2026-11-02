@@ -4,6 +4,7 @@
 // and never throws. Injected services, no Vue.
 import { ensureTrailingSlash, toDavPath } from '../caldav/urls'
 import { setBookingMarks } from '../ical/booking-marks'
+import { t } from '../i18n'
 import { describeBookingRefusal } from './errors'
 import type { BookableResource, BookingStatus, NewBookingBody } from './types'
 import type { BookingSlot } from './slot'
@@ -64,7 +65,7 @@ export async function bookResources(
   if (eventCalendarPath === null) {
     // No path, no booking: the event would never be followed. The saved event stays.
     for (const resource of args.resources) {
-      result.failed.push({ resource, reason: 'the calendar of the event cannot be booked from' })
+      result.failed.push({ resource, reason: t('the calendar of the event cannot be booked from') })
     }
     return result
   }
@@ -101,18 +102,21 @@ export async function bookResources(
 }
 
 function names(items: readonly { name: string }[]): string {
-  return items.length === 2
-    ? `${items[0]!.name} and ${items[1]!.name}`
-    : items
-        .map((item) => item.name)
-        .join(', ')
-        .replace(/, ([^,]*)$/, ' and $1')
+  if (items.length === 2) return t('{a} and {b}', { a: items[0]!.name, b: items[1]!.name })
+  if (items.length < 2) return items.map((item) => item.name).join(', ')
+  return t('{list} and {last}', {
+    list: items
+      .slice(0, -1)
+      .map((item) => item.name)
+      .join(', '),
+    last: items[items.length - 1]!.name,
+  })
 }
 
 /** The failures, one sentence each: "Room 1 could not be booked: it is already booked ...". */
 export function describeFailures(result: BookingFlowResult): string[] {
-  return result.failed.map(
-    ({ resource, reason }) => `${resource.name} could not be booked: ${reason}.`,
+  return result.failed.map(({ resource, reason }) =>
+    t('{name} could not be booked: {reason}.', { name: resource.name, reason }),
   )
 }
 
@@ -122,7 +126,8 @@ export function describeBooked(result: BookingFlowResult): string | null {
   const waiting = result.booked.filter((item) => item.status === 'pending').map((i) => i.resource)
   const done = result.booked.filter((item) => item.status !== 'pending').map((i) => i.resource)
   const parts: string[] = []
-  if (done.length > 0) parts.push(`${names(done)} booked`)
-  if (waiting.length > 0) parts.push(`${names(waiting)} requested, waiting for approval`)
+  if (done.length > 0) parts.push(t('{names} booked', { names: names(done) }))
+  if (waiting.length > 0)
+    parts.push(t('{names} requested, waiting for approval', { names: names(waiting) }))
   return `${parts.join('; ')}.`
 }

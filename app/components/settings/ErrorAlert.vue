@@ -11,11 +11,14 @@
     :title="title"
     :description="message"
     :ui="ERROR_ALERT_UI"
-    :actions="retryable ? [{ label: 'Retry', color: 'neutral', variant: 'outline', onClick }] : []"
+    :actions="
+      retryable ? [{ label: t('Retry'), color: 'neutral', variant: 'outline', onClick }] : []
+    "
   />
 </template>
 
 <script setup lang="ts">
+import { t } from '~/utils/i18n'
 import { ERROR_ALERT_UI } from '~/utils/settings/ui'
 
 defineProps<{

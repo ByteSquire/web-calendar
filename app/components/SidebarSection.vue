@@ -1,7 +1,9 @@
 <!--
   A section of the sidebar (FR-21): a heading that is also the button which folds the section
   away and back, and the section's content. The chevron shows the state; the state is kept per
-  title in this browser (app/utils/sidebar-sections.ts). The content is only hidden, not removed,
+  title in this browser (app/utils/sidebar-sections.ts). `title` is the English text, marked with
+  N_() by the caller: it stays the key of the saved state in every language, and the heading shows
+  its translation. The content is only hidden, not removed,
   so what was typed into an "Add" input is still there when the section is opened again.
 -->
 <template>
@@ -20,7 +22,7 @@
           :class="open ? '' : '-rotate-90'"
           aria-hidden="true"
         />
-        {{ title }}
+        {{ tv(title) }}
       </button>
     </h2>
     <div v-show="open" :id="bodyId" class="flex flex-col">
@@ -30,20 +32,14 @@
 </template>
 
 <script setup lang="ts">
+import { browserStore } from '~/utils/browser-store'
+import { tv } from '~/utils/i18n'
 import { readClosedSections, toggleSection, writeClosedSections } from '~/utils/sidebar-sections'
 
 const props = defineProps<{ title: string }>()
 
 const headingId = useId()
 const bodyId = useId()
-
-function browserStore(): Storage | null {
-  try {
-    return window.localStorage
-  } catch {
-    return null
-  }
-}
 
 // One list for all sections (and for both copies of the sidebar, the column and the drawer).
 const closed = useState<string[]>('sidebar-closed-sections', () =>

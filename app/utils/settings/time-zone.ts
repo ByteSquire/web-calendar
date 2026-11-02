@@ -2,6 +2,8 @@
 // the browser knows. Pure, so it runs in plain Vitest.
 
 /** The value of the choice "no zone of my own": the browser's zone. Not an IANA name. */
+import { t } from '~/utils/i18n'
+
 export const BROWSER_CHOICE = 'browser'
 
 export interface TimeZoneChoice {
@@ -42,13 +44,13 @@ export interface TimeZoneChoicesInput {
  * names such as `UTC` or an older spelling of a zone, and the closed control would show nothing.
  */
 export function timeZoneChoices(input: TimeZoneChoicesInput): [TimeZoneChoice[], TimeZoneChoice[]] {
-  const browserLabel = `Browser's zone (${input.defaultZone})`
+  const browserLabel = t("Browser's zone ({zone})", { zone: input.defaultZone })
   const names = new Set([...(input.zones ?? supportedZones()), input.defaultZone, input.orgZone])
   if (input.current) names.add(input.current)
   return [
     [{ label: browserLabel, value: BROWSER_CHOICE, search: browserLabel }],
     [...names].sort().map((zone) => ({
-      label: zone === input.orgZone ? `${zone} (organization zone)` : zone,
+      label: zone === input.orgZone ? t('{zone} (organization zone)', { zone }) : zone,
       value: zone,
       search: searchText(zone),
     })),
@@ -58,6 +60,6 @@ export function timeZoneChoices(input: TimeZoneChoicesInput): [TimeZoneChoice[],
 /** What the live region says after a save. `displayZone` is the zone times are shown in now. */
 export function describeZoneChange(chosen: string | null, displayZone: string): string {
   return chosen === null
-    ? `Times are now shown in your browser's zone, ${displayZone}.`
-    : `Times are now shown in ${displayZone}.`
+    ? t("Times are now shown in your browser's zone, {zone}.", { zone: displayZone })
+    : t('Times are now shown in {zone}.', { zone: displayZone })
 }

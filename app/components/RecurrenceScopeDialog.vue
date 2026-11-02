@@ -10,7 +10,7 @@
 <template>
   <UModal
     :open="open"
-    :title="action === 'delete' ? 'Delete repeating event' : 'Edit repeating event'"
+    :title="action === 'delete' ? t('Delete repeating event') : t('Edit repeating event')"
     :description="eventTitle"
     :content="{ onOpenAutoFocus: focusChoice, onCloseAutoFocus: restoreFocus }"
     @update:open="onOpenChange"
@@ -20,7 +20,7 @@
         <URadioGroup
           v-model="choice"
           :items="items"
-          :legend="action === 'delete' ? 'Delete which events?' : 'Change which events?'"
+          :legend="action === 'delete' ? t('Delete which events?') : t('Change which events?')"
           :ui="RADIO_UI"
         />
       </form>
@@ -29,18 +29,19 @@
     <template #footer>
       <div class="flex w-full justify-end gap-2">
         <UButton
-          label="Cancel"
+          :label="t('Cancel')"
           color="neutral"
           variant="outline"
           @click="emit('update:open', false)"
         />
-        <UButton type="submit" form="recurrence-scope-form" label="Continue" />
+        <UButton type="submit" form="recurrence-scope-form" :label="t('Continue')" />
       </div>
     </template>
   </UModal>
 </template>
 
 <script setup lang="ts">
+import { t, tv } from '~/utils/i18n'
 import { keepFocusOffControlsOnTouch, pickFocusTarget } from '~/utils/focus'
 import { SCOPE_CHOICES, SCOPE_LABELS, type ScopeChoice } from '~/utils/writes/types'
 
@@ -73,7 +74,9 @@ const RADIO_UI = {
   fieldset: 'gap-1',
 }
 
-const items = SCOPE_CHOICES.map((value) => ({ label: SCOPE_LABELS[value], value }))
+const items = computed(() =>
+  SCOPE_CHOICES.map((value) => ({ label: tv(SCOPE_LABELS[value]), value })),
+)
 const choice = ref<ScopeChoice>('this')
 let chosen = false
 

@@ -3,6 +3,7 @@
 // calendar service, bounded. The gateway and Radicale cap a request body at 10 MB each by default,
 // which a file of at most 5 MB cannot reach; with a lower cap an event can still be refused as too
 // large, and the import reports that for the event.
+import { t } from '~/utils/i18n'
 import { formatBytes } from '../settings/format'
 
 /** The largest file that is read. */
@@ -31,16 +32,16 @@ const UNSPECIFIC_TYPES = new Set(['', 'application/octet-stream', 'application/i
  * browser reports, never at the content, so a refused file is not read at all.
  */
 export function checkFile(file: PickedFile): string | null {
-  if (file.size === 0) return 'The file is empty.'
+  if (file.size === 0) return t('The file is empty.')
   if (file.size > MAX_FILE_BYTES) {
-    return (
-      `The file is too large (${formatBytes(file.size)}). Files up to ` +
-      `${formatBytes(MAX_FILE_BYTES)} can be imported; split the calendar into smaller files.`
+    return t(
+      'The file is too large ({size}). Files up to {max} can be imported; split the calendar into smaller files.',
+      { size: formatBytes(file.size), max: formatBytes(MAX_FILE_BYTES) },
     )
   }
   const type = file.type.toLowerCase().split(';')[0]!.trim()
   if (!type.startsWith('text/') && !UNSPECIFIC_TYPES.has(type) && !CALENDAR_NAME.test(file.name)) {
-    return 'This does not look like a calendar file. Choose an .ics file.'
+    return t('This does not look like a calendar file. Choose an .ics file.')
   }
   return null
 }

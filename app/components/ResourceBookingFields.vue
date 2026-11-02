@@ -9,14 +9,16 @@
     v-if="offered.length > 0 || booked.length > 0 || modelValue.length > 0 || note"
     class="flex flex-col gap-2"
   >
-    <legend class="text-sm font-medium">Resources</legend>
+    <legend class="text-sm font-medium">{{ t('Resources') }}</legend>
 
     <ul v-if="booked.length > 0" class="flex flex-col gap-1" data-booked-resources>
       <li v-for="item in booked" :key="item.name" class="flex min-h-11 items-center gap-2 text-sm">
         <UIcon name="i-lucide-door-open" class="size-4 shrink-0" aria-hidden="true" />
         <span
           >{{ item.name
-          }}<span v-if="item.status" class="text-toned"> ({{ item.status }})</span></span
+          }}<span v-if="item.status" class="text-toned">
+            ({{ statusWord(item.status) }})</span
+          ></span
         >
       </li>
     </ul>
@@ -36,7 +38,7 @@
           color="neutral"
           variant="ghost"
           class="size-11 justify-center"
-          :aria-label="`Remove ${item.name}`"
+          :aria-label="t('Remove {name}', { name: item.name })"
           :disabled="disabled"
           @click="remove(item.id)"
         />
@@ -47,8 +49,8 @@
       v-if="available.length > 0"
       :model-value="undefined"
       :items="available"
-      placeholder="Add a resource"
-      aria-label="Add a resource"
+      :placeholder="t('Add a resource')"
+      :aria-label="t('Add a resource')"
       class="w-full"
       :disabled="disabled"
       :ui="{ base: 'min-h-11', item: 'min-h-11 items-center' }"
@@ -60,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+import { N_, t, tv } from '~/utils/i18n'
 import type { BookableResource } from '~/utils/resources/types'
 
 const props = withDefaults(
@@ -76,6 +79,15 @@ const props = withDefaults(
   }>(),
   { booked: () => [], note: '', disabled: false },
 )
+
+// The status as the marks of the event carry it; shown in the person's language.
+const STATUS_WORDS: Record<string, string> = {
+  pending: N_('pending'),
+  approved: N_('approved'),
+  declined: N_('declined'),
+  cancelled: N_('cancelled'),
+}
+const statusWord = (status: string) => tv(STATUS_WORDS[status] ?? status)
 
 const emit = defineEmits<{ 'update:modelValue': [ids: string[]] }>()
 

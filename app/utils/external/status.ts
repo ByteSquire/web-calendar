@@ -1,42 +1,42 @@
 // The "Check connection" button of an external account (FR-8): ask the account's server for its
 // calendars through the proxy and say in words whether it works, or why not. The same discovery
 // the calendar view runs, so a green check means the calendars will load.
+import { tc, t } from '~/utils/i18n'
 import { DavError } from '../caldav/errors'
-import { pluralize } from '../settings/format'
 
 /** `Works: 3 calendars found.` */
 export function describeCheckOk(calendars: number): string {
   return calendars === 0
-    ? 'The server answered, but no calendar was found at this address.'
-    : `Works: ${pluralize(calendars, 'calendar')} found.`
+    ? t('The server answered, but no calendar was found at this address.')
+    : tc('Works: {count} calendar found. | Works: {count} calendars found.', calendars)
 }
 
 /** One sentence for a failed check, from whatever discovery threw. */
 export function describeCheckFailure(error: unknown): string {
-  if (!(error instanceof DavError)) return 'The connection failed.'
+  if (!(error instanceof DavError)) return t('The connection failed.')
   switch (error.kind) {
     case 'login-rejected':
-      return 'The server rejected the login. Check the user name and enter the password again.'
+      return t('The server rejected the login. Check the user name and enter the password again.')
     case 'credential-needed':
-      return 'This browser has no password for the account. Enter it first.'
+      return t('This browser has no password for the account. Enter it first.')
     case 'host-not-allowed':
-      return 'The administrator has not allowed this server.'
+      return t('The administrator has not allowed this server.')
     case 'rate-limited':
-      return 'Too many requests. Try again in a moment.'
+      return t('Too many requests. Try again in a moment.')
     case 'network':
-      return 'The server could not be reached.'
+      return t('The server could not be reached.')
     case 'unauthorized':
-      return 'You are signed out. Reload the page to sign in again.'
+      return t('You are signed out. Reload the page to sign in again.')
     case 'not-found':
-      return 'Nothing was found at this address.'
+      return t('Nothing was found at this address.')
     case 'forbidden':
-      return 'The server denied access.'
+      return t('The server denied access.')
     case 'unavailable':
-      return 'The server is not available right now.'
+      return t('The server is not available right now.')
     case 'bad-response':
-      return 'The address did not answer like a CalDAV server.'
+      return t('The address did not answer like a CalDAV server.')
     default:
-      return 'The server refused the request.'
+      return t('The server refused the request.')
   }
 }
 
@@ -47,6 +47,8 @@ export function describeCheckFailure(error: unknown): string {
  */
 export function rememberNote(requested: boolean, kept: boolean): string {
   return requested && !kept
-    ? ' This browser did not allow keeping it on this device, so it is kept until you close this tab.'
+    ? t(
+        ' This browser did not allow keeping it on this device, so it is kept until you close this tab.',
+      )
     : ''
 }

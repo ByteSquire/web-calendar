@@ -11,20 +11,20 @@
     <header class="flex flex-col gap-1">
       <NuxtLink to="/" class="inline-flex min-h-11 items-center gap-1.5 self-start underline">
         <UIcon name="i-lucide-arrow-left" class="size-4" />
-        Back to calendar
+        {{ t('Back to calendar') }}
       </NuxtLink>
-      <h1 class="text-2xl font-semibold">Resource bookings</h1>
+      <h1 class="text-2xl font-semibold">{{ t('Resource bookings') }}</h1>
     </header>
 
     <div v-if="!bookings.loaded.value && !bookings.error.value" role="status" class="flex">
-      <span class="sr-only">Loading the bookings</span>
+      <span class="sr-only">{{ t('Loading the bookings') }}</span>
       <USkeleton class="h-11 w-full max-w-md" aria-hidden="true" />
     </div>
 
     <template v-if="bookings.error.value">
       <FormAlert :message="bookings.error.value" />
       <UButton
-        label="Try again"
+        :label="t('Try again')"
         color="neutral"
         variant="outline"
         class="min-h-11 self-start"
@@ -38,9 +38,9 @@
         aria-labelledby="requests-heading"
         class="flex flex-col gap-3"
       >
-        <h2 id="requests-heading" class="text-lg font-semibold">Pending requests</h2>
+        <h2 id="requests-heading" class="text-lg font-semibold">{{ t('Pending requests') }}</h2>
         <p v-if="bookings.requests.value.length === 0" data-requests-none class="text-toned">
-          There are no pending requests.
+          {{ t('There are no pending requests.') }}
         </p>
         <ul v-else class="flex flex-col gap-3">
           <li
@@ -52,13 +52,18 @@
             <div>
               <p class="font-medium">{{ row.resourceName }}</p>
               <p>{{ slotText(row) }}</p>
-              <p class="text-toned">Requested by {{ row.requesterName }}</p>
+              <p class="text-toned">
+                {{ t('Requested by {name}', { name: row.requesterName }) }}
+              </p>
             </div>
             <p v-if="row.orphaned" data-orphaned class="flex items-start gap-1.5 text-sm">
               <UIcon name="i-lucide-triangle-alert" class="mt-0.5 size-4 shrink-0" />
               <span>
-                The event of this booking cannot be found right now. It may have been moved or
-                deleted; check before you approve.
+                {{
+                  t(
+                    'The event of this booking cannot be found right now. It may have been moved or deleted; check before you approve.',
+                  )
+                }}
               </span>
             </p>
             <p
@@ -71,20 +76,20 @@
             </p>
             <div class="flex flex-wrap gap-2">
               <UButton
-                label="Accept"
+                :label="t('Accept')"
                 icon="i-lucide-check"
                 class="min-h-11"
-                :aria-label="`Accept ${row.requesterName}'s request for ${row.resourceName}, ${slotText(row)}`"
+                :aria-label="acceptLabel(row)"
                 :disabled="busy"
                 @click="decide(row, 'accept')"
               />
               <UButton
-                label="Decline"
+                :label="t('Decline')"
                 icon="i-lucide-x"
                 color="neutral"
                 variant="outline"
                 class="min-h-11"
-                :aria-label="`Decline ${row.requesterName}'s request for ${row.resourceName}, ${slotText(row)}`"
+                :aria-label="declineLabel(row)"
                 :disabled="busy"
                 @click="decide(row, 'decline')"
               />
@@ -94,9 +99,9 @@
       </section>
 
       <section aria-labelledby="mine-heading" class="flex flex-col gap-3">
-        <h2 id="mine-heading" class="text-lg font-semibold">My bookings</h2>
+        <h2 id="mine-heading" class="text-lg font-semibold">{{ t('My bookings') }}</h2>
         <p v-if="bookings.mine.value.length === 0" data-mine-none class="text-toned">
-          You have no upcoming bookings.
+          {{ t('You have no upcoming bookings.') }}
         </p>
         <ul v-else class="flex flex-col gap-3">
           <li
@@ -109,16 +114,21 @@
               <p class="font-medium">{{ row.resourceName }}</p>
               <p>{{ slotText(row) }}</p>
               <p class="text-toned">
-                {{ row.status === 'pending' ? 'Waiting for approval' : 'Approved' }}
+                {{ row.status === 'pending' ? t('Waiting for approval') : t('Approved') }}
               </p>
             </div>
             <UButton
-              label="Cancel booking"
+              :label="t('Cancel booking')"
               icon="i-lucide-trash-2"
               color="neutral"
               variant="outline"
               class="min-h-11 self-start"
-              :aria-label="`Cancel booking of ${row.resourceName}, ${slotText(row)}`"
+              :aria-label="
+                t('Cancel booking of {resource}, {slot}', {
+                  resource: row.resourceName,
+                  slot: slotText(row),
+                })
+              "
               :disabled="busy"
               @click="decide(row, 'cancel')"
             />
@@ -136,10 +146,11 @@
 
 <script setup lang="ts">
 import { useResourceBookings } from '~/composables/useResourceBookings'
+import { t, tc } from '~/utils/i18n'
 import { formatSlot } from '~/utils/resources/format'
 import type { BookingRow } from '~/utils/resources/rows'
 
-useHead({ title: 'Resource bookings' })
+useHead({ title: () => t('Resource bookings') })
 
 const zone = useDisplayTimeZone()
 const bookings = useResourceBookings()
@@ -152,14 +163,31 @@ const slotText = (row: BookingRow) => formatSlot(row.start, row.end, zone.value)
 function overlapText(row: BookingRow): string {
   const others = bookings.requests.value.filter((other) => row.overlapIds.includes(other.id))
   const names = others.map((other) => `${other.requesterName} (${slotText(other)})`)
-  const lead =
-    row.overlapIds.length === 1
-      ? 'Overlaps another pending request'
-      : `Overlaps ${row.overlapIds.length} other pending requests`
+  const lead = tc(
+    'Overlaps another pending request | Overlaps {count} other pending requests',
+    row.overlapIds.length,
+  )
   return names.length > 0
-    ? `${lead}: ${names.join(', ')}. Approving this one declines the others.`
-    : `${lead}. Approving this one declines the others.`
+    ? t('{lead}: {names}. Approving this one declines the others.', {
+        lead,
+        names: names.join(', '),
+      })
+    : t('{lead}. Approving this one declines the others.', { lead })
 }
+
+const acceptLabel = (row: BookingRow) =>
+  t("Accept {requester}'s request for {resource}, {slot}", {
+    requester: row.requesterName,
+    resource: row.resourceName,
+    slot: slotText(row),
+  })
+
+const declineLabel = (row: BookingRow) =>
+  t("Decline {requester}'s request for {resource}, {slot}", {
+    requester: row.requesterName,
+    resource: row.resourceName,
+    slot: slotText(row),
+  })
 
 const start = () => bookings.load()
 

@@ -9,6 +9,7 @@ import { useCalendarState } from '~/composables/useCalendarState'
 import { useExternalAccess } from '~/composables/useExternalAccess'
 import { useResourceUpdates } from '~/composables/useResourceUpdates'
 import { useServerConfigState } from '~/composables/useServerConfigState'
+import { t } from '~/utils/i18n'
 import { fetchIcsText } from '~/utils/live/ics'
 import { createLiveLoader, type LiveLoader } from '~/utils/live/loader'
 import { isLiveConfig } from '~/utils/live/seed'
@@ -95,8 +96,10 @@ export function useLiveCalendar(): void {
       if (state.sidebarOpen.value) return
       toast.add({
         title:
-          keys.length === 1 ? 'Something could not be loaded' : 'Some things could not be loaded',
-        description: 'Open the sidebar to see what and to try again.',
+          keys.length === 1
+            ? t('Something could not be loaded')
+            : t('Some things could not be loaded'),
+        description: t('Open the sidebar to see what and to try again.'),
         icon: 'i-lucide-triangle-alert',
         color: 'warning',
       })

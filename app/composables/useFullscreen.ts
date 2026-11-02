@@ -1,4 +1,5 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { t } from '~/utils/i18n'
 
 /**
  * Full screen for the whole page (the Fullscreen API). On a phone it hides the address bar and
@@ -29,7 +30,7 @@ export function useFullscreen() {
     } catch (cause) {
       console.error('Full screen failed', cause)
       toast.add({
-        title: 'Full screen is not available',
+        title: t('Full screen is not available'),
         color: 'error',
         icon: 'i-lucide-triangle-alert',
       })

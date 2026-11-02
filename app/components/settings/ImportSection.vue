@@ -10,12 +10,18 @@
 <template>
   <section v-if="available" aria-labelledby="settings-import" class="flex flex-col gap-4">
     <h2 id="settings-import" ref="heading" tabindex="-1" class="text-lg font-semibold">
-      Import a calendar file
+      {{ t('Import a calendar file') }}
     </h2>
     <p>
-      Add the events of an <code>.ics</code> file to one of your calendars. The file is read in your
-      browser. Events the calendar already has are left as they are, so importing a file twice does
-      not make copies. To follow a calendar that keeps changing, add an iCal subscription instead.
+      <template
+        v-for="(part, i) in tparts(
+          'Add the events of an {ics} file to one of your calendars. The file is read in your browser. Events the calendar already has are left as they are, so importing a file twice does not make copies. To follow a calendar that keeps changing, add an iCal subscription instead.',
+        )"
+        :key="i"
+      >
+        <code v-if="'name' in part">.ics</code>
+        <template v-else>{{ part.text }}</template>
+      </template>
     </p>
 
     <div
@@ -30,32 +36,49 @@
       <p>{{ summary }}</p>
       <SettingsErrorAlert v-if="report.stopped" :message="report.stopped" />
       <template v-if="problems.length > 0">
-        <p class="font-medium">Events that could not be imported</p>
-        <ul aria-label="Events that could not be imported" class="flex flex-col gap-1 text-sm">
+        <p class="font-medium">{{ t('Events that could not be imported') }}</p>
+        <ul
+          :aria-label="t('Events that could not be imported')"
+          class="flex flex-col gap-1 text-sm"
+        >
           <li v-for="(item, index) in shownProblems" :key="index" class="wrap-anywhere">
             <span class="font-medium">{{ item.title }}</span
             >: {{ item.message }}
           </li>
           <li v-if="problems.length > shownProblems.length" class="text-toned">
-            … and {{ problems.length - shownProblems.length }} more
+            {{ t('… and {count} more', { count: problems.length - shownProblems.length }) }}
           </li>
         </ul>
       </template>
       <p v-if="incomplete" class="text-sm text-toned">
-        You can import the file again: events that are already in the calendar are left alone.
+        {{
+          t(
+            'You can import the file again: events that are already in the calendar are left alone.',
+          )
+        }}
       </p>
       <div class="flex flex-wrap gap-2">
-        <UButton v-if="incomplete" label="Import again" color="neutral" @click="importAgain" />
-        <UButton label="Done" :color="incomplete ? 'neutral' : 'primary'" @click="finish" />
+        <UButton
+          v-if="incomplete"
+          :label="t('Import again')"
+          color="neutral"
+          @click="importAgain"
+        />
+        <UButton :label="t('Done')" :color="incomplete ? 'neutral' : 'primary'" @click="finish" />
       </div>
     </div>
 
     <!-- Hidden, not removed, while the result is shown: "Import again" needs the chosen file. -->
     <div v-show="!report" class="flex flex-col gap-4">
       <UFormField
-        label="Calendar file"
+        :label="t('Calendar file')"
         name="import-file"
-        :help="`An .ics file of up to ${formatBytes(MAX_FILE_BYTES)} and ${MAX_EVENTS} events.`"
+        :help="
+          t('An .ics file of up to {size} and {max} events.', {
+            size: formatBytes(MAX_FILE_BYTES),
+            max: MAX_EVENTS,
+          })
+        "
         :error="fileError || undefined"
         :ui="FIELD_UI"
       >
@@ -81,31 +104,35 @@
         <p class="font-semibold wrap-anywhere">{{ plan.preview.fileName }}</p>
         <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
           <template v-if="plan.preview.calendarName">
-            <dt class="text-toned">Calendar name</dt>
+            <dt class="text-toned">{{ t('Calendar name') }}</dt>
             <dd class="wrap-anywhere">{{ plan.preview.calendarName }}</dd>
           </template>
-          <dt class="text-toned">Events</dt>
+          <dt class="text-toned">{{ t('Events') }}</dt>
           <dd>{{ plan.preview.events }}</dd>
           <template v-if="plan.preview.skippedCount > 0">
-            <dt class="text-toned">Not imported</dt>
+            <dt class="text-toned">{{ t('Not imported') }}</dt>
             <dd>{{ plan.preview.skippedCount }}</dd>
           </template>
         </dl>
         <ul
           v-if="plan.preview.sample.length > 0"
-          aria-label="The first events in the file"
+          :aria-label="t('The first events in the file')"
           class="list-disc pl-5 text-sm"
         >
           <li v-for="(title, index) in plan.preview.sample" :key="index" class="wrap-anywhere">
             {{ title }}
           </li>
           <li v-if="plan.preview.events > plan.preview.sample.length" class="list-none text-toned">
-            … and {{ plan.preview.events - plan.preview.sample.length }} more
+            {{
+              t('… and {count} more', {
+                count: plan.preview.events - plan.preview.sample.length,
+              })
+            }}
           </li>
         </ul>
         <ul
           v-if="plan.preview.skipped.length > 0"
-          aria-label="What is not imported"
+          :aria-label="t('What is not imported')"
           class="list-disc pl-5 text-sm"
         >
           <li v-for="group in plan.preview.skipped" :key="group.text">{{ group.text }}</li>
@@ -116,13 +143,15 @@
             v-if="noWritableCalendar"
             class="rounded-lg border border-default bg-elevated p-3 text-sm"
           >
-            None of your calendars can take new events. Ask for a calendar you can write to.
+            {{
+              t('None of your calendars can take new events. Ask for a calendar you can write to.')
+            }}
           </p>
-          <UFormField v-else label="Import into" name="import-calendar" required>
+          <UFormField v-else :label="t('Import into')" name="import-calendar" required>
             <USelect
               v-model="calendarId"
               :items="calendarItems"
-              placeholder="Choose a calendar"
+              :placeholder="t('Choose a calendar')"
               :disabled="importing"
               class="w-full"
               :ui="SELECT_UI"
@@ -149,11 +178,11 @@
             <progress
               :value="progress.done"
               :max="progress.total"
-              aria-label="Import progress"
+              :aria-label="t('Import progress')"
               class="h-2 w-full accent-(--ui-primary)"
             />
             <p class="text-sm text-toned" aria-hidden="true">
-              {{ progress.done }} of {{ progress.total }}
+              {{ t('{done} of {total}', { done: progress.done, total: progress.total }) }}
             </p>
           </div>
 
@@ -161,7 +190,9 @@
             <UButton
               ref="importButton"
               :label="
-                importing ? 'Importing…' : `Import ${pluralize(plan.preview.events, 'event')}`
+                importing
+                  ? t('Importing…')
+                  : tc('Import {count} event | Import {count} events', plan.preview.events)
               "
               icon="i-lucide-file-up"
               :disabled="!canImport"
@@ -171,7 +202,7 @@
             <UButton
               v-if="importing"
               ref="cancelButton"
-              label="Cancel import"
+              :label="t('Cancel import')"
               color="neutral"
               variant="outline"
               @click="cancelImport"
@@ -187,6 +218,7 @@
 </template>
 
 <script setup lang="ts">
+import { t, tc, tparts } from '~/utils/i18n'
 import { useCalDav } from '~/composables/useCalDav'
 import { useCalendarState } from '~/composables/useCalendarState'
 import { useCalendarSourcesVersion, useLiveStatus } from '~/composables/useLiveCalendar'
@@ -196,7 +228,7 @@ import { summarize } from '~/utils/import/messages'
 import { prepareImport, type ImportPlan } from '~/utils/import/preview'
 import { runImport, type ImportReport } from '~/utils/import/run'
 import { isLiveConfig } from '~/utils/live/seed'
-import { formatBytes, pluralize } from '~/utils/settings/format'
+import { formatBytes } from '~/utils/settings/format'
 import { FIELD_UI } from '~/utils/settings/ui'
 import { writableCalendars } from '~/utils/writes/rules'
 
@@ -278,7 +310,7 @@ async function onFile(event: Event) {
   notice.value = ''
   if (!file) return
 
-  notice.value = 'Reading the file…'
+  notice.value = t('Reading the file…')
   const result = await prepareImport(file)
   if (mine !== choice) return
   if (!result.ok) {
@@ -288,11 +320,14 @@ async function onFile(event: Event) {
   }
   plan.value = result.plan
   phase.value = 'ready'
-  const events = pluralize(result.plan.preview.events, 'event')
+  const count = result.plan.preview.events
   notice.value =
-    result.plan.preview.events > 0
-      ? `File read: ${events} can be imported.`
-      : 'File read: it has no events to import.'
+    count > 0
+      ? tc(
+          'File read: {count} event can be imported. | File read: {count} events can be imported.',
+          count,
+        )
+      : t('File read: it has no events to import.')
 }
 
 // ---- Importing ------------------------------------------------------------------------------------
@@ -308,7 +343,7 @@ async function startImport() {
   progress.done = 0
   progress.total = current.resources.length
   phase.value = 'importing'
-  notice.value = `Importing ${pluralize(progress.total, 'event')}…`
+  notice.value = tc('Importing {count} event… | Importing {count} events…', progress.total)
   // The button that was pressed is disabled now: the keyboard moves to the way out.
   await nextTick()
   cancelButton.value?.$el.focus()
@@ -328,7 +363,7 @@ async function startImport() {
     // person can try again; the section must not stay on "Importing" for ever.
     controller = null
     phase.value = 'ready'
-    notice.value = 'The import could not be run. Try again.'
+    notice.value = t('The import could not be run. Try again.')
     return
   }
   controller = null
@@ -345,7 +380,7 @@ async function startImport() {
 }
 
 function cancelImport() {
-  notice.value = 'Cancelling…'
+  notice.value = t('Cancelling…')
   controller?.abort()
 }
 
@@ -355,8 +390,8 @@ onBeforeUnmount(() => controller?.abort())
 
 const summary = computed(() => (report.value ? summarize(report.value) : ''))
 const resultTitle = computed(() => {
-  if (report.value?.cancelled) return 'Import cancelled'
-  return report.value?.stopped ? 'Import stopped' : 'Import finished'
+  if (report.value?.cancelled) return t('Import cancelled')
+  return report.value?.stopped ? t('Import stopped') : t('Import finished')
 })
 const problems = computed(
   () => report.value?.items.filter((item) => item.status === 'failed') ?? [],

@@ -12,34 +12,36 @@
     :aria-busy="busy"
     @submit.prevent="submit"
   >
-    <h2 id="access-add-heading" class="text-lg font-semibold">Add access</h2>
+    <h2 id="access-add-heading" class="text-lg font-semibold">{{ t('Add access') }}</h2>
 
     <URadioGroup
       v-model="type"
-      legend="Give access to"
+      :legend="t('Give access to')"
       :items="whoItems"
       :ui="RADIO_UI"
       orientation="vertical"
     />
 
-    <UFormField v-if="type === 'user'" label="Person" :error="problem" required>
+    <UFormField v-if="type === 'user'" :label="t('Person')" :error="problem" required>
       <USelectMenu
         v-model="person"
         :items="personItems"
         value-key="value"
         :search-input="SEARCH_PEOPLE"
-        placeholder="Choose a person"
+        :placeholder="t('Choose a person')"
         class="w-full max-w-md"
         :ui="{ base: 'min-h-11', item: 'min-h-11 items-center' }"
       >
-        <template #empty>Nobody matches. People appear here after they signed in once.</template>
+        <template #empty>{{
+          t('Nobody matches. People appear here after they signed in once.')
+        }}</template>
       </USelectMenu>
     </UFormField>
 
     <UFormField
       v-else-if="type === 'group'"
-      label="Group name"
-      help="The short name of the group in Kanidm, for example staff."
+      :label="t('Group name')"
+      :help="t('The short name of the group in Kanidm, for example staff.')"
       :error="problem"
       required
     >
@@ -52,24 +54,27 @@
       />
     </UFormField>
 
-    <p v-else class="text-toned">Everyone who can sign in to this calendar app gets this access.</p>
+    <p v-else class="text-toned">
+      {{ t('Everyone who can sign in to this calendar app gets this access.') }}
+    </p>
 
     <URadioGroup
       v-model="levelModel"
-      legend="Access level"
+      :legend="t('Access level')"
       :items="levelItems"
       :ui="RADIO_UI"
       orientation="vertical"
     />
 
     <div>
-      <UButton type="submit" label="Add access" icon="i-lucide-plus" :loading="busy" />
+      <UButton type="submit" :label="t('Add access')" icon="i-lucide-plus" :loading="busy" />
     </div>
   </form>
 </template>
 
 <script setup lang="ts" generic="P extends string">
 import type { Ref } from 'vue'
+import { t, tv } from '~/utils/i18n'
 import {
   PRINCIPAL_CHOICES,
   isGroupName,
@@ -94,7 +99,10 @@ const props = defineProps<{
 }>()
 
 // The search field is named; a placeholder is no name for assistive technology.
-const SEARCH_PEOPLE = { placeholder: 'Search people', 'aria-label': 'Search people' }
+const SEARCH_PEOPLE = computed(() => ({
+  placeholder: t('Search people'),
+  'aria-label': t('Search people'),
+}))
 // 44 px rows for the radio buttons (design §9).
 const RADIO_UI = { item: 'min-h-11 items-center' }
 
@@ -109,19 +117,22 @@ const whoItems = computed(() =>
     choice.value === 'group' && !props.groupsAvailable
       ? {
           ...choice,
+          label: tv(choice.label),
           disabled: true,
-          description: 'Not available: the server has no Kanidm token to check groups with.',
+          description: t('Not available: the server has no Kanidm token to check groups with.'),
         }
-      : choice,
+      : { ...choice, label: tv(choice.label) },
   ),
 )
 // Nuxt UI types the radio group by its items; a plain string keeps that simple while the saved rule
 // keeps the caller's own level type `P`.
-const levelItems = props.levels.map((level) => ({
-  value: level.value as string,
-  label: level.label,
-  description: level.help,
-}))
+const levelItems = computed(() =>
+  props.levels.map((level) => ({
+    value: level.value as string,
+    label: tv(level.label),
+    description: tv(level.help),
+  })),
+)
 const levelModel = computed<string>({
   get: () => permission.value,
   set: (value) => {
@@ -141,7 +152,7 @@ async function submit() {
   if (type.value === 'user') {
     const chosen = props.users.find((user) => user.sub === person.value)
     if (!chosen) {
-      problem.value = 'Choose a person.'
+      problem.value = t('Choose a person.')
       return
     }
     if (
@@ -155,7 +166,7 @@ async function submit() {
   } else if (type.value === 'group') {
     const name = group.value.trim()
     if (!isGroupName(name)) {
-      problem.value = 'Enter the group name: letters, digits, dots, dashes and underscores.'
+      problem.value = t('Enter the group name: letters, digits, dots, dashes and underscores.')
       return
     }
     if (
@@ -169,7 +180,7 @@ async function submit() {
   } else {
     await props.save(
       { principalType: 'authenticated', principal: null, permission: permission.value },
-      'Everyone signed in',
+      t('Everyone signed in'),
     )
   }
 }

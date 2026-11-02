@@ -12,27 +12,30 @@
     <header class="flex flex-col gap-1">
       <NuxtLink to="/" class="inline-flex min-h-11 items-center gap-1.5 self-start underline">
         <UIcon name="i-lucide-arrow-left" class="size-4" />
-        Back to calendar
+        {{ t('Back to calendar') }}
       </NuxtLink>
-      <h1 class="text-2xl font-semibold">Resources</h1>
+      <h1 class="text-2xl font-semibold">{{ t('Resources') }}</h1>
     </header>
 
     <div v-if="checking" role="status" class="flex flex-col gap-2">
-      <span class="sr-only">Checking your permissions</span>
+      <span class="sr-only">{{ t('Checking your permissions') }}</span>
       <USkeleton class="h-11 w-full max-w-md" aria-hidden="true" />
     </div>
 
     <SettingsErrorAlert
       v-else-if="admin === null"
-      message="Could not check whether you may manage resources. Try again."
+      :message="t('Could not check whether you may manage resources. Try again.')"
       retryable
       @retry="start()"
     />
 
     <template v-else-if="admin">
       <p>
-        Rooms, cars and equipment that people can book. Deactivated resources take no new bookings;
-        existing bookings stay.
+        {{
+          t(
+            'Rooms, cars and equipment that people can book. Deactivated resources take no new bookings; existing bookings stay.',
+          )
+        }}
       </p>
 
       <SettingsErrorAlert v-if="loadError" :message="loadError" retryable @retry="start()" />
@@ -40,10 +43,10 @@
       <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
 
       <p v-if="loaded && resources.length === 0" data-resource-none class="text-toned">
-        There are no resources yet.
+        {{ t('There are no resources yet.') }}
       </p>
 
-      <ul v-if="resources.length > 0" aria-label="Resources" class="flex flex-col gap-2">
+      <ul v-if="resources.length > 0" :aria-label="t('Resources')" class="flex flex-col gap-2">
         <li
           v-for="resource in resources"
           :key="resource.id"
@@ -56,34 +59,38 @@
           </div>
           <UBadge
             v-if="!resource.active"
-            label="Inactive"
+            :label="t('Inactive')"
             icon="i-lucide-pause"
             color="neutral"
             variant="outline"
           />
           <div class="flex flex-wrap gap-2">
             <UButton
-              :aria-label="`Edit ${resource.name}`"
+              :aria-label="t('Edit {name}', { name: resource.name })"
               icon="i-lucide-pencil"
-              label="Edit"
+              :label="t('Edit')"
               color="neutral"
               variant="outline"
               :disabled="saving"
               @click="startEdit(resource)"
             />
             <UButton
-              :aria-label="`Access for ${resource.name}`"
+              :aria-label="t('Access for {name}', { name: resource.name })"
               icon="i-lucide-users"
-              label="Access"
+              :label="t('Access')"
               color="neutral"
               variant="outline"
               :disabled="saving"
               @click="selectRules(resource)"
             />
             <UButton
-              :aria-label="`${resource.active ? 'Deactivate' : 'Reactivate'} ${resource.name}`"
+              :aria-label="
+                resource.active
+                  ? t('Deactivate {name}', { name: resource.name })
+                  : t('Reactivate {name}', { name: resource.name })
+              "
               :icon="resource.active ? 'i-lucide-pause' : 'i-lucide-play'"
-              :label="resource.active ? 'Deactivate' : 'Reactivate'"
+              :label="resource.active ? t('Deactivate') : t('Reactivate')"
               color="neutral"
               variant="outline"
               :disabled="saving"
@@ -118,7 +125,7 @@
         class="flex flex-col gap-3 outline-none"
       >
         <h2 id="resource-rules-heading" class="text-lg font-semibold">
-          Who may use {{ ruleTarget.name }}
+          {{ t('Who may use {name}', { name: ruleTarget.name }) }}
         </h2>
         <SettingsErrorAlert v-if="rulesError" :message="rulesError" />
         <AdminResourceRuleList
@@ -129,8 +136,12 @@
           @remove="removeRule"
         />
         <p v-if="rules !== null && !hasManager" data-resource-no-manager class="text-sm text-toned">
-          Nobody can manage {{ ruleTarget.name }} yet, so nobody can accept booking requests.
-          Administrators are not managers by default.
+          {{
+            t(
+              'Nobody can manage {name} yet, so nobody can accept booking requests. Administrators are not managers by default.',
+              { name: ruleTarget.name },
+            )
+          }}
         </p>
         <AdminAccessAddForm
           v-if="rules !== null"
@@ -165,9 +176,10 @@ import {
   type ResourceRule,
   type toBody,
 } from '~/utils/admin/resources'
+import { N_, t, tc, tv } from '~/utils/i18n'
 import { describeError } from '~/utils/settings/api-errors'
 
-useHead({ title: 'Resources' })
+useHead({ title: () => t('Resources') })
 
 type Body = NonNullable<ReturnType<typeof toBody>>
 
@@ -197,17 +209,17 @@ const ruleRows = computed(() => (rules.value ?? []).map((rule) => ({ rule, label
 const hasManager = computed(() => rules.value?.some((rule) => rule.right === 'manage') === true)
 
 function labelOf(rule: ResourceRule): string {
-  if (rule.principalType === 'authenticated') return 'Everyone signed in'
-  if (rule.principalType === 'group') return `Group ${rule.principal}`
+  if (rule.principalType === 'authenticated') return t('Everyone signed in')
+  if (rule.principalType === 'group') return t('Group {name}', { name: rule.principal ?? '' })
   const known = users.value.find((user) => user.sub === rule.principal)
-  return known ? userLabel(known) : 'This person'
+  return known ? userLabel(known) : t('This person')
 }
 
 function summary(resource: AdminResource): string {
   return [
     typeLabel(resource.type),
     resource.location,
-    resource.capacity === null ? null : `${resource.capacity} places`,
+    resource.capacity === null ? null : tc('{count} place | {count} places', resource.capacity),
   ]
     .filter(Boolean)
     .join(' · ')
@@ -232,7 +244,7 @@ async function start() {
     loadError.value = null
     loaded.value = true
   } catch (cause) {
-    loadError.value = describeError(cause, 'load the resources')
+    loadError.value = describeError(cause, N_('load the resources'))
   }
 }
 
@@ -268,7 +280,9 @@ async function create(body: Body): Promise<boolean> {
   const result = await run(async () => {
     const saved = await api<AdminResource>('/api/admin/resources', { method: 'POST', body })
     resources.value = [...resources.value, saved].sort((a, b) => a.name.localeCompare(b.name))
-    return `${saved.name} was added. Everyone signed in can book it; choose who manages it.`
+    return t('{name} was added. Everyone signed in can book it; choose who manages it.', {
+      name: saved.name,
+    })
   })
   createErrors.value = result.fields
   return result.ok
@@ -283,7 +297,7 @@ async function saveEdit(body: Body): Promise<boolean> {
       body,
     })
     replaceResource(saved)
-    return `${saved.name} was saved.`
+    return t('{name} was saved.', { name: saved.name })
   })
   fieldErrors.value = result.fields
   if (result.ok) editing.value = null
@@ -299,7 +313,9 @@ async function setActive(resource: AdminResource, active: boolean) {
       { method: active ? 'PUT' : 'POST', ...(active ? { body: { active: true } } : {}) },
     )
     replaceResource(saved)
-    return active ? `${saved.name} is active again.` : `${saved.name} is deactivated.`
+    return active
+      ? t('{name} is active again.', { name: saved.name })
+      : t('{name} is deactivated.', { name: saved.name })
   })
 }
 
@@ -324,7 +340,7 @@ async function selectRules(resource: AdminResource) {
     if (ruleTarget.value?.id === resource.id) rules.value = answer.rules
   } catch (cause) {
     if (ruleTarget.value?.id === resource.id) {
-      rulesError.value = describeError(cause, 'load the rules')
+      rulesError.value = describeError(cause, N_('load the rules'))
     }
   }
 }
@@ -358,11 +374,19 @@ function addRule(
   }
   return saveRules(
     withRule(rules.value ?? [], next),
-    `${label} can now: ${RESOURCE_RIGHTS.find((item) => item.value === next.right)?.label.toLowerCase()}.`,
+    t('{label} can now: {right}.', {
+      label,
+      right: tv(
+        RESOURCE_RIGHTS.find((item) => item.value === next.right)?.label ?? '',
+      ).toLowerCase(),
+    }),
   )
 }
 
 function removeRule(rule: ResourceRule) {
-  void saveRules(withoutRule(rules.value ?? [], rule), `${labelOf(rule)} no longer has access.`)
+  void saveRules(
+    withoutRule(rules.value ?? [], rule),
+    t('{label} no longer has access.', { label: labelOf(rule) }),
+  )
 }
 </script>

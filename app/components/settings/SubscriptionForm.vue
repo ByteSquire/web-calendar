@@ -6,15 +6,15 @@
 -->
 <template>
   <form novalidate class="flex flex-col gap-4" @submit.prevent="onSubmit">
-    <UFormField label="Name" name="name" required :error="shownErrors.name" :ui="FIELD_UI">
+    <UFormField :label="t('Name')" name="name" required :error="shownErrors.name" :ui="FIELD_UI">
       <UInput ref="nameInput" v-model="name" autocomplete="off" class="w-full" />
     </UFormField>
 
     <UFormField
-      label="Address of the .ics file"
+      :label="t('Address of the .ics file')"
       name="url"
       required
-      help="An http://, https:// or webcal:// link to a calendar file."
+      :help="t('An http://, https:// or webcal:// link to a calendar file.')"
       :error="shownErrors.url"
       :ui="FIELD_UI"
     >
@@ -34,18 +34,19 @@
     <div class="flex flex-wrap justify-end gap-2">
       <UButton
         v-if="cancelable"
-        label="Cancel"
+        :label="t('Cancel')"
         color="neutral"
         variant="outline"
         :disabled="busy"
         @click="emit('cancel')"
       />
-      <UButton type="submit" :label="busy ? 'Saving…' : submitLabel" :aria-busy="busy" />
+      <UButton type="submit" :label="busy ? t('Saving…') : submitLabel" :aria-busy="busy" />
     </div>
   </form>
 </template>
 
 <script setup lang="ts">
+import { t } from '~/utils/i18n'
 import { colorChoices, initialColor } from '~/utils/settings/palette'
 import type { Subscription, SubscriptionInput } from '~/utils/settings/types'
 import { FIELD_UI } from '~/utils/settings/ui'

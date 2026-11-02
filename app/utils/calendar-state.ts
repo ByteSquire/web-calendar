@@ -4,6 +4,8 @@
 import { computed, type Ref } from 'vue'
 import { Temporal } from 'temporal-polyfill'
 import type { MockData } from '../data/mock'
+import { monthLong, monthShort, weekdayShort } from './date-names'
+import { N_, t } from './i18n'
 import { isAutoCategory } from './live/categories'
 import type {
   Calendar,
@@ -20,13 +22,13 @@ export type ViewType = (typeof VIEW_TYPES)[number]
 
 /** Switcher labels, in the order of `VIEW_TYPES` (FR-22). */
 export const VIEW_TYPE_LABELS = {
-  day: 'Day',
-  '5day': '5 days',
-  week: 'Week',
-  month: 'Month',
-  year: 'Year',
-  split: 'Split',
-  list: 'List',
+  day: N_('Day'),
+  '5day': N_('5 days'),
+  week: N_('Week'),
+  month: N_('Month'),
+  year: N_('Year'),
+  split: N_('Split'),
+  list: N_('List'),
 } satisfies Record<ViewType, string>
 
 /** Time span one band of the split view covers. */
@@ -69,23 +71,8 @@ export interface EventCriteria {
   categoryIds: readonly string[]
 }
 
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-]
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-const shortMonth = (date: Temporal.PlainDate) => MONTHS[date.month - 1]!.slice(0, 3)
-const dayMonth = (date: Temporal.PlainDate) => `${date.day} ${shortMonth(date)}`
+const dayMonth = (date: Temporal.PlainDate) =>
+  t('{day} {month}', { day: date.day, month: monthShort(date.month) })
 
 const CATEGORY_COLORS = [
   '#1d4ed8',
@@ -159,9 +146,14 @@ export function formatRangeLabel(kind: RangeKind, range: DateRange): string {
   const last = range.end.subtract({ days: 1 })
   switch (kind) {
     case 'day':
-      return `${WEEKDAYS[first.dayOfWeek - 1]}, ${first.day} ${shortMonth(first)} ${first.year}`
+      return t('{weekday}, {day} {month} {year}', {
+        weekday: weekdayShort(first.dayOfWeek),
+        day: first.day,
+        month: monthShort(first.month),
+        year: first.year,
+      })
     case 'month':
-      return `${MONTHS[first.month - 1]} ${first.year}`
+      return `${monthLong(first.month)} ${first.year}`
     case 'year':
       return String(first.year)
     default:
@@ -169,7 +161,7 @@ export function formatRangeLabel(kind: RangeKind, range: DateRange): string {
         return `${dayMonth(first)} ${first.year} – ${dayMonth(last)} ${last.year}`
       }
       if (first.month !== last.month) return `${dayMonth(first)} – ${dayMonth(last)} ${last.year}`
-      return `${first.day} – ${dayMonth(last)} ${last.year}`
+      return `${t('{day}', { day: first.day })} – ${dayMonth(last)} ${last.year}`
   }
 }
 

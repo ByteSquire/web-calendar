@@ -5,7 +5,7 @@
 <template>
   <ul
     v-if="rules.length > 0"
-    :aria-label="`Access rules of ${resourceName}`"
+    :aria-label="t('Access rules of {name}', { name: resourceName })"
     class="flex flex-col gap-2"
   >
     <li
@@ -22,9 +22,9 @@
         </p>
       </div>
       <UButton
-        :aria-label="`Remove ${item.label} from ${resourceName}`"
+        :aria-label="t('Remove {who} from {name}', { who: item.label, name: resourceName })"
         icon="i-lucide-trash-2"
-        label="Remove"
+        :label="t('Remove')"
         color="neutral"
         variant="outline"
         :disabled="busy"
@@ -32,10 +32,13 @@
       />
     </li>
   </ul>
-  <p v-else data-resource-empty class="text-toned">Nobody has access to {{ resourceName }}.</p>
+  <p v-else data-resource-empty class="text-toned">
+    {{ t('Nobody has access to {name}.', { name: resourceName }) }}
+  </p>
 </template>
 
 <script setup lang="ts">
+import { t } from '~/utils/i18n'
 import { principalKind, type AccessPrincipalType } from '~/utils/admin/access'
 import { rightLabel, type ResourceRule } from '~/utils/admin/resources'
 

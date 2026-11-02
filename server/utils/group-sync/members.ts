@@ -9,10 +9,21 @@
 // is matched too, but only when the SPN's domain is the Kanidm domain: the host of the issuer is
 // that domain or a subdomain of it. Names are unique within one Kanidm domain, so `alice` there is
 // `alice@<that domain>`; an `alice@elsewhere.example` is somebody else and never matches.
+//
+// A member the table does not know yet (they have not signed in) is not an error: it is reported as
+// `pending`, and the caller leaves them out of the file until their first sign-in. Only the caller
+// can tell whether that is onboarding or a naming mismatch (service.ts).
 import type { Database } from 'better-sqlite3'
-import { fail, type Result } from './types'
+import type { Result } from './types'
 
-export type MemberResolver = (spns: string[]) => Result<Map<string, string>>
+export interface MemberResolution {
+  /** SPN -> `sub` for every member that is a known user. */
+  uuids: Map<string, string>
+  /** The members with no known UUID yet, in the order they were asked for. */
+  pending: string[]
+}
+
+export type MemberResolver = (spns: string[]) => Result<MemberResolution>
 
 export interface UsersTableResolverOptions {
   /**
@@ -58,23 +69,15 @@ export function createUsersTableResolver(
     'SELECT oidc_sub FROM users WHERE username = ? COLLATE NOCASE',
   )
   return (spns) => {
-    const resolved = new Map<string, string>()
-    const missing: string[] = []
+    const uuids = new Map<string, string>()
+    const pending: string[] = []
     for (const spn of spns) {
       // The name is unique in the table (a case-insensitive unique index), so a match is one user.
       const short = shortNameOf(spn, issuerHost)
       const row = find.get(spn) ?? (short === null ? undefined : find.get(short))
-      if (row) resolved.set(spn, row.oidc_sub)
-      else missing.push(spn)
+      if (row) uuids.set(spn, row.oidc_sub)
+      else pending.push(spn)
     }
-    if (missing.length > 0) {
-      const shown = missing.slice(0, 5).join(', ')
-      const more = missing.length > 5 ? ` and ${missing.length - 5} more` : ''
-      return fail(
-        'unresolved-members',
-        `${missing.length} group member(s) have no known UUID yet (they have not signed in): ${shown}${more}`,
-      )
-    }
-    return { ok: true, value: resolved }
+    return { ok: true, value: { uuids, pending } }
   }
 }

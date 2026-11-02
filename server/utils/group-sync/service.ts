@@ -11,6 +11,12 @@ import { fail, type FileGroup, type GroupSyncFailure, type Logger, type Result }
 /** Consecutive failed runs after which the log line and the audit event escalate. */
 export const ESCALATE_AFTER_FAILURES = 5
 
+/** "a, b and 3 more": up to five names for a log line. */
+function nameSome(names: string[]): string {
+  const more = names.length > 5 ? ` and ${names.length - 5} more` : ''
+  return `${names.slice(0, 5).join(', ')}${more}`
+}
+
 export interface GroupSyncServiceOptions {
   client: KanidmClient
   /** Resolves per run, so it can use a database that opens later. */
@@ -33,6 +39,10 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
   const { log, ports } = options
   let failures = 0
   let alarmRaised = false
+  // Members with no known UUID yet: what the last run said, and how long the users group has waited.
+  let pendingKey = ''
+  let pendingRuns = 0
+  let pendingAlarm = false
 
   async function attempt(): Promise<Result<'written' | 'unchanged'>> {
     const startedAt = new Date()
@@ -51,11 +61,30 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
     const groups = answers.flatMap((answer) => (answer.ok ? [answer.value] : []))
 
     const spns = [...new Set(groups.flatMap((group) => group.members))].sort()
-    const resolved = options.resolver()(spns)
-    if (!resolved.ok) return resolved
+    const resolution = options.resolver()(spns)
+    if (!resolution.ok) return resolution
+    const { uuids, pending } = resolution.value
+    const pendingSet = new Set(pending)
+    // A member who has not signed in has no UUID yet and cannot be put in the file. They can use
+    // nothing until they do, so they are left out and picked up by the run after their first
+    // sign-in; everybody else's removals and additions go ahead. If NOBODY of the users group can be
+    // mapped, that is a naming mismatch and not onboarding: fail, as an empty file would take the
+    // group access away from everyone.
+    const usersMembers = groups.find((group) => group.name === USERS_GROUP)?.members ?? []
+    const usersPending = usersMembers.filter((member) => pendingSet.has(member)).length
+    if (usersMembers.length > 0 && usersPending === usersMembers.length) {
+      return fail(
+        'unresolved-members',
+        `none of the ${usersMembers.length} member(s) of ${USERS_GROUP} has a known UUID (they have not signed in, or their user names do not match): ${nameSome(usersMembers)}`,
+      )
+    }
+    notePending(pending, usersPending)
     const fileGroups: FileGroup[] = groups.map((group) => ({
       name: group.name,
-      members: group.members.map((member) => resolved.value.get(member) ?? member),
+      members: group.members.flatMap((member) => {
+        const uuid = uuids.get(member)
+        return uuid === undefined ? [] : [uuid]
+      }),
     }))
 
     const rendered = renderGroupFile(fileGroups)
@@ -68,11 +97,53 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
     if (written.ok && written.value === 'written') {
       ports.audit({
         action: 'group_sync.updated',
-        details: { groups: names, members: new Set(spns).size },
+        details: {
+          groups: names,
+          members: new Set(spns).size,
+          ...(pending.length > 0 ? { pending: pending.length } : {}),
+        },
       })
     }
-    if (written.ok) revokeTokensOfRemovedUsers(fileGroups, startedAt)
+    if (written.ok) revokeTokensOfRemovedUsers(fileGroups, startedAt, usersPending)
     return written
+  }
+
+  /**
+   * Says so when the members without a UUID change, and escalates once when members of the users
+   * group have waited for ESCALATE_AFTER_FAILURES runs in a row (their pending state also holds
+   * the revoking of app tokens, see below).
+   */
+  function notePending(pending: string[], usersPending: number): void {
+    const key = pending.join('\n')
+    if (key !== pendingKey) {
+      pendingKey = key
+      if (pending.length > 0) {
+        log.warn(
+          `[group-sync] ${pending.length} member(s) have no known UUID yet (they have not signed in) and are left out of the group file until they do: ${nameSome(pending)}` +
+            (usersPending > 0
+              ? `; app tokens of removed users are not revoked while a member of ${USERS_GROUP} is waiting`
+              : ''),
+        )
+      } else {
+        log.info('[group-sync] every group member has a known UUID now')
+      }
+    }
+    if (usersPending === 0) {
+      pendingRuns = 0
+      pendingAlarm = false
+      return
+    }
+    pendingRuns += 1
+    if (pendingRuns >= ESCALATE_AFTER_FAILURES && !pendingAlarm) {
+      pendingAlarm = true
+      log.error(
+        `[group-sync] ${usersPending} member(s) of ${USERS_GROUP} have not signed in after ${pendingRuns} runs; app tokens of removed users are not revoked until they do`,
+      )
+      ports.audit({
+        action: 'group_sync.members_pending',
+        details: { members: usersPending, runs: pendingRuns },
+      })
+    }
   }
 
   /**
@@ -80,11 +151,18 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
    * users group would keep CalDAV access for as long as the token lives (security review
    * 2026-11-01, finding 2). Runs only after a run that read every group and wrote the file, so a
    * half answer from Kanidm never removes anybody. An EMPTY users group removes nobody: that is
-   * far more likely a Kanidm or sync misconfiguration than an offboarding of everyone. It never
+   * far more likely a Kanidm or sync misconfiguration than an offboarding of everyone. So does a
+   * run where a member of the users group has no UUID yet (`usersPending`): that user may be new, or
+   * may be a member whose name does not match, and the second would look like a removal. It never
    * fails the run.
    */
-  function revokeTokensOfRemovedUsers(fileGroups: FileGroup[], startedAt: Date): void {
+  function revokeTokensOfRemovedUsers(
+    fileGroups: FileGroup[],
+    startedAt: Date,
+    usersPending: number,
+  ): void {
     if (!ports.revokeTokensOfNonMembers) return
+    if (usersPending > 0) return
     const members = fileGroups.find((group) => group.name === USERS_GROUP)?.members ?? []
     if (members.length === 0) {
       log.warn(`[group-sync] ${USERS_GROUP} has no members: no app tokens are revoked`)

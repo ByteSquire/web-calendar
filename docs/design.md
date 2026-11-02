@@ -814,9 +814,14 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   file atomically (temp file, `fsync`, `rename`, `htgroup.prev`); an error or a `null` answer
   leaves the file untouched. **The members are mapped through the app's `users` table** (S9): the
   API token lists members as SPNs only and cannot read persons, so SPN (`preferred_username`) is
-  mapped to `sub` from users who signed in once. A member who never signed in makes the run fail
-  (the warning names up to five SPNs) and the file stays stale until the next interval after their
-  first sign-in; nested groups are unresolvable the same way. `preferred_username` is the SPN, or
+  mapped to `sub` from users who signed in once. A member who never signed in has no UUID yet: the
+  run leaves them out of the file (the warning names up to five SPNs, once per change) and picks them
+  up at the first run after their first sign-in, so everybody else's additions and removals go ahead
+  meanwhile. While a member of `web_calendar_users` is waiting, **no app tokens are revoked**: that
+  member may be new, or a name that does not match, and the second looks like a removal; after five
+  runs in a row the log says so as an error and `group_sync.members_pending` is audited (once per
+  wait). If **nobody** of `web_calendar_users` can be mapped the run fails and the file stays as it
+  was (a naming mismatch, not onboarding); nested groups are unresolvable the same way. `preferred_username` is the SPN, or
   the short name (the documented `prefer-short-username`) when the member's domain is the Kanidm
   domain, the host of the issuer or a parent of it (`createUsersTableResolver`); otherwise nothing
   resolves. LDAP (`entryuuid`) would remove the limit. A first look at a user's
@@ -1417,7 +1422,7 @@ off, which the reconcile already ignores; a calendar owned by a member and named
   only, and in the test stack the same token cannot read persons (`/v1/person/<spn>` and
   `/v1/raw/search` return `null` or nothing; `/scim/v1/*` and `/v1/internal/uuid/*` answer 404). The
   sync therefore maps SPN to `sub` through the app's `users` table, and a member who never signed
-  in blocks a run (§8). LDAP (`entryuuid`) or a Kanidm grant to read persons would remove that.
+  in is left out of the file until they do (§8). LDAP (`entryuuid`) or a Kanidm grant to read persons would remove that.
 
 ### Risks and decisions still open
 
@@ -1426,9 +1431,10 @@ off, which the reconcile already ignores; a calendar owned by a member and named
   account reads them with a read-only token (S9, residual risk: the account's group
   has write power). The interval is a security setting: a removed member keeps
   access for up to 60 s. Kanidm unreachable: handled (the last file is kept and the log is
-  loud, five failures escalate). Open: a member who never signed in makes every run fail, so
-  removals are not applied while someone in a group has not signed in yet (fail closed, stale
-  file); decide between an LDAP bind and a Kanidm grant to read persons. The Radicale
+  loud, five failures escalate). A member who never signed in is left out of the file until they do
+  (2026-11-02, decided: before that, one such member made every run fail and stopped all removals);
+  the revoking of app tokens waits while a member of the users group is in that state (§8). Open:
+  an LDAP bind or a Kanidm grant to read persons would remove the need to sign in first. The Radicale
   volume directory must be writable by the app user (`/groups` is chowned to `node` in the
   Dockerfile).
 - **Gateway is security-critical** — header spoofing, open-proxy paths and request

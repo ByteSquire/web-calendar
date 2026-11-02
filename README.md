@@ -180,8 +180,8 @@ and client renders match.
   app's group sync rewrites the file every `NUXT_GROUP_SYNC_INTERVAL_SEC` seconds (60 by
   default, 300 at most) and keeps the previous version as `htgroup.prev`. The members are
   Kanidm `sub` UUIDs, which the app knows from the users' sign-ins: a group member who has
-  never signed in makes the run fail (the file stays as it was, and the log says who) until
-  they do. A group change seen in `/api/me` triggers a run at once. See
+  never signed in is left out of the file (the log says who) until they do; app tokens of removed
+  users are not revoked while a member of `web_calendar_users` is waiting. A group change seen in `/api/me` triggers a run at once. See
   [`docs/kanidm-setup.md`](docs/kanidm-setup.md) section 3 for the token.
 - The sharing writer turns the access rules (`calendar_acl`) into Radicale map shares at start, after
   every access change and every `NUXT_SHARING_RECONCILE_INTERVAL_SEC` seconds. It talks to Radicale

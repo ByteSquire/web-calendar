@@ -46,16 +46,15 @@ describe('group sync run', () => {
   /** What the stub port says it revoked; nothing, unless a test is about that. */
   let revoked: { users: number; revoked: number }
 
-  const resolver: MemberResolver = (spns) => {
-    const unknown = spns.filter((spn) => !SPNS[spn])
-    if (unknown.length > 0) {
-      return {
-        ok: false,
-        failure: { kind: 'unresolved-members', message: `unknown ${unknown.join(',')}` },
-      }
-    }
-    return { ok: true, value: new Map(spns.map((spn) => [spn, SPNS[spn] as string])) }
-  }
+  // Who has signed in: `known` is the table of the app. Everybody else is pending.
+  let known: Record<string, string>
+  const resolver: MemberResolver = (spns) => ({
+    ok: true,
+    value: {
+      uuids: new Map(spns.flatMap((spn) => (known[spn] ? [[spn, known[spn]] as const] : []))),
+      pending: spns.filter((spn) => !known[spn]),
+    },
+  })
 
   function service() {
     const line = (level: string) => (message: string) => void logs.push(`${level} ${message}`)
@@ -95,6 +94,7 @@ describe('group sync run', () => {
     revokes = []
     revokeThrows = false
     revoked = { users: 0, revoked: 0 }
+    known = { ...SPNS }
     answers = {
       calendar_admins: () => new Response(groupBody('calendar_admins', ['alice@idm.example.org'])),
       web_calendar_users: () =>
@@ -270,6 +270,113 @@ describe('group sync run', () => {
     expect(await readFile(file, 'utf8')).toBe('')
   })
 
+  describe('members who have not signed in yet', () => {
+    const CAROL = 'carol@idm.example.org'
+
+    it('writes the file without them, tells so once, and counts them in the audit', async () => {
+      answers.web_calendar_users = () =>
+        new Response(groupBody('web_calendar_users', [CAROL, 'alice@idm.example.org']))
+      const sync = service()
+      expect(await sync.run()).toEqual({ ok: true, outcome: 'written' })
+      expect(await readFile(file, 'utf8')).toBe(
+        `calendar_admins: ${ALICE}\nweb_calendar_users: ${ALICE}\n`,
+      )
+      expect(audits).toEqual([
+        {
+          action: 'group_sync.updated',
+          details: { groups: ['calendar_admins', 'web_calendar_users'], members: 2, pending: 1 },
+        },
+      ])
+      const warning = logs.filter((line) => line.includes('no known UUID yet'))
+      expect(warning).toHaveLength(1)
+      expect(warning[0]).toContain(CAROL)
+      // the same people on the next run: no second line
+      await sync.run()
+      expect(logs.filter((line) => line.includes('no known UUID yet'))).toHaveLength(1)
+    })
+
+    it('still applies a removal while somebody else is waiting', async () => {
+      const sync = service()
+      await sync.run()
+      expect(await readFile(file, 'utf8')).toContain(BOB)
+      // bob leaves the group and carol, who has not signed in, joins it
+      answers.web_calendar_users = () =>
+        new Response(groupBody('web_calendar_users', [CAROL, 'alice@idm.example.org']))
+      expect((await sync.run()).ok).toBe(true)
+      expect(await readFile(file, 'utf8')).toBe(
+        `calendar_admins: ${ALICE}\nweb_calendar_users: ${ALICE}\n`,
+      )
+    })
+
+    it('picks them up on the run after their first sign-in', async () => {
+      answers.web_calendar_users = () =>
+        new Response(groupBody('web_calendar_users', [CAROL, 'alice@idm.example.org']))
+      const sync = service()
+      await sync.run()
+      const CAROL_UUID = '0f0f0f0f-0000-4000-8000-00000000c0c0'
+      known[CAROL] = CAROL_UUID
+      expect(await sync.run()).toEqual({ ok: true, outcome: 'written' })
+      expect(await readFile(file, 'utf8')).toBe(
+        `calendar_admins: ${ALICE}\nweb_calendar_users: ${[ALICE, CAROL_UUID].sort().join(' ')}\n`,
+      )
+      expect(logs).toContain('info [group-sync] every group member has a known UUID now')
+    })
+
+    it('does not revoke app tokens while a member of the users group is waiting', async () => {
+      answers.web_calendar_users = () =>
+        new Response(groupBody('web_calendar_users', [CAROL, 'alice@idm.example.org']))
+      const sync = service()
+      await sync.run()
+      expect(revokes).toEqual([])
+      expect(
+        logs.some((line) => line.includes('not revoked while a member of web_calendar_users')),
+      ).toBe(true)
+      // once everybody is known, the revoking resumes
+      known[CAROL] = '0f0f0f0f-0000-4000-8000-00000000c0c0'
+      await sync.run()
+      expect(revokes).toHaveLength(1)
+    })
+
+    it('does revoke while somebody in another group is waiting: they have no tokens', async () => {
+      extra = ['designers']
+      answers.designers = () => new Response(groupBody('designers', [CAROL]))
+      expect(await service().run()).toEqual({ ok: true, outcome: 'written' })
+      expect(await readFile(file, 'utf8')).toBe(
+        `calendar_admins: ${ALICE}\ndesigners:\nweb_calendar_users: ${ALICE} ${BOB}\n`,
+      )
+      expect(revokes).toHaveLength(1)
+    })
+
+    it('fails, and keeps the file, when nobody of the users group can be mapped', async () => {
+      const sync = service()
+      await sync.run()
+      const before = await readFile(file, 'utf8')
+      known = {}
+      const result = await sync.run()
+      expect(!result.ok && result.failure.kind).toBe('unresolved-members')
+      expect(!result.ok && result.failure.message).toContain('none of the 2 member(s)')
+      expect(await readFile(file, 'utf8')).toBe(before)
+    })
+
+    it('escalates once when a member of the users group keeps waiting', async () => {
+      answers.web_calendar_users = () =>
+        new Response(groupBody('web_calendar_users', [CAROL, 'alice@idm.example.org']))
+      const sync = service()
+      for (let i = 0; i < ESCALATE_AFTER_FAILURES - 1; i += 1) await sync.run()
+      expect(audits.filter((event) => event.action === 'group_sync.members_pending')).toEqual([])
+      expect(logs.some((line) => line.startsWith('error'))).toBe(false)
+      await sync.run()
+      await sync.run()
+      expect(audits.filter((event) => event.action === 'group_sync.members_pending')).toEqual([
+        {
+          action: 'group_sync.members_pending',
+          details: { members: 1, runs: ESCALATE_AFTER_FAILURES },
+        },
+      ])
+      expect(logs.filter((line) => line.startsWith('error'))).toHaveLength(1)
+    })
+  })
+
   it('escalates after repeated failures and reports the recovery', async () => {
     const sync = service()
     answers.calendar_admins = () => new Response('null')
@@ -329,16 +436,20 @@ describe('createUsersTableResolver', () => {
   })
   afterEach(() => db.close())
 
-  it('maps an SPN to the sub of the user and fails on one nobody knows', () => {
+  it('maps an SPN to the sub of the user and reports one nobody knows as pending', () => {
     upsertUser(db, { sub: ALICE, username: 'alice@idm.example.org' })
     const resolve = createUsersTableResolver(db)
     expect(resolve(['Alice@idm.example.org'])).toEqual({
       ok: true,
-      value: new Map([['Alice@idm.example.org', ALICE]]),
+      value: { uuids: new Map([['Alice@idm.example.org', ALICE]]), pending: [] },
     })
-    const missing = resolve(['alice@idm.example.org', 'bob@idm.example.org'])
-    expect(!missing.ok && missing.failure.kind).toBe('unresolved-members')
-    expect(!missing.ok && missing.failure.message).toContain('bob@idm.example.org')
+    expect(resolve(['alice@idm.example.org', 'bob@idm.example.org'])).toEqual({
+      ok: true,
+      value: {
+        uuids: new Map([['alice@idm.example.org', ALICE]]),
+        pending: ['bob@idm.example.org'],
+      },
+    })
   })
 })
 
@@ -351,21 +462,24 @@ describe('createUsersTableResolver: short names (prefer-short-username)', () => 
   afterEach(() => db.close())
   const resolveOne = (spn: string, issuer: string = ISSUER) =>
     createUsersTableResolver(db, { issuer })([spn])
+  /** True when the member was mapped to a user (not left pending). */
+  const mapped = (result: ReturnType<typeof resolveOne>) =>
+    result.ok && result.value.pending.length === 0
 
   it('maps a member of the Kanidm domain to the user with the short name', () => {
     upsertUser(db, { sub: ALICE, username: 'alice' })
     expect(resolveOne('alice@idm.example.org')).toEqual({
       ok: true,
-      value: new Map([['alice@idm.example.org', ALICE]]),
+      value: { uuids: new Map([['alice@idm.example.org', ALICE]]), pending: [] },
     })
     // Case does not matter, as with the whole SPN.
-    expect(resolveOne('Alice@IDM.example.org').ok).toBe(true)
+    expect(mapped(resolveOne('Alice@IDM.example.org'))).toBe(true)
   })
 
   it('accepts the domain of Kanidm when the issuer is a host within it', () => {
     upsertUser(db, { sub: ALICE, username: 'alice' })
     const issuer = 'https://login.idm.example.org/oauth2/openid/web-calendar'
-    expect(resolveOne('alice@idm.example.org', issuer).ok).toBe(true)
+    expect(mapped(resolveOne('alice@idm.example.org', issuer))).toBe(true)
   })
 
   it('does not match a member of another domain with the same short name', () => {
@@ -377,16 +491,16 @@ describe('createUsersTableResolver: short names (prefer-short-username)', () => 
       'alice@sub.idm.example.org', // a child domain does not cover the issuer's host
     ]) {
       const result = resolveOne(spn)
-      expect(result.ok, spn).toBe(spn === 'alice@example.org')
+      expect(mapped(result), spn).toBe(spn === 'alice@example.org')
     }
   })
 
   it('does not match a short name without an issuer, or with one that is no URL', () => {
     upsertUser(db, { sub: ALICE, username: 'alice' })
-    expect(resolveOne('alice@idm.example.org', 'not a url').ok).toBe(false)
-    expect(resolveOne('alice@idm.example.org', '').ok).toBe(false)
-    expect(createUsersTableResolver(db)(['alice@idm.example.org']).ok).toBe(false)
-    expect(createUsersTableResolver(db, {})(['alice@idm.example.org']).ok).toBe(false)
+    expect(mapped(resolveOne('alice@idm.example.org', 'not a url'))).toBe(false)
+    expect(mapped(resolveOne('alice@idm.example.org', ''))).toBe(false)
+    expect(mapped(createUsersTableResolver(db)(['alice@idm.example.org']))).toBe(false)
+    expect(mapped(createUsersTableResolver(db, {})(['alice@idm.example.org']))).toBe(false)
   })
 
   it('prefers the user who has the whole SPN as a name', () => {
@@ -394,25 +508,25 @@ describe('createUsersTableResolver: short names (prefer-short-username)', () => 
     upsertUser(db, { sub: BOB, username: 'alice@idm.example.org' })
     expect(resolveOne('alice@idm.example.org')).toEqual({
       ok: true,
-      value: new Map([['alice@idm.example.org', BOB]]),
+      value: { uuids: new Map([['alice@idm.example.org', BOB]]), pending: [] },
     })
   })
 
   it('refuses a member without a name or a domain, and an SPN with more than one @', () => {
     upsertUser(db, { sub: ALICE, username: 'alice' })
     for (const spn of ['@idm.example.org', 'alice@', 'a@b@idm.example.org']) {
-      expect(resolveOne(spn).ok, spn).toBe(false)
+      expect(mapped(resolveOne(spn)), spn).toBe(false)
     }
   })
 
-  it('still names the members nobody knows', () => {
+  it('still names the members nobody knows, and only them', () => {
     upsertUser(db, { sub: ALICE, username: 'alice' })
     const result = createUsersTableResolver(db, { issuer: ISSUER })([
       'alice@idm.example.org',
       'carol@idm.example.org',
     ])
-    expect(!result.ok && result.failure.message).toContain('carol@idm.example.org')
-    expect(!result.ok && result.failure.message).not.toContain('alice')
+    expect(result.ok && result.value.pending).toEqual(['carol@idm.example.org'])
+    expect(result.ok && [...result.value.uuids.keys()]).toEqual(['alice@idm.example.org'])
   })
 })
 

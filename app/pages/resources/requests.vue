@@ -1,9 +1,10 @@
 <!--
   Resource bookings (FR-19). Managers see the pending requests of the resources they manage and
   accept or decline them: an overlapping pending request is only a hint until one is approved,
-  which declines the others. Everybody sees their own bookings and can cancel them. A person who
-  manages nothing and has no booking is sent back to the calendar; that is only tidiness, the
-  routes check the rights themselves. Demo mode keeps the rows in local state.
+  which declines the others. Everybody sees their own bookings and can cancel them. Nobody is sent
+  away: the sidebar links this page for everybody, and a person with nothing to decide and no
+  booking sees that, instead of being thrown back to the calendar. The routes check the rights
+  themselves. Demo mode keeps the rows in local state.
 -->
 <template>
   <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 sm:p-6">
@@ -140,7 +141,6 @@ import type { BookingRow } from '~/utils/resources/rows'
 
 useHead({ title: 'Resource bookings' })
 
-const router = useRouter()
 const zone = useDisplayTimeZone()
 const bookings = useResourceBookings()
 const busy = ref(false)
@@ -161,12 +161,7 @@ function overlapText(row: BookingRow): string {
     : `${lead}. Approving this one declines the others.`
 }
 
-async function start() {
-  await bookings.load()
-  if (bookings.loaded.value && !bookings.manages.value && bookings.mine.value.length === 0) {
-    await router.replace('/')
-  }
-}
+const start = () => bookings.load()
 
 onMounted(start)
 

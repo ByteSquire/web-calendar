@@ -1,12 +1,13 @@
 import { expect, test, type Page } from '@playwright/test'
 import { openSignedIn } from './session'
 
-// FR-21 and FR-2 with the real stack (design S8 setup): alice (an administrator) makes a shared
-// view; bob (not an administrator) sees it with the "Shared" badge and a menu with the one thing he
-// may do, "Copy to my views"; the copy is his own, with the full own-view menu, and renaming and
-// deleting it go through the real /api/views routes. The demo cannot show a non-administrator (it
-// always shows the sidebar of one). The test removes what it made; a run that fails half-way leaves
-// a shared view "E2E shared <number>" (alice can delete it) and bob's copy of it behind.
+// FR-21 and FR-2 with the real stack (design S8 setup): alice (an administrator) makes a view and
+// shares it with everybody from its menu; bob (not an administrator) sees it with the "Shared"
+// badge and a menu with the one thing he may do, "Copy to my views"; the copy is his own, with the
+// full own-view menu (no "Share with everybody"), and renaming and deleting it go through the real
+// /api/views routes. The demo cannot show a non-administrator (it always shows the sidebar of one).
+// The test removes what it made; a run that fails half-way leaves a shared view
+// "E2E shared <number>" (alice can delete it) and bob's copy of it behind.
 test.describe.configure({ mode: 'serial' })
 
 const SHARED = `E2E shared ${Date.now()}`
@@ -42,22 +43,42 @@ async function reload(page: Page): Promise<void> {
   await expect(page.locator('[data-calendar-main]')).toBeVisible()
 }
 
-test('alice makes a shared view', async () => {
-  await alice.getByLabel('New shared view name', { exact: true }).fill(SHARED)
-  await alice.getByRole('button', { name: 'Add shared view', exact: true }).click()
+test('alice makes a view and shares it with everybody from its menu', async () => {
+  await alice.getByLabel('New view name', { exact: true }).fill(SHARED)
+  await alice.getByRole('button', { name: 'Add view', exact: true }).click()
   await expect(viewButton(alice, SHARED)).toBeVisible()
+  await expect(alice.locator('li').filter({ has: viewButton(alice, SHARED) })).not.toContainText(
+    'Shared',
+  )
+
+  await actions(alice, SHARED).click()
+  await expect(alice.getByRole('menuitem')).toHaveText([
+    'Rename',
+    'Duplicate',
+    'Share with everybody',
+    'Delete',
+  ])
+  await alice.getByRole('menuitem', { name: 'Share with everybody', exact: true }).click()
+  await expect(alice.getByText(`Shared ${SHARED} with everybody`).first()).toBeVisible()
+  await expect(alice.locator('li').filter({ has: viewButton(alice, SHARED) })).toContainText(
+    'Shared',
+  )
+
+  // it is kept: one shared view with that name after a reload, and no own one beside it
+  await reload(alice)
+  await expect(alice.getByRole('button', { name: SHARED, exact: true })).toHaveCount(1)
   await expect(alice.locator('li').filter({ has: viewButton(alice, SHARED) })).toContainText(
     'Shared',
   )
 })
 
-test('bob sees it with the badge, no way to add a shared view, and a menu with one item', async () => {
+test('bob sees it with the badge and a menu with one item', async () => {
   await reload(bob)
   await expect(viewButton(bob, SHARED)).toBeVisible()
   await expect(bob.locator('li').filter({ has: viewButton(bob, SHARED) })).toContainText('Shared')
-  await expect(bob.getByLabel('New shared view name', { exact: true })).toHaveCount(0)
-  // he may add a view of his own
+  // he may add a view of his own, and has no way to make a shared one
   await expect(bob.getByLabel('New view name', { exact: true })).toBeVisible()
+  await expect(bob.getByLabel('New shared view name', { exact: true })).toHaveCount(0)
 
   await actions(bob, SHARED).click()
   await expect(bob.getByRole('menuitem')).toHaveText(['Copy to my views'])

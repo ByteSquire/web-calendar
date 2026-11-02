@@ -259,6 +259,26 @@ describe('quick add on live data', () => {
     expect(server.callsOf('PUT')).toEqual([])
   })
 
+  it('chooses the calendar when the calendars arrive after the dialog was opened', async () => {
+    await mountApp()
+    seedState([])
+    const state = useCalendarState()
+    const all = state.calendars.value
+    state.calendars.value = []
+    state.openQuickAdd()
+    await vi.waitFor(() => expect(top()).not.toBeNull())
+    const select = () => top()!.querySelector<HTMLElement>('[role="combobox"]')
+    expect(text(select())).not.toContain('Work')
+
+    state.calendars.value = all
+    await vi.waitFor(() => expect(text(select())).toContain('Work'))
+    // and the event goes to it
+    type(labelled<HTMLInputElement>(top()!, 'Title')!, 'Late calendars')
+    buttonIn(top()!, 'Add event')!.click()
+    await vi.waitFor(() => expect(top()).toBeNull())
+    expect(server.callsOf('PUT')[0]!.url.startsWith(WORK_HREF)).toBe(true)
+  })
+
   it('says so when no calendar takes new events', async () => {
     await mountApp()
     seedState([])

@@ -172,6 +172,13 @@ watch(quickAddOpen, (open) => {
   opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
 })
 
+// The calendars can arrive after the dialog opened (a slow server, or a first visit): the form was
+// made without one, so the choice is made when they do, unless the person has chosen already.
+watch(choosableCalendars, () => {
+  if (!quickAddOpen.value || form.value.calendarId !== '') return
+  form.value = { ...form.value, calendarId: createForm().calendarId }
+})
+
 function onOpenChange(open: boolean) {
   if (!open) closeQuickAdd()
 }

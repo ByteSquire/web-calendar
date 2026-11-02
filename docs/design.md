@@ -881,18 +881,26 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
 /api/admin/views/:id` (`defineAdminHandler`, at most 100, audit `admin_view.created|updated|deleted`
   with the name). Only `is_admin = 1` rows are touched; user routes answer `404` for a shared view.
   `ext:` refs are refused per field, refs are shape-checked only (no lookup; what a viewer cannot read
-  Radicale answers with `403`). In the sidebar admins get an "Add shared view" input and Rename / Update from selection / Delete
-  actions. Every view has a `⋯` menu (FR-21): on a shared view everybody else gets one item, "Copy
-  to my views", and sees the "Shared" badge. In demo mode the controls change the local list only.
+  Radicale answers with `403`). There is no separate input for a shared view: an administrator adds a view like anyone else and
+  then chooses "Share with everybody" in its `⋯` menu (below). Admins also get Rename / Update from
+  selection / Delete on a shared view. Every view has a `⋯` menu (FR-21): on a shared view everybody
+  else gets one item, "Copy to my views", and sees the "Shared" badge. In demo mode the controls
+  change the local list only.
 - **Own views (FR-2, FR-21)** — every user adds, renames, duplicates and deletes their own views
   through `POST /api/views`, `PUT` and `DELETE /api/views/:id` (at most 100 per user; another user's
-  view and a shared one answer `404`). The sidebar has an "Add view" input (the view starts as the
+  view and a shared one answer `404`). The sidebar has one "Add view" input (the view starts as the
   calendars now shown) below the list of views. "Duplicate" on an own view and "Copy to my views"
   on a shared one make a copy of the user's own, named "<name> (copy)" ("(copy 2)" and on when
   taken), with the same calendars; an own view may hold external calendars, a shared one never.
-  Without a server (demo) the same controls change the local list. Tests: `tests/user-views.test.ts`,
-  `e2e/own-views.spec.ts` (demo), `e2e/live/shared-view-menu.spec.ts` (alice shares, bob, who is no
-  administrator, copies, renames and deletes).
+  "Share with everybody" (administrators only, in the menu of their own views) makes a shared view
+  with the same name, icon and calendars through `POST /api/admin/views` and then deletes the own
+  view through `DELETE /api/views/:id`, in that order, so a failure never loses the view (if only
+  the delete fails both are listed and a message says so); external calendars are left out and the
+  message says that too; a shared name that is taken is refused. There is no "make private" again:
+  an administrator deletes the shared view, or copies it to their own views first. Without a server
+  (demo) the same controls change the local list. Tests: `tests/user-views.test.ts`,
+  `e2e/own-views.spec.ts` and `e2e/admin-views.spec.ts` (demo), `e2e/live/shared-view-menu.spec.ts`
+  (alice makes a view and shares it; bob, who is no administrator, copies, renames and deletes).
 - **Public view** _(planned)_ — no logged-in user, so it reads **only** the calendars
   in `published_calendars` with a service credential, read-only. Decided when the
   feature is scheduled.

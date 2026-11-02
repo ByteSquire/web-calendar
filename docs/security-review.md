@@ -327,8 +327,9 @@ error.
 - _Built:_ the token is read-only and never logged (scrubbed from every message; 10 s timeout, 1
   MiB cap, no redirects); groups are those named by `calendar_acl` and `resource_acl` plus the
   two fixed ones; the interval is clamped to 1..300 and `validate-config.mjs` rejects a larger
-  value. Members are mapped from SPN to `sub` through the `users` table, so a member who never
-  signed in fails the run (fail closed; the file stays as it was). **Stale-file risk:** while
+  value. Members are mapped from SPN to `sub` by reading each person's `uuid` from Kanidm on every
+  run (the account needs `idm_people_pii_read`); if nobody of the users group can be read, the run
+  fails (fail closed; the file stays as it was). **Stale-file risk:** while
   runs fail, removed members keep access (removals are not applied) until the cause is fixed.
   Alarms: `401`/`403` logs at error level each run and audits `group_sync.unauthorized` once per
   streak; the fifth consecutive failure and every fifth after it log at error level and audit

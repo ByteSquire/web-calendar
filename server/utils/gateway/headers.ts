@@ -74,8 +74,10 @@ export function buildUpstreamHeaders(inbound: Headers, options: UpstreamHeaderOp
   return headers
 }
 
+// RFC 9110 §7.6.1, plus the non-standard `Proxy-Connection` that Go's and nginx's proxies also drop.
 const HOP_BY_HOP = new Set([
   'connection',
+  'proxy-connection',
   'keep-alive',
   'proxy-authenticate',
   'proxy-authorization',

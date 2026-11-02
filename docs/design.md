@@ -823,19 +823,20 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   groups that `calendar_acl` and `resource_acl` name, plus `calendar_admins` and
   `web_calendar_users`, every `NUXT_GROUP_SYNC_INTERVAL_SEC` (default 60 s, clamped to 1..300) and writes the
   file atomically (temp file, `fsync`, `rename`, `htgroup.prev`); an error or a `null` answer
-  leaves the file untouched. **The members are mapped through the app's `users` table** (S9): the
-  API token lists members as SPNs only and cannot read persons, so SPN (`preferred_username`) is
-  mapped to `sub` from users who signed in once. A member who never signed in has no UUID yet: the
-  run leaves them out of the file (the warning names up to five SPNs, once per change) and picks them
-  up at the first run after their first sign-in, so everybody else's additions and removals go ahead
-  meanwhile. While a member of `web_calendar_users` is waiting, **no app tokens are revoked**: that
-  member may be new, or a name that does not match, and the second looks like a removal; after five
+  leaves the file untouched. **The members are mapped by asking Kanidm** (S9, changed 2026-11-02):
+  the group lists members as SPNs, and the sync reads each one's `uuid` (the `sub`) with
+  `GET /v1/person/<spn>/_attr/uuid` on every run, at most 8 at a time, with no cache, so a renamed
+  and reused name never maps to its previous holder. The account needs `idm_people_pii_read` for
+  that. A member Kanidm answers `null` for (a service account, a nested group) is left out of the
+  file (the warning names up to five SPNs, once per change), so everybody else's additions and
+  removals go ahead. While such a member is in `web_calendar_users`, **no app tokens are revoked**:
+  leaving them out would look like a removal; after five
   runs in a row the log says so as an error and `group_sync.members_pending` is audited (once per
   wait). If **nobody** of `web_calendar_users` can be mapped the run fails and the file stays as it
-  was (a naming mismatch, not onboarding); nested groups are unresolvable the same way. `preferred_username` is the SPN, or
-  the short name (the documented `prefer-short-username`) when the member's domain is the Kanidm
-  domain, the host of the issuer or a parent of it (`createUsersTableResolver`); otherwise nothing
-  resolves. LDAP (`entryuuid`) would remove the limit. A first look at a user's
+  was (most likely the account lacks `idm_people_pii_read`; the log says so). Until 2026-11-02 the
+  members were mapped through the app's `users` table, by the name last seen at sign-in, which let a
+  reused name grant the old holder the new holder's groups (security review 2026-11-01 §5) and left
+  members out until their first sign-in. A first look at a user's
   groups is not a change; a differing later claim triggers a run (debounce 2 s). Alarms: `401`/`403`
   logs at error level every run and records `group_sync.unauthorized` once per streak; every fifth
   consecutive failure logs at error level and records `group_sync.failing`; the first success
@@ -1403,8 +1404,8 @@ off, which the reconcile already ignores; a calendar owned by a member and named
     states MIT and says the package is no longer maintained, recommending Reka UI's
     Drawer. Treat it as unverified until the AGPL audit in §2 is signed off, and
     avoid `UDrawer`.
-- **S4 — Radicale and recurrence. Done 2026-10-30** (`dev/spike-tscaldav`, through the
-  gateway). `expand` in `calendar-query` works and is correct: a weekly series across the
+- **S4 — Radicale and recurrence. Done 2026-10-30** (`dev/spike-tscaldav`, removed
+  2026-11-02; in git history up to `7073e38`; through the gateway). `expand` in `calendar-query` works and is correct: a weekly series across the
   25 Oct daylight-saving change gives the right UTC instants, `EXDATE` and a moved
   `RECURRENCE-ID` override are applied, `BYSETPOS` (last weekday of the month) is right,
   all-day instances keep a date `RECURRENCE-ID`, floating and UTC events pass through.
@@ -1417,7 +1418,7 @@ off, which the reconcile already ignores; a calendar owned by a member and named
   `.ics` (lossless, `If-Match` gives `412`, accepts our `fetch`); edits patch the raw
   resource with `ical.js`.
 - **S10 — Time zones in Radicale. Done 2026-10-30.** Observed behaviour (Radicale 3.9.0,
-  `dev/spike-tscaldav/tz-probe.mjs`), not read from its source.
+  `dev/spike-tscaldav/tz-probe.mjs`, see S4), not read from its source.
   - A floating event (`DTSTART:20261104T100000`) is stored exactly as sent; it is not
     converted to UTC.
   - `calendar-timezone` is never set by Radicale itself. A client can set it (for example
@@ -1474,8 +1475,9 @@ off, which the reconcile already ignores; a calendar owned by a member and named
   service-account bind. _Found while building the sync (Phase 3):_ the group lists members as SPNs
   only, and in the test stack the same token cannot read persons (`/v1/person/<spn>` and
   `/v1/raw/search` return `null` or nothing; `/scim/v1/*` and `/v1/internal/uuid/*` answer 404). The
-  sync therefore maps SPN to `sub` through the app's `users` table, and a member who never signed
-  in is left out of the file until they do (§8). LDAP (`entryuuid`) or a Kanidm grant to read persons would remove that.
+  sync therefore mapped SPN to `sub` through the app's `users` table at first. _2026-11-02:_ with the
+  account in `idm_people_pii_read` the same read-only token reads `/v1/person/<spn>/_attr/uuid`
+  (write attempts still 403), and the sync now asks Kanidm for every member (§8).
 
 ### Risks and decisions still open
 
@@ -1484,10 +1486,10 @@ off, which the reconcile already ignores; a calendar owned by a member and named
   account reads them with a read-only token (S9, residual risk: the account's group
   has write power). The interval is a security setting: a removed member keeps
   access for up to 60 s. Kanidm unreachable: handled (the last file is kept and the log is
-  loud, five failures escalate). A member who never signed in is left out of the file until they do
-  (2026-11-02, decided: before that, one such member made every run fail and stopped all removals);
-  the revoking of app tokens waits while a member of the users group is in that state (§8). Open:
-  an LDAP bind or a Kanidm grant to read persons would remove the need to sign in first. The Radicale
+  loud, five failures escalate). Member UUIDs are read from Kanidm, which needs
+  `idm_people_pii_read` (residual: the token can read every person's entry, PII included); a member
+  Kanidm does not show as a person is left out of the file, and the revoking of app tokens waits
+  while one is in the users group (§8). An LDAP bind would need neither admin group. The Radicale
   volume directory must be writable by the app user (`/groups` is chowned to `node` in the
   Dockerfile).
 - **Gateway is security-critical** — header spoofing, open-proxy paths and request

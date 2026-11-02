@@ -19,8 +19,8 @@ function nameSome(names: string[]): string {
 
 export interface GroupSyncServiceOptions {
   client: KanidmClient
-  /** Resolves per run, so it can use a database that opens later. */
-  resolver: () => MemberResolver
+  /** Maps member SPNs to `sub` UUIDs (members.ts). */
+  resolver: MemberResolver
   ports: GroupSyncPorts
   log: Logger
   file: string
@@ -39,7 +39,7 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
   const { log, ports } = options
   let failures = 0
   let alarmRaised = false
-  // Members with no known UUID yet: what the last run said, and how long the users group has waited.
+  // Members with no UUID: what the last run said, and how long the users group has waited.
   let pendingKey = ''
   let pendingRuns = 0
   let pendingAlarm = false
@@ -61,21 +61,21 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
     const groups = answers.flatMap((answer) => (answer.ok ? [answer.value] : []))
 
     const spns = [...new Set(groups.flatMap((group) => group.members))].sort()
-    const resolution = options.resolver()(spns)
+    const resolution = await options.resolver(spns)
     if (!resolution.ok) return resolution
     const { uuids, pending } = resolution.value
     const pendingSet = new Set(pending)
-    // A member who has not signed in has no UUID yet and cannot be put in the file. They can use
-    // nothing until they do, so they are left out and picked up by the run after their first
-    // sign-in; everybody else's removals and additions go ahead. If NOBODY of the users group can be
-    // mapped, that is a naming mismatch and not onboarding: fail, as an empty file would take the
-    // group access away from everyone.
+    // A member Kanidm does not show as a person (a service account, a nested group) has no UUID and
+    // cannot be put in the file, so they are left out; everybody else's removals and additions go
+    // ahead. If NOBODY of the users group can be mapped, the sync account most likely cannot read
+    // persons (not in idm_people_pii_read): fail, as an empty file would take the group access away
+    // from everyone.
     const usersMembers = groups.find((group) => group.name === USERS_GROUP)?.members ?? []
     const usersPending = usersMembers.filter((member) => pendingSet.has(member)).length
     if (usersMembers.length > 0 && usersPending === usersMembers.length) {
       return fail(
         'unresolved-members',
-        `none of the ${usersMembers.length} member(s) of ${USERS_GROUP} has a known UUID (they have not signed in, or their user names do not match): ${nameSome(usersMembers)}`,
+        `none of the ${usersMembers.length} member(s) of ${USERS_GROUP} can be read as a person in Kanidm (is the sync account in idm_people_pii_read?): ${nameSome(usersMembers)}`,
       )
     }
     notePending(pending, usersPending)
@@ -119,7 +119,7 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
       pendingKey = key
       if (pending.length > 0) {
         log.warn(
-          `[group-sync] ${pending.length} member(s) have no known UUID yet (they have not signed in) and are left out of the group file until they do: ${nameSome(pending)}` +
+          `[group-sync] ${pending.length} member(s) cannot be read as a person in Kanidm and are left out of the group file (a service account or a nested group never is; for a person, check that the sync account is in idm_people_pii_read): ${nameSome(pending)}` +
             (usersPending > 0
               ? `; app tokens of removed users are not revoked while a member of ${USERS_GROUP} is waiting`
               : ''),
@@ -137,7 +137,7 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
     if (pendingRuns >= ESCALATE_AFTER_FAILURES && !pendingAlarm) {
       pendingAlarm = true
       log.error(
-        `[group-sync] ${usersPending} member(s) of ${USERS_GROUP} have not signed in after ${pendingRuns} runs; app tokens of removed users are not revoked until they do`,
+        `[group-sync] ${usersPending} member(s) of ${USERS_GROUP} still cannot be read as a person after ${pendingRuns} runs; app tokens of removed users are not revoked until they can`,
       )
       ports.audit({
         action: 'group_sync.members_pending',
@@ -152,8 +152,8 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
    * 2026-11-01, finding 2). Runs only after a run that read every group and wrote the file, so a
    * half answer from Kanidm never removes anybody. An EMPTY users group removes nobody: that is
    * far more likely a Kanidm or sync misconfiguration than an offboarding of everyone. So does a
-   * run where a member of the users group has no UUID yet (`usersPending`): that user may be new, or
-   * may be a member whose name does not match, and the second would look like a removal. It never
+   * run where a member of the users group has no UUID (`usersPending`): Kanidm did not show them
+   * as a person this time, and leaving them out would look like a removal. It never
    * fails the run.
    */
   function revokeTokensOfRemovedUsers(

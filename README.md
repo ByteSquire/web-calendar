@@ -181,9 +181,10 @@ and client renders match.
   Radicale starts only after the app is healthy. Radicale mounts the volume read-only; the
   app's group sync rewrites the file every `NUXT_GROUP_SYNC_INTERVAL_SEC` seconds (60 by
   default, 300 at most) and keeps the previous version as `htgroup.prev`. The members are
-  Kanidm `sub` UUIDs, which the app knows from the users' sign-ins: a group member who has
-  never signed in is left out of the file (the log says who) until they do; app tokens of removed
-  users are not revoked while a member of `web_calendar_users` is waiting. A group change seen in `/api/me` triggers a run at once. See
+  Kanidm `sub` UUIDs, read from Kanidm on every run (the sync account needs
+  `idm_people_pii_read`); a member Kanidm does not show as a person is left out of the file (the
+  log says who), and app tokens of removed users are not revoked while such a member is in
+  `web_calendar_users`. A group change seen in `/api/me` triggers a run at once. See
   [`docs/kanidm-setup.md`](docs/kanidm-setup.md) section 3 for the token.
 - The sharing writer turns the access rules (`calendar_acl`) into Radicale map shares at start, after
   every access change and every `NUXT_SHARING_RECONCILE_INTERVAL_SEC` seconds. It talks to Radicale
@@ -257,7 +258,7 @@ in `nuxt.config.ts`; an empty value in `.env` falls back to them.
 | `NUXT_RESOURCES_RECONCILE_INTERVAL_SEC` | no            | `300`                    | Seconds between checks of the events of bookings for moved or deleted events, at most `900`; the first check is 90 s after start                                                   |
 | `NUXT_RESOURCES_MANAGER_CANCEL`         | no            | `true`                   | `false` stops a manager of a resource cancelling the bookings of others; the requester can always cancel their own                                                                 |
 | `NUXT_GATEWAY_CORS_ORIGINS`             | no            | empty (no CORS)          | Origins of external browser apps that may call `/caldav/`, comma-separated                                                                                                         |
-| `NUXT_GATEWAY_TRUST_FORWARDED_FOR`      | no            | `false`                  | `true` behind a reverse proxy that overwrites `X-Forwarded-For`: its last hop is the client address for the login throttle. Leave it off without a proxy                           |
+| `NUXT_GATEWAY_TRUST_FORWARDED_FOR`      | no            | `false`                  | `true` behind a reverse proxy that appends to `X-Forwarded-For`: its last hop is the client address for the login throttle. Leave it off without a proxy                           |
 | `NUXT_OIDC_KEY_MAX_AGE_SEC`             | no            | `3600`                   | Age after which the cached Kanidm signing keys are refetched in the background                                                                                                     |
 | `NUXT_GATEWAY_MAX_BODY_BYTES`           | no            | `10485760`               | Largest request body the gateway forwards                                                                                                                                          |
 | `NUXT_GATEWAY_MAX_CONCURRENT_PER_USER`  | no            | `8`                      | Requests one signed-in user may have in flight at once through `/caldav/`; the next ones get `429` until one finishes                                                              |

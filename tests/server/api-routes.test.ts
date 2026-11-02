@@ -400,6 +400,22 @@ describe('GET /api/ical-subscriptions/:id/data', () => {
     expect(await handled.text()).toContain('BEGIN:VCALENDAR')
   })
 
+  it('serves a file that looks like HTML as text/calendar, never as HTML', async () => {
+    await call('alice', 'GET', '/api/views')
+    const id = subscribe('alice')
+    icalProxy.get.mockResolvedValue({ body: '<!doctype html><script>alert(1)</script>' })
+
+    const handled = await handle(
+      new Request(`http://localhost/api/ical-subscriptions/${id}/data`, {
+        headers: { authorization: 'Bearer test-alice' },
+      }),
+    )
+    expect(handled.status).toBe(200)
+    expect(handled.headers.get('content-type')).toBe('text/calendar; charset=utf-8')
+    expect(handled.headers.get('x-content-type-options')).toBe('nosniff')
+    expect(handled.headers.get('etag')).toBeNull()
+  })
+
   it('answers 404, and fetches nothing, for the subscription of another user', async () => {
     await call('alice', 'GET', '/api/views')
     await call('bob', 'GET', '/api/views')

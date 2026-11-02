@@ -42,6 +42,7 @@ server {
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_http_version 1.1; # older nginx buffers a chunked body over HTTP/1.0 despite the next line
     proxy_request_buffering off;
   }
 }
@@ -56,22 +57,27 @@ calendar.example.org {
     max_size 10MiB # matches NUXT_GATEWAY_MAX_BODY_BYTES (10 MiB; Caddy's 10MB is 10,000,000 bytes)
   }
   reverse_proxy 127.0.0.1:3000 {
-    header_up X-Forwarded-For {http.request.header.X-Forwarded-For},{http.request.remote.host}
-    flush_interval -1 # do not buffer; matters for /caldav/
+    flush_interval -1 # do not buffer responses; Caddy streams request bodies by default
   }
 }
 ```
 
-Caddy appends to `X-Forwarded-For` itself when the header is left out of `header_up`; the line
-above is only needed if another proxy ahead of Caddy already sets the header and both should be
-kept. Either way, set `NUXT_GATEWAY_TRUST_FORWARDED_FOR=true` only once this proxy is genuinely the
-sole path to the app.
+Caddy writes `X-Forwarded-For` itself: it drops what the client sent and sets the client's address,
+unless the client is listed in `trusted_proxies`, in which case it appends. Either way the last
+entry is the address Caddy saw, which is what the app reads. Do not add a `header_up
+X-Forwarded-For` line: built from placeholders it yields `,<address>` when the client sent none.
+Set `NUXT_GATEWAY_TRUST_FORWARDED_FOR=true` only once this proxy is genuinely the sole path to the
+app.
 
 ## Tested
 
-2026-11-02, with nginx 1.30.6 and Caddy 2.11.7 as throwaway containers in front of the production
-image, with `NUXT_GATEWAY_TRUST_FORWARDED_FOR=true`: TLS and HTTP/2 work; the fifth failed Basic login
-is throttled (`429`) even when the client changes its `X-Forwarded-For`; a `PROPFIND` and `/api/me`
-with a Kanidm bearer token give `207` and `200`; an 11 MB body gets `413`. Caddy's `max_size 10MB`
-refused a 10.2 MB body, which is why the example says `10MiB`. Not tested: Let's Encrypt, a proxy on
-another host, and long uploads.
+2026-11-02, nginx 1.31.8 (`nginx:alpine`) and Caddy 2.11.7 (`caddy:2-alpine`) as throwaway
+containers with a self-signed certificate (Caddy: `tls internal`), the examples above unchanged
+except the upstream address and certificate paths, in front of the production image from
+`docker-compose.yml`: `nginx -t` and `caddy validate` pass; HSTS is sent; nginx appends to a
+client's `X-Forwarded-For` (`203.0.113.9, <client>`) and Caddy replaces it (`<client>`); a 10 MiB
+`PUT` passes and 10 MiB + 1 byte gets `413` from both; a chunked `PUT` sent over 3 s reaches the
+upstream as it is sent, not after; `PROPFIND /.well-known/caldav` gives `301` to `/caldav/` and
+`PROPFIND /caldav/` without or with wrong credentials gives `401` from the gateway. Not tested: an
+authenticated `PROPFIND` (no Kanidm in the run), the throttle with
+`NUXT_GATEWAY_TRUST_FORWARDED_FOR=true`, Let's Encrypt and a proxy on another host.

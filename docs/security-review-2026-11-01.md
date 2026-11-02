@@ -76,9 +76,8 @@ Confidence is how sure the finding is real, not its severity.
    working; bob was then added back. That run also found a defect in the sync itself, now fixed:
    with Kanidm's documented `prefer-short-username` the stored name is `alice` but the group
    member is `alice@idm.localhost`, so no member matched and the sync never ran. The users
-   lookup (`createUsersTableResolver` in `server/utils/group-sync/members.ts`) now also matches
-   the short name when the SPN's domain is the issuer's host or a parent of it; a member of
-   another domain with the same short name does not match. Tests:
+   lookup then also matched the short name in the issuer's domain; since 2026-11-02 the names are
+   not looked up locally at all (§5), which removes this class of mismatch. Tests:
    `tests/server/group-sync-service.test.ts` (also checked by breaking the code).
 
 3. **Low, confidence 90. No "revoke all" for app tokens.** Guide §4 and §7.7 ask for it; only
@@ -92,8 +91,9 @@ Confidence is how sure the finding is real, not its severity.
    one (TLS, HSTS, appended `X-Forwarded-For`, body size, buffering off for `/caldav/`); `deploy/`
    has only Radicale's files, and `design.md` leaves it to prose. **Fixed**: added
    `deploy/reverse-proxy/README.md` with an nginx and a Caddy example, linked from the guide §7.8
-   and the README. **The two examples were written to the guide's list and have not been run
-   against nginx or Caddy.**
+   and the README. Run on 2026-11-02 against nginx 1.31.8 and Caddy 2.11.7 (results in that
+   file's "Tested"); fixed then: Caddy's `header_up X-Forwarded-For` line sent `,<address>` and is
+   gone, and nginx's `/caldav/` sets `proxy_http_version 1.1` so older nginx streams chunked bodies.
 
 5. **Low, confidence 70. The three secret keys are not required to differ.**
    `NUXT_TOKEN_HASH_KEY`/`NUXT_TOKEN_HASH_KEYS`, `NUXT_EXTERNAL_SEAL_KEY` and
@@ -116,15 +116,18 @@ Confidence is how sure the finding is real, not its severity.
    `PRAGMA integrity_check` on the copy. It uses `node:sqlite` (Node 24), so no new dependency.
    README "Production" has the throwaway-container command and the restore steps. Tests:
    `tests/scripts/backup-db.test.ts`, plus one run through `npm run backup` against a live
-   writer. **The `docker run …` command in the README was not run**; Radicale's volume
+   writer. The README's `docker run …` command was run on 2026-11-02 against a live Compose stack's
+   volume, and the copy restored by the README's steps into a new volume: `PRAGMA integrity_check`
+   is `ok` and the image starts on it. Radicale's volume
    (with `sharing.csv`) is still backed up by the operator.
 
 8. **Low, confidence 50. Radicale's isolation rests on the default Compose network.**
    `docker-compose.yml` has no explicit `networks:`, so another container the operator later joins
    to the same Compose project could set `X-Remote-User` to anyone. **Fixed**: an explicit `radicale` network with `internal: true`,
    shared only by `web-calendar` and `radicale`; Radicale is no longer on `default`. Checked with
-   `docker compose config` only. **The stack was not brought up with it**, so that the app still
-   reaches Radicale over the new network is unverified.
+   `docker compose config`, then brought up on 2026-11-02: the app reaches `radicale:5232`,
+   Radicale has no published port, no default route and no DNS outside, and both containers run
+   with a read-only root, no capabilities (`CapEff` 0) and `NoNewPrivs` 1.
 
 9. **Low, confidence 50. The gateway has no per-user rate limit, concurrency cap or upstream
    timeout**, so a valid user can run unbounded heavy `REPORT`/`PROPFIND` requests, and `client_id`
@@ -165,18 +168,39 @@ plugin, migrations 001–004 and 008, most `.vue` files beyond a grep for `v-htm
 by grep almost throughout — nobody in this review ran the suites file-by-file to confirm a title's
 test does what it says beyond the full-suite pass already recorded above).
 
+Follow-up (2026-11-02): `server/utils/sharing/reconcile.ts`, `server/plugins/sharing.ts`,
+`server/utils/group-sync/*`, migrations 001–004 and 008, the `.vue` files under `app/` and the
+German-translation commit (411e485, `tparts`) are now read. No `v-html`, `innerHTML`,
+`target="_blank"` or bound `href`/`src` exists; `tparts` returns text parts rendered with `{{ }}`,
+so user text is escaped; the OIDC user store is in memory, only the login state is in
+`sessionStorage`. The one finding is open in §5. `oidc-client-ts`, `tsdav` and the test bodies
+outside the files below are still unread.
+
 ## 4. Controls with no test (candidates for a test)
 
-- The `.ics` data endpoint (`server/api/ical-subscriptions/[id]/data.get.ts`) has no route-level
-  test for `nosniff` or content-type coercion.
-- Compose hardening (`read_only`, `cap_drop`, `no-new-privileges`, the `internal: true` network)
-  and the content of the Radicale rights file.
+Both now have one (2026-11-02):
+
+- The `.ics` data endpoint: `tests/server/api-routes.test.ts` (`GET /api/ical-subscriptions/:id/data`)
+  checks `nosniff` and that a body that looks like HTML is still served as `text/calendar`.
+- Compose hardening (`read_only`, `cap_drop`, `no-new-privileges`, the `internal: true` network,
+  no published Radicale port) and the content of the Radicale rights file:
+  `tests/scripts/compose-hardening.test.ts`.
 
 ## 5. Open
 
 No finding is open. What the gate did not prove:
 
-- The reverse-proxy examples (Finding 4), the README's `docker run` backup command (Finding 7)
-  and the Compose stack with the `internal: true` network (Finding 8) were not run.
+- Findings 4, 7 and 8 were run on 2026-11-02 (see each); not run: an authenticated request
+  through the proxies, and Let's Encrypt.
 - A per-user request rate limit (Finding 9) was not added; the concurrency cap stands in for it.
-- The items in §3 and §4 above.
+- What §3 still lists as unread.
+- Group membership by stale user name (Low, medium confidence), found 2026-11-02 and **fixed** the
+  same day: the sync mapped a member SPN to a `sub` through `users.username` as last seen at
+  sign-in, so a name renamed away and given to someone who had not signed in yet granted the old
+  holder that person's groups. It now reads each member's `uuid` from Kanidm on every run
+  (`createKanidmResolver` in `server/utils/group-sync/members.ts`, `readPersonUuid` in
+  `kanidm.ts`); the sync account needs `idm_people_pii_read` (docs/kanidm-setup.md §3). Tests:
+  `tests/server/group-sync-service.test.ts` (the reuse test fails when a cache is added),
+  `tests/server/group-sync-kanidm.test.ts`. **Proven live** against the test Kanidm: with an empty
+  `users` table the file got alice's and bob's UUIDs; without the grant every run failed with the
+  message naming it and no file was written; a write with the token still answers 403.

@@ -121,3 +121,58 @@ describe('createKanidmClient.readGroup', () => {
     }
   })
 })
+
+describe('createKanidmClient.readPersonUuid', () => {
+  const ALICE = '189c6a24-f9cb-437b-8f58-b5cc8d7f909e'
+
+  it('reads the uuid attribute of the person by SPN, lower-case, with the bearer token', async () => {
+    const { api, calls } = client(() => new Response(JSON.stringify([ALICE.toUpperCase()])))
+    expect(await api.readPersonUuid('alice@idm.example.org')).toEqual({ ok: true, value: ALICE })
+    expect(calls[0]?.url).toBe(
+      'https://idm.example.org/v1/person/alice%40idm.example.org/_attr/uuid',
+    )
+    expect(new Headers(calls[0]?.init.headers).get('authorization')).toBe(`Bearer ${TOKEN}`)
+    expect(calls[0]?.init.redirect).toBe('error')
+  })
+
+  it('answers null when Kanidm does: not a person, or not readable by the token', async () => {
+    const { api } = client(() => new Response('null'))
+    expect(await api.readPersonUuid('sync@idm.example.org')).toEqual({ ok: true, value: null })
+  })
+
+  it('encodes the SPN, so it cannot leave the person path', async () => {
+    const { api, calls } = client(() => new Response('null'))
+    await api.readPersonUuid('../group/x?y#z')
+    expect(calls[0]?.url).toBe(
+      'https://idm.example.org/v1/person/..%2Fgroup%2Fx%3Fy%23z/_attr/uuid',
+    )
+  })
+
+  it.each([
+    ['not a list', JSON.stringify({ uuid: ALICE })],
+    ['two values', JSON.stringify([ALICE, ALICE])],
+    ['no value', '[]'],
+    ['not a UUID', JSON.stringify(['alice'])],
+    ['not JSON', '<html>'],
+  ])('fails on a malformed answer: %s', async (_, body) => {
+    const { api } = client(() => new Response(body))
+    const result = await api.readPersonUuid('alice@idm.example.org')
+    expect(!result.ok && result.failure.kind).toBe('malformed')
+  })
+
+  it('reports a refused token as unauthorized and keeps the token out of messages', async () => {
+    const { api } = client(() => new Response('', { status: 403 }))
+    const result = await api.readPersonUuid('alice@idm.example.org')
+    expect(!result.ok && result.failure.kind).toBe('unauthorized')
+    expect(JSON.stringify(result)).not.toContain(TOKEN)
+  })
+
+  it('reports a network failure without the token', async () => {
+    const { api } = client(() => {
+      throw new TypeError(`fetch failed ${TOKEN}`, { cause: { code: 'ECONNREFUSED' } })
+    })
+    const result = await api.readPersonUuid('alice@idm.example.org')
+    expect(!result.ok && result.failure.kind).toBe('network')
+    expect(JSON.stringify(result)).not.toContain(TOKEN)
+  })
+})

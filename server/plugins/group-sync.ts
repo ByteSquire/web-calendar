@@ -3,7 +3,7 @@ import { createAppPorts } from '../utils/group-sync/app-ports'
 import { createGroupsTracker, setActiveGroupSync } from '../utils/group-sync/active'
 import { clampIntervalSec, groupFilePath } from '../utils/group-sync/config'
 import { createKanidmClient, kanidmOrigin } from '../utils/group-sync/kanidm'
-import { createUsersTableResolver } from '../utils/group-sync/members'
+import { createKanidmResolver } from '../utils/group-sync/members'
 import { createGroupSyncScheduler } from '../utils/group-sync/scheduler'
 import { createGroupSyncService } from '../utils/group-sync/service'
 
@@ -29,9 +29,10 @@ export default defineNitroPlugin((nitroApp) => {
     )
   }
 
+  const client = createKanidmClient({ origin, token })
   const service = createGroupSyncService({
-    client: createKanidmClient({ origin, token }),
-    resolver: () => createUsersTableResolver(getDb(), { issuer: config.oidc.issuer }),
+    client,
+    resolver: createKanidmResolver(client),
     ports: createAppPorts(getDb, console),
     log: console,
     file: groupFilePath(config.groupSync.file, process.env.NODE_ENV),
@@ -49,7 +50,8 @@ export default defineNitroPlugin((nitroApp) => {
     setActiveGroupSync(undefined)
   })
 
-  // The database opens asynchronously (plugins/db.ts); the first run needs its users table.
+  // The database opens asynchronously (plugins/db.ts); the first run needs it (access rules, app
+  // tokens).
   void (async () => {
     for (let i = 0; i < 120; i += 1) {
       try {

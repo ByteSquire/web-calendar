@@ -2,7 +2,6 @@
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { Database } from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { upsertUser } from '../../server/db/users'
 import { resolveMe } from '../../server/utils/api/me'
@@ -15,10 +14,12 @@ import {
 import { clampIntervalSec, groupFilePath } from '../../server/utils/group-sync/config'
 import { createKanidmClient } from '../../server/utils/group-sync/kanidm'
 import {
-  createUsersTableResolver,
+  createKanidmResolver,
+  PERSON_LOOKUP_CONCURRENCY,
   type MemberResolver,
 } from '../../server/utils/group-sync/members'
 import { createDefaultPorts, type GroupSyncAuditEvent } from '../../server/utils/group-sync/ports'
+import type { Result } from '../../server/utils/group-sync/types'
 import { createGroupSyncScheduler } from '../../server/utils/group-sync/scheduler'
 import {
   createGroupSyncService,
@@ -46,9 +47,9 @@ describe('group sync run', () => {
   /** What the stub port says it revoked; nothing, unless a test is about that. */
   let revoked: { users: number; revoked: number }
 
-  // Who has signed in: `known` is the table of the app. Everybody else is pending.
+  // Who Kanidm shows as a person: `known`. Everybody else is pending.
   let known: Record<string, string>
-  const resolver: MemberResolver = (spns) => ({
+  const resolver: MemberResolver = async (spns) => ({
     ok: true,
     value: {
       uuids: new Map(spns.flatMap((spn) => (known[spn] ? [[spn, known[spn]] as const] : []))),
@@ -69,7 +70,7 @@ describe('group sync run', () => {
           return answer()
         },
       }),
-      resolver: () => resolver,
+      resolver,
       ports: {
         listExtraGroups: () => extra,
         audit: (event) => void audits.push(event),
@@ -192,7 +193,7 @@ describe('group sync run', () => {
             fetch: async (input) =>
               answers[decodeURIComponent(String(input).split('/').pop() ?? '')]!(),
           }),
-          resolver: () => resolver,
+          resolver,
           ports,
           log: { info() {}, warn() {}, error() {} },
           file,
@@ -270,7 +271,7 @@ describe('group sync run', () => {
     expect(await readFile(file, 'utf8')).toBe('')
   })
 
-  describe('members who have not signed in yet', () => {
+  describe('members Kanidm does not show as a person', () => {
     const CAROL = 'carol@idm.example.org'
 
     it('writes the file without them, tells so once, and counts them in the audit', async () => {
@@ -287,19 +288,19 @@ describe('group sync run', () => {
           details: { groups: ['calendar_admins', 'web_calendar_users'], members: 2, pending: 1 },
         },
       ])
-      const warning = logs.filter((line) => line.includes('no known UUID yet'))
+      const warning = logs.filter((line) => line.includes('cannot be read as a person'))
       expect(warning).toHaveLength(1)
       expect(warning[0]).toContain(CAROL)
       // the same people on the next run: no second line
       await sync.run()
-      expect(logs.filter((line) => line.includes('no known UUID yet'))).toHaveLength(1)
+      expect(logs.filter((line) => line.includes('cannot be read as a person'))).toHaveLength(1)
     })
 
     it('still applies a removal while somebody else is waiting', async () => {
       const sync = service()
       await sync.run()
       expect(await readFile(file, 'utf8')).toContain(BOB)
-      // bob leaves the group and carol, who has not signed in, joins it
+      // bob leaves the group and carol, whom Kanidm does not show as a person, joins it
       answers.web_calendar_users = () =>
         new Response(groupBody('web_calendar_users', [CAROL, 'alice@idm.example.org']))
       expect((await sync.run()).ok).toBe(true)
@@ -308,7 +309,7 @@ describe('group sync run', () => {
       )
     })
 
-    it('picks them up on the run after their first sign-in', async () => {
+    it('picks them up on the run after Kanidm shows them', async () => {
       answers.web_calendar_users = () =>
         new Response(groupBody('web_calendar_users', [CAROL, 'alice@idm.example.org']))
       const sync = service()
@@ -413,7 +414,7 @@ describe('group sync run', () => {
     extra = []
     const sync = createGroupSyncService({
       client: { readGroup: () => Promise.reject(new Error('boom')) },
-      resolver: () => resolver,
+      resolver,
       ports: {
         listExtraGroups: () => [],
         audit: () => {
@@ -429,104 +430,100 @@ describe('group sync run', () => {
   })
 })
 
-describe('createUsersTableResolver', () => {
-  let db: Database
-  beforeEach(() => {
-    db = openTestDb()
-  })
-  afterEach(() => db.close())
+describe('createKanidmResolver', () => {
+  const answers: Record<string, Result<string | null>> = {
+    'alice@idm.example.org': { ok: true, value: ALICE },
+    'bob@idm.example.org': { ok: true, value: BOB },
+    'sync@idm.example.org': { ok: true, value: null },
+  }
+  function fake() {
+    let inFlight = 0
+    let most = 0
+    const asked: string[] = []
+    const client = {
+      async readPersonUuid(spn: string): Promise<Result<string | null>> {
+        asked.push(spn)
+        inFlight += 1
+        most = Math.max(most, inFlight)
+        await new Promise((resolve) => setTimeout(resolve, 1))
+        inFlight -= 1
+        return answers[spn] ?? { ok: true, value: null }
+      },
+    }
+    return { client, asked, most: () => most }
+  }
 
-  it('maps an SPN to the sub of the user and reports one nobody knows as pending', () => {
-    upsertUser(db, { sub: ALICE, username: 'alice@idm.example.org' })
-    const resolve = createUsersTableResolver(db)
-    expect(resolve(['Alice@idm.example.org'])).toEqual({
-      ok: true,
-      value: { uuids: new Map([['Alice@idm.example.org', ALICE]]), pending: [] },
-    })
-    expect(resolve(['alice@idm.example.org', 'bob@idm.example.org'])).toEqual({
+  it('asks Kanidm for every member and reports one that is not a person as pending', async () => {
+    const { client, asked } = fake()
+    const result = await createKanidmResolver(client)([
+      'alice@idm.example.org',
+      'sync@idm.example.org',
+      'bob@idm.example.org',
+    ])
+    expect(result).toEqual({
       ok: true,
       value: {
-        uuids: new Map([['alice@idm.example.org', ALICE]]),
-        pending: ['bob@idm.example.org'],
+        uuids: new Map([
+          ['alice@idm.example.org', ALICE],
+          ['bob@idm.example.org', BOB],
+        ]),
+        pending: ['sync@idm.example.org'],
       },
     })
-  })
-})
-
-describe('createUsersTableResolver: short names (prefer-short-username)', () => {
-  const ISSUER = 'https://idm.example.org/oauth2/openid/web-calendar'
-  let db: Database
-  beforeEach(() => {
-    db = openTestDb()
-  })
-  afterEach(() => db.close())
-  const resolveOne = (spn: string, issuer: string = ISSUER) =>
-    createUsersTableResolver(db, { issuer })([spn])
-  /** True when the member was mapped to a user (not left pending). */
-  const mapped = (result: ReturnType<typeof resolveOne>) =>
-    result.ok && result.value.pending.length === 0
-
-  it('maps a member of the Kanidm domain to the user with the short name', () => {
-    upsertUser(db, { sub: ALICE, username: 'alice' })
-    expect(resolveOne('alice@idm.example.org')).toEqual({
-      ok: true,
-      value: { uuids: new Map([['alice@idm.example.org', ALICE]]), pending: [] },
-    })
-    // Case does not matter, as with the whole SPN.
-    expect(mapped(resolveOne('Alice@IDM.example.org'))).toBe(true)
+    expect(asked).toEqual(['alice@idm.example.org', 'sync@idm.example.org', 'bob@idm.example.org'])
   })
 
-  it('accepts the domain of Kanidm when the issuer is a host within it', () => {
-    upsertUser(db, { sub: ALICE, username: 'alice' })
-    const issuer = 'https://login.idm.example.org/oauth2/openid/web-calendar'
-    expect(mapped(resolveOne('alice@idm.example.org', issuer))).toBe(true)
-  })
-
-  it('does not match a member of another domain with the same short name', () => {
-    upsertUser(db, { sub: ALICE, username: 'alice' })
-    for (const spn of [
-      'alice@evil.example',
-      'alice@example.org', // a parent of the issuer's host is a domain, but not the one of Kanidm
-      'alice@notidm.example.org',
-      'alice@sub.idm.example.org', // a child domain does not cover the issuer's host
-    ]) {
-      const result = resolveOne(spn)
-      expect(mapped(result), spn).toBe(spn === 'alice@example.org')
+  it('asks again on every run: nothing is cached, so a reused name maps to its new holder', async () => {
+    const { client, asked } = fake()
+    const resolve = createKanidmResolver(client)
+    await resolve(['alice@idm.example.org'])
+    answers['alice@idm.example.org'] = { ok: true, value: BOB }
+    try {
+      const second = await resolve(['alice@idm.example.org'])
+      expect(second.ok && second.value.uuids.get('alice@idm.example.org')).toBe(BOB)
+      expect(asked).toEqual(['alice@idm.example.org', 'alice@idm.example.org'])
+    } finally {
+      answers['alice@idm.example.org'] = { ok: true, value: ALICE }
     }
   })
 
-  it('does not match a short name without an issuer, or with one that is no URL', () => {
-    upsertUser(db, { sub: ALICE, username: 'alice' })
-    expect(mapped(resolveOne('alice@idm.example.org', 'not a url'))).toBe(false)
-    expect(mapped(resolveOne('alice@idm.example.org', ''))).toBe(false)
-    expect(mapped(createUsersTableResolver(db)(['alice@idm.example.org']))).toBe(false)
-    expect(mapped(createUsersTableResolver(db, {})(['alice@idm.example.org']))).toBe(false)
-  })
-
-  it('prefers the user who has the whole SPN as a name', () => {
-    upsertUser(db, { sub: ALICE, username: 'alice' })
-    upsertUser(db, { sub: BOB, username: 'alice@idm.example.org' })
-    expect(resolveOne('alice@idm.example.org')).toEqual({
-      ok: true,
-      value: { uuids: new Map([['alice@idm.example.org', BOB]]), pending: [] },
-    })
-  })
-
-  it('refuses a member without a name or a domain, and an SPN with more than one @', () => {
-    upsertUser(db, { sub: ALICE, username: 'alice' })
-    for (const spn of ['@idm.example.org', 'alice@', 'a@b@idm.example.org']) {
-      expect(mapped(resolveOne(spn)), spn).toBe(false)
+  it('fails the whole resolution when one lookup fails', async () => {
+    const failing = {
+      readPersonUuid: async (spn: string): Promise<Result<string | null>> =>
+        spn.startsWith('bob')
+          ? { ok: false, failure: { kind: 'timeout', message: 'Kanidm did not answer' } }
+          : { ok: true, value: ALICE },
     }
-  })
-
-  it('still names the members nobody knows, and only them', () => {
-    upsertUser(db, { sub: ALICE, username: 'alice' })
-    const result = createUsersTableResolver(db, { issuer: ISSUER })([
+    const result = await createKanidmResolver(failing)([
       'alice@idm.example.org',
-      'carol@idm.example.org',
+      'bob@idm.example.org',
     ])
-    expect(result.ok && result.value.pending).toEqual(['carol@idm.example.org'])
-    expect(result.ok && [...result.value.uuids.keys()]).toEqual(['alice@idm.example.org'])
+    expect(!result.ok && result.failure.kind).toBe('timeout')
+  })
+
+  it('keeps at most the given number of lookups in flight', async () => {
+    const { client, asked, most } = fake()
+    const spns = Array.from({ length: 20 }, (_, i) => `user${i}@idm.example.org`)
+    const result = await createKanidmResolver(client, 3)(spns)
+    expect(result.ok && result.value.pending).toEqual(spns)
+    expect(asked).toHaveLength(20)
+    expect(most()).toBe(3)
+    expect(PERSON_LOOKUP_CONCURRENCY).toBe(8)
+  })
+
+  it('refuses a concurrency that is not a positive integer', () => {
+    const { client } = fake()
+    expect(() => createKanidmResolver(client, 0)).toThrow(RangeError)
+    expect(() => createKanidmResolver(client, 1.5)).toThrow(RangeError)
+  })
+
+  it('resolves no members to nothing, without asking', async () => {
+    const { client, asked } = fake()
+    expect(await createKanidmResolver(client)([])).toEqual({
+      ok: true,
+      value: { uuids: new Map(), pending: [] },
+    })
+    expect(asked).toEqual([])
   })
 })
 

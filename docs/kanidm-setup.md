@@ -58,11 +58,14 @@ service account with a **read-only API token**:
 ```sh
 kanidm service-account create calendar-sync 'Calendar group sync' idm_admins
 kanidm group add-members idm_group_admins calendar-sync
+kanidm group add-members idm_people_pii_read calendar-sync
 kanidm service-account api-token generate calendar-sync 'group sync'   # read-only by default
 ```
 
 The server then reads a group with `GET /v1/group/<name>` and a bearer token (the `member`
-attribute lists SPNs such as `alice@idm.example.org`).
+attribute lists SPNs such as `alice@idm.example.org`), and each member's `uuid` with
+`GET /v1/person/<spn>/_attr/uuid`. Reading a person needs `idm_people_pii_read`: without it Kanidm
+answers `null` (tested on Kanidm 1.11.2).
 
 Why `idm_group_admins`: in the test stack a fresh service account **could not read groups** (the call
 returned `null`), also as a member of `idm_service_desk`, and Kanidm 1.11.2 has no built-in read-only
@@ -110,20 +113,23 @@ The sync logs `[group-sync] ALARM` at error level every run and writes one audit
 token at once. Five failed runs in a row (any reason) log an error and write `group_sync.failing`;
 the first good run afterwards writes `group_sync.recovered`.
 
-**Members and UUIDs.** Kanidm lists group members as SPNs and the token cannot read persons, so the app
-maps each SPN to the `sub` UUID with its own `users` table (the `preferred_username` of the sign-in).
-With `prefer-short-username` (set above) that name is `alice`, not `alice@idm.example.org`, so a
-member also matches the user with the short name, but only when the member's domain is the Kanidm
-domain: the host of `NUXT_OIDC_ISSUER` has to be that domain or a subdomain of it. An
-`alice@other.example` never matches `alice`. A member who has never signed in has no UUID yet:
-the run leaves them out of the group file, with a warning naming them, and adds them at the first run
-after their first sign-in. Everybody else's changes go ahead meanwhile. While a member of
-`web_calendar_users` is waiting, app tokens of removed users are not revoked (after five runs the
-log says so as an error and `group_sync.members_pending` is audited). If nobody of that group can be
-mapped (their user names do not match), the run fails and the file stays as it was.
+**Members and UUIDs.** Kanidm lists group members as SPNs, but names can be renamed and given to
+someone else, so the sync asks Kanidm for each member's `uuid` (the `sub` of their sign-in) on every
+run, at most 8 requests at a time, and caches nothing. A member who has never signed in is in the
+file at once. A member Kanidm does not show as a person (a service account, a nested group) is left
+out, with a warning naming them; everybody else's changes go ahead. While such a member is in
+`web_calendar_users`, app tokens of removed users are not revoked (after five runs the log says so
+as an error and `group_sync.members_pending` is audited). If nobody of that group can be read as a
+person, the run fails and the file stays as it was: the log asks whether the account is in
+`idm_people_pii_read`.
+
+**Residual risk of `idm_people_pii_read`.** Whoever holds the token can read every person's entry,
+including mail addresses and legal names, although the sync only asks for `uuid`. The group grants
+reading only. Kanidm 1.11.2 has no narrower built-in group that shows a person's `uuid`.
 
 **Target state: the LDAP read-only bind.** Kanidm's LDAP interface is read-only by construction and a
-service-account bind there needs no `idm_group_admins`; it also returns `entryuuid` for members. The
+service-account bind there needs neither `idm_group_admins` nor `idm_people_pii_read`; it also returns
+`entryuuid` for members. The
 sync is built on the API token because adding an LDAP library is out of scope for now; replace
 `server/utils/group-sync/kanidm.ts` and `members.ts` when you switch.
 

@@ -5,6 +5,12 @@
 <template>
   <div class="app-shell" :class="{ 'sidebar-open': sidebarOpen }">
     <template v-if="ready">
+      <!-- Skip link (WCAG 2.4.1): hidden until it gets keyboard focus. -->
+      <a
+        href="#main-content"
+        class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:rounded-md focus:bg-default focus:px-3 focus:py-2 focus:ring-2 focus:ring-primary"
+        >{{ t('Skip to main content') }}</a
+      >
       <TopBar />
 
       <!-- Desktop: fixed column. Below 768 px the same content opens in a slideover. -->
@@ -31,7 +37,12 @@
       </USlideover>
 
       <!-- Main area fills the remaining height; page content scrolls internally. -->
-      <main class="main-area" :aria-busy="loading">
+      <main
+        id="main-content"
+        tabindex="-1"
+        class="main-area focus:outline-none"
+        :aria-busy="loading"
+      >
         <slot />
       </main>
 

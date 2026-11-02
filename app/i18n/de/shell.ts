@@ -10,6 +10,12 @@ export const shell: Readonly<Record<string, string>> = {
   List: 'Liste',
   Today: 'Heute',
   'Date navigation': 'Datumsnavigation',
+  'Skip to main content': 'Zum Hauptinhalt springen',
+  'Page not found': 'Seite nicht gefunden',
+  'This address does not exist in Web Calendar.': 'Diese Adresse gibt es in Web Calendar nicht.',
+  'Something went wrong': 'Etwas ist schiefgegangen',
+  'Something went wrong. Try again; if it keeps happening, ask an administrator.':
+    'Etwas ist schiefgegangen. Versuche es erneut; wenn es bleibt, frag einen Administrator.',
   'View type': 'Ansichtstyp',
   Period: 'Zeitraum',
   Calendars: 'Kalender',

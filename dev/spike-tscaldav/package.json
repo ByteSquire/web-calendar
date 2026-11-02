@@ -1,9 +1,0 @@
-{
-  "name": "spike-tscaldav",
-  "private": true,
-  "type": "module",
-  "dependencies": {
-    "ts-caldav": "0.4.5",
-    "tsdav": "^2.5.0"
-  }
-}

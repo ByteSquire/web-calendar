@@ -61,14 +61,31 @@ test.describe('keyboard', () => {
     const runs = stops
       .map((stop) => stop.region)
       .filter((region, i, all) => i === 0 || region !== all[i - 1])
-    expect(runs.slice(0, 5)).toEqual(['header', 'sidebar', 'main', 'body', 'header'])
+    // The skip link (outside the landmarks) comes first, then the top bar.
+    expect(runs.slice(0, 6)).toEqual(['other', 'header', 'sidebar', 'main', 'body', 'other'])
     // The top bar leads with the controls a keyboard user needs first.
-    expect(stops.slice(0, 4).map((stop) => stop.name)).toEqual([
+    expect(stops.slice(0, 5).map((stop) => stop.name)).toEqual([
+      'Skip to main content',
       'Close sidebar',
       'Previous week',
       'Today',
       'Next week',
     ])
+  })
+
+  test('the skip link moves the focus past the top bar and the sidebar (WCAG 2.4.1)', async ({
+    page,
+  }) => {
+    desktopOnly()
+    await openApp(page)
+    await page.keyboard.press('Tab')
+    const skip = page.getByRole('link', { name: 'Skip to main content' })
+    await expect(skip).toBeFocused()
+    await expect(skip).toBeInViewport()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('#main-content')).toBeFocused()
+    await page.keyboard.press('Tab')
+    expect(await page.evaluate(() => !!document.activeElement?.closest('#main-content'))).toBe(true)
   })
 
   test('no stop is visited twice before the focus leaves the page (no keyboard trap)', async ({

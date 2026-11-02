@@ -1,82 +1,50 @@
 // Maps the member SPNs Kanidm lists (`alice@idm.example.org`) to the `sub` UUIDs the group file
-// needs. The sync token cannot read persons (a read of one answers `null`), so the only source is
-// the app's own `users` table: Kanidm's `preferred_username` claim is the SPN, and `oidc_sub` is
-// the UUID. Nothing is cached across runs: an SPN can be released and given to another person, and
-// a stale entry would then grant that person the old one's access.
+// needs, by asking Kanidm for each person's `uuid` (the OIDC `sub`). The sync account needs
+// `idm_people_pii_read` for that (docs/kanidm-setup.md §3); without it every answer is `null`.
 //
-// With `prefer-short-username` on the OIDC client (the documented setup) `preferred_username` is the
-// short name, `alice`, while Kanidm still lists the member as `alice@idm.example.org`. A short name
-// is matched too, but only when the SPN's domain is the Kanidm domain: the host of the issuer is
-// that domain or a subdomain of it. Names are unique within one Kanidm domain, so `alice` there is
-// `alice@<that domain>`; an `alice@elsewhere.example` is somebody else and never matches.
+// Kanidm is asked on every run and nothing is cached: names can be renamed and given to someone
+// else, and only the `uuid` is stable (Kanidm: "You MUST use the uuid attribute ... as an external
+// primary key"). An earlier version mapped names through the app's `users` table, which is only
+// updated at sign-in, so a reused name could map to its previous holder (security review
+// 2026-11-01 §5).
 //
-// A member the table does not know yet (they have not signed in) is not an error: it is reported as
-// `pending`, and the caller leaves them out of the file until their first sign-in. Only the caller
-// can tell whether that is onboarding or a naming mismatch (service.ts).
-import type { Database } from 'better-sqlite3'
+// A member Kanidm answers `null` for is not an error: a service account or a nested group is not a
+// person. It is reported as `pending` and left out of the file; the caller decides what that means
+// (service.ts). Any other failure fails the whole resolution, so the run keeps the old file.
+import type { KanidmClient } from './kanidm'
 import type { Result } from './types'
 
 export interface MemberResolution {
-  /** SPN -> `sub` for every member that is a known user. */
+  /** SPN -> `sub` for every member that is a person the token can read. */
   uuids: Map<string, string>
-  /** The members with no known UUID yet, in the order they were asked for. */
+  /** The members with no UUID, in the order they were asked for. */
   pending: string[]
 }
 
-export type MemberResolver = (spns: string[]) => Result<MemberResolution>
+export type MemberResolver = (spns: string[]) => Promise<Result<MemberResolution>>
 
-export interface UsersTableResolverOptions {
-  /**
-   * `NUXT_OIDC_ISSUER`. Its host names the Kanidm domain for the short-name match. Absent or not a
-   * URL: only a user whose name is the whole SPN matches.
-   */
-  issuer?: string
-}
+/** Requests to Kanidm in flight at once during one resolution. */
+export const PERSON_LOOKUP_CONCURRENCY = 8
 
-/** The lower-case host of the issuer, or null when it is not a URL. */
-function hostOf(issuer: string | undefined): string | null {
-  if (!issuer) return null
-  try {
-    return new URL(issuer).hostname.toLowerCase() || null
-  } catch {
-    return null
-  }
-}
-
-/** True when `domain` is `host` or a parent domain of it (Kanidm's origin lies within its domain). */
-function domainCovers(domain: string, host: string): boolean {
-  return domain === host || host.endsWith(`.${domain}`)
-}
-
-/**
- * The short name of a member whose SPN is in the Kanidm domain, else null. Exactly one `@` is
- * allowed, with something on both sides.
- */
-function shortNameOf(spn: string, issuerHost: string | null): string | null {
-  if (issuerHost === null) return null
-  const at = spn.indexOf('@')
-  if (at <= 0 || at !== spn.lastIndexOf('@') || at === spn.length - 1) return null
-  const domain = spn.slice(at + 1).toLowerCase()
-  return domainCovers(domain, issuerHost) ? spn.slice(0, at) : null
-}
-
-export function createUsersTableResolver(
-  db: Database,
-  options: UsersTableResolverOptions = {},
+export function createKanidmResolver(
+  client: Pick<KanidmClient, 'readPersonUuid'>,
+  concurrency = PERSON_LOOKUP_CONCURRENCY,
 ): MemberResolver {
-  const issuerHost = hostOf(options.issuer)
-  const find = db.prepare<[string], { oidc_sub: string }>(
-    'SELECT oidc_sub FROM users WHERE username = ? COLLATE NOCASE',
-  )
-  return (spns) => {
+  if (!Number.isInteger(concurrency) || concurrency < 1) {
+    throw new RangeError(`concurrency must be a positive integer, got ${concurrency}`)
+  }
+  return async (spns) => {
     const uuids = new Map<string, string>()
     const pending: string[] = []
-    for (const spn of spns) {
-      // The name is unique in the table (a case-insensitive unique index), so a match is one user.
-      const short = shortNameOf(spn, issuerHost)
-      const row = find.get(spn) ?? (short === null ? undefined : find.get(short))
-      if (row) uuids.set(spn, row.oidc_sub)
-      else pending.push(spn)
+    for (let start = 0; start < spns.length; start += concurrency) {
+      const batch = spns.slice(start, start + concurrency)
+      const answers = await Promise.all(batch.map((spn) => client.readPersonUuid(spn)))
+      for (const [i, answer] of answers.entries()) {
+        if (!answer.ok) return answer
+        const spn = batch[i]!
+        if (answer.value === null) pending.push(spn)
+        else uuids.set(spn, answer.value)
+      }
     }
     return { ok: true, value: { uuids, pending } }
   }

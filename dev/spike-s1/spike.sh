@@ -163,6 +163,8 @@ cmd_bootstrap() {
   # for it); its API token is read-only by default, which is what keeps it from writing.
   "${k[@]}" service-account create calendar-sync 'Calendar group sync' idm_admins
   "${k[@]}" group add-members idm_group_admins calendar-sync
+  # It reads each member's uuid (the OIDC sub) from their person entry, which needs this group.
+  "${k[@]}" group add-members idm_people_pii_read calendar-sync
   secret_set GROUP_SYNC_TOKEN "$("${k[@]}" service-account api-token generate calendar-sync 'group sync (read-only)' |
     grep -o 'eyJ[A-Za-z0-9._-]*' | head -1)"
 

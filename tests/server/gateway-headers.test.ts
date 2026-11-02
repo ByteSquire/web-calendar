@@ -160,6 +160,7 @@ describe('filterResponseHeaders', () => {
       connection: 'close, x-internal',
       'x-internal': 'secret',
       'keep-alive': 'timeout=5',
+      'proxy-connection': 'keep-alive',
       'transfer-encoding': 'chunked',
       upgrade: 'h2c',
       'proxy-authenticate': 'Basic',

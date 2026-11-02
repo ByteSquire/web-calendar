@@ -55,7 +55,7 @@ value from the file by hand; read it with `sh -c '. .local/secrets.env && printf
 | Kanidm users           | `alice`, `bob`  | Both in `web_calendar_users`; `alice` also in `calendar_admins`                                                                                         |
 | Kanidm OAuth2 client   | `web-calendar`  | Public, PKCE. The SPA's login. Scopes `openid profile email groups caldav`; localhost redirects allowed, callback `http://localhost:3000/auth/callback` |
 | Kanidm admin           | `idm_admin`     | Break-glass account, password recovered at bootstrap                                                                                                    |
-| Kanidm service account | `calendar-sync` | In `idm_group_admins`; read-only API token in `secrets.env` (`GROUP_SYNC_TOKEN`)                                                                        |
+| Kanidm service account | `calendar-sync` | In `idm_group_admins` and `idm_people_pii_read`; read-only API token in `secrets.env` (`GROUP_SYNC_TOKEN`)                                              |
 
 ## Commands
 

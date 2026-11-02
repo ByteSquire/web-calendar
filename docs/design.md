@@ -916,6 +916,26 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
 
 Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
 
+- **UI principles** — they decide between two designs that both work:
+  - The UI is **clean, clear, lean and consistent** across users and devices: by default the same
+    controls, wording and places. Consistency is the default, not a ban on change: where it
+    serves the screen, a control may take another form or be swapped for a better fit on a small
+    or a large screen (the sidebar as a drawer, a menu as a sheet, a switcher that scrolls, labels
+    shortened or shown as icons, more at once on a wide screen). What stays the same is what a
+    person can do: nothing they need is reachable on one size only, and a changed control still
+    has the same name for assistive technology.
+  - **Extra rights do not get extra furniture.** When administrators (or any other group) may do
+    more than other users, first ask whether that really needs a new UI element. Prefer an item in
+    a menu or a place that exists already (the `⋯` menu of the thing it acts on, a page that the
+    others use too) over a new input, button, section or page that only some users see. Show it
+    only to those who may use it (a convenience; the server decides, §8), and keep the menu of
+    everybody else complete: no gaps, no disabled copies.
+  - A new element for one group needs a reason in the design note that adds it: why a menu item
+    or an existing element was not enough. Example of the rule applied: there is no "Add shared
+    view" input; an administrator adds a view like anyone else and chooses "Share with everybody"
+    in its `⋯` menu (§8, Shared views and Own views). Example of an element that is justified:
+    the "Calendar access" page (`/admin/access`), because a rule editor does not fit in a menu
+    item; it is still reached from the existing app menu, not from a new button.
 - **Left sidebar** (top → bottom): **views** (icon + `⋯` menu), **calendars**
   (visibility toggle), **resources** (visibility toggle), **categories** (add
   control), **filters** (add control + chooser).

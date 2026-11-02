@@ -11,6 +11,15 @@ Climb this ladder and stop at the first rung that works:
 
 Never add a dependency for a few lines. A new one must be AGPLv3-compatible (`docs/design.md` §12).
 
+## UI
+
+- The UI stays clean, clear, lean and consistent across users and devices (`docs/design.md` §9).
+  Controls may differ between small and large screens where that serves the screen, as long as the
+  same things stay possible on both.
+- When administrators can do more than other users, do not add a control for it by default. Look
+  for an item in an existing menu or a place that exists already first, and say in the design note
+  why a new element was needed if you add one.
+
 ## Never simplify away
 
 Validation, error handling, security checks or accessibility. If a change needs one of them

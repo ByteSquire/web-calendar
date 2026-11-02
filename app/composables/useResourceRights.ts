@@ -25,9 +25,6 @@ export function useResourceRights() {
       })
       .map((resource) => ({ id: resource.id, name: resource.name })),
   )
-  const managesAny = computed(() =>
-    resources.value.some((resource) => rightOn(resource.id) === 'manage'),
-  )
 
-  return { live, rights, bookable, managesAny, rightOn }
+  return { live, rights, bookable, rightOn }
 }

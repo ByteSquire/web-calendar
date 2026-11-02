@@ -168,6 +168,18 @@ describe('overflow menu', () => {
     expect(document.querySelector('[role="menuitem"][href="/settings"]')).not.toBeNull()
   })
 
+  it('has no entry for the booking requests, not even for a resource manager: the sidebar links it', async () => {
+    useState('cal-user').value = { id: '7', name: 'Alice', email: 'alice@example.org' }
+    useState('resource-rights').value = { 'res-1': 'manage' }
+    const { resources } = useCalendarState()
+    resources.value = [
+      { id: 'res-1', name: 'Room A', type: 'room', calendarId: 'cal-1' },
+    ] as typeof resources.value
+    await open()
+    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Dark mode', 'Help', 'Sign out'])
+    expect(document.querySelector('[href="/resources/requests"]')).toBeNull()
+  })
+
   it('names the organization zone only when it differs from the display zone', async () => {
     useConfig({ timezone: OTHER_ZONE })
     await open()

@@ -1,7 +1,7 @@
 <!--
   Overflow (⋮) menu (FR-25). Nuxt UI closes it on Escape and on a click outside, moves focus into
   the menu and returns it to the trigger. Signed in (live mode): the user, the time zone the times
-  are shown in, Refresh (FR-10), Settings, Resource bookings (managers of a resource only), Calendar access (admins only), Full screen, Dark mode, Help and Sign out. The demo mode
+  are shown in, Refresh (FR-10), Settings, Calendar access (admins only), Full screen, Dark mode, Help and Sign out. The demo mode
   keeps the placeholder items of the mock-up. "Full screen" is only offered where the browser has
   one for pages (not on iPhone Safari): on a phone it hides the address bar. "Dark mode" is a
   switch: it shows the scheme in use, which is the system's until it is flipped, and from then on
@@ -51,7 +51,6 @@ import type { DropdownMenuItem } from '@nuxt/ui'
 import { useAdminFlag } from '~/composables/useAdminAccess'
 import { useAuth } from '~/composables/useAuth'
 import { useLiveStatus } from '~/composables/useLiveCalendar'
-import { useResourceRights } from '~/composables/useResourceRights'
 import { useServerConfigState } from '~/composables/useServerConfigState'
 import { isLiveConfig } from '~/utils/live/seed'
 
@@ -65,8 +64,6 @@ const live = isLiveConfig(useServerConfigState().value)
 const fullscreen = useFullscreen()
 const colorMode = useColorMode()
 const adminFlag = useAdminFlag()
-// The entry for the booking requests shows only to people who manage a resource.
-const resourceRights = useResourceRights()
 
 // Only to show the entry for the access administration; the admin routes check on the server.
 watch(
@@ -178,9 +175,6 @@ const items = computed<DropdownMenuItem[][]>(() => {
     ],
     [
       { label: 'Settings', icon: 'i-lucide-settings', to: '/settings' },
-      ...(resourceRights.managesAny.value
-        ? [{ label: 'Resource bookings', icon: 'i-lucide-inbox', to: '/resources/requests' }]
-        : []),
       ...(adminFlag.admin.value === true
         ? [{ label: 'Calendar access', icon: 'i-lucide-shield-check', to: '/admin/access' }]
         : []),

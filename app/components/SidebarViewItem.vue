@@ -29,7 +29,8 @@ import type { CalendarView } from '../../shared/types/calendar'
 
 // Every view has a menu (FR-21). A shared view offers "Copy to my views" to everyone; its own
 // actions (Rename, Update from selection, Delete) need `canManage`: the viewer is an administrator
-// (a convenience; the server enforces). A user's own view offers Rename, Duplicate and Delete.
+// (a convenience; the server enforces). A user's own view offers Rename, Duplicate and Delete, and
+// an administrator may also share it with everybody.
 const props = defineProps<{ view: CalendarView; selected: boolean; canManage?: boolean }>()
 const emit = defineEmits<{
   select: []
@@ -37,6 +38,7 @@ const emit = defineEmits<{
   update: []
   delete: []
   copy: []
+  share: []
 }>()
 
 const copy: DropdownMenuItem = {
@@ -73,9 +75,17 @@ const items = computed<DropdownMenuItem[][]>(() => {
         ]
       : [[copy]]
   }
-  return [
-    [rename, { label: 'Duplicate', icon: 'i-lucide-copy', onSelect: () => emit('copy') }],
-    [remove],
+  const own: DropdownMenuItem[] = [
+    rename,
+    { label: 'Duplicate', icon: 'i-lucide-copy', onSelect: () => emit('copy') },
   ]
+  if (props.canManage) {
+    own.push({
+      label: 'Share with everybody',
+      icon: 'i-lucide-users',
+      onSelect: () => emit('share'),
+    })
+  }
+  return [own, [remove]]
 })
 </script>

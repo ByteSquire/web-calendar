@@ -18,11 +18,11 @@
             @update="updateFromSelection(view)"
             @delete="startDelete(view)"
             @copy="copyView(view)"
+            @share="shareView(view)"
           />
         </li>
       </ul>
       <SidebarAddInput noun="view" :submit="submitOwnView" />
-      <SidebarAddInput v-if="isAdmin" noun="shared view" :submit="submitSharedView" />
     </SidebarSection>
 
     <SidebarSection title="Calendars">
@@ -115,7 +115,6 @@
 import { useAuthFetch } from '~/composables/useAuthFetch'
 import { useServerConfigState } from '~/composables/useServerConfigState'
 import {
-  createSharedView,
   deleteSharedView,
   describeSharedViewError,
   fetchIsAdmin,
@@ -130,7 +129,9 @@ import {
   deleteOwnView,
   describeOwnViewError,
   ownViewBody,
+  shareOwnView,
   updateOwnView,
+  type SharedOwnView,
 } from '~/utils/live/user-views'
 import type { CalendarView, ViewIcon } from '../../shared/types/calendar'
 
@@ -197,33 +198,6 @@ function replaceView(next: CalendarView) {
   views.value = views.value.map((view) => (view.id === next.id ? next : view))
 }
 
-async function submitSharedView(name: string): Promise<string | undefined> {
-  if (views.value.some((view) => view.isAdmin && view.name === name)) {
-    return 'A shared view with this name already exists.'
-  }
-  try {
-    const body = sharedViewBody(name, 'users', visibleCalendarIds.value)
-    if (api) {
-      views.value = [...views.value, await createSharedView(api, body)]
-    } else {
-      localCounter += 1
-      views.value = [
-        ...views.value,
-        {
-          id: `view-shared-${localCounter}`,
-          name,
-          icon: 'users',
-          calendarIds: body.calendars.map((calendar) => calendar.ref),
-          isAdmin: true,
-        },
-      ]
-    }
-    return undefined
-  } catch (error) {
-    return describeSharedViewError(error)
-  }
-}
-
 /** A new view of the user's own with these calendars; on the server, or in the local list (demo). */
 async function createOwn(
   name: string,
@@ -263,6 +237,61 @@ async function copyView(view: CalendarView) {
   } catch (error) {
     toast.add({ title: describeOwnViewError(error), color: 'error', icon: 'i-lucide-x' })
   }
+}
+
+/**
+ * "Share with everybody" on an administrator's own view: the shared view takes its place (see
+ * `shareOwnView`). If the own view could not be deleted both are listed and the toast says so.
+ */
+async function shareView(view: CalendarView) {
+  if (views.value.some((item) => item.isAdmin && item.name === view.name)) {
+    toast.add({
+      title: 'A shared view with this name already exists. Rename this view first.',
+      color: 'error',
+      icon: 'i-lucide-x',
+    })
+    return
+  }
+  let result: SharedOwnView
+  try {
+    if (api) {
+      result = await shareOwnView(api, view)
+    } else {
+      localCounter += 1
+      const body = sharedViewBody(view.name, view.icon, view.calendarIds)
+      result = {
+        shared: {
+          id: `view-shared-${localCounter}`,
+          name: view.name,
+          icon: view.icon,
+          calendarIds: body.calendars.map((calendar) => calendar.ref),
+          isAdmin: true,
+        },
+        leftOut: new Set(view.calendarIds).size - body.calendars.length,
+      }
+    }
+  } catch (error) {
+    toast.add({ title: describeSharedViewError(error), color: 'error', icon: 'i-lucide-x' })
+    return
+  }
+  const { shared, leftOut, removeError } = result
+  if (removeError !== undefined) {
+    views.value = [...views.value, shared]
+    toast.add({
+      title: `Shared ${view.name}, but your own view could not be removed.`,
+      description: describeOwnViewError(removeError),
+      color: 'error',
+      icon: 'i-lucide-x',
+    })
+    return
+  }
+  views.value = views.value.map((item) => (item.id === view.id ? shared : item))
+  if (selectedViewId.value === view.id) selectView(shared.id)
+  toast.add({
+    title: `Shared ${view.name} with everybody`,
+    description: leftOut > 0 ? 'External calendars are not shared.' : undefined,
+    icon: 'i-lucide-check',
+  })
 }
 
 async function updateFromSelection(view: CalendarView) {

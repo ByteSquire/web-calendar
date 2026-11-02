@@ -12,6 +12,7 @@ import {
   deleteOwnView,
   describeOwnViewError,
   ownViewBody,
+  shareOwnView,
   updateOwnView,
 } from '~/utils/live/user-views'
 
@@ -69,6 +70,62 @@ describe('the requests', () => {
     expect(describeOwnViewError({ status: 429 })).toMatch(/Too many changes/)
     expect(describeOwnViewError({ statusCode: 400 })).toMatch(/did not accept/)
     expect(describeOwnViewError(new Error('x'))).toMatch(/could not be saved/)
+  })
+})
+
+describe('shareOwnView', () => {
+  const own = {
+    id: '4',
+    name: 'Mine',
+    icon: 'star' as const,
+    calendarIds: ['dav:/a/', 'ext:1:https://e/c', 'dav:/a/', 'ics:2'],
+    isAdmin: false,
+    ownerId: '3',
+  }
+  const made = { id: 9, name: 'Mine', icon: 'star', calendars: [], isAdmin: true, ownerId: null }
+
+  it('makes the shared view first, then deletes the own one, and leaves ext: refs out', async () => {
+    const api = vi.fn(async () => made)
+    const result = await shareOwnView(api, own)
+    expect(api.mock.calls).toEqual([
+      [
+        '/api/admin/views',
+        {
+          method: 'POST',
+          body: {
+            name: 'Mine',
+            icon: 'star',
+            calendars: [
+              { ref: 'dav:/a/', color: null },
+              { ref: 'ics:2', color: null },
+            ],
+          },
+        },
+      ],
+      ['/api/views/4', { method: 'DELETE' }],
+    ])
+    expect(result.shared).toMatchObject({ id: '9', isAdmin: true })
+    expect(result.leftOut).toBe(1)
+    expect(result.removeError).toBeUndefined()
+  })
+
+  it('throws, and deletes nothing, when the shared view cannot be made', async () => {
+    const api = vi.fn(async () => {
+      throw { statusCode: 403 }
+    })
+    await expect(shareOwnView(api, own)).rejects.toMatchObject({ statusCode: 403 })
+    expect(api).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the own view and reports why when it cannot be deleted', async () => {
+    const failure = { statusCode: 500 }
+    const api = vi.fn(async (path: string, init?: { method?: string }) => {
+      if (init?.method === 'DELETE') throw failure
+      return made
+    })
+    const result = await shareOwnView(api, own)
+    expect(result.shared).toMatchObject({ id: '9' })
+    expect(result.removeError).toBe(failure)
   })
 })
 

@@ -2,7 +2,7 @@
 // Shared views have their own routes (admin-views.ts). The server decides who owns what: another
 // user's view, and a shared one, answer 404 on these routes.
 import type { CalendarView, ViewIcon } from '../../../shared/types/calendar'
-import { oneView, type AdminViewsApi } from './admin-views'
+import { createSharedView, oneView, sharedViewBody, type AdminViewsApi } from './admin-views'
 
 /** The longest view name the server accepts (`MAX_VIEW_NAME_LENGTH` in server/utils/api/views.ts). */
 export const VIEW_NAME_MAX = 80
@@ -46,6 +46,33 @@ export async function updateOwnView(
 
 export async function deleteOwnView(api: AdminViewsApi, id: string): Promise<void> {
   await api(`/api/views/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export interface SharedOwnView {
+  /** The shared view that now exists. */
+  shared: CalendarView
+  /** How many of the view's calendars a shared view cannot hold (`ext:` ones) and left out. */
+  leftOut: number
+  /** Set when the own view could not be deleted after sharing: both exist then. */
+  removeError?: unknown
+}
+
+/**
+ * Shares an own view of an administrator with everybody: a shared view with the same name, icon
+ * and calendars is made first (it throws when that fails, and nothing has changed), then the own
+ * view is deleted. A failing delete does not throw: the own view stays, `removeError` says why, so
+ * a view is never lost. `ext:` refs are left out, as shared views refuse them.
+ */
+export async function shareOwnView(api: AdminViewsApi, view: CalendarView): Promise<SharedOwnView> {
+  const body = sharedViewBody(view.name, view.icon, view.calendarIds)
+  const leftOut = new Set(view.calendarIds).size - body.calendars.length
+  const shared = await createSharedView(api, body)
+  try {
+    await deleteOwnView(api, view.id)
+  } catch (removeError) {
+    return { shared, leftOut, removeError }
+  }
+  return { shared, leftOut }
 }
 
 /** A sentence for people from a failed request (an ofetch error or anything else). */

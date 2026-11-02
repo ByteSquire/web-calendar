@@ -4,7 +4,6 @@ import { defineComponent, h } from 'vue'
 import { clearNuxtState } from '#app'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { SidebarContent, SidebarViewItem, UApp } from '#components'
-import { useCalendarState } from '~/composables/useCalendarState'
 import {
   createSharedView,
   deleteSharedView,
@@ -116,17 +115,9 @@ describe('SidebarContent without a server (mock data)', () => {
     render: () => h(UApp, null, { default: () => h(SidebarContent) }),
   })
 
-  it('offers to create a shared view from the selection', async () => {
+  it('has one input for adding a view, and none for a shared view', async () => {
     await mount(Shell, { attachTo: document.body })
-    const { views, visibleCalendarIds } = useCalendarState()
-    const input = document.querySelector<HTMLInputElement>('input[placeholder="Add shared view"]')
-    expect(input).not.toBeNull()
-    input!.value = 'Ops'
-    input!.dispatchEvent(new Event('input', { bubbles: true }))
-    document.querySelector<HTMLButtonElement>('button[aria-label="Add shared view"]')!.click()
-    await vi.waitFor(() => expect(views.value.some((view) => view.name === 'Ops')).toBe(true))
-    const created = views.value.find((view) => view.name === 'Ops')!
-    expect(created.isAdmin).toBe(true)
-    expect(created.calendarIds).toEqual(visibleCalendarIds.value)
+    expect(document.querySelector('input[placeholder="Add view"]')).not.toBeNull()
+    expect(document.querySelector('input[placeholder="Add shared view"]')).toBeNull()
   })
 })

@@ -53,7 +53,7 @@ server {
 calendar.example.org {
   header Strict-Transport-Security "max-age=63072000"
   request_body {
-    max_size 10MB # matches NUXT_GATEWAY_MAX_BODY_BYTES
+    max_size 10MiB # matches NUXT_GATEWAY_MAX_BODY_BYTES (10 MiB; Caddy's 10MB is 10,000,000 bytes)
   }
   reverse_proxy 127.0.0.1:3000 {
     header_up X-Forwarded-For {http.request.header.X-Forwarded-For},{http.request.remote.host}
@@ -66,3 +66,12 @@ Caddy appends to `X-Forwarded-For` itself when the header is left out of `header
 above is only needed if another proxy ahead of Caddy already sets the header and both should be
 kept. Either way, set `NUXT_GATEWAY_TRUST_FORWARDED_FOR=true` only once this proxy is genuinely the
 sole path to the app.
+
+## Tested
+
+2026-11-02, with nginx 1.30.6 and Caddy 2.11.7 as throwaway containers in front of the production
+image, with `NUXT_GATEWAY_TRUST_FORWARDED_FOR=true`: TLS and HTTP/2 work; the fifth failed Basic login
+is throttled (`429`) even when the client changes its `X-Forwarded-For`; a `PROPFIND` and `/api/me`
+with a Kanidm bearer token give `207` and `200`; an 11 MB body gets `413`. Caddy's `max_size 10MB`
+refused a 10.2 MB body, which is why the example says `10MiB`. Not tested: Let's Encrypt, a proxy on
+another host, and long uploads.

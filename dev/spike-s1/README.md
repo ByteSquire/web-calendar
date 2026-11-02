@@ -45,7 +45,10 @@ The `*.localhost` names resolve to the loopback interface in browsers and curl. 
 
 ## Accounts
 
-Generated passwords are in `.local/secrets.env` (mode 600, git-ignored).
+Generated passwords are in `.local/secrets.env` (mode 600, git-ignored). The file is shell syntax: a
+character such as `!` is written as `\!`, and the backslash is not part of the password. Do not copy a
+value from the file by hand; read it with `sh -c '. .local/secrets.env && printf %s "$ALICE_PASSWORD"'`
+(for example `... | wl-copy` to put it on the clipboard).
 
 | What                   | Name            | Notes                                                                                                                                                   |
 | ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |

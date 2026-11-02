@@ -40,6 +40,12 @@ kanidm system oauth2 prefer-short-username web-calendar
 - A public client cannot skip the consent prompt. Users see it once, and again when the scopes change.
 - The issuer is `https://idm.example.org/oauth2/openid/web-calendar`; the signing keys are at
   `<issuer>/public_key.jwk`.
+- The browser talks to Kanidm itself (the discovery document and the token request), so Kanidm
+  must be reachable from the user's browser under the name in the issuer. Kanidm's CORS answers
+  are fine. If that name resolves to a private or loopback address while the app is on a public
+  one, Chrome, Edge, Brave and Firefox (Local Network Access) block the call until the person
+  allows "Apps on device" / "Device apps and services" for the app's site, and report it as a CORS
+  failure. Give Kanidm a name that resolves to an address the browser reaches the usual way.
 
 Check from the app side, as a user: the access token is an ES256 JWT valid for 900 s, `scope` contains
 `caldav`, and `aud` and `client_id` equal `web-calendar`.

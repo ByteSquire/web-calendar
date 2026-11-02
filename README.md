@@ -224,6 +224,11 @@ docker run --rm --user 1000:1000 -v web-calendar_web-calendar-data:/data \
 token hash key apart from the backups, encrypt the backups, and after a restore let the sharing
 writer reconcile (it does at start). For a restore, stop the app, replace `web-calendar.db` with
 the copy (delete the old `-wal` and `-shm` files), and start it again.
+Restoring into a new, empty volume (a new host, say): the volume's folder must belong to uid 1000
+as well as the file (`docker run --rm --user 0 -v <volume>:/data node:24-bookworm-slim chown
+1000:1000 /data`), or SQLite cannot create its `-wal` file and the app stops at start with
+"attempt to write a readonly database". Tried on 2026-11-02: a backup made while the app ran, with
+a view added just before, restored into a new volume; the app started on it and the view was there.
 
 ### Environment
 
@@ -289,6 +294,11 @@ Kanidm is then at `https://idm.localhost:8443` (issuer
 `http://127.0.0.1:5232`, published on the loopback interface only for development. See
 [`dev/spike-s1/README.md`](dev/spike-s1/README.md) for the accounts, all commands and what
 each spike tested.
+
+`idm.localhost` is the loopback address of your own machine. Open the app from `http://localhost`
+(the dev server and the live tests do). If the app is served from a public name instead, newer
+Chrome, Edge, Brave and Firefox block the browser's calls to Kanidm (they show it as a CORS error)
+until you allow "Apps on device" / "Device apps and services" for that site.
 
 ### Release checks (run on your machine)
 

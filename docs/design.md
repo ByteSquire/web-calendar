@@ -975,6 +975,30 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   A failed save opens the region that holds the error before the focus goes to the field. The
   closed region is hidden, not removed, so nothing typed is lost. Two buttons because the dialogs
   differ in what they ask, not in who may use them; both are for everybody.
+- **Languages (FR-33)** — English and German, with the helper in `app/utils/i18n.ts` and no
+  library (the app has no routing by language, no server rendering, and the texts are also made in
+  plain TypeScript, so a `t()` that works anywhere was the smaller solution). The English text is
+  the key (`t('Enter a title.')`): English needs no dictionary, an untranslated text shows in
+  English, and the unit and browser tests that read English text did not change. German lives in
+  `app/i18n/de/<area>.ts`; the rules, the "du" style and the glossary are in `docs/i18n.md`.
+  `tests/i18n-completeness.test.ts` reads the source and fails on a text without a German entry,
+  a different `{value}` or plural form, an unused entry, and on a `t()` that is not given a
+  string literal. The language is the saved choice (`localStorage`, Settings → Language, a
+  select; not saved on the server, so it does not follow a person to another device, unlike the
+  time zone), else the first of the browser's languages that the app has, else English. It
+  applies at once, without a reload: the plugin `app/plugins/i18n.client.ts` sets it before the
+  first screen, `app.vue` gives Nuxt UI its `de` or `en` locale and sets `<html lang>`, the
+  calendar gets FullCalendar's `de` locale (`CalendarMain`, `SplitTimeline`), and dates use
+  `app/utils/date-names.ts` and `intlLocale()` (`Do, 29. Okt 2026`, `26. Okt – 1. Nov 2026`). A
+  text kept in a constant is marked `N_()` and shown with `tv()`; a text that is the key of
+  saved data stays English in the data (the folded sidebar sections). A message that is made once
+  and kept (a problem in the sidebar, the "pending" title of a booking slot) keeps the language
+  of the moment it was made until the next load. The reader of iCalendar data is shared with the
+  server and stays English. The words the server writes in a 400 or 409 answer (a field message
+  such as "must be at most 100 characters") are shown as they come. A **select**, not radio
+  buttons: Reka UI names a radio button after its label once, when it is drawn, so the name
+  stayed in the old language after a switch. Not translated: this documentation, the demo's
+  sample events, server logs and the API texts for calendar apps, and what people write.
 - **Accounts and tokens** — Settings shows the **built-in calendar service** (preconfigured, same
   origin), **external CalDAV accounts** (URL plus OIDC, basic or no auth; their tokens stay in
   the browser), **app tokens** for Thunderbird and phones (FR-31) and, for admins, **calendars

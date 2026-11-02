@@ -141,8 +141,10 @@ and client renders match.
   and reconcile drive; not yet run: production, or a database with data): the audit log, access
   administration (`/admin/access`, menu entry "Calendar access", admins only), shared views managed
   by admins from the sidebar, the sharing writer, the group sync and resources
-  (bookings and availability blocks, availability reads, the booking form, the requests page
-  `/resources/requests` for managers, and the reconcile of moved or deleted booking events).
+  (bookings and availability blocks, availability reads, the booking form, the page
+  `/resources/requests` for requests and "My bookings", the administrator page `/admin/resources`,
+  and the reconcile of moved or deleted booking events). The app speaks English and German: the
+  language of the browser, or Settings → Language (`docs/i18n.md` has the rules for adding texts).
   Not built yet: the public view. Spikes S1 to S6 and S8 to S10 are done; S7
   (real clients) is open (design §12). A test stack
   for the spikes is in `dev/spike-s1`.

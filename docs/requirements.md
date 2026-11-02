@@ -206,6 +206,11 @@ minimum:
   setting in Settings overrides the browser's zone: the precedence is the user's setting, then
   the browser's zone, then the organization zone. Standard CalDAV clients convert
   on their own, as the data carries each event's zone.
+- **FR-33** The app speaks **English and German**. A person gets the language of their
+  browser, or chooses English or German in Settings (the choice is kept in that browser).
+  Month and weekday names, date order and the words of the calendar grid follow the language,
+  and so do the texts for screen readers. What people write (calendar, view and category names,
+  event text) and the demo's sample events are not translated.
 
 ### 4.9 Third-party CalDAV access
 

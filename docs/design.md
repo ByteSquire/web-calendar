@@ -356,15 +356,26 @@ status, blocked, mine`, and an event without a calendar counts as blocked. `GET
   calendar `res:<id>`, hidden by default. For the visible ones the loader asks the availability
   route in pieces of at most 62 days and shows approved and blocked slots as hatched "Busy",
   pending ones as tentative "Busy (pending)", the rest as "Booked by <name>" or the event's title.
-  Quick add and the event edit form have the resource fields and the "book right away" checkbox;
+  The "Add" dialog (top bar, beside Quick add, which stays lean and has no resource fields) and the
+  event edit form have the resource fields and the "book right away" checkbox;
   the booking is requested after the save, and a refusal keeps the saved event and says why.
   **Series rule:** a new repeating event, or an edit with a scope other than "This event", is
   saved without booking (the marks would cover the whole series); one occurrence can be booked.
-  The page `/resources/requests` (menu entry "Resource bookings", managers only) lists pending
-  requests with accept and decline, an overlap hint and an orphaned note, and "My bookings" with
-  cancel. One toast on sign-in reports bookings that changed (seen-state in `localStorage`). Known
+  The page `/resources/requests` (the sidebar links it for everybody) lists pending
+  requests with accept and decline, an overlap hint and an orphaned note (managers only), and
+  "My bookings" with cancel. Nobody is sent away from it: a person who manages nothing and has no
+  booking reads "You have no upcoming bookings." (it used to send them back to the calendar, which
+  looked like a crash; `tests/resources-requests-page.test.ts`). One toast on sign-in reports bookings that changed (seen-state in `localStorage`). Known
   limits: "My bookings" takes one request per resource; with several resources only the first
   booked one is marked on the event; a pending, blocked slot has no hatched tentative look.
+  **Administration page** `/admin/resources` (menu entry "Resources", admins only, beside "Calendar
+  access"): lists active and inactive resources; adds, edits (name, type, location, capacity,
+  description), deactivates and reactivates them (`PUT` with `active: true`; there is no separate
+  route); and shows and changes the rules of one resource (a person, a group or everyone signed in
+  with can see / can book / can manage), reusing the add form of the access page. It warns when no
+  rule has `manage`, because administrators are not managers by default and nobody could accept a
+  request. After each change the calendar data is reloaded. A page was needed because resources
+  could only be created through the API; it is one menu item, with no new control elsewhere.
   The booking body carries the event's calendar by its path (`eventCalendarPath`, required, only
   for the built-in service; an event on another server is not booked). The server stores the path
   as given if it is in the booker's own home (`/<sub>/...`, else 400 `invalid_event`) and the
@@ -888,7 +899,7 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   `ext:` refs are refused per field, refs are shape-checked only (no lookup; what a viewer cannot read
   Radicale answers with `403`). There is no separate input for a shared view: an administrator adds a view like anyone else and
   then chooses "Share with everybody" in its `⋯` menu (below). Admins also get Rename / Update from
-  selection / Delete on a shared view. Every view has a `⋯` menu (FR-21): on a shared view everybody
+  selection / Unshare / Delete on a shared view. Every view has a `⋯` menu (FR-21): on a shared view everybody
   else gets one item, "Copy to my views", and sees the "Shared" badge. In demo mode the controls
   change the local list only.
 - **Own views (FR-2, FR-21)** — every user adds, renames, duplicates and deletes their own views
@@ -901,8 +912,12 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   with the same name, icon and calendars through `POST /api/admin/views` and then deletes the own
   view through `DELETE /api/views/:id`, in that order, so a failure never loses the view (if only
   the delete fails both are listed and a message says so); external calendars are left out and the
-  message says that too; a shared name that is taken is refused. There is no "make private" again:
-  an administrator deletes the shared view, or copies it to their own views first. Without a server
+  message says that too; a shared name that is taken is refused. "Unshare" (administrators only, in
+  the menu of a shared view) is the way back: it makes an own view of the administrator with the same
+  name, icon and calendars through `POST /api/views` and then deletes the shared one through
+  `DELETE /api/admin/views/:id`, in that order, so a failure never loses the view (if only the delete
+  fails both are listed and a message says so); it is refused while the administrator already has an
+  own view of that name. Other people stop seeing the view. Without a server
   (demo) the same controls change the local list. Tests: `tests/user-views.test.ts`,
   `e2e/own-views.spec.ts` and `e2e/admin-views.spec.ts` (demo), `e2e/live/shared-view-menu.spec.ts`
   (alice makes a view and shares it; bob, who is no administrator, copies, renames and deletes).
@@ -943,10 +958,23 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     item; it is still reached from the existing app menu, not from a new button.
 - **Left sidebar** (top → bottom): **views** (icon + `⋯` menu), **calendars**
   (visibility toggle), **resources** (visibility toggle), **categories** (add
-  control), **filters** (add control + chooser).
+  control), **filters** (add control + chooser). Each section has a heading that is a button and
+  folds the section away (chevron down while open, to the right while closed; `aria-expanded`); the
+  closed sections are remembered in this browser (`localStorage`, `app/utils/sidebar-sections.ts`),
+  the same on the column and in the drawer. A closed section is hidden, not removed.
 - **View-type switcher** (FR-22): **day, 5-day, week, month, year, split, list**.
 - **Date navigation** (FR-23): previous / **today** / next.
-- **Quick-add** (FR-24) and **overflow (`⋮`) menu** (FR-25).
+- **Quick-add** (FR-24), **Add** and **overflow (`⋮`) menu** (FR-25). Quick add is lean: title,
+  calendar, start and end (with "All day") and, on live data, the repeat rule. "Add" (the outline
+  button beside it) opens the same dialog, titled "Add event", with the folding **Details**
+  (location, description) and the **resources** to book with the event (a dropdown of the
+  resources the person may book). The edit dialog has the same two regions. **Start and end** and
+  **Details** are regions that fold away: a button with the chevron of the sidebar, and while closed
+  it shows what is inside ("Thu 29 Oct, 09:00–10:00"; "Room 42 · Agenda"). Start and end are open
+  to begin with; Details start closed unless the event already has a location or a description.
+  A failed save opens the region that holds the error before the focus goes to the field. The
+  closed region is hidden, not removed, so nothing typed is lost. Two buttons because the dialogs
+  differ in what they ask, not in who may use them; both are for everybody.
 - **Accounts and tokens** — Settings shows the **built-in calendar service** (preconfigured, same
   origin), **external CalDAV accounts** (URL plus OIDC, basic or no auth; their tokens stay in
   the browser), **app tokens** for Thunderbird and phones (FR-31) and, for admins, **calendars
@@ -975,9 +1003,10 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   - Reka UI restores focus on close only to a `DialogTrigger`. A modal or slideover driven by `:open`
     loses focus to the page, so pass `content.onCloseAutoFocus` and focus the element that opened it
     (done in `QuickAddModal`, `EventSheet` and the layout's sidebar slideover).
-  - The top bar has two rows below 1024 px: toggle, period title and the quick-add / `⋮` buttons on top,
-    date navigation and the view switcher below in a strip that scrolls sideways. A single row does not
-    fit at 360 px and hid the switcher.
+  - The top bar has two rows below 1024 px: toggle, period title and the quick-add / add / `⋮` buttons
+    on top, date navigation and the view switcher below in a strip that scrolls sideways. A single row
+    does not fit at 360 px and hid the switcher. At 360 px the three 44 px buttons leave the period
+    title about 136 px, so below 640 px it is 14 px and may use two lines ("26 Oct – 1 Nov" over "2026").
   - **Date/time picker** — keep the browser's native inputs. The phone-specific focus issue was
     resolved by the temporary UI workaround; the native picker remains a little unintuitive, which
     is accepted. A custom picker is **not planned**.

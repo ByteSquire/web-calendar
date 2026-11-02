@@ -424,6 +424,8 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   const selectedEventId = state<string | null>('cal-selected-event', () => null)
   const quickAddOpen = state<boolean>('cal-quick-add-open', () => false)
   const quickAddPreset = state<Partial<NewEventInput> | null>('cal-quick-add-preset', () => null)
+  // One dialog in two sizes: 'Quick add' (lean) or 'Add' (details, resources); the last opener decides.
+  const quickAddFull = state<boolean>('cal-quick-add-full', () => false)
   const sidebarOpen = state<boolean>('cal-sidebar-open', options.sidebarOpen)
 
   const anchorDate = computed({
@@ -605,6 +607,14 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   }
 
   function openQuickAdd(preset?: Partial<NewEventInput>) {
+    quickAddFull.value = false
+    quickAddPreset.value = preset ?? null
+    quickAddOpen.value = true
+  }
+
+  /** The longer form: also the details and the resources to book. */
+  function openAddEvent(preset?: Partial<NewEventInput>) {
+    quickAddFull.value = true
     quickAddPreset.value = preset ?? null
     quickAddOpen.value = true
   }
@@ -662,7 +672,9 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     selectEvent,
     quickAddOpen,
     quickAddPreset,
+    quickAddFull,
     openQuickAdd,
+    openAddEvent,
     closeQuickAdd,
     sidebarOpen,
     toggleSidebar,

@@ -21,5 +21,12 @@ export default defineAppConfig({
         item: 'min-h-11 items-center',
       },
     },
+    // The folding regions of the forms keep their slide, but not for people who ask for less motion.
+    collapsible: {
+      slots: {
+        content:
+          'data-[state=closed]:overflow-hidden motion-safe:data-[state=open]:animate-[collapsible-down_200ms_var(--ease-out)] motion-safe:data-[state=closed]:animate-[collapsible-up_200ms_var(--ease-out)]',
+      },
+    },
   },
 })

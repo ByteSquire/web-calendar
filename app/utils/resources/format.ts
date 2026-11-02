@@ -1,4 +1,4 @@
-// The time of a booking as text, in the viewer's display zone.
+// The time of a booking, or of an event being edited, as text, in the viewer's display zone.
 const LOCALE = 'en-GB'
 
 function parts(iso: string, zone: string) {
@@ -17,6 +17,11 @@ function parts(iso: string, zone: string) {
       timeZone: zone,
     }).format(date),
   }
+}
+
+/** `Fri 6 Nov`: the day of an instant in `zone`. */
+export function formatDay(iso: string, zone: string): string {
+  return parts(iso, zone).day
 }
 
 /** `Fri 6 Nov, 14:00–15:00`, or both days when the booking spans midnight. */

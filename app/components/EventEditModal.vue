@@ -32,6 +32,7 @@
           mode="edit"
           :errors="errors"
           extended
+          details
           :calendars="calendarList"
           :calendar-name="calendar?.name ?? ''"
           :category-names="categoryNames"
@@ -198,6 +199,7 @@ async function onSubmit() {
   if (props.pending || !form.value || !original.value) return
   submitted.value = true
   if (Object.keys(errors.value).length > 0) {
+    fields.value?.revealErrors(errors.value)
     await nextTick()
     formElement.value?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
     return

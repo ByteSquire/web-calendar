@@ -1,10 +1,14 @@
 <!--
-  The fields of the event dialogs, shared by "Quick add" (create) and "Edit": title, calendar, all
-  day, start and end, then, on live data, description and location, and for a new event the repeat
-  rule, for an existing one the status and the categories. The parent owns the form (v-model) and
-  the validation messages; the model and its rules are in app/utils/writes/event-form.ts.
+  The fields of the event dialogs, shared by "Quick add" and "Add" (create) and "Edit": title,
+  calendar, then the start and end with "All day" in a region that folds away, then, on live data,
+  for a new event the repeat rule, for an existing one the status and the categories. `details`
+  adds a second region that folds away with the location and the description (not in "Quick add",
+  which stays lean). The parent owns the form (v-model) and the validation messages; the model and
+  its rules are in app/utils/writes/event-form.ts.
 
   Without `extended` (the in-memory demo) only the five fields of the Phase 1 dialog are drawn.
+  A region that holds an error is opened by `revealErrors`, which the parent calls on a failed
+  submit before it moves the focus to the first invalid field.
 -->
 <template>
   <div class="flex flex-col gap-4">
@@ -64,51 +68,53 @@
       </UInput>
     </UFormField>
 
-    <USwitch
-      :model-value="form.allDay"
-      label="All day"
-      class="min-h-11 items-center"
-      :ui="{
-        // The switch is small; the pseudo-element grows its hit area to 44 px.
-        base: 'relative before:absolute before:-inset-x-2 before:-inset-y-3',
-        label: 'flex min-h-11 cursor-pointer items-center',
-      }"
-      @update:model-value="onAllDayChange"
-    />
-
-    <!-- Keyed by the input type: the browser drops a value that does not fit a new type. -->
-    <UFormField
-      :label="form.allDay ? 'Start date' : 'Start'"
-      name="start"
-      required
-      :error="errors.start"
-    >
-      <UInput
-        :key="inputType"
-        :type="inputType"
-        :model-value="form.start"
-        required
-        class="w-full"
-        @update:model-value="onStartChange"
+    <FormRegion v-model:open="whenOpen" title="Start and end" :summary="whenSummary(form)">
+      <USwitch
+        :model-value="form.allDay"
+        label="All day"
+        class="min-h-11 items-center"
+        :ui="{
+          // The switch is small; the pseudo-element grows its hit area to 44 px.
+          base: 'relative before:absolute before:-inset-x-2 before:-inset-y-3',
+          label: 'flex min-h-11 cursor-pointer items-center',
+        }"
+        @update:model-value="onAllDayChange"
       />
-    </UFormField>
 
-    <UFormField
-      :label="form.allDay ? 'End date' : 'End'"
-      name="end"
-      required
-      :error="errors.end"
-      :help="extended && !form.allDay ? `Times are in your time zone (${timeZone}).` : undefined"
-    >
-      <UInput
-        :key="inputType"
-        :model-value="form.end"
-        :type="inputType"
+      <!-- Keyed by the input type: the browser drops a value that does not fit a new type. -->
+      <UFormField
+        :label="form.allDay ? 'Start date' : 'Start'"
+        name="start"
         required
-        class="w-full"
-        @update:model-value="patch({ end: text($event) })"
-      />
-    </UFormField>
+        :error="errors.start"
+      >
+        <UInput
+          :key="inputType"
+          :type="inputType"
+          :model-value="form.start"
+          required
+          class="w-full"
+          @update:model-value="onStartChange"
+        />
+      </UFormField>
+
+      <UFormField
+        :label="form.allDay ? 'End date' : 'End'"
+        name="end"
+        required
+        :error="errors.end"
+        :help="extended && !form.allDay ? `Times are in your time zone (${timeZone}).` : undefined"
+      >
+        <UInput
+          :key="inputType"
+          :model-value="form.end"
+          :type="inputType"
+          required
+          class="w-full"
+          @update:model-value="patch({ end: text($event) })"
+        />
+      </UFormField>
+    </FormRegion>
 
     <template v-if="extended && mode === 'create'">
       <UFormField
@@ -174,24 +180,31 @@
     </template>
 
     <template v-if="extended">
-      <UFormField label="Location" name="location">
-        <UInput
-          :model-value="form.location"
-          class="w-full"
-          @update:model-value="patch({ location: text($event) })"
-        />
-      </UFormField>
+      <FormRegion
+        v-if="details"
+        v-model:open="detailsOpen"
+        title="Details"
+        :summary="detailsSummary"
+      >
+        <UFormField label="Location" name="location">
+          <UInput
+            :model-value="form.location"
+            class="w-full"
+            @update:model-value="patch({ location: text($event) })"
+          />
+        </UFormField>
 
-      <UFormField label="Description" name="description">
-        <UTextarea
-          :model-value="form.description"
-          :rows="3"
-          autoresize
-          :maxrows="8"
-          class="w-full"
-          @update:model-value="patch({ description: text($event) })"
-        />
-      </UFormField>
+        <UFormField label="Description" name="description">
+          <UTextarea
+            :model-value="form.description"
+            :rows="3"
+            autoresize
+            :maxrows="8"
+            class="w-full"
+            @update:model-value="patch({ description: text($event) })"
+          />
+        </UFormField>
+      </FormRegion>
 
       <template v-if="mode === 'edit'">
         <UFormField label="Status" name="status">
@@ -221,6 +234,7 @@
 import { Temporal } from 'temporal-polyfill'
 import type { EventStatus } from '../../shared/types/calendar'
 import { setQuickAddAllDay, setQuickAddStart } from '~/utils/quick-add'
+import { whenSummary } from '~/utils/writes/when-summary'
 import {
   MAX_REPEAT_COUNT,
   REPEAT_ENDS_LABELS,
@@ -236,8 +250,10 @@ const props = withDefaults(
   defineProps<{
     mode?: 'create' | 'edit'
     errors?: EventFormErrors
-    /** Draw description, location, repeat (new) and status, categories (existing). */
+    /** Draw repeat (new) and status, categories (existing), and the details when asked for. */
     extended?: boolean
+    /** Draw the folding region with the location and the description (on live data). */
+    details?: boolean
     /** The calendars a new event can go to. */
     calendars?: readonly { id: string; name: string; color: string }[]
     /** The calendar of an existing event (shown, not changeable). */
@@ -251,6 +267,7 @@ const props = withDefaults(
     mode: 'create',
     errors: () => ({}),
     extended: false,
+    details: false,
     calendars: () => [],
     calendarName: '',
     categoryNames: () => [],
@@ -260,6 +277,16 @@ const props = withDefaults(
 
 const form = defineModel<EventForm>({ required: true })
 const titleInput = useTemplateRef('titleInput')
+
+// The start and end are open to begin with (they are needed for every event); the details are open
+// when the event already has a location or a description, so that nothing is hidden from view.
+const whenOpen = ref(true)
+const detailsOpen = ref(form.value.location !== '' || form.value.description !== '')
+const detailsSummary = computed(() =>
+  [form.value.location, form.value.description.split('\n')[0]]
+    .filter((part) => part !== '')
+    .join(' · '),
+)
 
 const SELECT_UI = { base: 'min-h-11', item: 'min-h-11 items-center' }
 // A row is a 44 px target in full: the checkbox's pseudo-element spreads over the whole row.
@@ -340,6 +367,10 @@ function onStartChange(start: string | number | null | undefined) {
 }
 
 defineExpose({
+  /** Opens the region that holds an error, so the invalid field can be seen and focused. */
+  revealErrors(shown: EventFormErrors): void {
+    if (shown.start || shown.end) whenOpen.value = true
+  },
   /** Puts the cursor into the title (where a dialog starts). */
   focusTitle(): boolean {
     const input = titleInput.value?.inputRef

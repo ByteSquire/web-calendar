@@ -71,11 +71,14 @@
  *   calendar that has at least one filtered event inside `visibleRange` (calendar order; events
  *   sorted by start). Calendars without events are omitted, which is the band hiding of FR-6.
  *
- * Quick-add
+ * Quick-add and Add
  * - `quickAddOpen: Ref<boolean>`, `quickAddPreset: Ref<Partial<NewEventInput>|null>`.
  *   Open it with `openQuickAdd(preset?)` (for example a clicked date as `start`/`end`); the
  *   modal reads the preset when it opens and closes with `closeQuickAdd()`. Setting
  *   `quickAddOpen` directly is fine for closing, not for opening with a preset.
+ * - `openAddEvent(preset?)` opens the same dialog as the longer "Add" form (`quickAddFull` is
+ *   true): also the details (location, description) and the resources to book. `openQuickAdd`
+ *   opens the lean one.
  *
  * Live mode (signed in; see composables/useLiveCalendar.ts)
  * - The state starts empty and `useLiveCalendar()` (called by the default layout) fills `currentUser`,

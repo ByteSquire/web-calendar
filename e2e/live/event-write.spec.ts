@@ -80,15 +80,18 @@ async function expectTargetsAtLeast44(scope: Locator): Promise<void> {
 }
 
 test('adds a repeating event with a location and a description', async () => {
-  const opener = page.getByRole('button', { name: 'Quick add' })
+  // "Add" is the longer form: location and description are in its folding "Details".
+  const opener = page.getByRole('button', { name: 'Add', exact: true })
   await opener.click()
-  const dialog = page.getByRole('dialog', { name: 'Quick add' })
+  const dialog = page.getByRole('dialog', { name: 'Add event' })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByLabel('Title')).toBeFocused()
   // Only calendars that can be written to; the first one is chosen.
   await expect(dialog.getByLabel('Calendar')).toContainText(/\S/)
 
   await dialog.getByLabel('Title').fill(TITLE)
+  await expect(dialog.getByLabel('Location')).toBeHidden()
+  await dialog.getByRole('button', { name: /^Details/ }).click()
   await dialog.getByLabel('Location').fill('Room 42')
   await dialog.getByLabel('Description').fill('Agenda: nothing')
   await dialog.getByLabel('Repeat').click()

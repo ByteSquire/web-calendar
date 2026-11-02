@@ -1,9 +1,12 @@
 <!--
-  Quick-add dialog (FR-24, FR-9). The layout always mounts it; it is open while `quickAddOpen` is
-  set in useCalendarState(). Each time it opens, the form starts from `quickAddPreset` (or from the
-  anchor date, 09:00 to 10:00) and validates on submit; after a failed submit the messages follow
-  the input live. Form model, defaults and validation: app/utils/quick-add.ts and
-  app/utils/writes/event-form.ts.
+  Quick-add and Add dialog (FR-24, FR-9). The layout always mounts it; it is open while
+  `quickAddOpen` is set in useCalendarState(). It is one dialog in two sizes, told apart by
+  `quickAddFull`: "Quick add" (the top bar, a click on a date) is lean, title, calendar, start and
+  end and a repeat rule; "Add" (the top bar) adds the folding "Details" (location, description)
+  and the resources to book with the event. Each time it opens, the form starts from
+  `quickAddPreset` (or from the anchor date, 09:00 to 10:00) and validates on submit; after a
+  failed submit the messages follow the input live. Form model, defaults and validation:
+  app/utils/quick-add.ts and app/utils/writes/event-form.ts.
 
   On live data the event is written to a writable calendar of the calendar service (with
   description, location and a repeat rule); the dialog stays open with the reason when that
@@ -12,7 +15,7 @@
 <template>
   <UModal
     :open="quickAddOpen"
-    title="Quick add"
+    :title="quickAddFull ? 'Add event' : 'Quick add'"
     description="Create an event"
     :content="{ onOpenAutoFocus: focusTitle, onCloseAutoFocus: restoreFocus }"
     @update:open="onOpenChange"
@@ -41,10 +44,12 @@
           mode="create"
           :errors="errors"
           :extended="live"
+          :details="quickAddFull"
           :calendars="choosableCalendars"
           :time-zone="timeZone"
         />
         <ResourceBookingFields
+          v-if="quickAddFull"
           v-model="chosenResources"
           :offered="bookable"
           :note="isSeries && chosenResources.length > 0 ? SERIES_NOTE : ''"
@@ -97,6 +102,7 @@ import { writableCalendars } from '~/utils/writes/rules'
 const {
   quickAddOpen,
   quickAddPreset,
+  quickAddFull,
   closeQuickAdd,
   calendars,
   calendarById,
@@ -331,6 +337,7 @@ async function onSubmit() {
   if (pending.value) return
   submitted.value = true
   if (Object.keys(errors.value).length > 0) {
+    fields.value?.revealErrors(errors.value)
     await nextTick()
     formElement.value?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
     return

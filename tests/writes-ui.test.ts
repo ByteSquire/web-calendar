@@ -220,17 +220,20 @@ describe('quick add on live data', () => {
     return { opener, dialog: top()! }
   }
 
+  it('is lean: no location and no description, but the repeat rule', async () => {
+    const { dialog } = await openQuickAdd()
+    expect(labelled(dialog, 'Location')).toBeNull()
+    expect(labelled(dialog, 'Description')).toBeNull()
+    expect(text(dialog)).not.toContain('Details')
+    expect(text(dialog)).toContain('Repeat')
+    expect(text(dialog)).toContain('Start and end')
+  })
+
   it('creates the event in a writable calendar, closes, reloads and returns the focus', async () => {
     const { opener, dialog } = await openQuickAdd()
-    // Description and location come with live data; the dialog starts in the title.
-    expect(labelled(dialog, 'Location')).not.toBeNull()
-    expect(labelled(dialog, 'Description')).not.toBeNull()
-    expect(text(dialog)).toContain('Repeat')
     await vi.waitFor(() => expect(document.activeElement).toBe(labelled(dialog, 'Title')))
 
     type(labelled<HTMLInputElement>(dialog, 'Title')!, 'Lunch with Ana')
-    type(labelled<HTMLInputElement>(dialog, 'Location')!, 'Canteen')
-    type(labelled<HTMLTextAreaElement>(dialog, 'Description')!, 'Bring the slides')
     buttonIn(dialog, 'Add event')!.click()
 
     await vi.waitFor(() => expect(top()).toBeNull())
@@ -241,8 +244,6 @@ describe('quick add on live data', () => {
     expect(puts[0]!.url.endsWith('.ics')).toBe(true)
     const lines = contentLines(puts[0]!.data!)
     expect(lines).toContain('SUMMARY:Lunch with Ana')
-    expect(lines).toContain('LOCATION:Canteen')
-    expect(lines).toContain('DESCRIPTION:Bring the slides')
     expect(invalidated).toEqual([WORK_HREF])
     await vi.waitFor(() => expect(document.body.textContent).toContain('Event added'))
     expect(document.activeElement).toBe(opener)
@@ -328,6 +329,69 @@ describe('quick add on live data', () => {
     release()
     await vi.waitFor(() => expect(top()).toBeNull())
     expect(server.callsOf('PUT')).toHaveLength(1)
+  })
+
+  it('"Add" has the details, closed while empty, and writes location and description', async () => {
+    const opener = await mountApp()
+    seedState([])
+    useCalendarState().openAddEvent({ start: '2026-11-05T09:00', end: '2026-11-05T10:00' })
+    await vi.waitFor(() => expect(top()).not.toBeNull())
+    const dialog = top()!
+    expect(text(dialog)).toContain('Details')
+    const detailsButton = [...dialog.querySelectorAll('button')].find((item) =>
+      text(item)?.startsWith('Details'),
+    )!
+    expect(detailsButton.getAttribute('aria-expanded')).toBe('false')
+    detailsButton.click()
+    await vi.waitFor(() => expect(detailsButton.getAttribute('aria-expanded')).toBe('true'))
+
+    type(labelled<HTMLInputElement>(dialog, 'Title')!, 'Lunch with Ana')
+    type(labelled<HTMLInputElement>(dialog, 'Location')!, 'Canteen')
+    type(labelled<HTMLTextAreaElement>(dialog, 'Description')!, 'Bring the slides')
+    buttonIn(dialog, 'Add event')!.click()
+
+    await vi.waitFor(() => expect(top()).toBeNull())
+    const lines = contentLines(server.callsOf('PUT')[0]!.data!)
+    expect(lines).toContain('LOCATION:Canteen')
+    expect(lines).toContain('DESCRIPTION:Bring the slides')
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('folds the start and end away and says what is in it', async () => {
+    await mountApp()
+    seedState([])
+    useCalendarState().openQuickAdd({ start: '2026-11-05T09:00', end: '2026-11-05T10:00' })
+    await vi.waitFor(() => expect(top()).not.toBeNull())
+    const dialog = top()!
+    const region = [...dialog.querySelectorAll('button')].find((item) =>
+      text(item)?.startsWith('Start and end'),
+    )!
+    expect(region.getAttribute('aria-expanded')).toBe('true')
+    region.click()
+    await vi.waitFor(() => expect(region.getAttribute('aria-expanded')).toBe('false'))
+    expect(text(region)).toMatch(/Thu,? 5 Nov, 09:00–10:00/)
+    // the fields are still in the form: a closed region is hidden, not dropped
+    expect(labelled(dialog, 'Start')).not.toBeNull()
+  })
+
+  it('opens the closed start and end when they hold the error, and focuses the field', async () => {
+    await mountApp()
+    seedState([])
+    useCalendarState().openQuickAdd({ start: '2026-11-05T09:00', end: '2026-11-05T10:00' })
+    await vi.waitFor(() => expect(top()).not.toBeNull())
+    const dialog = top()!
+    const region = [...dialog.querySelectorAll('button')].find((item) =>
+      text(item)?.startsWith('Start and end'),
+    )!
+    region.click()
+    await vi.waitFor(() => expect(region.getAttribute('aria-expanded')).toBe('false'))
+    type(labelled<HTMLInputElement>(dialog, 'Title')!, 'Backwards')
+    type(labelled<HTMLInputElement>(dialog, 'End')!, '2026-11-05T08:00')
+    buttonIn(dialog, 'Add event')!.click()
+    await vi.waitFor(() => expect(region.getAttribute('aria-expanded')).toBe('true'))
+    await vi.waitFor(() => expect(text(dialog)).toContain('The end must be after the start.'))
+    expect(document.activeElement).toBe(labelled(dialog, 'End'))
+    expect(server.callsOf('PUT')).toEqual([])
   })
 
   it('still adds to the in-memory store in demo mode, without the live fields', async () => {
@@ -458,6 +522,36 @@ describe('the event sheet on live data', () => {
       expect(server.calls).toEqual([])
       expect(document.body.textContent).toContain('Nothing to save')
       expect(state.selectedEventId.value).toBe(event.id)
+    })
+
+    it('keeps the details folded away for an event without a location or a description', async () => {
+      const { event } = seedEvent(NEW_INPUT)
+      await open(event)
+      await pressed('Edit')
+      await vi.waitFor(() => expect(dialogs()).toHaveLength(2))
+      const details = [...top()!.querySelectorAll('button')].find((item) =>
+        text(item)?.startsWith('Details'),
+      )!
+      expect(details.getAttribute('aria-expanded')).toBe('false')
+      details.click()
+      await vi.waitFor(() => expect(details.getAttribute('aria-expanded')).toBe('true'))
+      expect(labelled(top(), 'Location')).not.toBeNull()
+    })
+
+    it('opens the details of an event that has a location, and shows it in the folded summary', async () => {
+      const { event } = seedEvent(NEW_INPUT, { location: 'Room 42', description: 'Agenda' })
+      await open(event)
+      await pressed('Edit')
+      await vi.waitFor(() => expect(dialogs()).toHaveLength(2))
+      const form = top()!
+      const details = [...form.querySelectorAll('button')].find((item) =>
+        text(item)?.startsWith('Details'),
+      )!
+      expect(details.getAttribute('aria-expanded')).toBe('true')
+      expect(labelled<HTMLInputElement>(form, 'Location')!.value).toBe('Room 42')
+      details.click()
+      await vi.waitFor(() => expect(details.getAttribute('aria-expanded')).toBe('false'))
+      expect(text(details)).toContain('Room 42 · Agenda')
     })
 
     it('shows why a save failed and lets the person try again', async () => {

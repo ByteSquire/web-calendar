@@ -881,9 +881,18 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
 /api/admin/views/:id` (`defineAdminHandler`, at most 100, audit `admin_view.created|updated|deleted`
   with the name). Only `is_admin = 1` rows are touched; user routes answer `404` for a shared view.
   `ext:` refs are refused per field, refs are shape-checked only (no lookup; what a viewer cannot read
-  Radicale answers with `403`). In the sidebar admins get an "Add shared view" input and Rename /
-  Update from selection / Delete actions; other users see a "Shared" badge. In demo mode the controls
-  change the local list only.
+  Radicale answers with `403`). In the sidebar admins get an "Add shared view" input and Rename / Update from selection / Delete
+  actions. Every view has a `⋯` menu (FR-21): on a shared view everybody else gets one item, "Copy
+  to my views", and sees the "Shared" badge. In demo mode the controls change the local list only.
+- **Own views (FR-2, FR-21)** — every user adds, renames, duplicates and deletes their own views
+  through `POST /api/views`, `PUT` and `DELETE /api/views/:id` (at most 100 per user; another user's
+  view and a shared one answer `404`). The sidebar has an "Add view" input (the view starts as the
+  calendars now shown) below the list of views. "Duplicate" on an own view and "Copy to my views"
+  on a shared one make a copy of the user's own, named "<name> (copy)" ("(copy 2)" and on when
+  taken), with the same calendars; an own view may hold external calendars, a shared one never.
+  Without a server (demo) the same controls change the local list. Tests: `tests/user-views.test.ts`,
+  `e2e/own-views.spec.ts` (demo), `e2e/live/shared-view-menu.spec.ts` (alice shares, bob, who is no
+  administrator, copies, renames and deletes).
 - **Public view** _(planned)_ — no logged-in user, so it reads **only** the calendars
   in `published_calendars` with a service credential, read-only. Decided when the
   feature is scheduled.

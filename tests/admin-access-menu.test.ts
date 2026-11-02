@@ -72,3 +72,33 @@ describe('the Calendar access entry', () => {
     expect(items()).not.toContain('Calendar access')
   })
 })
+
+describe('the Resources entry', () => {
+  it('is in the menu for an admin and leads to the page', async () => {
+    configure(false)
+    useState('admin-flag').value = true
+    await open()
+    expect(items()).toContain('Resources')
+    expect(
+      document.querySelector('[role="menuitem"][href="/admin/resources"]')?.textContent,
+    ).toContain('Resources')
+  })
+
+  it.each([
+    ['somebody who is not an admin', false],
+    ['somebody whose status is not known yet', null],
+  ])('is not in the menu for %s', async (_label, flag) => {
+    configure(false)
+    useState('admin-flag').value = flag
+    await open()
+    expect(items()).not.toContain('Resources')
+    expect(document.querySelector('[href="/admin/resources"]')).toBeNull()
+  })
+
+  it('is not in the menu in demo mode', async () => {
+    configure(true)
+    useState('admin-flag').value = true
+    await open()
+    expect(items()).not.toContain('Resources')
+  })
+})

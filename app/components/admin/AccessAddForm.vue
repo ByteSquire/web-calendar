@@ -55,7 +55,7 @@
     <p v-else class="text-toned">Everyone who can sign in to this calendar app gets this access.</p>
 
     <URadioGroup
-      v-model="permission"
+      v-model="levelModel"
       legend="Access level"
       :items="levelItems"
       :ui="RADIO_UI"
@@ -68,15 +68,13 @@
   </form>
 </template>
 
-<script setup lang="ts">
+<script setup lang="ts" generic="P extends string">
+import type { Ref } from 'vue'
 import {
-  ACCESS_LEVELS,
   PRINCIPAL_CHOICES,
   isGroupName,
   userLabel,
-  type AccessPermission,
   type AccessPrincipalType,
-  type AccessRuleInput,
   type AccessUser,
 } from '~/utils/admin/access'
 
@@ -84,8 +82,15 @@ const props = defineProps<{
   users: readonly AccessUser[]
   groupsAvailable: boolean
   busy: boolean
+  /** The levels to choose from (calendars: read/write, resources: read/book/manage). */
+  levels: readonly { value: P; label: string; help: string }[]
+  /** The level that is selected at first. */
+  defaultLevel: P
   /** Saves the rule; true when it worked. `label` names who it is for. */
-  save: (rule: AccessRuleInput, label: string) => Promise<boolean>
+  save: (
+    rule: { principalType: AccessPrincipalType; principal: string | null; permission: P },
+    label: string,
+  ) => Promise<boolean>
 }>()
 
 // The search field is named; a placeholder is no name for assistive technology.
@@ -96,7 +101,7 @@ const RADIO_UI = { item: 'min-h-11 items-center' }
 const type = ref<AccessPrincipalType>('user')
 const person = ref<string | undefined>(undefined)
 const group = ref('')
-const permission = ref<AccessPermission>('read')
+const permission = ref(props.defaultLevel) as Ref<P>
 const problem = ref<string | undefined>(undefined)
 
 const whoItems = computed(() =>
@@ -110,11 +115,19 @@ const whoItems = computed(() =>
       : choice,
   ),
 )
-const levelItems = ACCESS_LEVELS.map((level) => ({
-  value: level.value,
+// Nuxt UI types the radio group by its items; a plain string keeps that simple while the saved rule
+// keeps the caller's own level type `P`.
+const levelItems = props.levels.map((level) => ({
+  value: level.value as string,
   label: level.label,
   description: level.help,
 }))
+const levelModel = computed<string>({
+  get: () => permission.value,
+  set: (value) => {
+    permission.value = value as P
+  },
+})
 const personItems = computed(() =>
   props.users.map((user) => ({ value: user.sub, label: userLabel(user) })),
 )

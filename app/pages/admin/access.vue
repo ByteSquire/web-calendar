@@ -81,6 +81,8 @@
           :users="access.users.data.value ?? []"
           :groups-available="groupsAvailable"
           :busy="saving"
+          :levels="ACCESS_LEVELS"
+          default-level="read"
           :save="add"
         />
       </template>
@@ -91,7 +93,7 @@
 <script setup lang="ts">
 import { useAdminAccess, useAdminFlag } from '~/composables/useAdminAccess'
 import type { AccessRule, AccessRuleInput } from '~/utils/admin/access'
-import { levelLabel, withRule, withoutRule } from '~/utils/admin/access'
+import { ACCESS_LEVELS, levelLabel, withRule, withoutRule } from '~/utils/admin/access'
 
 useHead({ title: 'Calendar access' })
 

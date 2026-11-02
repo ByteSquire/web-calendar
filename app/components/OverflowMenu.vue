@@ -178,6 +178,10 @@ const items = computed<DropdownMenuItem[][]>(() => {
       ...(adminFlag.admin.value === true
         ? [{ label: 'Calendar access', icon: 'i-lucide-shield-check', to: '/admin/access' }]
         : []),
+      // Resources administration: admins only, beside Calendar access.
+      ...(adminFlag.admin.value === true
+        ? [{ label: 'Resources', icon: 'i-lucide-door-open', to: '/admin/resources' }]
+        : []),
       ...fullScreenItems,
       darkMode,
       ...followSystem,

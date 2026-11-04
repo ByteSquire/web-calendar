@@ -102,7 +102,7 @@ Configure it like [`deploy/radicale/config`](../radicale/config) (tested with Ra
 - `[sharing] type = csv`, `collection_by_map = true`, `permit_create_map = true`, with the
   database in Radicale's data storage
 - `[storage] predefined_collections` as in the file, for each user's first calendar
-- `[server] max_content_length` at least the app's **Largest CalDAV request**
+- `[server] max_content_length` the same as the app's **Largest CalDAV request**
 - `[web] type = none`
 
 Radicale refuses to start without the group file. The app creates an empty one when it starts, so

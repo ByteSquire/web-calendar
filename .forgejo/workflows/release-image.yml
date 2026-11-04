@@ -1,0 +1,130 @@
+# Publishes the container image to Codeberg's registry, codeberg.org/<owner>/web-calendar, when a
+# version tag is pushed (v1.2.3, or v1.2.3-rc.1 for a pre-release), or when started by hand for an
+# existing tag (to rebuild a release on a fresh base image, say). The image gets the version as its
+# tag (1.2.3), plus 1.2 and latest when it is the newest release of that line; a pre-release gets
+# only its own tag. The tag must match "version" in package.json.
+#
+# Setup and use: README "Release image". The checks do not run here: a release is gated by README
+# "Release checks" on the maintainer's machine before the tag is pushed (docs/design.md §12).
+name: Release image
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build and publish again, for example v0.1.0
+        type: string
+        required: true
+
+jobs:
+  image:
+    # Codeberg's small hosted runner, lazy variant: 2 CPUs, 4 GB (files written count against it),
+    # 5 minutes at most, started when Codeberg has capacity to spare (within a day). A run with those
+    # limits took 50 to 75 s, plus up to 23 s to download the job image; the tiny runner's 2 minutes
+    # are too short. For an urgent release, use codeberg-small. It has no Docker daemon, so Buildah builds
+    # the Dockerfile.
+    runs-on: codeberg-small-lazy
+    timeout-minutes: 5
+    # No Codeberg runner image has Buildah, so the job runs in the official Buildah image (Fedora).
+    # It is the biggest download (244 MB; Alpine plus apk: 38 MB) but skips the package install: with
+    # the same limits its runs were 3 to 7 s faster than Alpine's, and a runner that has to download
+    # it first spends about 20 s more on that. The version tag keeps Buildah at 1.43 (Codeberg's
+    # buildah-simple action warns against 1.44) and still receives the image's rebuilds.
+    container:
+      image: quay.io/buildah/stable:v1.43.5
+    defaults:
+      run:
+        shell: bash
+    env:
+      REGISTRY: codeberg.org
+      # Buildah in an unprivileged container: chroot instead of new namespaces for the RUN steps.
+      BUILDAH_ISOLATION: chroot
+    steps:
+      - name: Configure Buildah
+        run: |
+          # As in Codeberg's actions/buildah-simple: ids for the files of the image layers, and plain
+          # copies instead of overlay mounts, which need FUSE here. The driver goes in the file:
+          # Buildah ignored STORAGE_DRIVER in later commands, tried overlay and failed.
+          echo root:1:65536 | tee /etc/subuid /etc/subgid > /dev/null
+          printf '[storage]\ndriver = "vfs"\nrunroot = "/run/containers/storage"\ngraphroot = "/var/lib/containers/storage"\n' \
+            > /etc/containers/storage.conf
+          buildah --version
+
+      # Values from the event go through env, never into the script text.
+      - name: Check the tag and the token
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          if [ "$FORGEJO_EVENT_NAME" = workflow_dispatch ]; then tag=$INPUT_TAG; else tag=$FORGEJO_REF_NAME; fi
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
+          if ! [[ $tag =~ $semver ]]; then
+            echo "::error::'$tag' is not a version tag like v1.2.3 or v1.2.3-rc.1"
+            exit 1
+          fi
+          if [ -z "$REGISTRY_TOKEN" ]; then
+            echo '::error::The repository secret REGISTRY_TOKEN is missing (README "Release image")'
+            exit 1
+          fi
+          echo "TAG=$tag" >> "$FORGEJO_ENV"
+
+      - name: Fetch the tag and choose the image tags
+        run: |
+          git clone --quiet --depth 1 --branch "$TAG" -c advice.detachedHead=false \
+            "$FORGEJO_SERVER_URL/$FORGEJO_REPOSITORY.git" src
+          cd src
+          commit=$(git rev-parse HEAD)
+          # A push run builds what was pushed; a tag that was moved in between stops it.
+          if [ "$FORGEJO_EVENT_NAME" = push ] && [ "$FORGEJO_SHA" != "$commit" ] &&
+            [ "$FORGEJO_SHA" != "$(git rev-parse "refs/tags/$TAG")" ]; then
+            echo "::error::$TAG now points to $commit, not to the pushed $FORGEJO_SHA"
+            exit 1
+          fi
+          version=$(python3 -c 'import json; print(json.load(open("package.json"))["version"])')
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::$TAG does not match the version in package.json ($version)"
+            exit 1
+          fi
+          tags=$version
+          if [[ $version != *-* ]]; then
+            releases=$(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' |
+              { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | sort -V)
+            minor=${version%.*}
+            newest_of_minor=$({ grep -E "^v${minor//./\\.}\." <<< "$releases" || true; } | tail -n 1)
+            if [ "$newest_of_minor" = "$TAG" ]; then tags="$tags $minor"; fi
+            if [ "$(tail -n 1 <<< "$releases")" = "$TAG" ]; then tags="$tags latest"; fi
+          fi
+          echo "Image tags: $tags"
+          {
+            echo "COMMIT=$commit"
+            echo "VERSION=$version"
+            echo "IMAGE_TAGS=$tags"
+            echo "IMAGE=$REGISTRY/${FORGEJO_REPOSITORY,,}"
+          } >> "$FORGEJO_ENV"
+
+      # The image store starts empty, so the base image is always pulled fresh. "missing" pulls it
+      # once; "always" asked Docker Hub again for the runtime stage, and a DNS hiccup on that second
+      # request failed a test run (Buildah does not retry a failed lookup).
+      - name: Build the image
+        run: |
+          buildah build --pull=missing \
+            --label "org.opencontainers.image.source=$FORGEJO_SERVER_URL/$FORGEJO_REPOSITORY" \
+            --label "org.opencontainers.image.version=$VERSION" \
+            --label "org.opencontainers.image.revision=$COMMIT" \
+            --label org.opencontainers.image.licenses=AGPL-3.0-only \
+            --tag "localhost/release:$VERSION" src
+
+      - name: Push the image
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          printf '%s' "$REGISTRY_TOKEN" |
+            buildah login --username "$FORGEJO_REPOSITORY_OWNER" --password-stdin "$REGISTRY"
+          for tag in $IMAGE_TAGS; do
+            buildah push --digestfile digest "localhost/release:$VERSION" "docker://$IMAGE:$tag"
+            echo "Pushed $IMAGE:$tag ($(cat digest))"
+          done
+          buildah logout "$REGISTRY"

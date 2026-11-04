@@ -1,0 +1,844 @@
+{
+  "cosmos-installer": {
+    "form": [
+      {
+        "name": "intro",
+        "type": "info",
+        "label": "Web Calendar: a calendar web app with a CalDAV gateway. It always installs the app. It can also install its own Kanidm (sign-in) and Radicale (calendar store), or use ones you already run. Every setting below has a short description; the defaults are the ones of the project's docker-compose.yml. Values must not contain double quotes or backslashes."
+      },
+      {
+        "name": "bundleKanidmInfo",
+        "type": "info",
+        "label": "Kanidm signs users in (OpenID Connect) and holds the groups. Tick the box to install a new Kanidm next to the app; you choose its address further down, with the address of the app. Untick it to use a Kanidm you already run (you enter its issuer URL below)."
+      },
+      {
+        "name": "bundleKanidm",
+        "type": "checkbox",
+        "label": "Install a Kanidm server for this app",
+        "initialValue": true
+      },
+      {
+        "name": "bundleRadicaleInfo",
+        "type": "info",
+        "label": "Radicale stores the calendars. Tick the box to install a new Radicale on a private network only the app can reach. Untick it to use a Radicale you already run; it must then be configured as described in deploy/cosmos/README.md."
+      },
+      {
+        "name": "bundleRadicale",
+        "type": "checkbox",
+        "label": "Install a Radicale server for this app",
+        "initialValue": true
+      },
+
+      {
+        "name": "appImageInfo",
+        "type": "info",
+        "label": "Image: the container image of the app. Cosmos pulls it from a registry, so it must be pushed there first (deploy/cosmos/README.md shows how). Use a version tag rather than latest so an update is your decision."
+      },
+      {
+        "name": "appImage",
+        "type": "text",
+        "label": "App image",
+        "initialValue": "codeberg.org/bytesquire/web-calendar:0.1.0"
+      },
+      {
+        "name": "autoUpdateInfo",
+        "type": "info",
+        "label": "Automatic updates: Cosmos pulls a newer image under the same tag and restarts the app on its own. Leave it off if you want to read the release notes and back up first."
+      },
+      {
+        "name": "autoUpdate",
+        "type": "checkbox",
+        "label": "Update the app image automatically",
+        "initialValue": false
+      }
+      {if Context.bundleKanidm}
+      ,
+      {
+        "name": "kanidmImageInfo",
+        "type": "info",
+        "label": "Kanidm image: keep a fixed version. Kanidm upgrades one minor version at a time, so never jump versions."
+      },
+      {
+        "name": "kanidmImage",
+        "type": "text",
+        "label": "Kanidm image",
+        "initialValue": "kanidm/server:1.11.2"
+      },
+      {
+        "name": "kanidmLogLevelInfo",
+        "type": "info",
+        "label": "Kanidm log level: info for normal operation, debug or trace only while looking for a problem (they log much more)."
+      },
+      {
+        "name": "kanidmLogLevel",
+        "type": "select",
+        "label": "Kanidm log level",
+        "initialValue": "info",
+        "options": [
+          ["info", "info"],
+          ["debug", "debug"],
+          ["trace", "trace"]
+        ]
+      }
+      {/if}
+      {if Context.bundleRadicale}
+      ,
+      {
+        "name": "radicaleImageInfo",
+        "type": "info",
+        "label": "Radicale image: the Radicale project's own image. The app is tested with 3.9.0."
+      },
+      {
+        "name": "radicaleImage",
+        "type": "text",
+        "label": "Radicale image",
+        "initialValue": "ghcr.io/kozea/radicale:3.9.0"
+      },
+      {
+        "name": "radicaleLogLevelInfo",
+        "type": "info",
+        "label": "Radicale log level: info logs every request; warning or error log less."
+      },
+      {
+        "name": "radicaleLogLevel",
+        "type": "select",
+        "label": "Radicale log level",
+        "initialValue": "info",
+        "options": [
+          ["debug", "debug"],
+          ["info", "info"],
+          ["warning", "warning"],
+          ["error", "error"],
+          ["critical", "critical"]
+        ]
+      }
+      {/if}
+      {if Context.bundleKanidm}
+      ,
+      {
+        "name": "oidcIssuerBundledInfo",
+        "type": "info",
+        "label": "Issuer: set for you as https://(Kanidm address)/oauth2/openid/(client id below). After the install, create the client in Kanidm as the post-install notes say."
+      }
+      {else}
+      ,
+      {
+        "name": "oidcIssuerInfo",
+        "type": "info",
+        "label": "Issuer (NUXT_OIDC_ISSUER, required): the issuer URL of the app's client in your Kanidm. An https URL that ends with the client id, for example https://idm.example.org/oauth2/openid/web-calendar (docs/kanidm-setup.md section 2)."
+      },
+      {
+        "name": "oidcIssuer",
+        "type": "text",
+        "label": "Kanidm issuer URL",
+        "initialValue": ""
+      }
+      {/if}
+      ,
+      {
+        "name": "oidcClientIdInfo",
+        "type": "info",
+        "label": "Client id (NUXT_OIDC_CLIENT_ID): the name of the app's OAuth2 client in Kanidm. Change it only if the client has another name; the issuer must end with it."
+      },
+      {
+        "name": "oidcClientId",
+        "type": "text",
+        "label": "OAuth2 client id",
+        "initialValue": "web-calendar"
+      },
+      {
+        "name": "oidcAllowedClientsInfo",
+        "type": "info",
+        "label": "Further clients (NUXT_OIDC_ALLOWED_CLIENTS): other Kanidm clients whose tokens the CalDAV gateway accepts, comma-separated. Empty means only the client above."
+      },
+      {
+        "name": "oidcAllowedClients",
+        "type": "text",
+        "label": "Further accepted clients",
+        "initialValue": ""
+      },
+      {
+        "name": "oidcAdminGroupInfo",
+        "type": "info",
+        "label": "Admin group (NUXT_OIDC_ADMIN_GROUP): the Kanidm group whose members are admins of the app. Must not be empty."
+      },
+      {
+        "name": "oidcAdminGroup",
+        "type": "text",
+        "label": "Admin group",
+        "initialValue": "calendar_admins"
+      },
+      {
+        "name": "oidcKeyMaxAgeInfo",
+        "type": "info",
+        "label": "Signing key cache (NUXT_OIDC_KEY_MAX_AGE_SEC): seconds the app uses Kanidm's signing keys before it fetches them again. A key Kanidm removed is trusted for at most this long. A whole number, at least 1."
+      },
+      {
+        "name": "oidcKeyMaxAge",
+        "type": "text",
+        "label": "Signing key cache (seconds)",
+        "initialValue": "3600"
+      },
+
+      {
+        "name": "tokenHashKeyInfo",
+        "type": "info",
+        "label": "App token key (NUXT_TOKEN_HASH_KEY, required): hashes the app tokens that calendar apps sign in with. At least 32 characters; a random one is filled in. Keep it: changing it signs every calendar app out. Rotate it with the next field instead."
+      },
+      {
+        "name": "tokenHashKey",
+        "type": "password",
+        "label": "App token key",
+        "initialValue": "{Passwords.0}{Passwords.1}"
+      },
+      {
+        "name": "tokenHashKeysInfo",
+        "type": "info",
+        "label": "Key rotation (NUXT_TOKEN_HASH_KEYS): more keys as version:key entries separated by commas, the current key first, for example 2:(new key). The key above stays valid as version 1. Empty means only the key above."
+      },
+      {
+        "name": "tokenHashKeys",
+        "type": "password",
+        "label": "Rotated app token keys",
+        "initialValue": ""
+      },
+      {
+        "name": "sealKeyInfo",
+        "type": "info",
+        "label": "External account key (NUXT_EXTERNAL_SEAL_KEY): seals the passwords of external CalDAV accounts. 32 random bytes as base64 or 64 hex characters; generate one with: openssl rand -base64 32. Empty turns accounts with a login off. Changing it makes users enter their passwords again."
+      },
+      {
+        "name": "sealKey",
+        "type": "password",
+        "label": "External account key",
+        "initialValue": ""
+      },
+
+      {
+        "name": "groupSyncTokenInfo",
+        "type": "info",
+        "label": "Group sync token (NUXT_GROUP_SYNC_TOKEN): the read-only API token of the Kanidm service account that copies group membership to Radicale (docs/kanidm-setup.md section 3). You only get it after setting Kanidm up: leave it empty now and add it later in the app container's environment. Without it, group shares do not work."
+      },
+      {
+        "name": "groupSyncToken",
+        "type": "password",
+        "label": "Group sync token",
+        "initialValue": ""
+      },
+      {
+        "name": "groupSyncIntervalInfo",
+        "type": "info",
+        "label": "Group sync interval (NUXT_GROUP_SYNC_INTERVAL_SEC): seconds between group-sync runs. A removed group member keeps access for up to this long; at most 300."
+      },
+      {
+        "name": "groupSyncInterval",
+        "type": "text",
+        "label": "Group sync interval (seconds)",
+        "initialValue": "60"
+      }
+      {if not Context.bundleRadicale}
+      ,
+      {
+        "name": "radicaleWarning",
+        "type": "warning",
+        "label": "Your Radicale must trust the X-Remote-User header (auth type http_x_remote_user), so anything that can reach it can act as any user. Only the app may be able to reach it: no published port, no route in Cosmos, a network shared with the app only. Its other settings are listed in deploy/cosmos/README.md."
+      },
+      {
+        "name": "radicaleUrlInfo",
+        "type": "info",
+        "label": "Radicale URL (NUXT_RADICALE_URL): the internal address the app reaches your Radicale at, for example http://radicale:5232."
+      },
+      {
+        "name": "radicaleUrl",
+        "type": "text",
+        "label": "Radicale URL",
+        "initialValue": "http://radicale:5232"
+      },
+      {
+        "name": "radicaleNetworkInfo",
+        "type": "info",
+        "label": "Radicale network: the Docker network your Radicale is on, so the app can join it. Empty if the app reaches it another way."
+      },
+      {
+        "name": "radicaleNetwork",
+        "type": "text",
+        "label": "Docker network of your Radicale",
+        "initialValue": ""
+      }
+      {/if}
+      ,
+      {
+        "name": "gatewayCorsInfo",
+        "type": "info",
+        "label": "CORS origins (NUXT_GATEWAY_CORS_ORIGINS): origins of external browser apps that may call the CalDAV gateway, comma-separated, for example https://other.example.org. Empty means none."
+      },
+      {
+        "name": "gatewayCors",
+        "type": "text",
+        "label": "CalDAV CORS origins",
+        "initialValue": ""
+      },
+      {
+        "name": "gatewayMaxBodyInfo",
+        "type": "info",
+        "label": "Largest upload (NUXT_GATEWAY_MAX_BODY_BYTES): the largest request body the CalDAV gateway forwards, in bytes. 10485760 is 10 MiB."
+      },
+      {
+        "name": "gatewayMaxBody",
+        "type": "text",
+        "label": "Largest CalDAV request (bytes)",
+        "initialValue": "10485760"
+      },
+      {
+        "name": "gatewayMaxConcurrentInfo",
+        "type": "info",
+        "label": "Parallel requests (NUXT_GATEWAY_MAX_CONCURRENT_PER_USER): requests one signed-in user may have in flight at once; more get 429 for a second. Raise it only if a calendar app of yours legitimately opens more."
+      },
+      {
+        "name": "gatewayMaxConcurrent",
+        "type": "text",
+        "label": "Parallel requests per user",
+        "initialValue": "8"
+      },
+      {
+        "name": "trustForwardedForInfo",
+        "type": "info",
+        "label": "Trust the proxy (NUXT_GATEWAY_TRUST_FORWARDED_FOR): the failed-login throttle takes the client address from X-Forwarded-For, which the Cosmos proxy adds. Keep it on while Cosmos is the only way to reach the app (this template publishes no port). Off, every client shares the proxy's address and one attacker can lock everyone out of the password login."
+      },
+      {
+        "name": "trustForwardedFor",
+        "type": "checkbox",
+        "label": "Trust X-Forwarded-For from the Cosmos proxy",
+        "initialValue": true
+      },
+
+      {
+        "name": "outboundHostsInfo",
+        "type": "info",
+        "label": "Allowed hosts (NUXT_OUTBOUND_ALLOWED_HOSTS): hosts the server may contact for its users (iCal subscriptions, external CalDAV accounts), comma-separated: exact names (cal.example.org) or domains (*.example.org). With a list, a script that got into the page can only reach these hosts."
+      },
+      {
+        "name": "outboundHosts",
+        "type": "text",
+        "label": "Allowed outbound hosts",
+        "initialValue": ""
+      },
+      {
+        "name": "outboundAnyInfo",
+        "type": "info",
+        "label": "Any host (NUXT_OUTBOUND_ALLOW_ANY_HOST): with no list above, lets the server contact any public host its users name, for example for public calendar feeds from many sites. Ignored when a list is set."
+      },
+      {
+        "name": "outboundAny",
+        "type": "checkbox",
+        "label": "Allow any public host",
+        "initialValue": false
+      }
+      {if not Context.outboundHosts}{if not Context.outboundAny}
+      ,
+      {
+        "name": "outboundError",
+        "type": "error",
+        "label": "Fill in the allowed hosts or tick Allow any public host: the app does not start with neither."
+      }
+      {/if}{/if}
+      ,
+      {
+        "name": "icalCacheTtlInfo",
+        "type": "info",
+        "label": "Feed cache (NUXT_ICAL_PROXY_CACHE_TTL_SEC): seconds a fetched .ics subscription is served without asking its source again; 0 always asks."
+      },
+      {
+        "name": "icalCacheTtl",
+        "type": "text",
+        "label": "Subscription cache (seconds)",
+        "initialValue": "300"
+      },
+      {
+        "name": "icalMaxBytesInfo",
+        "type": "info",
+        "label": "Largest feed (NUXT_ICAL_PROXY_MAX_BYTES): the largest .ics file the server fetches, in bytes. 5242880 is 5 MiB."
+      },
+      {
+        "name": "icalMaxBytes",
+        "type": "text",
+        "label": "Largest subscription (bytes)",
+        "initialValue": "5242880"
+      },
+      {
+        "name": "icalTimeoutInfo",
+        "type": "info",
+        "label": "Feed timeout (NUXT_ICAL_PROXY_TIMEOUT_MS): milliseconds allowed for fetching one .ics file."
+      },
+      {
+        "name": "icalTimeout",
+        "type": "text",
+        "label": "Subscription timeout (ms)",
+        "initialValue": "10000"
+      },
+
+      {
+        "name": "sharingReconcileInfo",
+        "type": "info",
+        "label": "Sharing check (NUXT_SHARING_RECONCILE_INTERVAL_SEC): seconds between the runs that turn the access rules into Radicale shares; at most 900. Changes made in the app apply at once anyway."
+      },
+      {
+        "name": "sharingReconcile",
+        "type": "text",
+        "label": "Sharing check interval (seconds)",
+        "initialValue": "300"
+      },
+      {
+        "name": "sharingAuditInfo",
+        "type": "info",
+        "label": "Sharing audit (NUXT_SHARING_AUDIT_INTERVAL_HOURS): hours between the consistency audits of every calendar home, 1 to 168."
+      },
+      {
+        "name": "sharingAudit",
+        "type": "text",
+        "label": "Sharing audit interval (hours)",
+        "initialValue": "24"
+      },
+      {
+        "name": "sharingOwnersInfo",
+        "type": "info",
+        "label": "Shared owners (NUXT_SHARING_SHARED_OWNERS): service principals whose calendars appear as shared calendars, comma-separated, each starting with an underscore, for example _team. Empty means none."
+      },
+      {
+        "name": "sharingOwners",
+        "type": "text",
+        "label": "Shared calendar owners",
+        "initialValue": ""
+      },
+      {
+        "name": "resourcesReconcileInfo",
+        "type": "info",
+        "label": "Booking check (NUXT_RESOURCES_RECONCILE_INTERVAL_SEC): seconds between the checks of booked events for moves and deletions; at most 900."
+      },
+      {
+        "name": "resourcesReconcile",
+        "type": "text",
+        "label": "Booking check interval (seconds)",
+        "initialValue": "300"
+      },
+      {
+        "name": "resourcesManagerCancelInfo",
+        "type": "info",
+        "label": "Managers cancel (NUXT_RESOURCES_MANAGER_CANCEL): a manager of a resource (a room, a car) may cancel other people's bookings of it. Off, only the person who booked can cancel."
+      },
+      {
+        "name": "resourcesManagerCancel",
+        "type": "checkbox",
+        "label": "Managers may cancel bookings of others",
+        "initialValue": true
+      },
+      {
+        "name": "timeZoneInfo",
+        "type": "info",
+        "label": "Time zone (TZ): the organization's IANA time zone, for example Europe/Berlin. The app shows and plans times in it by default."
+      },
+      {
+        "name": "timeZone",
+        "type": "text",
+        "label": "Time zone",
+        "initialValue": "Europe/Berlin"
+      },
+      {
+        "name": "demoInfo",
+        "type": "warning",
+        "label": "Demo mode (NUXT_DEMO): the page skips the sign-in and shows made-up data. For previews only; never for real use. The server logs a warning while it is on."
+      },
+      {
+        "name": "demo",
+        "type": "checkbox",
+        "label": "Demo mode",
+        "initialValue": false
+      },
+
+      {
+        "name": "useHostFoldersInfo",
+        "type": "info",
+        "label": "Storage: by default each kind of data gets its own Docker volume. Tick the box to keep it in folders on the host instead (easier to back up with your own tools). Leave a name or path empty for the default shown in its description."
+      },
+      {
+        "name": "useHostFolders",
+        "type": "checkbox",
+        "label": "Store data in host folders instead of Docker volumes",
+        "initialValue": false
+      },
+      {
+        "name": "appDataInfo",
+        "type": "info",
+        "label": "App data, mounted at /data: the app's SQLite database (app tokens, access rules, settings, bookings, audit log). Back it up. Default: the volume (service name)-data, or the folder (Cosmos storage)/(service name)/data."
+      },
+      {if Context.useHostFolders}
+      {
+        "name": "appDataPath",
+        "type": "path",
+        "label": "Host folder for the app data",
+        "initialValue": ""
+      },
+      {else}
+      {
+        "name": "appDataVolume",
+        "type": "text",
+        "label": "Volume for the app data",
+        "initialValue": ""
+      },
+      {/if}
+      {
+        "name": "groupsInfo",
+        "type": "info",
+        "label": "Group file, mounted at /groups: the file htgroup, which the app writes from Kanidm's groups and Radicale reads. With your own Radicale, pick a volume or folder that Radicale reads too. Default: the volume (service name)-groups, or the folder (Cosmos storage)/(service name)/groups."
+      },
+      {if Context.useHostFolders}
+      {
+        "name": "groupsPath",
+        "type": "path",
+        "label": "Host folder for the group file",
+        "initialValue": ""
+      }
+      {else}
+      {
+        "name": "groupsVolume",
+        "type": "text",
+        "label": "Volume for the group file",
+        "initialValue": ""
+      }
+      {/if}
+      {if Context.bundleRadicale}
+      ,
+      {
+        "name": "radicaleDataInfo",
+        "type": "info",
+        "label": "Calendars, mounted at /var/lib/radicale: every calendar and event, and Radicale's share list. Back it up. Default: the volume (service name)-radicale-data, or the folder (Cosmos storage)/(service name)/radicale."
+      },
+      {if Context.useHostFolders}
+      {
+        "name": "radicaleDataPath",
+        "type": "path",
+        "label": "Host folder for the calendars",
+        "initialValue": ""
+      }
+      {else}
+      {
+        "name": "radicaleDataVolume",
+        "type": "text",
+        "label": "Volume for the calendars",
+        "initialValue": ""
+      }
+      {/if}
+      {/if}
+      {if Context.bundleKanidm}
+      ,
+      {
+        "name": "kanidmDataInfo",
+        "type": "info",
+        "label": "Kanidm data, mounted at /data: the Kanidm database (users, groups, credentials) and its TLS certificate. Back it up. Default: the volume (service name)-kanidm-data, or the folder (Cosmos storage)/(service name)/kanidm."
+      },
+      {if Context.useHostFolders}
+      {
+        "name": "kanidmDataPath",
+        "type": "path",
+        "label": "Host folder for the Kanidm data",
+        "initialValue": ""
+      }
+      {else}
+      {
+        "name": "kanidmDataVolume",
+        "type": "text",
+        "label": "Volume for the Kanidm data",
+        "initialValue": ""
+      }
+      {/if}
+      {/if}
+    ],
+    "post-install": [
+      {
+        "type": "success",
+        "name": "open",
+        "label": "The app is at https://{Hostnames.{StaticServiceName}.{StaticServiceName}.host}/ once sign-in is set up."
+      }
+      {if Context.bundleKanidm}
+      ,
+      {
+        "type": "info",
+        "name": "kanidmSetup",
+        "label": "Set Kanidm up: 1. Get the admin password with: docker exec {ServiceName}-kanidm kanidmd recover-account idm_admin. 2. Follow docs/kanidm-setup.md with the server https://{Hostnames.{StaticServiceName}-kanidm.{StaticServiceName}-kanidm.host}: create the groups, the client {Context.oidcClientId} with the redirect URL https://{Hostnames.{StaticServiceName}.{StaticServiceName}.host}/auth/callback, and the group-sync account. 3. Put its token into NUXT_GROUP_SYNC_TOKEN in the environment of the container {ServiceName} and restart it."
+      }
+      {else}
+      ,
+      {
+        "type": "info",
+        "name": "kanidmExisting",
+        "label": "In your Kanidm, follow docs/kanidm-setup.md: the client {Context.oidcClientId} needs the redirect URL https://{Hostnames.{StaticServiceName}.{StaticServiceName}.host}/auth/callback. Put the group-sync token into NUXT_GROUP_SYNC_TOKEN in the environment of the container {ServiceName} if you have not yet."
+      }
+      {/if}
+      {if not Context.bundleRadicale}
+      ,
+      {
+        "type": "warning",
+        "name": "radicaleExisting",
+        "label": "Check that your Radicale is reachable by the app only and reads the group file the app writes (deploy/cosmos/README.md)."
+      }
+      {/if}
+    ]
+  },
+  "minVersion": "0.17.0",
+  "services": {
+    "{ServiceName}": {
+      "image": "{Context.appImage}",
+      "container_name": "{ServiceName}",
+      "hostname": "{ServiceName}",
+      "restart": "unless-stopped",
+      "user": "1000:1000",
+      "environment": [
+        "NUXT_OIDC_ISSUER={if Context.bundleKanidm}https://{Hostnames.{StaticServiceName}-kanidm.{StaticServiceName}-kanidm.host}/oauth2/openid/{Context.oidcClientId}{else}{Context.oidcIssuer}{/if}",
+        "NUXT_OIDC_CLIENT_ID={Context.oidcClientId}",
+        "NUXT_OIDC_ALLOWED_CLIENTS={Context.oidcAllowedClients}",
+        "NUXT_OIDC_ADMIN_GROUP={Context.oidcAdminGroup}",
+        "NUXT_OIDC_KEY_MAX_AGE_SEC={Context.oidcKeyMaxAge}",
+        "NUXT_TOKEN_HASH_KEY={Context.tokenHashKey}",
+        "NUXT_TOKEN_HASH_KEYS={Context.tokenHashKeys}",
+        "NUXT_EXTERNAL_SEAL_KEY={Context.sealKey}",
+        "NUXT_GROUP_SYNC_TOKEN={Context.groupSyncToken}",
+        "NUXT_GROUP_SYNC_INTERVAL_SEC={Context.groupSyncInterval}",
+        "NUXT_GROUP_SYNC_FILE=/groups/htgroup",
+        "NUXT_DB_PATH=/data/web-calendar.db",
+        "NUXT_RADICALE_URL={if Context.bundleRadicale}http://{ServiceName}-radicale:5232{else}{Context.radicaleUrl}{/if}",
+        "NUXT_GATEWAY_CORS_ORIGINS={Context.gatewayCors}",
+        "NUXT_GATEWAY_MAX_BODY_BYTES={Context.gatewayMaxBody}",
+        "NUXT_GATEWAY_MAX_CONCURRENT_PER_USER={Context.gatewayMaxConcurrent}",
+        "NUXT_GATEWAY_TRUST_FORWARDED_FOR={if Context.trustForwardedFor}true{else}false{/if}",
+        "NUXT_OUTBOUND_ALLOWED_HOSTS={Context.outboundHosts}",
+        "NUXT_OUTBOUND_ALLOW_ANY_HOST={if Context.outboundAny}true{else}false{/if}",
+        "NUXT_ICAL_PROXY_CACHE_TTL_SEC={Context.icalCacheTtl}",
+        "NUXT_ICAL_PROXY_MAX_BYTES={Context.icalMaxBytes}",
+        "NUXT_ICAL_PROXY_TIMEOUT_MS={Context.icalTimeout}",
+        "NUXT_ICAL_PROXY_ALLOW_PRIVATE=false",
+        "NUXT_SHARING_RECONCILE_INTERVAL_SEC={Context.sharingReconcile}",
+        "NUXT_SHARING_AUDIT_INTERVAL_HOURS={Context.sharingAudit}",
+        "NUXT_SHARING_SHARED_OWNERS={Context.sharingOwners}",
+        "NUXT_RESOURCES_RECONCILE_INTERVAL_SEC={Context.resourcesReconcile}",
+        "NUXT_RESOURCES_MANAGER_CANCEL={if Context.resourcesManagerCancel}true{else}false{/if}",
+        "NUXT_DEMO={if Context.demo}true{else}false{/if}",
+        "TZ={Context.timeZone}"
+      ],
+      "volumes": [
+        {if Context.useHostFolders}
+        {
+          "source": "{if Context.appDataPath}{Context.appDataPath}{else}{DefaultDataPath}/{ServiceName}/data{/if}",
+          "target": "/data",
+          "type": "bind"
+        },
+        {
+          "source": "{if Context.groupsPath}{Context.groupsPath}{else}{DefaultDataPath}/{ServiceName}/groups{/if}",
+          "target": "/groups",
+          "type": "bind"
+        }
+        {else}
+        {
+          "source": "{if Context.appDataVolume}{Context.appDataVolume}{else}{ServiceName}-data{/if}",
+          "target": "/data",
+          "type": "volume"
+        },
+        {
+          "source": "{if Context.groupsVolume}{Context.groupsVolume}{else}{ServiceName}-groups{/if}",
+          "target": "/groups",
+          "type": "volume"
+        }
+        {/if}
+      ],
+      {if Context.bundleRadicale}
+      "networks": {
+        "{ServiceName}-radicale": {}
+      },
+      {else}{if Context.radicaleNetwork}
+      "networks": {
+        "{Context.radicaleNetwork}": {}
+      },
+      {/if}{/if}
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "healthcheck": {
+        "test": [
+          "CMD",
+          "node",
+          "-e",
+          "Promise.all([fetch('http://127.0.0.1:3000/api/config'), fetch('http://127.0.0.1:3000/caldav/')]).then(([config, caldav]) => process.exit(config.status === 200 && caldav.status === 401 ? 0 : 1)).catch(() => process.exit(1))"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "start_period": 10
+      },
+      "labels": {
+        "cosmos-force-network-secured": "true",
+        "cosmos-auto-update": "{if Context.autoUpdate}true{else}false{/if}",
+        "cosmos-persistent-env": "NUXT_TOKEN_HASH_KEY",
+        "cosmos-stack": "{ServiceName}",
+        "cosmos-stack-main": "{ServiceName}"
+      },
+      "routes": [
+        {
+          "name": "{ServiceName}",
+          "description": "The calendar web app and its CalDAV gateway (/caldav/)",
+          "useHost": true,
+          "target": "http://{ServiceName}:3000",
+          "mode": "SERVAPP",
+          "Timeout": 60000,
+          "ThrottlePerMinute": 12000,
+          "BlockCommonBots": false,
+          "SmartShield": {
+            "Enabled": true
+          }
+        }
+      ]
+    }
+    {if Context.bundleRadicale}
+    ,
+    "{ServiceName}-radicale": {
+      "image": "{Context.radicaleImage}",
+      "container_name": "{ServiceName}-radicale",
+      "hostname": "{ServiceName}-radicale",
+      "restart": "unless-stopped",
+      "user": "1000:1000",
+      "command": "--server-hosts 0.0.0.0:5232 --server-max-content-length 10485760 --auth-type http_x_remote_user --rights-type owner_only --group-type htgroup --group-htgroup-filename /etc/radicale/groups/htgroup --sharing-type csv --sharing-database-path /var/lib/radicale/sharing.csv --sharing-collection-by-map True --sharing-permit-create-map True --storage-filesystem-folder /var/lib/radicale/collections --storage-predefined-collections {\"def-calendar\":{\"C:supported-calendar-component-set\":\"VEVENT,VJOURNAL,VTODO\",\"D:displayname\":\"Personal\\u0020Calendar\",\"tag\":\"VCALENDAR\"}} --web-type none --logging-level {Context.radicaleLogLevel}",
+      "network_mode": "{ServiceName}-radicale",
+      "depends_on": {
+        "{ServiceName}": {}
+      },
+      "volumes": [
+        {if Context.useHostFolders}
+        {
+          "source": "{if Context.radicaleDataPath}{Context.radicaleDataPath}{else}{DefaultDataPath}/{ServiceName}/radicale{/if}",
+          "target": "/var/lib/radicale",
+          "type": "bind"
+        },
+        {
+          "source": "{if Context.groupsPath}{Context.groupsPath}{else}{DefaultDataPath}/{ServiceName}/groups{/if}",
+          "target": "/etc/radicale/groups",
+          "type": "bind",
+          "ReadOnly": true
+        }
+        {else}
+        {
+          "source": "{if Context.radicaleDataVolume}{Context.radicaleDataVolume}{else}{ServiceName}-radicale-data{/if}",
+          "target": "/var/lib/radicale",
+          "type": "volume"
+        },
+        {
+          "source": "{if Context.groupsVolume}{Context.groupsVolume}{else}{ServiceName}-groups{/if}",
+          "target": "/etc/radicale/groups",
+          "type": "volume",
+          "ReadOnly": true
+        }
+        {/if}
+      ],
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "labels": {
+        "cosmos-auto-update": "false",
+        "cosmos-stack": "{ServiceName}",
+        "cosmos-stack-main": "{ServiceName}"
+      }
+    }
+    {/if}
+    {if Context.bundleKanidm}
+    ,
+    "{ServiceName}-kanidm-certs": {
+      "image": "{Context.kanidmImage}",
+      "container_name": "{ServiceName}-kanidm-certs",
+      "restart": "no",
+      "command": "/sbin/kanidmd cert-generate",
+      "network_mode": "none",
+      "healthcheck": {
+        "test": ["NONE"]
+      },
+      "environment": [
+        "KANIDM_DOMAIN={Hostnames.{StaticServiceName}-kanidm.{StaticServiceName}-kanidm.host}",
+        "KANIDM_ORIGIN=https://{Hostnames.{StaticServiceName}-kanidm.{StaticServiceName}-kanidm.host}",
+        "KANIDM_DB_PATH=/data/kanidm.db",
+        "KANIDM_TLS_CHAIN=/data/chain.pem",
+        "KANIDM_TLS_KEY=/data/key.pem",
+        "KANIDM_BINDADDRESS=0.0.0.0:8443",
+        "KANIDM_LOG_LEVEL={Context.kanidmLogLevel}"
+      ],
+      "volumes": [
+        {
+          "source": "{if Context.useHostFolders}{if Context.kanidmDataPath}{Context.kanidmDataPath}{else}{DefaultDataPath}/{ServiceName}/kanidm{/if}{else}{if Context.kanidmDataVolume}{Context.kanidmDataVolume}{else}{ServiceName}-kanidm-data{/if}{/if}",
+          "target": "/data",
+          "type": "{if Context.useHostFolders}bind{else}volume{/if}"
+        }
+      ],
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "labels": {
+        "cosmos-auto-update": "false",
+        "cosmos-stack": "{ServiceName}",
+        "cosmos-stack-main": "{ServiceName}"
+      }
+    },
+    "{ServiceName}-kanidm": {
+      "image": "{Context.kanidmImage}",
+      "container_name": "{ServiceName}-kanidm",
+      "hostname": "{ServiceName}-kanidm",
+      "restart": "unless-stopped",
+      "depends_on": {
+        "{ServiceName}-kanidm-certs": {}
+      },
+      "environment": [
+        "KANIDM_DOMAIN={Hostnames.{StaticServiceName}-kanidm.{StaticServiceName}-kanidm.host}",
+        "KANIDM_ORIGIN=https://{Hostnames.{StaticServiceName}-kanidm.{StaticServiceName}-kanidm.host}",
+        "KANIDM_DB_PATH=/data/kanidm.db",
+        "KANIDM_TLS_CHAIN=/data/chain.pem",
+        "KANIDM_TLS_KEY=/data/key.pem",
+        "KANIDM_BINDADDRESS=0.0.0.0:8443",
+        "KANIDM_LOG_LEVEL={Context.kanidmLogLevel}"
+      ],
+      "volumes": [
+        {
+          "source": "{if Context.useHostFolders}{if Context.kanidmDataPath}{Context.kanidmDataPath}{else}{DefaultDataPath}/{ServiceName}/kanidm{/if}{else}{if Context.kanidmDataVolume}{Context.kanidmDataVolume}{else}{ServiceName}-kanidm-data{/if}{/if}",
+          "target": "/data",
+          "type": "{if Context.useHostFolders}bind{else}volume{/if}"
+        }
+      ],
+      "cap_drop": ["ALL"],
+      "security_opt": ["no-new-privileges:true"],
+      "labels": {
+        "cosmos-force-network-secured": "true",
+        "cosmos-auto-update": "false",
+        "cosmos-stack": "{ServiceName}",
+        "cosmos-stack-main": "{ServiceName}"
+      },
+      "routes": [
+        {
+          "name": "{ServiceName}-kanidm",
+          "description": "Kanidm, the sign-in server of the calendar",
+          "useHost": true,
+          "target": "https://{ServiceName}-kanidm:8443",
+          "mode": "SERVAPP",
+          "AcceptInsecureHTTPSTarget": true,
+          "Timeout": 60000,
+          "ThrottlePerMinute": 12000,
+          "BlockCommonBots": true,
+          "SmartShield": {
+            "Enabled": true
+          }
+        }
+      ]
+    }
+    {/if}
+  }
+  {if Context.bundleRadicale}
+  ,
+  "networks": {
+    "{ServiceName}-radicale": {
+      "internal": true,
+      "labels": {
+        "cosmos-stack": "{ServiceName}"
+      }
+    }
+  }
+  {/if}
+}

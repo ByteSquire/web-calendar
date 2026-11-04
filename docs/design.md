@@ -1,6 +1,6 @@
 # Web Calendar — Design
 
-> Status: **Draft v1.5** — companion to `requirements.md` (Draft v1.4).
+> Status: **Draft v1.6** — companion to `requirements.md` (Draft v1.4).
 > This document turns the requirements into a concrete technical design.
 > v1.2 (2026-10-29), after spike S1: the app bundles Radicale and exposes its own authenticated
 > `/caldav/` endpoint (bearer tokens verified locally, app tokens for other clients). Access rules
@@ -14,6 +14,8 @@
 > maintainer's machine (§12, Security backlog; README "Release checks").
 > v1.5 (2026-11-01): the external-account proxy and the time-zone ranges and writes are marked as
 > built, not planned (§4, §7); the `calendar-timezone` hint is still planned.
+> v1.6 (2026-11-02): a Forgejo Actions workflow publishes the release image to Codeberg's registry;
+> the checks still run on the maintainer's machine (§12, Security backlog).
 
 ---
 
@@ -1596,11 +1598,15 @@ off, which the reconcile already ignores; a calendar owned by a member and named
   live key rotation test against Kanidm. Phase 3: the audit log, `requireAdmin` with a rate limit,
   the sharing writer with its pre-check, the group sync and the resource blocks are built (unit and
   e2e tests pass; §8). Open: the dependency audit on each Nuxt release; the public view and its
-  controls. **No CI for now** (decided 2026-11-01): the repo is private, Codeberg's hosted Woodpecker
-  needs a public repo, and the live-login suite cannot run on a hosted runner anyway (it needs the
+  controls. **No CI for the checks** (decided 2026-11-01): Codeberg's hosted runners need a public
+  repo, and the live-login suite cannot run on a hosted runner anyway (it needs the
   Kanidm and Radicale test stack). A release is gated by a manual run of the checks on the
   maintainer's machine, in the Dev Container: `check`, `test`, `test:e2e`, `audit:prod`,
-  `test:gateway:prod` and `test:e2e:live` (README "Release checks"). The repo has no CI configuration.
+  `test:gateway:prod` and `test:e2e:live` (README "Release checks"). The only CI (2026-11-02) is
+  `.forgejo/workflows/release-image.yml`: after those checks, a pushed version tag makes Codeberg's
+  hosted Forgejo Actions runner build the image with Buildah and push it to Codeberg's registry
+  (README "Release image"). It needs the repo to be public and a `REGISTRY_TOKEN` secret limited to
+  the package scope; it runs no tests.
 - **External accounts, residual risks** — the Radicale host is refused by name, and by address
   only when `NUXT_RADICALE_URL` is an IP literal, so a listed internal name that resolves to the
   Radicale container would get through; worst-case memory of the proxy is about 32 × 10 MiB; an

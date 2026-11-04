@@ -12,3 +12,6 @@ package-lock.json
 playwright-report
 test-results
 blob-report
+
+# A Whiskers template: valid JSON only after Cosmos renders it (deploy/cosmos/README.md)
+deploy/cosmos/cosmos-compose.json

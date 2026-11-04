@@ -29,6 +29,7 @@ docker-compose*.yml
 # Dev container and CI configuration
 .devcontainer
 .github
+.forgejo
 
 # Developer tooling and personal files that live in the dev-container workspace
 .claude

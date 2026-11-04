@@ -164,6 +164,8 @@ and client renders match.
 ### Production
 
 `docker-compose.yml` runs two services (design §10); Kanidm is an existing external service.
+To run it as a Cosmos ServApp instead, with Kanidm and Radicale optionally included, see
+[`deploy/cosmos/`](deploy/cosmos/README.md).
 
 - `web-calendar` is the app (Nuxt 4 / Nitro). It listens on `127.0.0.1:3000`, so put a
   reverse proxy with TLS in front. It runs as the unprivileged `node` user on a read-only
@@ -305,8 +307,8 @@ until you allow "Apps on device" / "Device apps and services" for that site.
 
 ### Release checks (run on your machine)
 
-There is no CI for now (design §12). A release is gated by this manual run on the maintainer's
-machine. Replace `intelligent_mayer` with the name of your Dev Container; `-w` is needed because
+The checks have no CI (design §12): a release is gated by this manual run on the maintainer's
+machine, before the version tag is pushed ([Release image](#release-image)). Replace `intelligent_mayer` with the name of your Dev Container; `-w` is needed because
 `docker exec` does not start in the workspace. The Dev Container has no Docker CLI, so the steps
 that start or connect the test stack run on the **host**; everything else runs in the container.
 
@@ -349,6 +351,41 @@ means the audit could not run, which is a fail too.
 
 When GG Coder runs these checks it needs the maintainer's approval each time; it does not start a
 full run on its own.
+
+### Release image
+
+[`.forgejo/workflows/release-image.yml`](.forgejo/workflows/release-image.yml) builds the image on
+Codeberg's hosted Forgejo Actions runner and pushes it to `codeberg.org/<owner>/web-calendar`, the
+image the [Cosmos ServApp](deploy/cosmos/README.md) installs. It runs the build only; the checks
+above stay on your machine. To spare Codeberg's resources it uses the small runner in its lazy
+variant, which starts the job when Codeberg has capacity to spare, at the latest within a day; for
+an urgent release, change `runs-on` to `codeberg-small`.
+
+Once:
+
+1. Codeberg runs hosted jobs only for public repositories under a free license: make the
+   repository public, then tick **Actions** under **Settings → Units**.
+2. Create an access token under **Settings → Applications** (your user settings) with the scope
+   `package` set to read and write, and nothing else. The automatic token of a workflow cannot
+   push images. Store it as the repository secret `REGISTRY_TOKEN` under **Settings → Actions →
+   Secrets**.
+
+Each release:
+
+1. Set `version` in `package.json` (here `0.2.0`), run the
+   [release checks](#release-checks-run-on-your-machine) and commit.
+2. Tag the commit with the same version and push the tag:
+
+   ```sh
+   git tag v0.2.0 && git push origin v0.2.0
+   ```
+
+The workflow stops if the tag is not `v` plus a version (`v1.2.3`, or `v1.2.3-rc.1` for a
+pre-release) or does not match `package.json`. The image gets the version as its tag (`0.2.0`),
+plus `0.2` and `latest` when it is the newest release of its line and of all; a pre-release gets
+only its own tag. To build a release again, for a fixed base image say, start the workflow by hand
+under **Actions** with the existing tag. A new package starts private: to let Cosmos pull without a
+login, make it public under **Packages → web-calendar → Settings**.
 
 ## License
 

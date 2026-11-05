@@ -9,7 +9,8 @@ has a field in the form, with a description above it.
 ## 1. Push the image
 
 Cosmos pulls images from a registry; it cannot build one, and a failed pull undoes the whole
-install. Pushing a version tag publishes the image through Codeberg's CI
+install. Pushing a version tag publishes the image through Codeberg's CI, and through GitHub's to
+`ghcr.io` for a GitHub copy of the repository
 ([README "Release image"](../../README.md#release-image)). To push one by hand instead, from the
 repository root, with a new tag for every release:
 

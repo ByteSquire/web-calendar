@@ -387,6 +387,14 @@ only its own tag. To build a release again, for a fixed base image say, start th
 under **Actions** with the existing tag. A new package starts private: to let Cosmos pull without a
 login, make it public under **Packages → web-calendar → Settings**.
 
+On GitHub, [`.github/workflows/release-image.yml`](.github/workflows/release-image.yml) does the
+same for `ghcr.io/<owner>/<repository>`, with the same tags and checks, when the version tag reaches
+a GitHub copy of the repository (a push mirror from Codeberg carries the tags). It needs no setup:
+the workflow's own token may push the package, which takes the visibility of the repository. It
+runs on `ubuntu-latest`, the smallest GitHub runner with Docker: `ubuntu-slim` has no Docker daemon
+and runs unprivileged, so no image builder works there. Codeberg reads only `.forgejo/workflows`
+and GitHub only `.github/workflows`, so each forge runs its own.
+
 ## License
 
 Copyright (C) 2026 ByteSquire

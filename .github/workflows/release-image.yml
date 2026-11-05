@@ -1,0 +1,99 @@
+# Publishes the container image to GitHub's registry, ghcr.io/<owner>/<repository>, when a version
+# tag is pushed (v1.2.3, or v1.2.3-rc.1 for a pre-release), or when started by hand for an existing
+# tag. Same tags and checks as .forgejo/workflows/release-image.yml, which publishes to Codeberg:
+# Codeberg reads only .forgejo/workflows, GitHub only .github/workflows.
+#
+# Setup and use: README "Release image". The checks do not run here: a release is gated by README
+# "Release checks" on the maintainer's machine before the tag is pushed (docs/design.md §12).
+name: Release image
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build and publish again, for example v0.1.0
+        type: string
+        required: true
+
+# The workflow's own token pushes the image; it may do nothing else.
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  image:
+    # The smallest GitHub runner that can build an image: ubuntu-slim (1 CPU) has no Docker daemon
+    # and runs unprivileged. This one has Docker with BuildKit, so nothing is installed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        shell: bash
+    env:
+      REGISTRY: ghcr.io
+    steps:
+      # Values from the event go through env, never into the script text.
+      - name: Check the tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then tag=$INPUT_TAG; else tag=$GITHUB_REF_NAME; fi
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?$'
+          if ! [[ $tag =~ $semver ]]; then
+            echo "::error::'$tag' is not a version tag like v1.2.3 or v1.2.3-rc.1"
+            exit 1
+          fi
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+
+      # A push run builds the pushed commit, a run by hand the commit the tag points to now.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'push' && github.sha || format('refs/tags/{0}', env.TAG) }}
+
+      - name: Choose the image tags
+        run: |
+          version=$(jq -r .version package.json)
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::$TAG does not match the version in package.json ($version)"
+            exit 1
+          fi
+          tags=$version
+          if [[ $version != *-* ]]; then
+            releases=$(git ls-remote --tags --refs origin 'v*' | sed 's#.*refs/tags/##' |
+              { grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | sort -V)
+            minor=${version%.*}
+            newest_of_minor=$({ grep -E "^v${minor//./\\.}\." <<< "$releases" || true; } | tail -n 1)
+            if [ "$newest_of_minor" = "$TAG" ]; then tags="$tags $minor"; fi
+            if [ "$(tail -n 1 <<< "$releases")" = "$TAG" ]; then tags="$tags latest"; fi
+          fi
+          echo "Image tags: $tags"
+          {
+            echo "COMMIT=$(git rev-parse HEAD)"
+            echo "VERSION=$version"
+            echo "IMAGE_TAGS=$tags"
+            echo "IMAGE=$REGISTRY/${GITHUB_REPOSITORY,,}"
+          } >> "$GITHUB_ENV"
+
+      # The source label links the package to this repository on GitHub.
+      - name: Build the image
+        run: |
+          tag_args=()
+          for tag in $IMAGE_TAGS; do tag_args+=(--tag "$IMAGE:$tag"); done
+          docker build --pull \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=$VERSION" \
+            --label "org.opencontainers.image.revision=$COMMIT" \
+            --label org.opencontainers.image.licenses=AGPL-3.0-only \
+            "${tag_args[@]}" .
+
+      - name: Push the image
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          printf '%s' "$GITHUB_TOKEN" |
+            docker login --username "$GITHUB_ACTOR" --password-stdin "$REGISTRY"
+          docker push --all-tags "$IMAGE"
+          docker logout "$REGISTRY"

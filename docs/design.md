@@ -1,6 +1,6 @@
 # Web Calendar — Design
 
-> Status: **Draft v1.6** — companion to `requirements.md` (Draft v1.4).
+> Status: **Draft v1.7** — companion to `requirements.md` (Draft v1.4).
 > This document turns the requirements into a concrete technical design.
 > v1.2 (2026-10-29), after spike S1: the app bundles Radicale and exposes its own authenticated
 > `/caldav/` endpoint (bearer tokens verified locally, app tokens for other clients). Access rules
@@ -16,6 +16,7 @@
 > built, not planned (§4, §7); the `calendar-timezone` hint is still planned.
 > v1.6 (2026-11-02): a Forgejo Actions workflow publishes the release image to Codeberg's registry;
 > the checks still run on the maintainer's machine (§12, Security backlog).
+> v1.7 (2026-11-05): a GitHub Actions workflow publishes the same image to GitHub's registry (§12).
 
 ---
 
@@ -1606,7 +1607,9 @@ off, which the reconcile already ignores; a calendar owned by a member and named
   `.forgejo/workflows/release-image.yml`: after those checks, a pushed version tag makes Codeberg's
   hosted Forgejo Actions runner build the image with Buildah and push it to Codeberg's registry
   (README "Release image"). It needs the repo to be public and a `REGISTRY_TOKEN` secret limited to
-  the package scope; it runs no tests.
+  the package scope; it runs no tests. `.github/workflows/release-image.yml` (2026-11-05) does the
+  same on a GitHub copy of the repo with Docker on `ubuntu-latest`, pushing to `ghcr.io` with the
+  workflow's own token; each forge reads only its own workflow folder.
 - **External accounts, residual risks** — the Radicale host is refused by name, and by address
   only when `NUXT_RADICALE_URL` is an IP literal, so a listed internal name that resolves to the
   Radicale container would get through; worst-case memory of the proxy is about 32 × 10 MiB; an

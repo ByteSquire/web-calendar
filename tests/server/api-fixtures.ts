@@ -5,6 +5,23 @@ import { expect } from 'vitest'
 import { openDatabase } from '../../server/db/connection'
 import { loadMigrationsFromDir, runMigrations } from '../../server/db/migrate'
 import { upsertUser } from '../../server/db/users'
+import { processDiscoveryStore } from '../../server/utils/auth/discovery'
+
+/** The issuer the route tests configure through their mocked `apiConfig`. */
+export const TEST_ISSUER = 'https://idm.test/oauth2/openid/web-calendar'
+
+/**
+ * Puts the discovery document of `issuer` where the userinfo client looks for it. In production the
+ * token verifier fills it when it fetches the signing keys; the route tests skip the verifier, and
+ * without a document userinfo answers `no-endpoint`.
+ */
+export function seedUserinfoEndpoint(issuer = TEST_ISSUER): void {
+  processDiscoveryStore().remember({
+    issuer,
+    jwksUri: `${issuer}/public_key.jwk`,
+    userinfoEndpoint: `${issuer}/userinfo`,
+  })
+}
 
 const migrationsDir = fileURLToPath(new URL('../../server/db/migrations', import.meta.url))
 

@@ -8,7 +8,12 @@ const ISSUER = 'https://idm.example.org/oauth2/openid/web-calendar'
 type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Response>
 
 function decide(respond: FetchFn, accessToken: string | null = 'alice-token') {
-  const client = createUserinfoClient({ fetch: respond as typeof fetch, timeoutMs: 50 })
+  const client = createUserinfoClient({
+    fetch: respond as typeof fetch,
+    // As the discovery document of ISSUER names it.
+    endpointOf: (issuer) => (issuer === ISSUER ? `${ISSUER}/userinfo` : null),
+    timeoutMs: 50,
+  })
   return decideAdmin({
     userinfo: client,
     issuer: ISSUER,

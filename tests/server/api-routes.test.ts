@@ -32,7 +32,7 @@ import { MAX_VIEWS_PER_USER } from '../../server/db/views'
 import { setDb } from '../../server/utils/db'
 import { defineApiHandler, requireAdmin } from '../../server/utils/api/handler'
 import { getUserinfoClient } from '../../server/utils/api/userinfo-service'
-import { openTestDb } from './api-fixtures'
+import { openTestDb, seedUserinfoEndpoint } from './api-fixtures'
 
 vi.mock('../../server/utils/auth/nitro', async () => {
   const { createError } = await import('h3')
@@ -108,6 +108,7 @@ beforeEach(() => {
   })
   vi.stubGlobal('fetch', userinfoFetch)
   getUserinfoClient().clear()
+  seedUserinfoEndpoint()
   vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
 

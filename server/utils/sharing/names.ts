@@ -5,6 +5,25 @@ import { AVAILABILITY_SHARE_NAME } from './types'
 
 const SHARED_NAME = /^shared-([1-9][0-9]{0,14})(?:-[A-Za-z0-9][A-Za-z0-9_.-]{0,63})?$/
 
+/** Every group principal starts with this; no person's id may (`isReservedPrincipal`). */
+export const GROUP_PRINCIPAL_PREFIX = '_group-'
+
+/**
+ * The Radicale principal of a group. It owns the group's calendar collections (`/_group-<id>/<uuid>/`)
+ * and is never a person: its id is the `groups.id`, which is never reused.
+ */
+export function groupPrincipal(groupId: number): string {
+  return `${GROUP_PRINCIPAL_PREFIX}${groupId}`
+}
+
+const GROUP_PRINCIPAL = /^_group-([1-9][0-9]{0,14})$/
+
+/** The `groups.id` a principal names, or null when it is not a group principal. */
+export function groupIdOfPrincipal(principal: string): number | null {
+  const match = GROUP_PRINCIPAL.exec(principal)
+  return match ? Number(match[1]) : null
+}
+
 /** Home collection of a user share of calendar `id`. */
 export function userShareName(calendarId: number): string {
   return `shared-${calendarId}`

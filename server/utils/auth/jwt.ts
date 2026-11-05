@@ -9,6 +9,7 @@ import {
 } from 'jose'
 import { AuthError } from './errors'
 import type { AllowedClient } from './clients'
+import { createDiscoveryStore, type DiscoveryStore } from './discovery'
 
 /** What a verified access token tells the gateway. */
 export interface VerifiedToken {
@@ -19,7 +20,7 @@ export interface VerifiedToken {
   exp: number
 }
 
-/** Returns the client's current public signing keys (the JWKS `keys` array). */
+/** Returns the signing keys of an issuer (the JWKS `keys` array). `client` is one the issuer serves. */
 export type KeyResolver = (client: AllowedClient) => Promise<readonly JWK[]>
 
 export interface TokenVerifierOptions {
@@ -27,17 +28,26 @@ export interface TokenVerifierOptions {
   clients: readonly AllowedClient[]
   /** Scope every token must carry. */
   requiredScope: string
+  /**
+   * Further `aud` values that make a token ours, for providers whose access tokens are issued for
+   * an API identifier and not for the client (Auth0, Entra). A token that names none of these and
+   * none of the allowed clients is refused.
+   */
+  audiences?: readonly string[]
   /** Clock tolerance for `exp` and `nbf`, in seconds. */
   toleranceSec?: number
-  /** Where keys come from; the default fetches `<issuer>/public_key.jwk`. */
+  /**
+   * Where keys come from; the default reads the `jwks_uri` of the issuer's discovery document and
+   * fetches the keys from there (`createJwksFetcher`).
+   */
   keyResolver?: KeyResolver
   /**
-   * Minimum time between two key fetches per client, in seconds (a failed fetch is retried after at
+   * Minimum time between two key fetches per issuer, in seconds (a failed fetch is retried after at
    * most 5 s). A token with an unknown `kid` cannot make us fetch more often than this.
    */
   keyCooldownSec?: number
   /**
-   * Longest time the cached keys of a client are used before they are fetched again, in seconds
+   * Longest time the cached keys of an issuer are used before they are fetched again, in seconds
    * (default 3600). A key the provider has removed stops being trusted once a fetch no longer lists
    * it. The fetch runs in the background: the request that finds the cache stale is still verified
    * with the cached keys, and a failed fetch keeps them.
@@ -53,32 +63,66 @@ export interface TokenVerifier {
   verify(token: string): Promise<VerifiedToken>
 }
 
-const ACCESS_TOKEN_TYP = 'at+jwt'
-// Kanidm signs access tokens with ES256 only (RFC 9068 requires an asymmetric algorithm).
-const ALG = 'ES256'
+/**
+ * The signature algorithms accepted: asymmetric ones only. `none` and the `HS*` family are never
+ * accepted (a shared secret cannot come from a published key set), and a key only verifies the
+ * algorithms its own type allows (see `admitKey`), so an RSA key never checks an `ES*` token.
+ */
+const RSA_ALGS = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512'] as const
+const ALLOWED_ALGS: ReadonlySet<string> = new Set([...RSA_ALGS, 'ES256', 'ES384', 'ES512', 'EdDSA'])
+const EC_ALG_OF_CURVE: Record<string, string> = {
+  'P-256': 'ES256',
+  'P-384': 'ES384',
+  'P-521': 'ES512',
+}
+const MIN_RSA_BITS = 2048
 
-/** Fetches `<issuer>/public_key.jwk`, the JWKS Kanidm publishes per client. */
+/**
+ * Header `typ` values of an access token. Providers differ: RFC 9068 says `at+jwt`, Kanidm sends it,
+ * Keycloak, Okta, Entra and Cognito send `JWT` or nothing. The header cannot tell an access token
+ * from an ID token then; the payload rules in `verify` and the required scope do.
+ */
+const ACCEPTED_TYP: ReadonlySet<string> = new Set(['at+jwt', 'jwt'])
+/** Claims that name the client a token was issued to, by provider: Kanidm and Cognito, Keycloak, Okta, Entra v1. */
+const CLIENT_CLAIMS = ['client_id', 'azp', 'cid', 'appid'] as const
+
+/** Fetches the key set at the `jwks_uri` of the issuer's discovery document. */
 export function createJwksFetcher(
-  options: { fetch?: typeof globalThis.fetch; timeoutMs?: number } = {},
+  options: {
+    fetch?: typeof globalThis.fetch
+    timeoutMs?: number
+    discovery?: DiscoveryStore
+    /** Hosts besides the issuer's own that the keys may come from (`NUXT_OIDC_JWKS_HOSTS`). */
+    jwksHosts?: readonly string[]
+  } = {},
 ): KeyResolver {
   const doFetch = options.fetch ?? globalThis.fetch
   const timeoutMs = options.timeoutMs ?? 5000
+  const discovery = options.discovery ?? createDiscoveryStore({ fetch: doFetch, timeoutMs })
   return async (client) => {
-    const response = await doFetch(`${client.issuer}/public_key.jwk`, {
+    const { jwksUri } = await discovery.refresh(client.issuer, { jwksHosts: options.jwksHosts })
+    const response = await doFetch(jwksUri, {
       headers: { accept: 'application/json' },
       redirect: 'error',
       signal: AbortSignal.timeout(timeoutMs),
     })
-    if (!response.ok) throw new Error(`key fetch for ${client.clientId} failed: ${response.status}`)
+    if (!response.ok) throw new Error(`key fetch for ${client.issuer} failed: ${response.status}`)
     const body: unknown = await response.json()
     const keys = (body as { keys?: unknown } | null)?.keys
-    if (!Array.isArray(keys)) throw new Error(`key fetch for ${client.clientId}: no "keys" array`)
+    if (!Array.isArray(keys)) throw new Error(`key fetch for ${client.issuer}: no "keys" array`)
     return keys as JWK[]
   }
 }
 
+/** A signing key we trust, with the algorithms it may verify. */
+interface KeyEntry {
+  algs: readonly string[]
+  /** The key for `alg` (an RSA key is imported per algorithm: its hash and padding are part of it). */
+  forAlg(alg: string): Promise<CryptoKey>
+}
+
 interface KeyState {
-  keys: Map<string, CryptoKey>
+  keys: Map<string, KeyEntry>
   /** When the key set was last fetched successfully; null while the cache has never been filled. */
   fetchedAt: number | null
   /** When the last fetch, successful or not, finished. */
@@ -96,24 +140,76 @@ function normalizeTyp(value: string): string {
   return lower.startsWith('application/') ? lower.slice('application/'.length) : lower
 }
 
-async function importKeys(jwks: readonly JWK[]): Promise<Map<string, CryptoKey>> {
-  const keys = new Map<string, CryptoKey>()
+/** The bit length of an RSA modulus given as base64url; 0 when it is not one. */
+function modulusBits(n: unknown): number {
+  if (typeof n !== 'string') return 0
+  const bytes = Buffer.from(n, 'base64url')
+  let first = 0
+  while (first < bytes.length && bytes[first] === 0) first += 1
+  if (first === bytes.length) return 0
+  return (bytes.length - first - 1) * 8 + (32 - Math.clz32(bytes[first]!))
+}
+
+const PRIVATE_MEMBERS = ['d', 'p', 'q', 'dp', 'dq', 'qi', 'oth', 'k'] as const
+
+/**
+ * The algorithms a published key may verify, or null when it is not a key we use: not a public
+ * signing key, a curve or size we do not accept, or labelled for another algorithm. The key type
+ * decides, never the token: P-256 means ES256 only, an RSA key means the RS and PS families, Ed25519
+ * means EdDSA. A key that names its own `alg` is limited to it.
+ */
+function admitKey(jwk: JWK): readonly string[] | null {
+  if (typeof jwk.kid !== 'string' || jwk.kid === '') return null
+  // A private key in a public key set is a mistake we do not want to touch.
+  if (PRIVATE_MEMBERS.some((member) => member in jwk)) return null
+  if (jwk.use !== undefined && jwk.use !== 'sig') return null
+  let algs: readonly string[]
+  switch (jwk.kty) {
+    case 'EC': {
+      const alg = EC_ALG_OF_CURVE[String(jwk.crv)]
+      if (!alg) return null
+      algs = [alg]
+      break
+    }
+    case 'RSA':
+      if (modulusBits(jwk.n) < MIN_RSA_BITS) return null
+      algs = RSA_ALGS
+      break
+    case 'OKP':
+      if (jwk.crv !== 'Ed25519') return null
+      algs = ['EdDSA']
+      break
+    default:
+      return null
+  }
+  if (jwk.alg !== undefined) {
+    if (!algs.includes(jwk.alg)) return null
+    algs = [jwk.alg]
+  }
+  return algs
+}
+
+async function importKeys(jwks: readonly JWK[]): Promise<Map<string, KeyEntry>> {
+  const keys = new Map<string, KeyEntry>()
   for (const jwk of jwks) {
-    // Only public ES256 signing keys with an id. A private key in a public key set is a mistake we
-    // do not want to touch.
-    if (typeof jwk.kid !== 'string' || keys.has(jwk.kid)) continue
-    if (jwk.kty !== 'EC' || jwk.crv !== 'P-256' || 'd' in jwk) continue
-    if (
-      (jwk.use !== undefined && jwk.use !== 'sig') ||
-      (jwk.alg !== undefined && jwk.alg !== ALG)
-    ) {
-      continue
+    const algs = admitKey(jwk)
+    if (!algs || keys.has(jwk.kid!)) continue
+    const imported = new Map<string, Promise<CryptoKey>>()
+    const forAlg = (alg: string): Promise<CryptoKey> => {
+      let key = imported.get(alg)
+      if (!key) {
+        key = importJWK(jwk, alg) as Promise<CryptoKey>
+        imported.set(alg, key)
+      }
+      return key
     }
     try {
-      keys.set(jwk.kid, (await importJWK(jwk, ALG)) as CryptoKey)
+      // Import once now, so that a key we cannot use is as good as absent.
+      await forAlg(algs[0]!)
     } catch {
-      // A key we cannot import is as good as absent.
+      continue
     }
+    keys.set(jwk.kid!, { algs, forAlg })
   }
   return keys
 }
@@ -141,10 +237,35 @@ function claimFailure(error: unknown): AuthError {
   return new AuthError('malformed', { cause: error })
 }
 
+/** The scopes of a token: `scope` (a space-separated string), else `scp` (a string or an array). */
+function readScopes(payload: Record<string, unknown>): string[] | null {
+  const split = (text: string) => text.split(/\s+/).filter(Boolean)
+  if (typeof payload.scope === 'string') return split(payload.scope)
+  if (payload.scope !== undefined) return null
+  const scp = payload.scp
+  if (typeof scp === 'string') return split(scp)
+  if (Array.isArray(scp) && scp.every((item) => typeof item === 'string')) {
+    return (scp as string[]).flatMap(split)
+  }
+  return null
+}
+
 /**
- * Verifies Kanidm access tokens locally (design §6): no introspection, no call to the provider per
- * request. Keys are cached per client and fetched again in two cases: when a token names a `kid` we
- * do not have (at most once per cooldown), and when the cache is older than `keyMaxAgeSec` (in the
+ * Verifies access tokens locally (design §6): no introspection, no call to the provider per
+ * request. Whatever the provider, a token is accepted when
+ *
+ * - its signature checks out against a key the issuer published, with an algorithm that key's type
+ *   allows, and its `iss` is an allowed client's issuer exactly;
+ * - it is an access token: header `typ` absent, `at+jwt` or `jwt`; payload `typ` absent or `Bearer`
+ *   (Keycloak tags ID, refresh, offline and logout tokens differently); `token_use` absent or
+ *   `access` (Cognito);
+ * - it names an allowed client in `client_id`, `azp`, `cid` or `appid`, or has an `aud` that holds
+ *   an allowed client or one of the configured audiences;
+ * - it carries the required scope, in `scope` or `scp`. An ID token has none, which is what keeps
+ *   it out where no marker tells it apart.
+ *
+ * Keys are cached per issuer and fetched again in two cases: when a token names a `kid` we do not
+ * have (at most once per cooldown), and when the cache is older than `keyMaxAgeSec` (in the
  * background, with a growing delay between failed tries). Either way a successful fetch replaces
  * the whole set and a failed one changes nothing.
  */
@@ -152,6 +273,7 @@ export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifie
   const { clients, requiredScope } = options
   if (!requiredScope) throw new TypeError('requiredScope must not be empty')
   if (clients.length === 0) throw new TypeError('at least one allowed client is required')
+  const audiences = new Set(options.audiences ?? [])
   const toleranceSec = options.toleranceSec ?? 60
   const cooldownMs = (options.keyCooldownSec ?? 30) * 1000
   // After a failed fetch the provider may be back within seconds, so try again sooner.
@@ -170,11 +292,15 @@ export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifie
     }
   }
   const resolveKeys = options.keyResolver ?? createJwksFetcher()
-  const byIssuer = new Map(clients.map((client) => [client.issuer, client]))
+  // Clients that share an issuer share its keys; the token's own claims then pick the client.
+  const byIssuer = new Map<string, AllowedClient[]>()
+  for (const client of clients) {
+    byIssuer.set(client.issuer, [...(byIssuer.get(client.issuer) ?? []), client])
+  }
   const states = new Map<string, KeyState>()
 
-  // One fetch at a time per client; concurrent requests wait for it. It never rejects.
-  function refresh(client: AllowedClient, state: KeyState): Promise<void> {
+  // One fetch at a time per issuer; concurrent requests wait for it. It never rejects.
+  function refresh(issuer: string, client: AllowedClient, state: KeyState): Promise<void> {
     const attempt = async () => {
       try {
         const keys = await importKeys(await resolveKeys(client))
@@ -189,7 +315,7 @@ export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifie
         if (state.failures === 0) {
           const reason = error instanceof Error ? error.message : String(error)
           log(
-            `fetching the signing keys of "${client.clientId}" failed (${reason}); ` +
+            `fetching the signing keys of "${issuer}" failed (${reason}); ` +
               `${state.keys.size > 0 ? `keeping the ${state.keys.size} cached` : 'none cached'}, will retry`,
           )
         }
@@ -213,22 +339,22 @@ export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifie
   // Stale-while-revalidate: the request that notices an old cache starts the fetch and does not wait
   // for it. Without a timer the schedule is only checked when a request arrives, which is enough:
   // with no requests there is nothing to verify.
-  function refreshIfStale(client: AllowedClient, state: KeyState): void {
+  function refreshIfStale(issuer: string, client: AllowedClient, state: KeyState): void {
     if (state.pending || state.fetchedAt === null) return
     const current = now()
     if (current - state.fetchedAt < maxAgeMs) return
     if (state.failures > 0 && current - (state.lastAttempt ?? 0) < backoffMs(state.failures)) return
-    void refresh(client, state)
+    void refresh(issuer, client, state)
   }
 
-  async function keyFor(client: AllowedClient, kid: string): Promise<CryptoKey> {
-    let state = states.get(client.clientId)
+  async function keyFor(issuer: string, client: AllowedClient, kid: string): Promise<KeyEntry> {
+    let state = states.get(issuer)
     if (!state) {
       state = { keys: new Map(), fetchedAt: null, lastAttempt: null, failures: 0, pending: null }
-      states.set(client.clientId, state)
+      states.set(issuer, state)
     }
     const cached = state.keys.get(kid)
-    refreshIfStale(client, state)
+    refreshIfStale(issuer, client, state)
     if (cached) return cached
     // The kid is unknown: that may be a rotation, or a forged header. Fetch (rate limited), or wait
     // for the fetch that is already running.
@@ -238,12 +364,29 @@ export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifie
       state.lastAttempt === null ||
       now() - state.lastAttempt >= (state.failures > 0 ? failureCooldownMs : cooldownMs)
     ) {
-      await refresh(client, state)
+      await refresh(issuer, client, state)
     }
     const key = state.keys.get(kid)
     if (key) return key
     // After a failed fetch we cannot tell a rotated key from a forged `kid`; ask the caller to retry.
     throw new AuthError(state.failures > 0 ? 'keys-unavailable' : 'unknown-kid')
+  }
+
+  /** The allowed client a verified token was issued to or for, or undefined. */
+  function clientOf(
+    candidates: readonly AllowedClient[],
+    payload: Record<string, unknown>,
+  ): AllowedClient | undefined {
+    const direct = candidates.find((client) =>
+      CLIENT_CLAIMS.some((claim) => payload[claim] === client.clientId),
+    )
+    if (direct) return direct
+    const aud = typeof payload.aud === 'string' ? [payload.aud] : payload.aud
+    const names = Array.isArray(aud) ? aud.filter((item) => typeof item === 'string') : []
+    const byAudience = candidates.find((client) => names.includes(client.clientId))
+    if (byAudience) return byAudience
+    // An API identifier says the token is for us, not which client asked: the first one stands in.
+    return names.some((name) => audiences.has(name)) ? candidates[0] : undefined
   }
 
   return {
@@ -256,23 +399,28 @@ export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifie
       } catch (error) {
         throw new AuthError('malformed', { cause: error })
       }
-      if (header.alg !== ALG) throw new AuthError('wrong-alg')
-      if (typeof header.typ !== 'string' || normalizeTyp(header.typ) !== ACCESS_TOKEN_TYP) {
+      const alg = header.alg
+      if (typeof alg !== 'string' || !ALLOWED_ALGS.has(alg)) throw new AuthError('wrong-alg')
+      if (
+        header.typ !== undefined &&
+        (typeof header.typ !== 'string' || !ACCEPTED_TYP.has(normalizeTyp(header.typ)))
+      ) {
         throw new AuthError('wrong-typ')
       }
       if (typeof header.kid !== 'string' || header.kid === '') throw new AuthError('malformed')
-      // The issuer picks the client whose keys are tried; the signature then proves the claim.
-      const client = typeof unverified.iss === 'string' ? byIssuer.get(unverified.iss) : undefined
-      if (!client) throw new AuthError('client-not-allowed')
+      // The issuer picks the keys that are tried; the signature then proves the claim.
+      const issuer = unverified.iss
+      const candidates = typeof issuer === 'string' ? byIssuer.get(issuer) : undefined
+      if (!candidates) throw new AuthError('client-not-allowed')
 
-      const key = await keyFor(client, header.kid)
+      const entry = await keyFor(issuer as string, candidates[0]!, header.kid)
+      // The algorithm-confusion defence: the key's own type limits what it may verify.
+      if (!entry.algs.includes(alg)) throw new AuthError('wrong-alg')
       let payload
       try {
-        ;({ payload } = await jwtVerify(token, key, {
-          algorithms: [ALG],
-          typ: ACCESS_TOKEN_TYP,
-          issuer: client.issuer,
-          audience: client.clientId,
+        ;({ payload } = await jwtVerify(token, await entry.forAlg(alg), {
+          algorithms: [alg],
+          issuer: issuer as string,
           requiredClaims: ['exp', 'sub'],
           clockTolerance: toleranceSec,
           currentDate: new Date(now()),
@@ -281,17 +429,27 @@ export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifie
         throw claimFailure(error)
       }
 
-      // Required (security review 2026-11-01, finding 9): `aud` already names the client, and Kanidm
-      // sets `client_id` to the same value; a token without it is not one Kanidm issued for us.
-      if (payload.client_id !== client.clientId) {
-        throw new AuthError('wrong-audience', { message: 'client_id is missing or does not match' })
-      }
       if (typeof payload.sub !== 'string' || payload.sub === '') {
         throw new AuthError('invalid-claims', { message: 'sub must be a non-empty string' })
       }
-      if (typeof payload.scope !== 'string') throw new AuthError('missing-scope')
-      const scopes = payload.scope.split(/\s+/).filter(Boolean)
-      if (!scopes.includes(requiredScope)) throw new AuthError('missing-scope')
+      // Only access tokens. Keycloak signs ID, refresh, offline and logout tokens with the same keys
+      // and says which in `typ`; a refresh token names our client and carries a scope, so it would
+      // pass everything below. Cognito says `token_use`.
+      if (
+        payload.typ !== undefined &&
+        (typeof payload.typ !== 'string' || payload.typ.toLowerCase() !== 'bearer')
+      ) {
+        throw new AuthError('wrong-typ', { message: 'the payload typ is not Bearer' })
+      }
+      if (payload.token_use !== undefined && payload.token_use !== 'access') {
+        throw new AuthError('wrong-typ', { message: 'token_use is not access' })
+      }
+      const client = clientOf(candidates, payload)
+      if (!client) {
+        throw new AuthError('wrong-audience', { message: 'the token names none of our clients' })
+      }
+      const scopes = readScopes(payload)
+      if (!scopes?.includes(requiredScope)) throw new AuthError('missing-scope')
 
       return { sub: payload.sub, clientId: client.clientId, scopes, exp: payload.exp as number }
     },

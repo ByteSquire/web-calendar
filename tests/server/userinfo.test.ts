@@ -30,7 +30,8 @@ type FetchFn = (url: string | URL | Request, init?: RequestInit) => Promise<Resp
 
 function run(respond: FetchFn, overrides: Partial<UserinfoRequest> = {}): Promise<UserinfoResult> {
   return fetchUserinfo({
-    issuer: ISSUER,
+    // As the discovery document of the issuer gives it; Keycloak or Entra would differ.
+    endpoint: `${ISSUER}/userinfo`,
     accessToken: TOKEN,
     expectedSub: SUB,
     fetch: respond as typeof fetch,
@@ -46,7 +47,7 @@ const hangs: FetchFn = (_url, init) =>
   })
 
 describe('fetchUserinfo', () => {
-  it('asks <issuer>/userinfo with the caller token and returns the profile', async () => {
+  it('asks the given endpoint with the caller token and returns the profile', async () => {
     const fake = vi.fn<FetchFn>(async () => json(ALICE))
     const result = await run(fake)
 
@@ -68,10 +69,11 @@ describe('fetchUserinfo', () => {
     expect(init?.redirect).toBe('error')
   })
 
-  it('does not double the slash of an issuer that ends with one', async () => {
+  it('asks exactly the endpoint it is given, wherever the provider keeps it', async () => {
     const fake = vi.fn<FetchFn>(async () => json(ALICE))
-    await run(fake, { issuer: `${ISSUER}/` })
-    expect(fake.mock.calls[0]![0]).toBe(`${ISSUER}/userinfo`)
+    const keycloak = 'https://keycloak.example.org/realms/team/protocol/openid-connect/userinfo'
+    await run(fake, { endpoint: keycloak })
+    expect(fake.mock.calls[0]![0]).toBe(keycloak)
   })
 
   it('ignores a userinfo answer about somebody else', async () => {
@@ -176,9 +178,10 @@ describe('fetchUserinfo', () => {
     expect(await run(slowBody, { timeoutMs: 30 })).toEqual({ ok: false, reason: 'timeout' })
   })
 
-  it('does not call out without an issuer or a token', async () => {
+  it('does not call out without an endpoint or a token', async () => {
     const fake = vi.fn<FetchFn>(async () => json(ALICE))
-    expect(await run(fake, { issuer: '' })).toEqual({ ok: false, reason: 'no-issuer' })
+    expect(await run(fake, { endpoint: null })).toEqual({ ok: false, reason: 'no-endpoint' })
+    expect(await run(fake, { endpoint: '' })).toEqual({ ok: false, reason: 'no-endpoint' })
     expect(await run(fake, { accessToken: null })).toEqual({ ok: false, reason: 'no-token' })
     expect(await run(fake, { accessToken: '' })).toEqual({ ok: false, reason: 'no-token' })
     expect(fake).not.toHaveBeenCalled()
@@ -227,5 +230,19 @@ describe('isAdminByGroups', () => {
   it('follows the configured group name', () => {
     expect(isAdminByGroups(['staff@idm.example.org'], 'staff')).toBe(true)
     expect(isAdminByGroups(['calendar_admins'], 'staff')).toBe(false)
+  })
+
+  it('compares a path or an id exactly, as Keycloak and Entra write them', () => {
+    // Keycloak's "Full group path": the admin group is then configured as the path.
+    expect(isAdminByGroups(['/team/ops', '/calendar_admins'], '/calendar_admins')).toBe(true)
+    expect(isAdminByGroups(['/team/ops'], '/team/ops')).toBe(true)
+    // Not by its last segment, by a parent, or by a longer path.
+    expect(isAdminByGroups(['/team/ops'], 'ops')).toBe(false)
+    expect(isAdminByGroups(['/team/ops'], '/team')).toBe(false)
+    expect(isAdminByGroups(['/team/ops/extra'], '/team/ops')).toBe(false)
+    // An Entra group is its object id.
+    const id = '6f1c2b0e-4d51-4c7e-9a52-0b6f3c1d2e77'
+    expect(isAdminByGroups([id], id)).toBe(true)
+    expect(isAdminByGroups([id.toUpperCase()], id)).toBe(false)
   })
 })

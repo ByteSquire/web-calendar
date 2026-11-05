@@ -31,6 +31,15 @@ async function failure(promise: Promise<unknown>): Promise<AuthError> {
   return error as AuthError
 }
 
+/** A caller whose bearer token and app token both belong to `sub`. */
+function asSub(sub: string, overrides: Partial<AuthDeps> = {}) {
+  return setup({
+    verifier: { verify: async () => ({ sub, clientId: 'c', scopes: [], exp: 1 }) },
+    verifyAppToken: () => ({ sub }),
+    ...overrides,
+  })
+}
+
 describe('authenticateRequest', () => {
   it('sends a bearer token to the verifier', async () => {
     const { call, verify, verifyAppToken } = setup()
@@ -172,17 +181,67 @@ describe('authenticateRequest', () => {
     await expect(verifierBug.call('Bearer a.b.c')).rejects.toBe(boom)
   })
 
-  it.each(['a/b', 'a\\b', 'line\nbreak', 'two words', '', 'ü', 'x'.repeat(256)])(
-    'refuses a user id that cannot be Radicale’s user name (%j)',
+  it.each([
+    'a/b',
+    'a\\b',
+    'line\nbreak',
+    'two words',
+    '',
+    'ü',
+    'x'.repeat(256),
+    '.hidden',
+    '..',
+    'tilde~',
+    'a:b',
+    "a'b",
+    'a"b',
+    'a*b',
+    'a?b',
+    'a,b',
+    'a@b@c',
+    '@x',
+    'x@',
+  ])('refuses a user id that cannot be Radicale’s user name (%j)', async (sub) => {
+    const caller = asSub(sub)
+    expect((await failure(caller.call('Bearer a.b.c'))).reason).toBe('invalid-sub')
+    expect((await failure(caller.call(basic('alice:x')))).reason).toBe('invalid-sub')
+  })
+
+  it.each([
+    'ABC123',
+    'abc123',
+    'Alice@Example.ORG',
+    'auth0|5f7c8ec7c33c6c004bbafe82',
+    'a+b=c.d',
+    'Zx9_-Zx9_-Zx9_-Zx9_-Zx9_-Zx9_-Zx9_-Zx9_-Zx9_-',
+    '_Zx9',
+    '-1',
+    'x'.repeat(255),
+  ])('takes the id the provider sends as it is, case and symbols kept (%j)', async (sub) => {
+    const caller = asSub(sub)
+    await expect(caller.call('Bearer a.b.c')).resolves.toEqual({ sub, via: 'bearer' })
+    await expect(caller.call(basic('alice:x'))).resolves.toEqual({ sub, via: 'app-token' })
+  })
+
+  it.each(['_resources', '_group-1', '_group-77', '_group-anything'])(
+    'refuses an id that is one of the app’s own principals (%j)',
     async (sub) => {
-      const bearer = setup({
-        verifier: { verify: async () => ({ sub, clientId: 'c', scopes: [], exp: 1 }) },
-      })
-      expect((await failure(bearer.call('Bearer a.b.c'))).reason).toBe('invalid-sub')
-      const token = setup({ verifyAppToken: () => ({ sub }) })
-      expect((await failure(token.call(basic('alice:x')))).reason).toBe('invalid-sub')
+      const caller = asSub(sub)
+      expect((await failure(caller.call('Bearer a.b.c'))).reason).toBe('invalid-sub')
+      expect((await failure(caller.call(basic('alice:x')))).reason).toBe('invalid-sub')
     },
   )
+
+  it('refuses a configured shared owner, and only when it is configured', async () => {
+    await expect(asSub('_team').call('Bearer a.b.c')).resolves.toMatchObject({ sub: '_team' })
+    const guarded = asSub('_team', { sharedOwners: ['_team'] })
+    expect((await failure(guarded.call('Bearer a.b.c'))).reason).toBe('invalid-sub')
+    expect((await failure(guarded.call(basic('alice:x')))).reason).toBe('invalid-sub')
+    // Another underscore id is a person's.
+    await expect(
+      asSub('_other', { sharedOwners: ['_team'] }).call('Bearer a.b.c'),
+    ).resolves.toMatchObject({ sub: '_other' })
+  })
 })
 
 describe('authenticateRequest: throttle of failed Basic logins', () => {

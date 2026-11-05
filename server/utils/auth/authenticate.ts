@@ -1,5 +1,5 @@
 import { AuthError, type AuthFailureReason } from './errors'
-import { isValidSubject } from './subject'
+import { isUserSubject } from './subject'
 import type { TokenVerifier } from './jwt'
 import type { BasicThrottle } from './throttle'
 
@@ -30,6 +30,11 @@ export interface AuthDeps {
   basicThrottle?: BasicThrottle
   /** Where the request came from, for `basicThrottle`; null when unknown (those clients share one counter). */
   clientAddress?: string | null
+  /**
+   * The service principals of `NUXT_SHARING_SHARED_OWNERS`. A token or app token owner with one of
+   * these ids (or `_resources`, or a `_group-` id) is refused: it would own that principal's calendars.
+   */
+  sharedOwners?: readonly string[]
 }
 
 export interface Identity {
@@ -93,7 +98,9 @@ export async function authenticateRequest(headers: Headers, deps: AuthDeps): Pro
           cause: error.cause,
         })
       }
-      if (!isValidSubject(verified.sub)) throw fail(deps, 'invalid-sub', { invalidToken: true })
+      if (!isUserSubject(verified.sub, deps.sharedOwners)) {
+        throw fail(deps, 'invalid-sub', { invalidToken: true })
+      }
       return { sub: verified.sub, via: 'bearer' }
     }
     case 'basic': {
@@ -112,7 +119,7 @@ export async function authenticateRequest(headers: Headers, deps: AuthDeps): Pro
         throw fail(deps, 'invalid-app-token')
       }
       throttle?.recordSuccess(clientAddress, parsed.username)
-      if (!isValidSubject(owner.sub)) throw fail(deps, 'invalid-sub')
+      if (!isUserSubject(owner.sub, deps.sharedOwners)) throw fail(deps, 'invalid-sub')
       return { sub: owner.sub, via: 'app-token' }
     }
     default:

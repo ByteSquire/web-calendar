@@ -30,6 +30,8 @@ function setup(options: { maxEntries?: number } = {}): UserinfoClient {
   fetchCalls = vi.fn<FetchFn>((url, init) => respond(url, init))
   return createUserinfoClient({
     fetch: fetchCalls as typeof fetch,
+    // The discovery document of ISSUER names this endpoint; any other issuer is not known.
+    endpointOf: (issuer) => (issuer === ISSUER ? `${ISSUER}/userinfo` : null),
     now: () => now,
     timeoutMs: 100,
     ...options,
@@ -49,6 +51,20 @@ beforeEach(() => {
 })
 
 describe('createUserinfoClient', () => {
+  it('asks the endpoint of the issuer’s discovery document, and nothing when there is none', async () => {
+    const client = setup()
+    await client.get(lookup('alice'))
+    expect(fetchCalls.mock.calls[0]![0]).toBe(`${ISSUER}/userinfo`)
+
+    // An issuer without a known endpoint (no document yet, or a provider without userinfo): no call,
+    // nothing kept, so the answer follows the document as soon as there is one.
+    fetchCalls.mockClear()
+    const unknown = { ...lookup('bob'), issuer: 'https://other.example.org/realms/team' }
+    expect(await client.get(unknown)).toEqual({ ok: false, reason: 'no-endpoint' })
+    expect(fetchCalls).not.toHaveBeenCalled()
+    expect(client.size()).toBe(1)
+  })
+
   it('keeps an answer for a minute per user and then asks again', async () => {
     const client = setup()
     const first = await client.get(lookup('alice'))
@@ -199,7 +215,7 @@ describe('createUserinfoClient', () => {
     const client = setup()
     expect(await client.get({ ...lookup('alice'), issuer: '' })).toEqual({
       ok: false,
-      reason: 'no-issuer',
+      reason: 'no-endpoint',
     })
     expect(await client.get({ ...lookup('alice'), accessToken: null })).toEqual({
       ok: false,

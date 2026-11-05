@@ -1,4 +1,4 @@
-/** An OAuth2 client whose access tokens the gateway accepts, with the issuer Kanidm gives it. */
+/** An OAuth2 client whose access tokens the gateway accepts, with the issuer its tokens carry. */
 export interface AllowedClient {
   clientId: string
   issuer: string
@@ -7,25 +7,24 @@ export interface AllowedClient {
 const CLIENT_ID = /^[A-Za-z0-9._~-]+$/
 
 /**
- * Kanidm scopes issuer and signing keys per client: `https://<kanidm>/oauth2/openid/<client>`.
- * The issuer of another client is the configured one with its last path segment replaced. The text
- * is kept as configured otherwise, because `iss` must match what the provider writes character by
- * character.
+ * The issuer of the tokens of `clientId`. Most providers have one issuer for all clients, and that
+ * is then the configured one. Kanidm scopes issuer and signing keys per client
+ * (`https://<kanidm>/oauth2/openid/<client>`): when the configured issuer ends in the app's own
+ * client id, another client's issuer is that with the last path segment replaced. The text is kept
+ * as configured otherwise, a trailing slash included, because `iss` must match what the provider
+ * writes character by character.
  */
-export function deriveClientIssuer(issuer: string, clientId: string): string {
+export function deriveClientIssuer(issuer: string, ownClientId: string, clientId: string): string {
   if (!CLIENT_ID.test(clientId))
     throw new Error(`invalid OIDC client id: ${JSON.stringify(clientId)}`)
-  const trimmed = issuer.replace(/\/+$/, '')
-  let url: URL
   try {
-    url = new URL(trimmed)
+    new URL(issuer)
   } catch {
     throw new Error(`invalid OIDC issuer URL: ${JSON.stringify(issuer)}`)
   }
-  if (url.pathname === '/' || url.search || url.hash) {
-    throw new Error(`OIDC issuer must end in the client id, got ${JSON.stringify(issuer)}`)
-  }
-  return trimmed.slice(0, trimmed.lastIndexOf('/') + 1) + clientId
+  const perClient = `/${ownClientId}`
+  if (!issuer.endsWith(perClient)) return issuer
+  return issuer.slice(0, issuer.length - ownClientId.length) + clientId
 }
 
 /** The allow-list from `runtimeConfig.oidc`: `allowedClients` (comma-separated), else `clientId`. */
@@ -39,5 +38,8 @@ export function buildAllowedClients(config: {
     .map((id) => id.trim())
     .filter(Boolean)
   const ids = [...new Set(listed.length > 0 ? listed : [config.clientId])]
-  return ids.map((clientId) => ({ clientId, issuer: deriveClientIssuer(config.issuer, clientId) }))
+  return ids.map((clientId) => ({
+    clientId,
+    issuer: deriveClientIssuer(config.issuer, config.clientId, clientId),
+  }))
 }

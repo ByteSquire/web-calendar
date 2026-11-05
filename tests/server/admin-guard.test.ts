@@ -9,7 +9,7 @@ import { createAdminLimiter } from '../../server/utils/api/admin-limit'
 import { defineAdminHandler } from '../../server/utils/api/admin-handler'
 import { getUserinfoClient } from '../../server/utils/api/userinfo-service'
 import { setDb } from '../../server/utils/db'
-import { openTestDb } from './api-fixtures'
+import { openTestDb, seedUserinfoEndpoint } from './api-fixtures'
 
 vi.mock('../../server/utils/auth/nitro', async () => {
   const { createError } = await import('h3')
@@ -81,6 +81,7 @@ beforeEach(() => {
     }),
   )
   getUserinfoClient().clear()
+  seedUserinfoEndpoint()
   vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
 

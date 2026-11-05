@@ -23,6 +23,7 @@ interface TestConfig {
   external: { sealKey: string }
   gateway: Record<string, unknown>
   groupSync: { file: string }
+  sharing: { sharedOwners: string }
 }
 
 function goodConfig(): TestConfig {
@@ -54,6 +55,7 @@ function goodConfig(): TestConfig {
       trustForwardedFor: 'false',
     },
     groupSync: { file: '' },
+    sharing: { sharedOwners: '' },
   }
 }
 

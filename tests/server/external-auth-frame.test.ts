@@ -47,6 +47,7 @@ beforeAll(async () => {
     },
     outbound: { allowedHosts: '' },
     external: { sealKey: '' },
+    sharing: { sharedOwners: '' },
   }
   const proxy = (await import('../../server/api/external/[id]/[...path]')).default
   const list = (await import('../../server/api/external-accounts/index.get')).default

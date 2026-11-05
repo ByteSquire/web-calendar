@@ -1,6 +1,7 @@
 // The OIDC userinfo call behind GET /api/me (design §6): the profile and the groups of the caller,
-// which Kanidm puts in the userinfo response and not in the access token. A pure function that
-// takes `fetch`, so tests need no network.
+// which Kanidm puts in the userinfo response and not in the access token. The endpoint is the one
+// in the provider's discovery document. A pure function that takes `fetch`, so tests need no
+// network.
 
 const DEFAULT_TIMEOUT_MS = 3000
 /** A userinfo answer is a few hundred bytes; anything bigger is not from an identity provider. */
@@ -20,7 +21,8 @@ export interface UserinfoProfile {
 }
 
 export type UserinfoFailure =
-  | 'no-issuer'
+  /** The provider publishes no userinfo endpoint, or its discovery document is not known yet. */
+  | 'no-endpoint'
   | 'no-token'
   | 'timeout'
   | 'network'
@@ -34,9 +36,12 @@ export type UserinfoResult =
   { ok: true; profile: UserinfoProfile } | { ok: false; reason: UserinfoFailure; status?: number }
 
 export interface UserinfoRequest {
-  /** The OIDC issuer; the endpoint is `<issuer>/userinfo`. */
-  issuer: string
-  /** The caller's own access token. It is only sent to the issuer and never logged or kept. */
+  /**
+   * The `userinfo_endpoint` of the issuer's discovery document, which was checked to be https for an
+   * https issuer; null when there is none. Nothing is derived from the issuer.
+   */
+  endpoint: string | null
+  /** The caller's own access token. It is only sent to the endpoint and never logged or kept. */
   accessToken: string | null
   /** The `sub` of the verified token. Userinfo about anybody else is ignored. */
   expectedSub: string
@@ -62,10 +67,10 @@ export function isAdminByGroups(groups: readonly string[], adminGroup: string): 
  * back as `{ ok: false, reason }` and the caller falls back to what is stored.
  */
 export async function fetchUserinfo(request: UserinfoRequest): Promise<UserinfoResult> {
-  if (!request.issuer) return { ok: false, reason: 'no-issuer' }
+  if (!request.endpoint) return { ok: false, reason: 'no-endpoint' }
   if (!request.accessToken) return { ok: false, reason: 'no-token' }
 
-  const url = `${request.issuer.replace(/\/+$/, '')}/userinfo`
+  const url = request.endpoint
   const controller = new AbortController()
   const timeoutMs = request.timeoutMs ?? DEFAULT_TIMEOUT_MS
   let timer: ReturnType<typeof setTimeout> | undefined

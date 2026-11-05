@@ -10,21 +10,41 @@ export default defineNuxtConfig({
   // NUXT_TOKEN_HASH_KEY (design §10). The SPA gets the public OIDC values from `/api/config`.
   runtimeConfig: {
     oidc: {
-      /** Issuer of the app's own Kanidm client, e.g. https://idm.example.org/oauth2/openid/web-calendar */
+      /**
+       * Issuer of the identity provider, exactly as its discovery document writes it (a trailing
+       * slash included). Kanidm: https://idm.example.org/oauth2/openid/web-calendar (one issuer per
+       * client); Keycloak: https://keycloak.example.org/realms/<realm>.
+       */
       issuer: '',
       /** The app's own public client; the SPA logs in with it. */
       clientId: 'web-calendar',
       /** Comma-separated client ids whose JWTs the gateway accepts; empty means `clientId` only. */
       allowedClients: '',
+      /**
+       * Further `aud` values that make an access token ours, comma-separated (NUXT_OIDC_AUDIENCE):
+       * the API identifier of Auth0 or Entra, whose tokens are issued for the API and not the client.
+       */
+      audience: '',
+      /**
+       * Host names besides the issuer's own that the signing keys may be fetched from, comma-separated
+       * (NUXT_OIDC_JWKS_HOSTS). Empty means the issuer's host only. Exact names, no wildcards.
+       */
+      jwksHosts: '',
       /** Scopes the SPA requests. */
-      scope: 'openid profile email groups_name caldav',
-      /** Scope every accepted access token must carry. */
+      scope: 'openid profile email groups caldav',
+      /**
+       * Scope every accepted access token must carry, in `scope` or `scp`. It also keeps ID tokens
+       * out: they carry none.
+       */
       requiredScope: 'caldav',
-      /** Kanidm group whose members are admins (checked on /api/me and, later, admin routes). */
+      /**
+       * Group whose members are admins (checked on /api/me and the admin routes): its name, its
+       * SPN, its id or its path, whatever the provider puts in the groups claim.
+       */
       adminGroup: 'calendar_admins',
       /**
-       * Seconds the cached Kanidm signing keys are used before they are fetched again in the
-       * background (NUXT_OIDC_KEY_MAX_AGE_SEC). A key Kanidm removed stops being trusted then.
+       * Seconds the cached signing keys are used before they are fetched again in the background
+       * (NUXT_OIDC_KEY_MAX_AGE_SEC). A key the provider removed stops being trusted then.
        */
       keyMaxAgeSec: '3600',
     },

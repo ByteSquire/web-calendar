@@ -4,7 +4,9 @@ import { getDb } from '../db'
 import { authenticateRequest, type Identity } from './authenticate'
 import { buildAllowedClients } from './clients'
 import { AuthError } from './errors'
-import { createTokenVerifier, type TokenVerifier } from './jwt'
+import { processDiscoveryStore } from './discovery'
+import { createJwksFetcher, createTokenVerifier, type TokenVerifier } from './jwt'
+import { parseSharedOwners } from '../sharing/config'
 import { createBasicThrottle, describeBlock, type BasicThrottle } from './throttle'
 import { describeTokenKeyring, parseTokenKeyring } from './token-keys'
 
@@ -13,6 +15,21 @@ import { describeTokenKeyring, parseTokenKeyring } from './token-keys'
 let verifier: TokenVerifier | undefined
 let basicThrottle: BasicThrottle | undefined
 let tokenKeyring: TokenKeyring | undefined
+let sharedOwners: readonly string[] | undefined
+
+/** The configured service principals (read once): no person may have one of these ids. */
+function getSharedOwners(): readonly string[] {
+  sharedOwners ??= parseSharedOwners(useRuntimeConfig().sharing.sharedOwners)
+  return sharedOwners
+}
+
+/** A comma-separated setting as a list: trimmed, without the empty entries. */
+function splitList(value: unknown): string[] {
+  return String(value ?? '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+}
 
 function getVerifier(): TokenVerifier {
   if (!verifier) {
@@ -28,6 +45,12 @@ function getVerifier(): TokenVerifier {
     verifier = createTokenVerifier({
       clients: buildAllowedClients(oidc),
       requiredScope: oidc.requiredScope,
+      audiences: splitList(oidc.audience),
+      // The discovery documents are kept in the store of the process; userinfo reads them there.
+      keyResolver: createJwksFetcher({
+        discovery: processDiscoveryStore(),
+        jwksHosts: splitList(oidc.jwksHosts),
+      }),
       keyMaxAgeSec,
       log: (message) => console.warn(`[auth] ${message}`),
     })
@@ -72,6 +95,7 @@ export function authenticateCalDav(
     verifyAppToken: (username, token) => verifyAppToken(getDb(), keyring, username, token),
     basicThrottle: getBasicThrottle(),
     clientAddress: context.clientAddress,
+    sharedOwners: getSharedOwners(),
   })
 }
 
@@ -84,7 +108,10 @@ const STATUS_TEXT = { 401: 'Unauthorized', 429: 'Too Many Requests', 503: 'Servi
  */
 export async function requireUser(event: H3Event): Promise<Identity> {
   try {
-    return await authenticateRequest(event.headers, { verifier: getVerifier() })
+    return await authenticateRequest(event.headers, {
+      verifier: getVerifier(),
+      sharedOwners: getSharedOwners(),
+    })
   } catch (error) {
     if (!(error instanceof AuthError)) throw error
     // A throttled client would log on every request; the throttle reports when it starts blocking.

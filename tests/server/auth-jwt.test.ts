@@ -97,8 +97,9 @@ describe('createTokenVerifier: the good token', () => {
       clientId: 'web-calendar',
       scopes: expect.arrayContaining(['caldav']),
     })
-    // Same issuer, audience, signing key and scopes: only the missing `typ` tells it apart.
-    expect(await reasonOf(verifier, kanidm.idToken)).toBe('wrong-typ')
+    // Same issuer, signing key, `aud` and `azp` as the access token, and no `typ` (which is allowed
+    // now): what keeps it out is the scope. An ID token has `scopes`, never `scope` or `scp`.
+    expect(await reasonOf(verifier, kanidm.idToken)).toBe('missing-scope')
     clock.ms = (kanidm.iat + 900 + 61) * 1000
     expect(await reasonOf(verifier, kanidm.accessToken)).toBe('expired')
   })
@@ -163,18 +164,25 @@ describe('createTokenVerifier: algorithm and type', () => {
     expect(await reasonOf(verifier, es384)).toBe('wrong-alg')
   })
 
-  it('rejects a wrong or missing typ (an ID token used as access token)', async () => {
-    const { verifier } = setup()
-    expect(await reasonOf(verifier, await mintAccessToken(key, { header: { typ: 'JWT' } }))).toBe(
-      'wrong-typ',
-    )
-    expect(
-      await reasonOf(verifier, await mintAccessToken(key, { header: { typ: undefined } })),
-    ).toBe('wrong-typ')
-    expect(
-      await reasonOf(verifier, await mintAccessToken(key, { header: { typ: 'id_token+jwt' } })),
-    ).toBe('wrong-typ')
-  })
+  it.each(['at+jwt', 'AT+JWT', 'application/at+jwt', 'JWT', 'jwt', 'application/jwt', undefined])(
+    'accepts the header typ %j: providers differ, the payload and the scope decide',
+    async (typ) => {
+      const { verifier } = setup()
+      await expect(
+        verifier.verify(await mintAccessToken(key, { header: { typ } })),
+      ).resolves.toBeDefined()
+    },
+  )
+
+  it.each(['id_token+jwt', 'JWE', 'secevent+jwt', 'logout+jwt', '', 'at+jwt+x', 5])(
+    'rejects the header typ %j',
+    async (typ) => {
+      const { verifier } = setup()
+      expect(await reasonOf(verifier, await mintAccessToken(key, { header: { typ } }))).toBe(
+        'wrong-typ',
+      )
+    },
+  )
 
   it.each(['', 'garbage', 'a.b.c', 'a.b', '....'])(
     'rejects the malformed token %j',
@@ -231,28 +239,33 @@ describe('createTokenVerifier: signature and claims', () => {
     ).toBe('bad-signature')
   })
 
-  it('rejects a wrong or missing audience, and a client_id that differs', async () => {
+  it('rejects a token that names none of the allowed clients', async () => {
     const { verifier } = setup()
+    const meant = (claims: Record<string, unknown>) => mintAccessToken(key, { claims })
+    // Another client in `client_id` and in `aud`, other audiences, none at all.
     expect(
-      await reasonOf(verifier, await mintAccessToken(key, { claims: { aud: 'other-app' } })),
+      await reasonOf(verifier, await meant({ aud: 'other-app', client_id: 'other-app' })),
     ).toBe('wrong-audience')
-    expect(
-      await reasonOf(verifier, await mintAccessToken(key, { claims: { aud: ['a', 'b'] } })),
-    ).toBe('wrong-audience')
-    expect(
-      await reasonOf(verifier, await mintAccessToken(key, { claims: { aud: undefined } })),
-    ).toBe('wrong-audience')
-    expect(
-      await reasonOf(verifier, await mintAccessToken(key, { claims: { client_id: 'other-app' } })),
-    ).toBe('wrong-audience')
+    expect(await reasonOf(verifier, await meant({ aud: ['a', 'b'], client_id: undefined }))).toBe(
+      'wrong-audience',
+    )
+    expect(await reasonOf(verifier, await meant({ aud: undefined, client_id: undefined }))).toBe(
+      'wrong-audience',
+    )
+    expect(await reasonOf(verifier, await meant({ aud: 7, client_id: undefined }))).toBe(
+      'wrong-audience',
+    )
   })
 
-  it('requires a client_id (security review 2026-11-01): a token without one is refused', async () => {
+  it('takes a token that names the client in aud or in a client claim, whichever the provider uses', async () => {
     const { verifier } = setup()
-    const withoutClientId = await mintAccessToken(key, { claims: { client_id: undefined } })
-    expect(await reasonOf(verifier, withoutClientId)).toBe('wrong-audience')
-    // The same token with the claim set to the right client passes, so only the claim differs.
-    await expect(verifier.verify(await mintAccessToken(key))).resolves.toBeDefined()
+    const meant = (claims: Record<string, unknown>) => mintAccessToken(key, { claims })
+    // `aud` alone (security review 2026-11-01, finding 9, asked for `client_id`; the binding is
+    // `client_id`, `azp`, `cid`, `appid` or `aud` now, because other providers set different ones).
+    await expect(verifier.verify(await meant({ client_id: undefined }))).resolves.toBeDefined()
+    await expect(
+      verifier.verify(await meant({ aud: 'x', client_id: undefined, azp: 'web-calendar' })),
+    ).resolves.toBeDefined()
   })
 
   it('applies exp with a 60 s tolerance', async () => {
@@ -408,7 +421,7 @@ describe('createTokenVerifier: key cache and rotation', () => {
     expect(await reasonOf(verifier, await mintAccessToken(key))).toBe('unknown-kid')
   })
 
-  it('ignores private keys and keys that are not ES256 signing keys in the key set', async () => {
+  it('ignores private keys, encryption keys and broken keys in the key set', async () => {
     const pair = await generateKeyPair('ES256', { extractable: true })
     const privateJwk = {
       ...(await exportJWK(pair.privateKey)),
@@ -488,22 +501,33 @@ describe('createTokenVerifier: provider unreachable', () => {
 describe('allowed clients from the configuration', () => {
   const issuer = 'https://idm.example.org/oauth2/openid/web-calendar'
 
-  it('derives the issuer of another client by replacing the last path segment', () => {
-    expect(deriveClientIssuer(issuer, 'other-app')).toBe(
+  const own = 'web-calendar'
+
+  it('derives the issuer of another client by replacing the last path segment (Kanidm layout)', () => {
+    expect(deriveClientIssuer(issuer, own, 'other-app')).toBe(
       'https://idm.example.org/oauth2/openid/other-app',
     )
-    expect(deriveClientIssuer(`${issuer}/`, 'other-app')).toBe(
-      'https://idm.example.org/oauth2/openid/other-app',
-    )
+    expect(deriveClientIssuer(issuer, own, own)).toBe(issuer)
   })
 
-  it('refuses issuers without a client segment and client ids that could escape the path', () => {
-    expect(() => deriveClientIssuer('https://idm.example.org', 'x')).toThrow()
-    expect(() => deriveClientIssuer('https://idm.example.org/', 'x')).toThrow()
-    expect(() => deriveClientIssuer('not a url', 'x')).toThrow()
-    expect(() => deriveClientIssuer(issuer, '../evil')).toThrow()
-    expect(() => deriveClientIssuer(issuer, 'a/b')).toThrow()
-    expect(() => deriveClientIssuer(issuer, '')).toThrow()
+  it('gives every client the configured issuer when it does not end in the own client id', () => {
+    for (const shared of [
+      'https://keycloak.example.org/realms/team',
+      // A trailing slash is part of the issuer (Auth0, Authentik) and is never stripped.
+      'https://tenant.auth0.example/',
+      `${issuer}/`,
+      'https://idm.example.org',
+      'https://login.example.org/application/o/calendar/',
+    ]) {
+      expect(deriveClientIssuer(shared, own, 'other-app'), shared).toBe(shared)
+    }
+  })
+
+  it('refuses an issuer that is not a URL and client ids that could escape the path', () => {
+    expect(() => deriveClientIssuer('not a url', own, 'x')).toThrow()
+    expect(() => deriveClientIssuer(issuer, own, '../evil')).toThrow()
+    expect(() => deriveClientIssuer(issuer, own, 'a/b')).toThrow()
+    expect(() => deriveClientIssuer(issuer, own, '')).toThrow()
   })
 
   it('defaults to the app’s own client and lists the configured ones otherwise', () => {

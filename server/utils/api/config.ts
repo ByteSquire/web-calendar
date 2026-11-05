@@ -6,9 +6,9 @@ import { getTokenKeyring } from '../auth/nitro'
 export interface ApiConfig {
   /** Keys for hashing app tokens (NUXT_TOKEN_HASH_KEY, NUXT_TOKEN_HASH_KEYS); see token-keys.ts. */
   tokenHashKey: TokenHashKeys
-  /** OIDC issuer (NUXT_OIDC_ISSUER); userinfo is `<issuer>/userinfo`. */
+  /** OIDC issuer (NUXT_OIDC_ISSUER); its discovery document says where userinfo is. */
   oidcIssuer: string
-  /** Kanidm group whose members are admins (NUXT_OIDC_ADMIN_GROUP). */
+  /** Group whose members are admins (NUXT_OIDC_ADMIN_GROUP): name, SPN, id or path. */
   adminGroup: string
   /** A manager of a resource may cancel the bookings of others (NUXT_RESOURCES_MANAGER_CANCEL). */
   managerCancel: boolean

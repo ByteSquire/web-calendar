@@ -7,6 +7,8 @@ import { createUserinfoClient } from '../../server/utils/api/userinfo-client'
 import { openTestDb } from './api-fixtures'
 
 const ISSUER = 'https://idm.example.org/oauth2/openid/web-calendar'
+/** As the discovery document of ISSUER names it; an empty issuer has none. */
+const endpointOfIssuer = (issuer: string) => (issuer === ISSUER ? `${ISSUER}/userinfo` : null)
 const ALICE_SUB = '189c6a24-f9cb-437b-8f58-b5cc8d7f909e'
 const BOB_SUB = '6f9f0e2d-0000-4000-8000-000000000002'
 const ALICE_TOKEN = 'alice.token.value'
@@ -32,7 +34,11 @@ function userinfo(claims: Record<string, unknown>, status = 200): Response {
 
 function options(fetchImpl: FetchFn, overrides: Partial<ResolveMeOptions> = {}): ResolveMeOptions {
   // A client of its own per call, so nothing is remembered between two calls of a test.
-  const client = createUserinfoClient({ fetch: fetchImpl as typeof fetch, timeoutMs: 50 })
+  const client = createUserinfoClient({
+    fetch: fetchImpl as typeof fetch,
+    endpointOf: endpointOfIssuer,
+    timeoutMs: 50,
+  })
   return {
     db,
     adminGroup: 'calendar_admins',
@@ -225,7 +231,10 @@ describe('resolveMe', () => {
 
   it('does not call out without an issuer or a bearer token', async () => {
     const fake = vi.fn<FetchFn>(async () => userinfo(ALICE_CLAIMS))
-    const client = createUserinfoClient({ fetch: fake as typeof fetch })
+    const client = createUserinfoClient({
+      fetch: fake as typeof fetch,
+      endpointOf: endpointOfIssuer,
+    })
     const user = signedIn(ALICE_SUB)
     const noIssuer = options(fake, {
       userinfo: (sub, accessToken) => client.get({ issuer: '', sub, accessToken }),

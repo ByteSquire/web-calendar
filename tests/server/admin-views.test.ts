@@ -15,7 +15,7 @@ import adminPost from '../../server/api/admin/views/index.post'
 import userDelete from '../../server/api/views/[id].delete'
 import userPut from '../../server/api/views/[id].put'
 import userPost from '../../server/api/views/index.post'
-import { openTestDb } from './api-fixtures'
+import { openTestDb, seedUserinfoEndpoint } from './api-fixtures'
 
 vi.mock('../../server/utils/auth/nitro', async () => {
   const { createError } = await import('h3')
@@ -73,6 +73,7 @@ beforeEach(() => {
     }),
   )
   getUserinfoClient().clear()
+  seedUserinfoEndpoint()
   vi.spyOn(console, 'warn').mockImplementation(() => {})
 })
 

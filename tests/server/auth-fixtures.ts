@@ -23,15 +23,19 @@ export interface TestKey {
   privateKey: CryptoKey
   /** The public key as the provider publishes it. */
   jwk: JWK
+  /** The algorithm it signs with (ES256 when absent). */
+  alg?: string
 }
 
-export async function makeKey(kid: string): Promise<TestKey> {
-  const { publicKey, privateKey } = await generateKeyPair('ES256')
-  return {
-    kid,
-    privateKey,
-    jwk: { ...(await exportJWK(publicKey)), kid, alg: 'ES256', use: 'sig' },
-  }
+/**
+ * A key pair for `alg` (ES256, ES384, ES512, RS256..512, PS256..512, EdDSA). The published key
+ * names its algorithm like Kanidm's does; `labelled: false` leaves `alg` out, as some providers do,
+ * which lets an RSA key verify the whole RS and PS family.
+ */
+export async function makeKey(kid: string, alg = 'ES256', labelled = true): Promise<TestKey> {
+  const { publicKey, privateKey } = await generateKeyPair(alg)
+  const published = { ...(await exportJWK(publicKey)), kid, use: 'sig' }
+  return { kid, alg, privateKey, jwk: labelled ? { ...published, alg } : published }
 }
 
 export interface MintOptions {
@@ -60,7 +64,7 @@ export async function mintAccessToken(key: TestKey, options: MintOptions = {}): 
     ...options.claims,
   }
   const header: Record<string, unknown> = {
-    alg: 'ES256',
+    alg: key.alg ?? 'ES256',
     kid: key.kid,
     typ: 'at+jwt',
     ...options.header,

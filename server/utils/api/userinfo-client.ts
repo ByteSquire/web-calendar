@@ -28,6 +28,8 @@ export interface UserinfoClient {
 
 export interface UserinfoClientOptions {
   fetch: typeof fetch
+  /** The userinfo endpoint of an issuer, from its discovery document; null when it has none. */
+  endpointOf: (issuer: string) => string | null
   /** Milliseconds, like `Date.now`. */
   now?: () => number
   ttlMs?: number
@@ -83,10 +85,11 @@ export function createUserinfoClient(options: UserinfoClientOptions): UserinfoCl
 
   return {
     get(lookup, { maxAgeMs = Infinity } = {}) {
-      // Nothing to ask for: no cache, no shared call.
-      if (!lookup.issuer || !lookup.accessToken) {
+      // Nothing to ask for (no endpoint known, no token): no cache, no shared call.
+      const endpoint = lookup.issuer ? options.endpointOf(lookup.issuer) : null
+      if (!endpoint || !lookup.accessToken) {
         return fetchUserinfo({
-          issuer: lookup.issuer,
+          endpoint,
           accessToken: lookup.accessToken,
           expectedSub: lookup.sub,
           fetch: options.fetch,
@@ -102,7 +105,7 @@ export function createUserinfoClient(options: UserinfoClientOptions): UserinfoCl
       if (running) return running
 
       const call = fetchUserinfo({
-        issuer: lookup.issuer,
+        endpoint,
         accessToken: lookup.accessToken,
         expectedSub: lookup.sub,
         fetch: options.fetch,

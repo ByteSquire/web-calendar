@@ -64,9 +64,10 @@ test.describe('keyboard', () => {
     // The skip link (outside the landmarks) comes first, then the top bar.
     expect(runs.slice(0, 6)).toEqual(['other', 'header', 'sidebar', 'main', 'body', 'other'])
     // The top bar leads with the controls a keyboard user needs first.
-    expect(stops.slice(0, 5).map((stop) => stop.name)).toEqual([
+    expect(stops.slice(0, 6).map((stop) => stop.name)).toEqual([
       'Skip to main content',
       'Close sidebar',
+      'Web Calendar',
       'Previous week',
       'Today',
       'Next week',

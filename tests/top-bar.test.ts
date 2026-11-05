@@ -45,6 +45,16 @@ afterEach(() => {
   clearNuxtState((key) => key !== 'color-mode')
 })
 
+describe('the name of the app', () => {
+  it('is a link to the base address, the calendar view', () => {
+    const link = [...document.querySelectorAll('a')].find(
+      (item) => item.textContent?.trim() === 'Web Calendar',
+    )
+    expect(link).toBeDefined()
+    expect(link!.getAttribute('href')).toBe('/')
+  })
+})
+
 describe('view-type switcher', () => {
   it('changes the view type and marks only the current one as pressed', async () => {
     const { viewType } = useCalendarState()

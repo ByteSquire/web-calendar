@@ -760,7 +760,11 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
   the events reference; an event without `UID` gets a hash of its lines, so a re-import finds it
   again. The resource name is 128 bits of the `UID`'s SHA-256 plus `.ics` (UIDs are untrusted).
   `PUT` with `If-None-Match: *`: a `412`, or a `409` (`no-uid-conflict`), means "already there".
-  A `PROPFIND` of the target comes first, because a missing collection also answers `409`.
+  A `PROPFIND` of the target comes first, because a missing collection also answers `409`. The
+  target may be a new calendar: "New calendar…" in the choice makes it with `MKCALENDAR` in the
+  person's own home when Import is pressed (named after the file's calendar name or file name,
+  at most 100 characters), the calendar sources are loaded again so that it shows in the sidebar, and
+  "Import again" fills the calendar made, not a second one.
   Concurrency 4; it stops on `401`, `403` or `404` or after 5 outage failures in a row, while
   `400` and `413` cost only that event. Skipped and counted: to-dos, journal entries, free/busy
   blocks, events without a start, damaged components and duplicates. vCalendar 1.0 is refused,

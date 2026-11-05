@@ -344,6 +344,12 @@ export const settings: Readonly<Record<string, string>> = {
   'The first events in the file': 'Die ersten Termine in der Datei',
   'What is not imported': 'Was nicht importiert wird',
   'Import into': 'Importieren in',
+  'New calendar…': 'Neuer Kalender …',
+  'Name of the new calendar': 'Name des neuen Kalenders',
+  'Creating the calendar…': 'Kalender wird angelegt …',
+  'The calendar “{name}” was created.': 'Der Kalender „{name}“ wurde angelegt.',
+  'The calendar could not be created: {problem}':
+    'Der Kalender konnte nicht angelegt werden: {problem}',
   'Import progress': 'Importfortschritt',
   '{done} of {total}': '{done} von {total}',
   'Importing…': 'Wird importiert …',

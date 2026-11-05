@@ -62,8 +62,13 @@ interface Put {
   create?: boolean
   signal?: AbortSignal
 }
+const NEW_HREF = '/caldav/alice/0a1b2c3d/'
 const service = {
   puts: [] as Put[],
+  /** The calendars the section asked to make (MKCALENDAR), in order. */
+  made: [] as { displayName: string }[],
+  /** Makes the next calendar fail. */
+  makeFails: null as DavError | null,
   invalidated: [] as string[],
   /** Holds every write until released, so a test can look at a run in progress. */
   hold: null as Promise<void> | null,
@@ -80,7 +85,28 @@ const caldav = {
         components: ['VEVENT'],
         readOnly: false,
       },
+      // A calendar the section made is there afterwards.
+      ...service.made.map((made) => ({
+        url: NEW_HREF,
+        displayName: made.displayName,
+        color: null,
+        ctag: null,
+        components: ['VEVENT'],
+        readOnly: false,
+      })),
     ],
+    createCalendar: async (args: { displayName: string }) => {
+      if (service.makeFails) throw service.makeFails
+      service.made.push({ displayName: args.displayName })
+      return {
+        url: NEW_HREF,
+        displayName: args.displayName,
+        color: null,
+        ctag: null,
+        components: ['VEVENT'],
+        readOnly: false,
+      }
+    },
     putObject: async (put: Put) => {
       const index = service.puts.length
       service.puts.push(put)
@@ -102,6 +128,10 @@ const button = (name: RegExp | string) =>
   buttons().find((item) =>
     typeof name === 'string' ? text(item) === name : name.test(text(item)),
   ) as HTMLButtonElement | undefined
+const newNameInput = () =>
+  section()?.querySelector<HTMLInputElement>('input[name="import-new-calendar"]') ??
+  [...(section()?.querySelectorAll<HTMLInputElement>('input:not([type="file"])') ?? [])][0] ??
+  null
 const status = () => text(section()?.querySelector('[role="status"]'))
 /** The terms and descriptions of the section's lists, by term. */
 const details = () =>
@@ -141,6 +171,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   service.puts = []
+  service.made = []
+  service.makeFails = null
   service.invalidated = []
   service.hold = null
   service.fail = () => null
@@ -274,15 +306,28 @@ describe('choosing a file', () => {
     expect(label).toBeDefined()
   })
 
-  it('says so when no calendar can take events, and the button stays off', async () => {
-    // A read-only share and a subscription: neither takes events.
+  it('offers "New calendar…" after the calendars, and has no name field while a calendar is chosen', async () => {
+    await mountSection()
+    await chooseAndRead(fixture('import-recurring-overrides.ics'))
+    expect(section()!.querySelector('input[name="import-new-calendar"]')).toBeNull()
+    const select = section()!.querySelector<HTMLElement>('[role="combobox"]')!
+    select.click()
+    await vi.waitFor(() => expect(document.querySelectorAll('[role="option"]').length).toBe(2))
+    expect([...document.querySelectorAll('[role="option"]')].map((item) => text(item))).toEqual([
+      'Work',
+      'New calendar…',
+    ])
+  })
+
+  it('has "New calendar…" chosen when no calendar can take events, and the button works', async () => {
+    // A read-only share and a subscription: neither takes events, but a new calendar can.
     await mountSection(calendars.slice(1))
     await chooseAndRead(fixture('import-recurring-overrides.ics'))
-    expect(text(section())).toContain('None of your calendars can take new events.')
-    expect(section()!.querySelector('[role="combobox"]')).toBeNull()
-    expect(button('Import 2 events')?.disabled).toBe(true)
-    button('Import 2 events')!.click()
-    expect(service.puts).toEqual([])
+    expect(text(section())).not.toContain('None of your calendars can take new events.')
+    await vi.waitFor(() => expect(newNameInput()).not.toBeNull())
+    expect(button('Import 2 events')?.disabled).toBe(false)
+    // The name starts as the calendar name of the file.
+    expect(newNameInput()!.value).toBe('Team calendar')
   })
 
   it('shows a file that is too large, no calendar or no text as a message at the field', async () => {
@@ -326,6 +371,84 @@ describe('choosing a file', () => {
     choose('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n', 'empty.ics')
     await vi.waitFor(() => expect(status()).toBe('File read: it has no events to import.'))
     expect(button(/^Import/)).toBeUndefined()
+  })
+})
+
+describe('importing into a new calendar', () => {
+  async function chooseNew(name?: string) {
+    await mountSection(calendars.slice(1))
+    await chooseAndRead(fixture('import-recurring-overrides.ics'))
+    await vi.waitFor(() => expect(newNameInput()).not.toBeNull())
+    if (name !== undefined) {
+      const input = newNameInput()!
+      input.value = name
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+  }
+
+  it('makes the calendar with the chosen name, writes the events into it and reloads the sources', async () => {
+    await chooseNew('Holidays 2027')
+    const before = sourcesVersion()
+    button('Import 2 events')!.click()
+    await vi.waitFor(() => expect(text(section())).toContain('Import finished'))
+    expect(service.made).toEqual([{ displayName: 'Holidays 2027' }])
+    expect(service.puts).toHaveLength(2)
+    for (const put of service.puts)
+      expect(put.url).toMatch(/^\/caldav\/alice\/0a1b2c3d\/[0-9a-f]{32}\.ics$/)
+    expect(text(section())).toContain('The calendar “Holidays 2027” was created.')
+    // Once for the new calendar, once for its events.
+    expect(sourcesVersion()).toBe(before + 2)
+    expect(service.invalidated).toEqual([NEW_HREF])
+  })
+
+  it('refuses an empty or too long name before anything is made, and says why at the field', async () => {
+    await chooseNew('   ')
+    button('Import 2 events')!.click()
+    await vi.waitFor(() => expect(section()!.querySelector('[role="alert"]')).not.toBeNull())
+    expect(text(section()!.querySelector('[role="alert"]'))).toContain('Enter a name.')
+    expect(service.made).toEqual([])
+    expect(service.puts).toEqual([])
+    const input = newNameInput()!
+    // The field stops typing at 100 characters; a longer value set by a script is still refused.
+    input.value = 'x'.repeat(101)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.waitFor(() => expect(section()!.querySelector('[role="alert"]')).toBeNull())
+    button('Import 2 events')!.click()
+    await vi.waitFor(() =>
+      expect(text(section()!.querySelector('[role="alert"]'))).toContain('at most 100'),
+    )
+    expect(service.made).toEqual([])
+    expect(service.puts).toEqual([])
+  })
+
+  it('shows why the calendar could not be made, imports nothing, and can be tried again', async () => {
+    await chooseNew('Holidays')
+    service.makeFails = new DavError('forbidden', 'no')
+    button('Import 2 events')!.click()
+    await vi.waitFor(() => expect(text(section())).toContain('The calendar could not be created'))
+    expect(service.puts).toEqual([])
+    expect(text(section())).not.toContain('Import finished')
+    service.makeFails = null
+    button('Import 2 events')!.click()
+    await vi.waitFor(() => expect(text(section())).toContain('Import finished'))
+    expect(service.made).toHaveLength(1)
+  })
+
+  it('fills the calendar it made when the file is imported again, and does not make a second one', async () => {
+    await chooseNew('Holidays')
+    service.fail = (_put, index) =>
+      index === 0 ? new DavError('rejected', 'no', { status: 500 }) : null
+    button('Import 2 events')!.click()
+    await vi.waitFor(() => expect(text(section())).toContain('Import again'))
+    service.fail = () => null
+    button('Import again')!.click()
+    await vi.waitFor(() => expect(button('Import 2 events')).toBeDefined())
+    button('Import 2 events')!.click()
+    await vi.waitFor(() => expect(service.puts).toHaveLength(4))
+    expect(service.made).toHaveLength(1)
+    expect(new Set(service.puts.map((put) => put.url.slice(0, NEW_HREF.length)))).toEqual(
+      new Set([NEW_HREF]),
+    )
   })
 })
 

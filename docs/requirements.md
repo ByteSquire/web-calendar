@@ -108,8 +108,8 @@ out). Views appear at the **top of the sidebar**.
 
 - **FR-7** Users can **import a calendar from an iCal (`.ics`) URL or file**. A URL is
   subscribed to (read-only, fetched by the server). A file is imported into one of the user's
-  own writable calendars, at most 5 MB and 2000 events, events only (VEVENT); nothing is kept
-  on the server.
+  own writable calendars, or into a **new calendar** made for it (named after the file, editable),
+  at most 5 MB and 2000 events, events only (VEVENT); nothing is kept on the server.
 - **FR-8** Users see the calendars of the **built-in calendar service** they have
   access to without any account setup, and can **add external CalDAV accounts**
   (a CalDAV URL plus an authentication mode: basic or none; OIDC later). External

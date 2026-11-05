@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import Database from 'better-sqlite3'
 import { openSignedIn } from './session'
 
 // FR-7 (the file half) with the real stack (design S8 setup: the production build with the login
@@ -229,6 +230,84 @@ test('deletes the series with its changed occurrence: all events', async () => {
   await page.getByRole('button', { name: 'Next week' }).click()
   await expect(area().getByText(MOVED)).toHaveCount(0)
   await page.getByRole('button', { name: 'Previous week' }).click()
+})
+
+// "New calendar…" makes the calendar (MKCALENDAR through the gateway, in alice's own home) when
+// Import is pressed. Nothing in the app deletes a personal calendar, so the test asks Radicale
+// directly (it trusts X-Remote-User on this test network) and removes the one it made.
+const RADICALE = 'http://radicale:5232'
+const DB_PATH = '/tmp/e2e-live.db'
+const NEW_CALENDAR = `E2E new calendar ${STAMP}`
+
+function aliceSub(): string {
+  const db = new Database(DB_PATH, { readonly: true, fileMustExist: true })
+  try {
+    const row = db.prepare('SELECT oidc_sub FROM users WHERE username = ?').get('alice') as
+      { oidc_sub: string } | undefined
+    if (!row) throw new Error('alice has not signed in')
+    return row.oidc_sub
+  } finally {
+    db.close()
+  }
+}
+
+/** The path of the collection with `displayName` in alice's home, or null. */
+async function findCollection(sub: string, displayName: string): Promise<string | null> {
+  const response = await fetch(`${RADICALE}/${sub}/`, {
+    method: 'PROPFIND',
+    headers: { 'X-Remote-User': sub, Depth: '1', 'Content-Type': 'application/xml' },
+    body: '<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:prop><D:displayname/></D:prop></D:propfind>',
+  })
+  const text = await response.text()
+  for (const block of text.split(/<(?:\w+:)?response>/).slice(1)) {
+    if (!block.includes(`>${displayName}<`)) continue
+    return /<(?:\w+:)?href>([^<]+)</.exec(block)?.[1] ?? null
+  }
+  return null
+}
+
+test('imports into a new calendar: it is made, filled and listed in the sidebar', async () => {
+  test.setTimeout(90_000)
+  await page.goto('/settings')
+  await chooseFile()
+  await expect(section().getByRole('status')).toHaveText('File read: 2 events can be imported.')
+  await section().getByLabel('Import into').click()
+  await page.getByRole('option', { name: 'New calendar…' }).click()
+  // The list has closed (it hides the rest of the page from assistive technology while it is open).
+  await expect(page.getByRole('option')).toHaveCount(0)
+  // The name starts as the calendar name of the file.
+  const name = section().getByLabel('Name of the new calendar')
+  await expect(name).toHaveValue('E2E import file')
+  await name.fill(NEW_CALENDAR)
+  expect(await scanSection()).toEqual([])
+  await section().getByRole('button', { name: 'Import 2 events' }).click()
+  await expect(section().getByRole('heading', { level: 3, name: 'Import finished' })).toBeFocused()
+  await expect(section()).toContainText(`The calendar “${NEW_CALENDAR}” was created.`)
+  await expect(section().getByRole('status')).toHaveText('Imported 2 events.')
+  await section().getByRole('button', { name: 'Done' }).click()
+
+  await page.getByRole('link', { name: 'Back to calendar' }).click()
+  await expect(page.getByText(NEW_CALENDAR, { exact: true }).first()).toBeVisible()
+  await expect(area().getByText(SINGLE).first()).toBeVisible()
+})
+
+test('the name of the app leads back to the calendar from Settings', async () => {
+  await page.goto('/settings')
+  await page.getByRole('link', { name: 'Web Calendar', exact: true }).click()
+  await expect(page).toHaveURL(/\/$/)
+  await expect(area()).toBeVisible()
+})
+
+test('removes the calendar the test made', async () => {
+  const sub = aliceSub()
+  const path = await findCollection(sub, NEW_CALENDAR)
+  expect(path).not.toBeNull()
+  const response = await fetch(`${RADICALE}${path}`, {
+    method: 'DELETE',
+    headers: { 'X-Remote-User': sub },
+  })
+  expect(response.status).toBeLessThan(300)
+  expect(await findCollection(sub, NEW_CALENDAR)).toBeNull()
 })
 
 test('no script or console errors came up', () => {

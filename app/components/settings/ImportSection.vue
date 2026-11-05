@@ -3,7 +3,8 @@
   file and splits it into events (utils/ical/split.ts, utils/import/), shows what it holds, and
   "Import" writes one resource per event through the session's CalDAV client; the app's own API is
   not involved. The file is untrusted: what is shown from it (name, titles) went through
-  `displayText` and is only ever bound as text. Events already in the calendar are left alone.
+  `displayText` and is only ever bound as text. Events already in the calendar are left alone. The person may choose "New calendar…"
+  instead of one of theirs: the calendar is then made (MKCALENDAR in their home) when Import is pressed.
   After events were written `calendar-sources-version` is bumped, which makes the calendar view
   load again. Not drawn in demo mode and wherever there is no calendar service to write to.
 -->
@@ -33,6 +34,9 @@
       <h3 id="settings-import-result" ref="resultHeading" tabindex="-1" class="font-semibold">
         {{ resultTitle }}
       </h3>
+      <p v-if="createdTarget">
+        {{ t('The calendar “{name}” was created.', { name: createdTarget.name }) }}
+      </p>
       <p>{{ summary }}</p>
       <SettingsErrorAlert v-if="report.stopped" :message="report.stopped" />
       <template v-if="problems.length > 0">
@@ -139,39 +143,64 @@
         </ul>
 
         <template v-if="plan.preview.events > 0">
-          <p
-            v-if="noWritableCalendar"
-            class="rounded-lg border border-default bg-elevated p-3 text-sm"
-          >
-            {{
-              t('None of your calendars can take new events. Ask for a calendar you can write to.')
-            }}
-          </p>
-          <UFormField v-else :label="t('Import into')" name="import-calendar" required>
+          <UFormField :label="t('Import into')" name="import-calendar" required>
             <USelect
               v-model="calendarId"
               :items="calendarItems"
               :placeholder="t('Choose a calendar')"
-              :disabled="importing"
+              :disabled="busy || createdTarget !== null"
               class="w-full"
               :ui="SELECT_UI"
             >
               <template #leading>
+                <UIcon
+                  v-if="calendarId === NEW_CALENDAR"
+                  name="i-lucide-plus"
+                  class="size-4"
+                  aria-hidden="true"
+                />
                 <span
-                  v-if="selectedCalendar"
+                  v-else-if="selectedCalendar"
                   class="size-3 rounded-full"
                   :style="{ backgroundColor: selectedCalendar.color }"
                   aria-hidden="true"
                 />
               </template>
               <template #item-leading="{ item }">
+                <UIcon
+                  v-if="item.value === NEW_CALENDAR"
+                  name="i-lucide-plus"
+                  class="size-4 shrink-0"
+                  aria-hidden="true"
+                />
                 <span
+                  v-else
                   class="size-3 shrink-0 rounded-full"
                   :style="{ backgroundColor: item.color }"
                   aria-hidden="true"
                 />
               </template>
             </USelect>
+          </UFormField>
+          <!-- A new calendar is made in the person's own home when "Import" is pressed. -->
+          <UFormField
+            v-if="calendarId === NEW_CALENDAR"
+            :label="t('Name of the new calendar')"
+            name="import-new-calendar"
+            :error="newNameError || undefined"
+            :ui="FIELD_UI"
+            required
+          >
+            <template v-if="newNameError" #error="{ error }">
+              <span role="alert">{{ error }}</span>
+            </template>
+            <UInput
+              v-model="newName"
+              :maxlength="CALENDAR_NAME_MAX"
+              autocomplete="off"
+              :disabled="busy || createdTarget !== null"
+              class="w-full"
+            />
           </UFormField>
 
           <div v-if="importing" class="flex flex-col gap-1">
@@ -190,13 +219,15 @@
             <UButton
               ref="importButton"
               :label="
-                importing
-                  ? t('Importing…')
-                  : tc('Import {count} event | Import {count} events', plan.preview.events)
+                creating
+                  ? t('Creating the calendar…')
+                  : importing
+                    ? t('Importing…')
+                    : tc('Import {count} event | Import {count} events', plan.preview.events)
               "
               icon="i-lucide-file-up"
               :disabled="!canImport"
-              :aria-busy="importing"
+              :aria-busy="busy"
               @click="startImport"
             />
             <UButton
@@ -227,9 +258,12 @@ import { MAX_EVENTS, MAX_FILE_BYTES } from '~/utils/import/limits'
 import { summarize } from '~/utils/import/messages'
 import { prepareImport, type ImportPlan } from '~/utils/import/preview'
 import { runImport, type ImportReport } from '~/utils/import/run'
+import { calendarNameProblem, GROUP_LIMITS } from '~/utils/groups/model'
+import { describeLoadError } from '~/utils/live/errors'
 import { isLiveConfig } from '~/utils/live/seed'
 import { formatBytes } from '~/utils/settings/format'
 import { FIELD_UI } from '~/utils/settings/ui'
+import { toDavPath } from '~/utils/caldav/urls'
 import { writableCalendars } from '~/utils/writes/rules'
 
 type Phase = 'empty' | 'ready' | 'importing' | 'done'
@@ -237,6 +271,9 @@ type Phase = 'empty' | 'ready' | 'importing' | 'done'
 /** How many events that could not be imported are listed; the rest is counted. */
 const MAX_LISTED = 100
 const SELECT_UI = { base: 'min-h-11', item: 'min-h-11 items-center' }
+/** The choice that makes a calendar for the file instead of using one of the person's. */
+const NEW_CALENDAR = '__new_calendar__'
+const CALENDAR_NAME_MAX = GROUP_LIMITS.calendarName
 
 const caldav = useCalDav()
 const config = useServerConfigState()
@@ -261,39 +298,54 @@ const fileError = ref('')
 const notice = ref('')
 const progress = reactive({ done: 0, total: 0 })
 const importing = computed(() => phase.value === 'importing')
+const creating = ref(false)
+// Making the calendar and filling it are one job for the controls.
+const busy = computed(() => importing.value || creating.value)
 
 // ---- The calendar to import into ---------------------------------------------------------------
 
 // The calendars the quick-add dialog offers: the ones the person may write to.
 const choosable = computed(() => writableCalendars(calendars.value))
-// Not while the calendars are still being loaded: the list is empty until they arrive.
-const noWritableCalendar = computed(() => !loading.value && choosable.value.length === 0)
-const calendarItems = computed(() =>
-  choosable.value.map((calendar) => ({
+const calendarItems = computed(() => [
+  ...choosable.value.map((calendar) => ({
     label: calendar.name,
     value: calendar.id,
     color: calendar.color,
   })),
-)
+  { label: t('New calendar…'), value: NEW_CALENDAR, color: '' },
+])
 const calendarId = ref('')
 const selectedCalendar = computed(() =>
   choosable.value.find((calendar) => calendar.id === calendarId.value),
 )
+// The first calendar the person can write to; with none (and the list loaded) a new one. That "new"
+// was not their choice, so it gives way when calendars arrive after all.
+let newByDefault = false
 watch(
-  choosable,
-  (list) => {
+  [choosable, loading],
+  ([list, isLoading]) => {
+    if (calendarId.value === NEW_CALENDAR && !(newByDefault && list.length > 0)) return
     if (!list.some((calendar) => calendar.id === calendarId.value)) {
-      calendarId.value = list[0]?.id ?? ''
+      const first = list[0]?.id
+      calendarId.value = first ?? (isLoading ? '' : NEW_CALENDAR)
+      newByDefault = first === undefined && !isLoading
     }
   },
   { immediate: true },
 )
 
+// The name of a calendar that is made for the file; it starts as the file's own calendar name.
+const newName = ref('')
+const newNameError = ref('')
+watch(newName, () => (newNameError.value = ''))
+/** The calendar this run made, so that "Import again" fills it instead of making another. */
+const createdTarget = ref<{ href: string; name: string } | null>(null)
+
 const canImport = computed(
   () =>
     phase.value === 'ready' &&
     (plan.value?.preview.events ?? 0) > 0 &&
-    selectedCalendar.value !== undefined,
+    (selectedCalendar.value !== undefined || calendarId.value === NEW_CALENDAR),
 )
 
 // ---- Choosing a file -----------------------------------------------------------------------------
@@ -308,6 +360,8 @@ async function onFile(event: Event) {
   phase.value = 'empty'
   fileError.value = ''
   notice.value = ''
+  createdTarget.value = null
+  newNameError.value = ''
   if (!file) return
 
   notice.value = t('Reading the file…')
@@ -320,6 +374,10 @@ async function onFile(event: Event) {
   }
   plan.value = result.plan
   phase.value = 'ready'
+  newName.value = (result.plan.preview.calendarName || stem(result.plan.preview.fileName)).slice(
+    0,
+    CALENDAR_NAME_MAX,
+  )
   const count = result.plan.preview.events
   notice.value =
     count > 0
@@ -334,10 +392,48 @@ async function onFile(event: Event) {
 
 let controller: AbortController | null = null
 
+/** A file name without its extension, for the name of a new calendar. */
+function stem(fileName: string): string {
+  return fileName.replace(/\.(ics|ical|icalendar|ifb)$/i, '')
+}
+
+/**
+ * The href to write to: the chosen calendar's, or a new calendar's (made now, in the person's own
+ * home). Null when there is nothing to write to yet; the reason is then shown where it belongs.
+ */
+async function targetHref(): Promise<string | null> {
+  if (calendarId.value !== NEW_CALENDAR) return selectedCalendar.value?.href ?? null
+  if (createdTarget.value) return createdTarget.value.href
+  const problem = calendarNameProblem(newName.value)
+  if (problem) {
+    newNameError.value = problem
+    return null
+  }
+  if (!caldav) return null
+  creating.value = true
+  notice.value = t('Creating the calendar…')
+  try {
+    const made = await caldav.client.createCalendar({ displayName: newName.value.trim() })
+    createdTarget.value = { href: toDavPath(made.url), name: made.displayName }
+    // The calendar is there from now on, whatever the import does: the sidebar lists it.
+    sourcesVersion.value++
+    return createdTarget.value.href
+  } catch (error) {
+    newNameError.value = t('The calendar could not be created: {problem}', {
+      problem: describeLoadError(error),
+    })
+    notice.value = ''
+    return null
+  } finally {
+    creating.value = false
+  }
+}
+
 async function startImport() {
   const current = plan.value
-  const calendar = selectedCalendar.value
-  if (!current || !calendar?.href || !caldav || phase.value !== 'ready') return
+  if (!current || !caldav || phase.value !== 'ready' || creating.value) return
+  const calendarHref = await targetHref()
+  if (!calendarHref) return
   const run = new AbortController()
   controller = run
   progress.done = 0
@@ -351,7 +447,7 @@ async function startImport() {
   let result: ImportReport
   try {
     result = await runImport(caldav.client, {
-      calendarHref: calendar.href,
+      calendarHref,
       resources: current.resources,
       signal: run.signal,
       onProgress: (value) => {
@@ -372,7 +468,7 @@ async function startImport() {
   notice.value = summarize(result)
   // Events that were interrupted or failed with an unclear answer may have been saved.
   if (result.created + result.interrupted + result.failed > 0) {
-    caldav.reader.invalidate(calendar.href)
+    caldav.reader.invalidate(calendarHref)
     sourcesVersion.value++
   }
   await nextTick()
@@ -418,6 +514,11 @@ async function finish() {
   phase.value = 'empty'
   fileError.value = ''
   notice.value = ''
+  createdTarget.value = null
+  newNameError.value = ''
+  const first = choosable.value[0]?.id
+  calendarId.value = first ?? NEW_CALENDAR
+  newByDefault = first === undefined
   const input = fileInput.value?.inputRef
   if (input) input.value = ''
   await nextTick()

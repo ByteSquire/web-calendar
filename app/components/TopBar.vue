@@ -20,7 +20,12 @@
       />
     </div>
     <div class="top-bar-title">
-      <span class="hidden lg:inline">Web Calendar</span>
+      <!-- The name leads back to the calendar (the base address) from every page that has this bar. -->
+      <NuxtLink
+        to="/"
+        class="hidden rounded-sm text-inherit no-underline hover:underline focus-visible:underline lg:inline"
+        >Web Calendar</NuxtLink
+      >
       <!-- Below 1024 px the shown period takes the place of the app name; DateNav hides its label. -->
       <!-- Two action buttons share the row at 360 px: there the label is smaller and may use two lines. -->
       <span

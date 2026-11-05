@@ -99,7 +99,13 @@
 <script setup lang="ts">
 import { useAdminAccess, useAdminFlag } from '~/composables/useAdminAccess'
 import type { AccessRule, AccessRuleInput } from '~/utils/admin/access'
-import { ACCESS_LEVELS, levelLabel, withRule, withoutRule } from '~/utils/admin/access'
+import {
+  ACCESS_LEVELS,
+  calendarLabel,
+  levelLabel,
+  withRule,
+  withoutRule,
+} from '~/utils/admin/access'
 import { t, tc } from '~/utils/i18n'
 
 useHead({ title: () => t('Calendar access') })
@@ -122,7 +128,7 @@ const notice = ref('')
 const calendarItems = computed(() =>
   (access.calendars.data.value?.calendars ?? []).map((calendar) => ({
     value: calendar.id,
-    label: calendar.name,
+    label: calendarLabel(calendar),
   })),
 )
 const current = computed(

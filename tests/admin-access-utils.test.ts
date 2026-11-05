@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  calendarLabel,
   describeSaveProblem,
   isGroupName,
   levelLabel,
@@ -130,6 +131,28 @@ describe('describeSaveProblem', () => {
     )
     expect(describeSaveProblem(new TypeError('Failed to fetch'), sent, labelOf)).toContain(
       'could not be reached',
+    )
+  })
+})
+
+describe('calendarLabel', () => {
+  it('names the owner of a personal calendar, so the ones that share a name can be told apart', () => {
+    expect(
+      calendarLabel({ name: 'Personal Calendar', kind: 'personal', owner: 'Bob Builder' }),
+    ).toBe('Personal Calendar (Bob Builder)')
+    expect(calendarLabel({ name: 'Personal Calendar', kind: 'personal', owner: 'Alice' })).toBe(
+      'Personal Calendar (Alice)',
+    )
+  })
+
+  it('leaves the name of an organization calendar or a resource as it is', () => {
+    expect(calendarLabel({ name: 'Team', kind: 'shared', owner: null })).toBe('Team')
+    expect(calendarLabel({ name: 'Room 1', kind: 'resource', owner: null })).toBe('Room 1')
+  })
+
+  it('keeps the name when the owner has no name to show', () => {
+    expect(calendarLabel({ name: 'Personal Calendar', kind: 'personal', owner: null })).toBe(
+      'Personal Calendar',
     )
   })
 })

@@ -156,6 +156,48 @@ describe('as an admin', () => {
     expect(text(document.body)).toContain('1 rule is pending')
   })
 
+  it('names the owner of each personal calendar in the drop-down, to tell them apart', async () => {
+    const base = api.handler!
+    api.handler = async (path, options) => {
+      if (path === '/api/admin/access/calendars' && !options?.method) {
+        const team = calendars().calendars[0]!
+        return {
+          calendars: [
+            {
+              ...team,
+              id: 6,
+              name: 'Personal Calendar',
+              kind: 'personal',
+              owner: 'Bob Builder',
+              rules: [],
+            },
+            {
+              ...team,
+              id: 7,
+              name: 'Personal Calendar',
+              kind: 'personal',
+              owner: 'Alice',
+              rules: [],
+            },
+            team,
+          ],
+        }
+      }
+      return base(path, options)
+    }
+    await mountPage()
+    const trigger = () => button(/Personal Calendar|Team/)
+    // The calendar that is chosen first shows its owner on the trigger.
+    await vi.waitFor(() => expect(text(trigger())).toContain('Personal Calendar (Bob Builder)'))
+    trigger()!.click()
+    await vi.waitFor(() => expect(document.querySelectorAll('[role="option"]')).toHaveLength(3))
+    expect([...document.querySelectorAll('[role="option"]')].map((item) => text(item))).toEqual([
+      'Personal Calendar (Bob Builder)',
+      'Personal Calendar (Alice)',
+      'Team',
+    ])
+  })
+
   it('removes a rule by sending the list without it', async () => {
     await mountPage()
     await vi.waitFor(() => expect(rules()).toHaveLength(2))

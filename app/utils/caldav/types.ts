@@ -14,6 +14,11 @@ export interface DavCalendar {
   components: string[]
   /** True when the server lists privileges for the user and none of them allows writing items. */
   readOnly: boolean
+  /**
+   * True when the user may see the busy times only (a free/busy share): the privileges name
+   * `read-free-busy` and not `read`. Its events cannot be queried, only `fetchFreeBusy`.
+   */
+  freeBusyOnly: boolean
 }
 
 export interface DavObject {

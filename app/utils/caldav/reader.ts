@@ -1,7 +1,7 @@
 // Reading several calendars for a visible range (design §7: one request per visible calendar, in
 // parallel with a limit, kept 30 s in memory). The reader never fails as a whole (NFR-4): each
-// calendar comes back with its objects or with its own error, and an abort ends the waiting
-// without touching what other callers share or what is cached.
+// calendar comes back with its objects (or, for a free/busy share, its busy times) or with its own
+// error, and an abort ends the waiting without touching what other callers share or what is cached.
 import { DavError, isAbortError } from './errors'
 import { createFlights, createLimiter } from './flights'
 import type { CalDavClient } from './client'
@@ -12,12 +12,16 @@ export interface ReadCalendar {
   url: string
   /** Let the server expand recurring events into instances. */
   expand: boolean
+  /** Ask for the busy times only (a free/busy share, which cannot query its events). */
+  freeBusy?: boolean
 }
 
 export interface ReadResult {
   /** The `url` of the requested calendar, as passed in. */
   calendarUrl: string
   objects?: DavObject[]
+  /** The VFREEBUSY text, for a calendar read with `freeBusy`. */
+  freeBusy?: string
   error?: DavError
 }
 
@@ -49,11 +53,14 @@ export interface CalendarReader {
   clear(): void
 }
 
+/** What one request brought: the objects, or the busy times of a free/busy share. */
+type Answer = { objects: DavObject[] } | { freeBusy: string }
+
 interface CacheEntry {
   expires: number
   /** Order in which the requests started, so a slow old answer never replaces a newer one. */
   sequence: number
-  objects: DavObject[]
+  answer: Answer
 }
 
 const DAY_MS = 86_400_000
@@ -70,15 +77,22 @@ function asDavError(error: unknown): DavError {
   return new DavError('bad-response', `unexpected failure: ${message}`, { cause: error })
 }
 
+/** A copy for the caller, so nobody changes what is cached. */
+function resultOf(calendarUrl: string, answer: Answer): ReadResult {
+  return 'objects' in answer
+    ? { calendarUrl, objects: answer.objects.slice() }
+    : { calendarUrl, freeBusy: answer.freeBusy }
+}
+
 export function createCalendarReader(
-  client: Pick<CalDavClient, 'fetchObjects'>,
+  client: Pick<CalDavClient, 'fetchObjects' | 'fetchFreeBusy'>,
   options: CalendarReaderOptions = {},
 ): CalendarReader {
   const ttlMs = options.ttlMs ?? 30_000
   const padMs = (options.padDays ?? 1) * DAY_MS
   const now = options.now ?? Date.now
   const limiter = createLimiter(options.concurrency ?? 6)
-  const flights = createFlights<DavObject[]>()
+  const flights = createFlights<Answer>()
 
   /** calendar -> (range and expand) -> answer */
   const cache = new Map<string, Map<string, CacheEntry>>()
@@ -113,32 +127,37 @@ export function createCalendarReader(
   ): Promise<ReadResult> {
     const calendarUrl = calendar.url
     const key = calendarKey(calendarUrl)
-    const rangeKey = `${calendar.expand ? 'expanded' : 'raw'} ${padded.start.toISOString()} ${padded.end.toISOString()}`
+    const mode = calendar.freeBusy ? 'free-busy' : calendar.expand ? 'expanded' : 'raw'
+    const rangeKey = `${mode} ${padded.start.toISOString()} ${padded.end.toISOString()}`
     try {
       if (signal?.aborted) throw new DavError('aborted', 'the request was aborted')
       if (!force) {
         const hit = cache.get(key)?.get(rangeKey)
-        if (hit && hit.expires > now()) return { calendarUrl, objects: hit.objects.slice() }
+        if (hit && hit.expires > now()) return resultOf(calendarUrl, hit.answer)
       }
 
       const generation = generationOf(key)
       const started = ++sequence
-      const objects = await flights.join(
+      const answer = await flights.join(
         `${key}\n${rangeKey}`,
         (shared) =>
-          limiter.run(async () => {
-            const result = await client.fetchObjects(calendarUrl, padded, {
-              expand: calendar.expand,
-              signal: shared,
-            })
+          limiter.run(async (): Promise<Answer> => {
+            const result: Answer = calendar.freeBusy
+              ? { freeBusy: await client.fetchFreeBusy(calendarUrl, padded, { signal: shared }) }
+              : {
+                  objects: await client.fetchObjects(calendarUrl, padded, {
+                    expand: calendar.expand,
+                    signal: shared,
+                  }),
+                }
             if (generationOf(key) === generation) {
-              store(key, rangeKey, { expires: now() + ttlMs, sequence: started, objects: result })
+              store(key, rangeKey, { expires: now() + ttlMs, sequence: started, answer: result })
             }
             return result
           }, shared),
         { ...(signal ? { signal } : {}), fresh: force },
       )
-      return { calendarUrl, objects: objects.slice() }
+      return resultOf(calendarUrl, answer)
     } catch (error) {
       return { calendarUrl, error: asDavError(error) }
     }

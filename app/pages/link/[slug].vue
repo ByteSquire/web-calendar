@@ -76,7 +76,7 @@ import { t } from '~/utils/i18n'
 import {
   LINK_CALENDAR_ID,
   failureOf,
-  fetchLinkObjects,
+  fetchLinkRead,
   linkEvents,
   openLink,
   readStoredSession,
@@ -179,10 +179,10 @@ async function load() {
   const mine = ++loadCount
   loading.value = true
   try {
-    const { objects } = await fetchLinkObjects(slug.value, current.token, range)
+    const read = await fetchLinkRead(slug.value, current.token, range)
     if (mine !== loadCount) return
     readProblem.value = null
-    state.events.value = linkEvents(objects, {
+    state.events.value = linkEvents(read, {
       displayTimeZone: displayTimeZone.value,
       orgTimeZone: orgTimeZone.value,
       range,

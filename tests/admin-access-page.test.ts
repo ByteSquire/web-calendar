@@ -2,10 +2,10 @@
 // The access administration page inside a real Nuxt UI app, with a fake API behind
 // `useAuthFetch`: who is sent away, what is listed, and what an add or a remove sends.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h } from 'vue'
+import { defineComponent, h, nextTick } from 'vue'
 import { clearNuxtState } from '#app'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
-import { UApp } from '#components'
+import { UApp, USelectMenu } from '#components'
 import AccessPage from '~/pages/admin/access.vue'
 import type { AccessCalendarsResponse } from '~/utils/admin/access'
 
@@ -67,6 +67,11 @@ beforeEach(() => {
     calls.push({ path, method: options?.method ?? 'GET', body: options?.body })
     if (path === '/api/me') return { ...ME, isAdmin: admin }
     if (path === '/api/admin/access/calendars' && !options?.method) return calendars()
+    // the links of the chosen calendar (their own tests: links-routes, e2e/admin-access.spec.ts)
+    if (/^\/api\/admin\/access\/calendars\/\d+\/links$/.test(path) && !options?.method) {
+      return { links: [] }
+    }
+    if (path === '/api/groups') return { groups: [{ name: 'staff' }, { name: 'nope' }] }
     if (path === '/api/admin/access/users')
       return { users: [{ sub: 'u-bob', name: 'Bob Builder', username: 'bob' }] }
     if (options?.method === 'PUT') {
@@ -105,6 +110,15 @@ afterEach(() => {
 async function mountPage() {
   app = await mountSuspended(Shell, { attachTo: document.body })
 }
+
+/** Picks a group in the "Group" drop-down of the add form. */
+async function chooseGroup(name: string) {
+  await vi.waitFor(() => expect(groupMenu()).toBeDefined())
+  groupMenu()!.vm.$emit('update:modelValue', name)
+  await nextTick()
+}
+const groupMenu = () =>
+  app.findAllComponents(USelectMenu).find((menu) => menu.props('placeholder') === 'Choose a group')
 
 const text = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, ' ').trim()
 const rules = () => [...document.querySelectorAll('[data-access-rule]')].map((li) => text(li))
@@ -208,9 +222,9 @@ describe('as an admin', () => {
       body: { rules: [{ principalType: 'group', principal: 'staff', permission: 'write' }] },
     })
     await vi.waitFor(() =>
-      expect(text(document.querySelector('[role="status"][aria-live]'))).toContain(
-        'no longer has access',
-      ),
+      expect(
+        [...document.querySelectorAll('[role="status"][aria-live]')].map(text).join(' '),
+      ).toContain('no longer has access'),
     )
   })
 
@@ -233,18 +247,18 @@ describe('as an admin', () => {
     })
   })
 
-  it('does not send a group name that cannot be one', async () => {
+  it('offers the groups of the Groups page to choose from, and sends nothing without one', async () => {
     await mountPage()
     await vi.waitFor(() => expect(rules()).toHaveLength(2))
     radio('A group').click()
-    await vi.waitFor(() =>
-      expect(document.querySelector('input[autocapitalize="none"]')).not.toBeNull(),
-    )
-    const input = document.querySelector<HTMLInputElement>('input[autocapitalize="none"]')!
-    input.value = 'bad/name'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.waitFor(() => expect(groupMenu()).toBeDefined())
+    expect(groupMenu()!.props('items')).toEqual([
+      { value: 'staff', label: 'staff' },
+      { value: 'nope', label: 'nope' },
+    ])
+    expect(calls.some((call) => call.path === '/api/groups')).toBe(true)
     button(/^Add access$/)!.click()
-    await vi.waitFor(() => expect(text(document.body)).toContain('Enter the group name'))
+    await vi.waitFor(() => expect(text(document.body)).toContain('Choose a group.'))
     expect(puts()).toHaveLength(0)
   })
 
@@ -267,12 +281,8 @@ describe('as an admin', () => {
     await mountPage()
     await vi.waitFor(() => expect(rules()).toHaveLength(2))
     radio('A group').click()
-    await vi.waitFor(() =>
-      expect(document.querySelector('input[autocapitalize="none"]')).not.toBeNull(),
-    )
-    const input = document.querySelector<HTMLInputElement>('input[autocapitalize="none"]')!
-    input.value = 'nope'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
+    // listed, but gone on the server by the time the rule is sent
+    await chooseGroup('nope')
     button(/^Add access$/)!.click()
     await vi.waitFor(() =>
       expect(text(document.querySelector('[role="alert"]'))).toContain(

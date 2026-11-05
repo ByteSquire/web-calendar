@@ -124,6 +124,7 @@ export function buildCalendars(input: BuildCalendarsInput): Calendar[] {
         type: 'caldav',
         href: toDavPath(collection.url),
         readOnly: collection.readOnly,
+        ...(collection.freeBusyOnly ? { freeBusyOnly: true } : {}),
         ...(input.ownerId !== undefined ? { ownerId: input.ownerId } : {}),
       },
       collection.color,

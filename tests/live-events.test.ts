@@ -165,6 +165,37 @@ describe('readCalendarEvents: subscriptions', () => {
   })
 })
 
+describe('readCalendarEvents: busy times only', () => {
+  it('makes "Busy" blocks of a free/busy share, only those in the range, and no problem', () => {
+    const text = [
+      'BEGIN:VCALENDAR',
+      'BEGIN:VFREEBUSY',
+      'FREEBUSY:20261105T090000Z/20261105T100000Z',
+      'FREEBUSY:20200101T090000Z/20200101T100000Z',
+      'END:VFREEBUSY',
+      'END:VCALENDAR',
+    ].join('\r\n')
+    const result = readCalendarEvents(
+      { kind: 'free-busy', calendarId: CAL, text },
+      {
+        ...context,
+        range: { start: new Date('2026-11-01T00:00:00Z'), end: new Date('2026-12-01T00:00:00Z') },
+      },
+    )
+    expect(result).toMatchObject({ error: null, skipped: 0, aborted: false })
+    expect(result.events).toEqual([
+      expect.objectContaining({
+        calendarId: CAL,
+        title: '',
+        isBlocked: true,
+        start: '2026-11-05T10:00:00',
+        end: '2026-11-05T11:00:00',
+      }),
+    ])
+    expect(result.events[0]!.href).toBeUndefined()
+  })
+})
+
 describe('readCalendarEvents: failures', () => {
   const failed = (error: unknown): CalendarOutcome => ({ kind: 'failed', calendarId: CAL, error })
 

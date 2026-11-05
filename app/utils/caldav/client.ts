@@ -59,6 +59,15 @@ export interface CalDavClient {
     range: DavRange,
     options?: { expand?: boolean; signal?: AbortSignal },
   ): Promise<DavObject[]>
+  /**
+   * The busy times in `range` of one calendar (a `free-busy-query`, RFC 4791 §7.10): the server's
+   * VFREEBUSY text, all a free/busy share may read. Padded like `fetchObjects` by the caller.
+   */
+  fetchFreeBusy(
+    calendarUrl: string,
+    range: DavRange,
+    options?: { signal?: AbortSignal },
+  ): Promise<string>
   getObject(objectUrl: string, signal?: AbortSignal): Promise<DavObject>
   /**
    * Writes an object. `etag` becomes `If-Match` (a `conflict` error if it changed meanwhile);
@@ -188,13 +197,20 @@ function calendarOf(
     privileges.has('write') ||
     privileges.has('writeContent') ||
     privileges.has('bind')
+  // Radicale lists `read-free-busy` alone for a free/busy share (`f`), with `read` for any other.
+  const freeBusyOnly =
+    privileges !== null &&
+    (privileges.has('readFreeBusy') || privileges.has('read-free-busy')) &&
+    !privileges.has('read') &&
+    !privileges.has('all')
   return {
     url,
     displayName: textOf(prop(props, 'displayname')) || lastSegment(url),
     color: normalizeColor(textOf(prop(props, 'calendarColor'))),
     ctag: textOf(prop(props, 'getctag')) || null,
     components,
-    readOnly: !canWrite,
+    readOnly: !canWrite || freeBusyOnly,
+    freeBusyOnly,
   }
 }
 
@@ -273,7 +289,7 @@ export function createCalDavClient(options: CalDavClientOptions): CalDavClient {
 
   /** A plain HTTP request (GET, PUT, DELETE); the body is read inside the guard. */
   function plain(
-    method: 'GET' | 'PUT' | 'DELETE',
+    method: 'GET' | 'PUT' | 'DELETE' | 'REPORT',
     url: string,
     init: { headers?: Record<string, string>; body?: string; signal?: AbortSignal },
   ): Promise<{ status: number; etag: string | null; text: string }> {
@@ -433,6 +449,32 @@ export function createCalDavClient(options: CalDavClientOptions): CalDavClient {
     return objects
   }
 
+  async function fetchFreeBusy(
+    calendarUrl: string,
+    range: DavRange,
+    opts: { signal?: AbortSignal } = {},
+  ): Promise<string> {
+    const url = requestUrl(calendarUrl)
+    const start = icalUtc(range.start, 'floor')
+    const end = icalUtc(range.end, 'ceil')
+    if (start >= end) throw new RangeError('the time range is empty')
+    const body =
+      `${XML_HEAD}<c:free-busy-query ${NAMESPACES}>` +
+      `<c:time-range start="${start}" end="${end}"/></c:free-busy-query>`
+    const reply = await plain('REPORT', url, {
+      headers: { Depth: '1', 'Content-Type': 'application/xml; charset=utf-8' },
+      body,
+      ...(opts.signal ? { signal: opts.signal } : {}),
+    })
+    if (reply.status < 200 || reply.status >= 300) throw errorForStatus('REPORT', reply.status)
+    if (!/^BEGIN:VCALENDAR/m.test(reply.text) || !/^BEGIN:VFREEBUSY/m.test(reply.text)) {
+      throw new DavError('bad-response', 'REPORT: the answer is no VFREEBUSY', {
+        status: reply.status,
+      })
+    }
+    return reply.text
+  }
+
   /** The ETag of one resource, for servers that leave the header out of a GET or PUT answer. */
   async function lookupEtag(url: string, signal?: AbortSignal): Promise<string | null> {
     const answer = multistatus(
@@ -553,6 +595,7 @@ export function createCalDavClient(options: CalDavClientOptions): CalDavClient {
       ctag: null,
       components: ['VEVENT'],
       readOnly: false,
+      freeBusyOnly: false,
     }
   }
 
@@ -561,6 +604,7 @@ export function createCalDavClient(options: CalDavClientOptions): CalDavClient {
     clearDiscovery,
     listCalendars,
     fetchObjects,
+    fetchFreeBusy,
     getObject,
     putObject,
     deleteObject,

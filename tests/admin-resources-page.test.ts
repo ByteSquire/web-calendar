@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { clearNuxtState } from '#app'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
-import { UApp } from '#components'
+import { UApp, USelectMenu } from '#components'
 import ResourcesPage from '~/pages/admin/resources.vue'
 import type { AdminResource, ResourceRule } from '~/utils/admin/resources'
 
@@ -73,6 +73,7 @@ beforeEach(() => {
       replace.mockClear()
       return { ...ME, isAdmin: admin }
     }
+    if (path === '/api/groups') return { groups: [{ name: 'staff' }] }
     if (path === '/api/admin/access/users')
       return { users: [{ sub: BOB, name: 'Bob Builder', username: 'bob' }] }
     if (path === '/api/admin/resources' && method === 'GET') return { resources }
@@ -391,12 +392,12 @@ describe('the rules of a resource', () => {
       document.getElementById(found?.getAttribute('for') ?? '')!.click()
     }
     choose('A group')
-    await vi.waitFor(() =>
-      expect(document.querySelector('input[autocapitalize="none"]')).not.toBeNull(),
-    )
-    const input = document.querySelector<HTMLInputElement>('input[autocapitalize="none"]')!
-    input.value = 'staff'
-    input.dispatchEvent(new Event('input', { bubbles: true }))
+    const groupMenu = () =>
+      app
+        .findAllComponents(USelectMenu)
+        .find((menu) => menu.props('placeholder') === 'Choose a group')
+    await vi.waitFor(() => expect(groupMenu()).toBeDefined())
+    groupMenu()!.vm.$emit('update:modelValue', 'staff')
     choose('Can manage')
     await vi.waitFor(() => expect(text(document.body)).toContain('Also accepts or declines'))
     button(/^Add access$/)!.click()

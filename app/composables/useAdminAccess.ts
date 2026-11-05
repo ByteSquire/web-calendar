@@ -43,6 +43,11 @@ export function useAdminAccess() {
     async () => (await api<{ users: AccessUser[] }>('/api/admin/access/users')).users,
     N_('load the people'),
   )
+  // The groups a rule can name: every group of the Groups page (any signed-in person may list them).
+  const groups = createResource(
+    async () => (await api<{ groups: { name: string }[] }>('/api/groups')).groups,
+    N_('load the groups'),
+  )
 
   /** Sets the complete rule list of a calendar and shows the server's answer. */
   async function saveRules(
@@ -67,5 +72,5 @@ export function useAdminAccess() {
     }
   }
 
-  return { calendars, users, saveRules }
+  return { calendars, users, groups, saveRules }
 }

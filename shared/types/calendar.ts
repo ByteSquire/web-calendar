@@ -39,6 +39,11 @@ export interface Calendar {
   href?: string
   /** The viewer may not change events here (subscriptions, read-only shares). */
   readOnly?: boolean
+  /**
+   * The viewer sees the busy times only ("Busy times only", a free/busy share): its entries are
+   * "Busy" blocks without titles, and a calendar link to it can show no more. Always read-only.
+   */
+  freeBusyOnly?: boolean
 }
 
 export interface CalendarResource {

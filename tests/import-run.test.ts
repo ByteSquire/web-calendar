@@ -27,6 +27,7 @@ const calendar = (extra: Partial<DavCalendar> = {}): DavCalendar => ({
   ctag: null,
   components: ['VEVENT'],
   readOnly: false,
+  freeBusyOnly: false,
   ...extra,
 })
 

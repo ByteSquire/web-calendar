@@ -537,7 +537,12 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
     try {
       const results = await deps.reader.read(
         // `expand`: Radicale returns the occurrences of a series as separate VEVENTs.
-        calendars.map((calendar) => ({ url: calendar.href ?? '', expand: true })),
+        // A free/busy share cannot query its events: its busy times are read instead.
+        calendars.map((calendar) => ({
+          url: calendar.href ?? '',
+          expand: true,
+          ...(calendar.freeBusyOnly ? { freeBusy: true } : {}),
+        })),
         range,
         { force },
       )
@@ -545,6 +550,9 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
         const result = results[index]
         if (result?.objects) {
           return { kind: 'caldav', calendarId: calendar.id, objects: result.objects }
+        }
+        if (result?.freeBusy !== undefined) {
+          return { kind: 'free-busy', calendarId: calendar.id, text: result.freeBusy }
         }
         const error = result?.error ?? new DavError('bad-response', 'no result for the calendar')
         return { kind: 'failed', calendarId: calendar.id, error }

@@ -2,6 +2,7 @@
 // reports problems per calendar (NFR-4: one calendar failing never takes the others down).
 import type { CalendarEvent } from '../../../shared/types/calendar'
 import type { DavObject } from '../caldav/types'
+import { freeBusyEvents } from '../ical/free-busy'
 import { readCalendarObject } from '../ical/read'
 import type { ReadIssue, ReadOptions } from '../ical/read-types'
 import { isExternalRef } from './calendars'
@@ -27,6 +28,8 @@ export type CalendarOutcome =
       expandRecurrence?: boolean
     }
   | { kind: 'ical'; calendarId: string; text: string }
+  /** The VFREEBUSY of a free/busy share: "Busy" blocks, nothing else of the events. */
+  | { kind: 'free-busy'; calendarId: string; text: string }
   | { kind: 'failed'; calendarId: string; error: unknown }
 
 export interface CalendarReadResult {
@@ -93,6 +96,16 @@ export function readCalendarEvents(
           error: describeLoadError(outcome.error),
           needsPassword: isPasswordError(outcome.error),
         }
+  }
+
+  if (outcome.kind === 'free-busy') {
+    // The query was padded by a day at each end, like the others; only what overlaps is kept.
+    const events = freeBusyEvents(outcome.text, {
+      calendarId,
+      displayTimeZone: context.displayTimeZone,
+      range: context.range,
+    })
+    return { ...base, events }
   }
 
   const common = {

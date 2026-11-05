@@ -1,8 +1,9 @@
-// Reads the calendar of a link as the person who made it, read-only. It sends exactly two kinds of
-// request: a depth-0 PROPFIND for the calendar's name and colour, and a calendar-query REPORT with
-// a time range and server-side expansion of series. Nothing that writes, and no other path than the
-// one given. A 403 or 404 means the maker cannot read the calendar (any more): a share or a
-// membership that ended ends the link with it.
+// Reads the calendar of a link, read-only, as the principal the link reads as (its maker, or the
+// collection's owner for a link an admin made). It sends exactly three kinds of request: a depth-0
+// PROPFIND for the calendar's name and colour, a calendar-query REPORT with a time range and
+// server-side expansion of series (level `read`), and a free-busy-query REPORT (level
+// `free_busy`). Nothing that writes, and no other path than the one given. A 403 or 404 means the
+// principal cannot read the calendar (any more): a share or a membership that ended ends the link.
 import {
   createStoreSend,
   escapeXml,
@@ -23,11 +24,22 @@ export type CalendarRead =
   | { kind: 'no_collection' }
   | { kind: 'error' }
 
+export type CalendarFreeBusy =
+  | { kind: 'ok'; text: string }
+  | { kind: 'forbidden' }
+  | { kind: 'no_collection' }
+  | { kind: 'error' }
+
 export interface LinkReader {
   /** The name and colour of the calendar, as `principal` sees it. */
   probe(principal: string, path: string): Promise<CalendarProbe>
   /** The calendar objects with events in `[start, end)`, series expanded by Radicale. */
   read(principal: string, path: string, start: Date, end: Date): Promise<CalendarRead>
+  /**
+   * The busy times in `[start, end)`: Radicale's `VFREEBUSY` (a free-busy-query), which is all a
+   * free/busy share gets, without titles or anything else of the events.
+   */
+  freeBusy(principal: string, path: string, start: Date, end: Date): Promise<CalendarFreeBusy>
 }
 
 /** `20261105T000000Z`: the UTC form CalDAV time ranges take. */
@@ -89,6 +101,23 @@ export function createLinkReader(options: EventReaderOptions): LinkReader {
         if (data) objects.push(data)
       }
       return { kind: 'ok', objects }
+    },
+
+    async freeBusy(principal, path, start, end) {
+      const answer = await send(
+        principal,
+        'REPORT',
+        path,
+        '1',
+        '<?xml version="1.0"?><C:free-busy-query xmlns:C="urn:ietf:params:xml:ns:caldav">' +
+          `<C:time-range start="${escapeXml(caldavUtc(start))}" end="${escapeXml(caldavUtc(end))}"/>` +
+          '</C:free-busy-query>',
+      )
+      if (!answer) return { kind: 'error' }
+      // The answer is the calendar text itself (200), not a multistatus.
+      if (answer.status !== 200) return { kind: status(answer.status) } as CalendarFreeBusy
+      if (!/BEGIN:VFREEBUSY/i.test(answer.text)) return { kind: 'error' }
+      return { kind: 'ok', text: answer.text }
     },
   }
 }

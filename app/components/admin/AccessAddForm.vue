@@ -1,6 +1,7 @@
 <!--
-  Adds a rule for a person (picked from the people who signed in once), a group (its name as the Groups page
-  shows it) or everyone signed in, with a plain description of each level. Adding someone who has a
+  Adds a rule for a person (picked from the people who signed in once), a group (picked from the
+  groups of the Groups page, made here or imported, like the share dialog of a group calendar) or
+  everyone signed in, with a plain description of each level. Adding someone who has a
   rule already changes their level. The parent saves and says whether it worked; only then are the
   inputs cleared.
 -->
@@ -38,20 +39,18 @@
       </USelectMenu>
     </UFormField>
 
-    <UFormField
-      v-else-if="type === 'group'"
-      :label="t('Group name')"
-      :help="t('The name of a group from the Groups page, for example staff.')"
-      :error="problem"
-      required
-    >
-      <UInput
+    <UFormField v-else-if="type === 'group'" :label="t('Group')" :error="problem" required>
+      <USelectMenu
         v-model="group"
-        autocomplete="off"
-        autocapitalize="none"
-        spellcheck="false"
+        :items="groupItems"
+        value-key="value"
+        :search-input="SEARCH_GROUPS"
+        :placeholder="t('Choose a group')"
         class="w-full max-w-md"
-      />
+        :ui="{ base: 'min-h-11', item: 'min-h-11 items-center' }"
+      >
+        <template #empty>{{ t('No group matches.') }}</template>
+      </USelectMenu>
     </UFormField>
 
     <p v-else class="text-toned">
@@ -77,7 +76,6 @@ import type { Ref } from 'vue'
 import { t, tv } from '~/utils/i18n'
 import {
   PRINCIPAL_CHOICES,
-  isGroupName,
   userLabel,
   type AccessPrincipalType,
   type AccessUser,
@@ -85,6 +83,8 @@ import {
 
 const props = defineProps<{
   users: readonly AccessUser[]
+  /** The groups a rule can name: the app's own (`/api/groups`). */
+  groups: readonly { name: string }[]
   busy: boolean
   /** The levels to choose from (calendars: read/write, resources: read/book/manage). */
   levels: readonly { value: P; label: string; help: string }[]
@@ -102,12 +102,16 @@ const SEARCH_PEOPLE = computed(() => ({
   placeholder: t('Search people'),
   'aria-label': t('Search people'),
 }))
+const SEARCH_GROUPS = computed(() => ({
+  placeholder: t('Search groups'),
+  'aria-label': t('Search groups'),
+}))
 // 44 px rows for the radio buttons (design §9).
 const RADIO_UI = { item: 'min-h-11 items-center' }
 
 const type = ref<AccessPrincipalType>('user')
 const person = ref<string | undefined>(undefined)
-const group = ref('')
+const group = ref<string | undefined>(undefined)
 const permission = ref(props.defaultLevel) as Ref<P>
 const problem = ref<string | undefined>(undefined)
 
@@ -132,6 +136,9 @@ const levelModel = computed<string>({
 const personItems = computed(() =>
   props.users.map((user) => ({ value: user.sub, label: userLabel(user) })),
 )
+const groupItems = computed(() =>
+  props.groups.map((item) => ({ value: item.name, label: item.name })),
+)
 
 watch(type, () => {
   problem.value = undefined
@@ -154,9 +161,9 @@ async function submit() {
       person.value = undefined
     }
   } else if (type.value === 'group') {
-    const name = group.value.trim()
-    if (!isGroupName(name)) {
-      problem.value = t('Enter the group name: letters, digits, dots, dashes and underscores.')
+    const name = props.groups.find((item) => item.name === group.value)?.name
+    if (!name) {
+      problem.value = t('Choose a group.')
       return
     }
     if (
@@ -165,7 +172,7 @@ async function submit() {
         name,
       )
     ) {
-      group.value = ''
+      group.value = undefined
     }
   } else {
     await props.save(

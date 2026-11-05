@@ -44,6 +44,7 @@ const collection = (url: string, displayName: string, extra: Partial<DavCalendar
     ctag: null,
     components: ['VEVENT'],
     readOnly: false,
+    freeBusyOnly: false,
     ...extra,
   }) satisfies DavCalendar
 
@@ -152,6 +153,8 @@ function harness(setup: Setup = {}) {
       [B, [object(`${B}two.ics`, 'two', 'Beta meeting')]],
     ]),
     icsText: new Map<string, string | unknown>(),
+    /** url -> the VFREEBUSY a free/busy share gives */
+    freeBusy: new Map<string, string>(),
   }
 
   const api = vi.fn(async (path: string): Promise<unknown> => {
@@ -191,6 +194,9 @@ function harness(setup: Setup = {}) {
       _options?: { force?: boolean },
     ): Promise<ReadResult[]> =>
       calendars.map((calendar) => {
+        if (calendar.freeBusy) {
+          return { calendarUrl: calendar.url, freeBusy: data.freeBusy.get(calendar.url) ?? '' }
+        }
         const found = data.objects.get(calendar.url)
         return found instanceof DavError
           ? { calendarUrl: calendar.url, error: found }
@@ -304,6 +310,37 @@ describe('first load', () => {
     ])
     expect(range).toEqual(loadRange(h.store.visibleRange.value, ZONE))
     expect(options).toEqual({ force: false })
+  })
+
+  it('reads a calendar the viewer sees as busy times only by its busy times, without a problem', async () => {
+    const h = harness({
+      collections: [
+        collection(A, 'Alpha'),
+        collection(B, 'Beta', { readOnly: true, freeBusyOnly: true }),
+      ],
+    })
+    h.data.freeBusy.set(
+      B,
+      [
+        'BEGIN:VCALENDAR',
+        'BEGIN:VFREEBUSY',
+        'FREEBUSY:20261028T090000Z/20261028T100000Z',
+        'END:VFREEBUSY',
+        'END:VCALENDAR',
+      ].join('\r\n'),
+    )
+    await h.loader.start()
+    expect(h.read.mock.calls[0]![0]).toEqual([
+      { url: A, expand: true },
+      { url: B, expand: true, freeBusy: true },
+    ])
+    expect(h.store.calendars.value.find((c) => c.id === idB)).toMatchObject({
+      readOnly: true,
+      freeBusyOnly: true,
+    })
+    const busy = h.store.events.value.filter((e) => e.calendarId === idB)
+    expect(busy).toEqual([expect.objectContaining({ isBlocked: true, title: '' })])
+    expect(h.status.errors.value).toEqual({})
   })
 
   it('starts with no calendar and no events, and a placeholder user, before the load', () => {

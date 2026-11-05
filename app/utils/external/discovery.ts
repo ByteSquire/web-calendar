@@ -152,6 +152,8 @@ export async function discoverCalendars(options: DiscoverOptions): Promise<DavCa
       components,
       // Writing to external calendars is not supported yet.
       readOnly: true,
+      // External calendars are read with their events only (the proxy has no free/busy query).
+      freeBusyOnly: false,
     }
   }
 

@@ -51,6 +51,7 @@ function collection(path: string, extra: Partial<DavCalendar> = {}): DavCalendar
     ctag: null,
     components: ['VEVENT'],
     readOnly: false,
+    freeBusyOnly: false,
     ...extra,
   }
 }
@@ -139,6 +140,21 @@ describe('buildCalendars', () => {
     expect(feed).toMatchObject({ sourceUrl: 'https://example.org/3.ics', name: 'Feed 3' })
     expect(feed!.ownerId).toBeUndefined()
     expect(feed!.href).toBeUndefined()
+  })
+
+  it('marks a calendar the viewer sees as busy times only, and only that one', () => {
+    const calendars = buildCalendars({
+      collections: [
+        collection('/caldav/u/a/'),
+        collection('/caldav/u/shared-7/', { readOnly: true, freeBusyOnly: true }),
+      ],
+      subscriptions: [],
+      prefs: [],
+    })
+    expect(calendars.map((c) => [c.id, c.readOnly ?? false, c.freeBusyOnly ?? false])).toEqual([
+      ['dav:/caldav/u/a/', false, false],
+      ['dav:/caldav/u/shared-7/', true, true],
+    ])
   })
 
   it('takes the server colour and falls back to the palette by position', () => {

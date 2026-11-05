@@ -589,3 +589,58 @@ describe('createLimiter', () => {
     await expect(limiter.run(async () => 'ok')).resolves.toBe('ok')
   })
 })
+
+describe('busy times', () => {
+  const FREE_BUSY = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'BEGIN:VFREEBUSY',
+    'FREEBUSY;FBTYPE=BUSY:20261105T090000Z/20261105T100000Z',
+    'END:VFREEBUSY',
+    'END:VCALENDAR',
+  ].join('\r\n')
+
+  function busyClient() {
+    const calls: string[] = []
+    const client = {
+      fetchObjects: async (url: string) => {
+        calls.push(`objects ${url}`)
+        return [object('x')]
+      },
+      fetchFreeBusy: async (url: string, range: DavRange) => {
+        calls.push(`free-busy ${url} ${range.start.toISOString()}`)
+        if (url.includes('refused')) throw new DavError('forbidden', 'no', { status: 403 })
+        return FREE_BUSY
+      },
+    }
+    return { calls, reader: createCalendarReader(client, { now: () => 1 }) }
+  }
+
+  it('reads a free/busy share with a free-busy query, padded and kept apart from its objects', async () => {
+    const { calls, reader } = busyClient()
+    const busy = { url: '/caldav/u/f/', expand: true, freeBusy: true }
+    expect(await reader.read([busy], RANGE)).toEqual([
+      { calendarUrl: '/caldav/u/f/', freeBusy: FREE_BUSY },
+    ])
+    // the second read comes from memory
+    await reader.read([busy], RANGE)
+    expect(calls).toEqual(['free-busy /caldav/u/f/ 2026-10-31T00:00:00.000Z'])
+    // the objects of the same calendar are another answer
+    await reader.read([{ url: '/caldav/u/f/', expand: true }], RANGE)
+    expect(calls).toHaveLength(2)
+    expect(calls[1]).toBe('objects /caldav/u/f/')
+  })
+
+  it('gives a refused query to its own calendar only', async () => {
+    const { reader } = busyClient()
+    const [refused, fine] = await reader.read(
+      [
+        { url: '/caldav/u/refused/', expand: true, freeBusy: true },
+        { url: '/caldav/u/f/', expand: true, freeBusy: true },
+      ],
+      RANGE,
+    )
+    expect(refused!.error?.kind).toBe('forbidden')
+    expect(fine!.freeBusy).toBe(FREE_BUSY)
+  })
+})

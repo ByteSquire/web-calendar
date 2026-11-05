@@ -126,6 +126,7 @@ describe('updating from v0.1.0 (001 to 008)', () => {
       '009_groups.sql',
       '010_sidebar_order.sql',
       '011_calendar_links.sql',
+      '012_calendar_link_levels.sql',
     ])
     expect(result.backup).toBe(`${path}.pre-009.bak`)
     expectKept(before, db)
@@ -194,7 +195,11 @@ describe('updating from v0.2.0 (001 to 009)', () => {
 
     const result = upgradeDatabase(db, path, current())
 
-    expect(result.applied).toEqual(['010_sidebar_order.sql', '011_calendar_links.sql'])
+    expect(result.applied).toEqual([
+      '010_sidebar_order.sql',
+      '011_calendar_links.sql',
+      '012_calendar_link_levels.sql',
+    ])
     expect(result.backup).toBe(`${path}.pre-010.bak`)
     expectKept(before, db)
     expectHealthy(db)

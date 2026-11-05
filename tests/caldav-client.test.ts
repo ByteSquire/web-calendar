@@ -257,6 +257,7 @@ describe('listCalendars', () => {
         ctag: '"9792c9fa"',
         components: ['VEVENT', 'VJOURNAL', 'VTODO'],
         readOnly: false,
+        freeBusyOnly: false,
       },
       {
         url: `/caldav/${SUB}/shared%20team/`,
@@ -265,6 +266,7 @@ describe('listCalendars', () => {
         ctag: null,
         components: ['VEVENT'],
         readOnly: true,
+        freeBusyOnly: false,
       },
       {
         // No displayname, no component set (any component), no privilege list: named by its path.
@@ -274,6 +276,7 @@ describe('listCalendars', () => {
         ctag: null,
         components: [],
         readOnly: false,
+        freeBusyOnly: false,
       },
     ])
     const listing = calls.at(-1)!
@@ -318,14 +321,35 @@ describe('listCalendars', () => {
     const { client } = clientFor(
       server(() =>
         ms(
-          `<multistatus ${DAV_NS}>${one('ro', '<privilege><read/></privilege><privilege><C:read-free-busy/></privilege>')}${one('wc', '<privilege><read/></privilege><privilege><write-content/></privilege>')}${one('bind', '<privilege><read/></privilege><privilege><bind/></privilege>')}${one('single', '<privilege><read/></privilege>')}</multistatus>`,
+          `<multistatus ${DAV_NS}>${one('ro', '<privilege><read/></privilege><privilege><C:read-free-busy/></privilege>')}${one('wc', '<privilege><read/></privilege><privilege><write-content/></privilege>')}${one('bind', '<privilege><read/></privilege><privilege><bind/></privilege>')}${one('single', '<privilege><read/></privilege>')}${one('fb', '<privilege><C:read-free-busy/></privilege>')}</multistatus>`,
         ),
       ),
     )
     const byName = Object.fromEntries(
-      (await client.listCalendars()).map((c) => [c.displayName, c.readOnly]),
+      (await client.listCalendars()).map((c) => [c.displayName, [c.readOnly, c.freeBusyOnly]]),
     )
-    expect(byName).toEqual({ ro: true, wc: false, bind: false, single: true })
+    expect(byName).toEqual({
+      ro: [true, false],
+      wc: [false, false],
+      bind: [false, false],
+      single: [true, false],
+      // a free/busy share (Radicale's `f`): busy times only, never writable
+      fb: [true, true],
+    })
+  })
+
+  it('reads a calendar without a privilege list as a full one', async () => {
+    const { client } = clientFor(
+      server(() =>
+        ms(
+          `<multistatus ${DAV_NS}><response><href>/caldav/${SUB}/c/</href><propstat><prop><resourcetype><C:calendar/></resourcetype></prop><status>HTTP/1.1 200 OK</status></propstat></response></multistatus>`,
+        ),
+      ),
+    )
+    expect((await client.listCalendars())[0]).toMatchObject({
+      readOnly: false,
+      freeBusyOnly: false,
+    })
   })
 
   it('is empty for an empty multistatus and fails like discovery on errors', async () => {
@@ -689,6 +713,7 @@ describe('createCalendar', () => {
       ctag: null,
       components: ['VEVENT'],
       readOnly: false,
+      freeBusyOnly: false,
     })
     const make = calls.at(-1)!
     expect(make.method).toBe('MKCALENDAR')
@@ -946,5 +971,42 @@ describe('URLs outside the server', () => {
     expect(() => createCalDavClient({ baseUrl: 'not a url', fetch })).toThrow(TypeError)
     expect(() => createCalDavClient({ baseUrl: 'ftp://dav.test/caldav', fetch })).toThrow(TypeError)
     expect(() => createCalDavClient({ baseUrl: '/caldav', fetch })).toThrow(TypeError)
+  })
+})
+
+describe('busy times', () => {
+  const FREE_BUSY = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'BEGIN:VFREEBUSY',
+    'FREEBUSY;FBTYPE=BUSY:20261105T090000Z/20261105T100000Z',
+    'END:VFREEBUSY',
+    'END:VCALENDAR',
+  ].join('\r\n')
+  const RANGE = {
+    start: new Date('2026-11-01T00:00:00Z'),
+    end: new Date('2026-11-08T00:00:00Z'),
+  }
+  const CAL = `/caldav/${SUB}/shared-7/`
+
+  it('asks with a free-busy query for the range and gives the VFREEBUSY back as it came', async () => {
+    const { client, calls } = clientFor(() =>
+      status(200, { 'content-type': 'text/calendar; charset=utf-8' }, FREE_BUSY),
+    )
+    expect(await client.fetchFreeBusy(CAL, RANGE)).toBe(FREE_BUSY)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ method: 'REPORT', path: CAL })
+    expect(calls[0]!.headers.get('depth')).toBe('1')
+    expect(calls[0]!.body).toContain('free-busy-query')
+    expect(calls[0]!.body).toContain('start="20261101T000000Z" end="20261108T000000Z"')
+    expect(calls[0]!.body).not.toContain('calendar-data')
+  })
+
+  it('fails like the other reads on a refusal, and on an answer that is no VFREEBUSY', async () => {
+    expect(await kindOf(clientFor(() => status(403)).client.fetchFreeBusy(CAL, RANGE))).toBe(
+      'forbidden',
+    )
+    const other = clientFor(() => status(200, { 'content-type': 'text/html' }, '<html></html>'))
+    expect(await kindOf(other.client.fetchFreeBusy(CAL, RANGE))).toBe('bad-response')
   })
 })

@@ -1,140 +1,58 @@
 // @vitest-environment node
-// The parts of calendar links without HTTP: what a link shows of an event (the allow-list), the
+// The parts of calendar links without HTTP: the sealed copy of the address and password, the
 // password hash, the session token and the path rule.
 import { describe, expect, it } from 'vitest'
 import { hashPassword, verifyPassword, passwordProblem } from '../../server/utils/links/password'
-import { sanitizeCalendarObject } from '../../server/utils/links/sanitize'
+import { openLinkSecret, sealLinkSecret } from '../../server/utils/links/secret'
 import {
   SESSION_LIFETIME_MS,
   createLinkSession,
   readLinkSession,
 } from '../../server/utils/links/session'
-import { ownCalendarPath, parseRange } from '../../server/utils/links/service'
-import { readCalendarObject } from '../../app/utils/ical/read'
+import { ownCalendarPath, parseRange, slugHashOf } from '../../server/utils/links/service'
 
 const SUB = '189c6a24-f9cb-437b-8f58-b5cc8d7f909e'
 
-const FULL = [
-  'BEGIN:VCALENDAR',
-  'VERSION:2.0',
-  'PRODID:-//Radicale//EN',
-  'X-WR-CALNAME:Secret name',
-  'BEGIN:VTIMEZONE',
-  'TZID:Europe/Berlin',
-  'X-LIC-LOCATION:Europe/Berlin',
-  'BEGIN:STANDARD',
-  'DTSTART:19701025T030000',
-  'TZOFFSETFROM:+0200',
-  'TZOFFSETTO:+0100',
-  'RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=-1SU',
-  'END:STANDARD',
-  'BEGIN:DAYLIGHT',
-  'DTSTART:19700329T020000',
-  'TZOFFSETFROM:+0100',
-  'TZOFFSETTO:+0200',
-  'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU',
-  'END:DAYLIGHT',
-  'END:VTIMEZONE',
-  'BEGIN:VEVENT',
-  'UID:one@example.org',
-  'DTSTAMP:20261101T080000Z',
-  'DTSTART;TZID=Europe/Berlin:20261110T090000',
-  'DTEND;TZID=Europe/Berlin:20261110T100000',
-  'SUMMARY:Planning',
-  'LOCATION:Room 4',
-  'DESCRIPTION:The budget numbers',
-  'ORGANIZER:mailto:boss@example.org',
-  'ATTENDEE;CN="Anna: QA":mailto:anna@example.org',
-  'ATTACH:https://files.example.org/secret.pdf',
-  'URL:https://intranet.example.org/x',
-  'CATEGORIES:Finance',
-  'X-WEB-CALENDAR-BOOKING:block-ref-123',
-  'BEGIN:VALARM',
-  'ACTION:DISPLAY',
-  'DESCRIPTION:Reminder text',
-  'TRIGGER:-PT15M',
-  'END:VALARM',
-  'END:VEVENT',
-  'END:VCALENDAR',
-].join('\r\n')
+describe('the kept address and password of a link', () => {
+  const keyring = {
+    current: { version: 2, key: 'new-key' },
+    keys: [
+      { version: 2, key: 'new-key' },
+      { version: 1, key: 'old-key' },
+    ],
+  }
+  const secret = { slug: 'Xq3-slug-of-the-link', password: 'correct horse' }
+  const hash = slugHashOf(secret.slug)
 
-const PRIVATE = [
-  'BEGIN:VCALENDAR',
-  'VERSION:2.0',
-  'BEGIN:VEVENT',
-  'UID:two@example.org',
-  'DTSTAMP:20261101T080000Z',
-  'DTSTART:20261111T090000Z',
-  'DTEND:20261111T100000Z',
-  'SUMMARY:Doctor',
-  'LOCATION:Clinic',
-  'CLASS:PRIVATE',
-  'END:VEVENT',
-  'END:VCALENDAR',
-].join('\r\n')
-
-describe('what a link shows of an event', () => {
-  it('keeps the times, the title, the place and the time zone, and nothing else', () => {
-    const clean = sanitizeCalendarObject(FULL)!
-    expect(clean.blocked).toBe(false)
-    for (const kept of [
-      'SUMMARY:Planning',
-      'LOCATION:Room 4',
-      'TZID:Europe/Berlin',
-      'UID:one@example.org',
-    ]) {
-      expect(clean.data).toContain(kept)
-    }
-    for (const dropped of [
-      'DESCRIPTION',
-      'ORGANIZER',
-      'ATTENDEE',
-      'ATTACH',
-      'URL:',
-      'CATEGORIES',
-      'X-',
-      'VALARM',
-      'Reminder',
-      'budget',
-      'Secret name',
-    ]) {
-      expect(clean.data, dropped).not.toContain(dropped)
-    }
+  it('opens again for its own link, and is sealed anew each time', () => {
+    const sealed = sealLinkSecret(keyring, hash, secret)
+    expect(sealed).toMatch(/^s1\.2\./)
+    expect(sealed).not.toContain('correct')
+    expect(openLinkSecret(keyring, hash, sealed)).toEqual(secret)
+    expect(sealLinkSecret(keyring, hash, secret)).not.toBe(sealed)
   })
 
-  it('shows a private event as busy: its time only', () => {
-    const clean = sanitizeCalendarObject(PRIVATE)!
-    expect(clean.blocked).toBe(true)
-    expect(clean.data).not.toContain('Doctor')
-    expect(clean.data).not.toContain('Clinic')
-    expect(clean.data).toContain('DTSTART:20261111T090000Z')
+  it('does not open for another link, changed, damaged or missing', () => {
+    const sealed = sealLinkSecret(keyring, hash, secret)
+    expect(openLinkSecret(keyring, slugHashOf('another'), sealed)).toBeNull()
+    const body = sealed.split('.')[2]!
+    const flipped = body.slice(0, 20) + (body[20] === 'A' ? 'B' : 'A') + body.slice(21)
+    expect(openLinkSecret(keyring, hash, `s1.2.${flipped}`)).toBeNull()
+    expect(openLinkSecret(keyring, hash, sealed.replace('s1.2.', 's1.1.'))).toBeNull()
+    expect(openLinkSecret(keyring, hash, 'garbage')).toBeNull()
+    expect(openLinkSecret(keyring, hash, null)).toBeNull()
   })
 
-  it('leaves out what is not a calendar with events', () => {
-    expect(sanitizeCalendarObject('not ical')).toBeNull()
-    expect(sanitizeCalendarObject('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR')).toBeNull()
+  it('sealed with a key that is still listed opens after a rotation, not once it is dropped', () => {
+    const old = sealLinkSecret('old-key', hash, secret)
+    expect(openLinkSecret(keyring, hash, old)).toEqual(secret)
     expect(
-      sanitizeCalendarObject(
-        'BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:x\r\nSUMMARY:Task\r\nEND:VTODO\r\nEND:VCALENDAR',
+      openLinkSecret(
+        { current: { version: 2, key: 'new-key' }, keys: [{ version: 2, key: 'new-key' }] },
+        hash,
+        old,
       ),
     ).toBeNull()
-  })
-
-  it('is read by the app’s own reader as the event it was, in the display zone', () => {
-    const clean = sanitizeCalendarObject(FULL)!
-    const read = readCalendarObject(clean.data, {
-      calendarId: 'link',
-      href: '',
-      displayTimeZone: 'Europe/Berlin',
-      orgTimeZone: 'Europe/Berlin',
-      range: { start: new Date('2026-11-01T00:00:00Z'), end: new Date('2026-12-01T00:00:00Z') },
-      expandRecurrence: false,
-    })
-    expect(read.errors).toEqual([])
-    expect(read.events).toHaveLength(1)
-    expect(read.events[0]).toMatchObject({ title: 'Planning', location: 'Room 4', allDay: false })
-    expect(read.events[0]!.start).toContain('2026-11-10T09:00')
-    expect(read.events[0]!.description ?? '').toBe('')
   })
 })
 

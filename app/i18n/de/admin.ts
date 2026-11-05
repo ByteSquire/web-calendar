@@ -8,6 +8,10 @@ export const admin: Readonly<Record<string, string>> = {
   'There are no calendars to manage yet.': 'Es gibt noch keine Kalender zu verwalten.',
   'Search calendars': 'Kalender suchen',
   'Who has access to {name}': 'Wer Zugriff auf {name} hat',
+  Links: 'Links',
+  'A link gives people without an account a view of this calendar, behind a password, at the access level you choose.':
+    'Ein Link gibt Menschen ohne Konto Einblick in diesen Kalender, geschützt durch ein Passwort, mit der Zugriffsstufe, die du wählst.',
+  'People and groups': 'Personen und Gruppen',
   'Owner: {name} (always has full access).': 'Besitzer: {name} (hat immer vollen Zugriff).',
   '{count} rule is pending. They are sent to the calendar server shortly; reload to see when they are applied. | {count} rules are pending. They are sent to the calendar server shortly; reload to see when they are applied.':
     '{count} Regel steht aus. Sie wird gleich an den Kalenderserver gesendet; lade die Seite neu, um zu sehen, wann sie gilt. | {count} Regeln stehen aus. Sie werden gleich an den Kalenderserver gesendet; lade die Seite neu, um zu sehen, wann sie gelten.',
@@ -24,15 +28,11 @@ export const admin: Readonly<Record<string, string>> = {
   'Nobody matches. People appear here after they signed in once.':
     'Niemand passt. Personen erscheinen hier, nachdem sie sich einmal angemeldet haben.',
   'Group name': 'Gruppenname',
-  'The name of a group from the Groups page, for example staff.':
-    'Der Name einer Gruppe von der Seite „Gruppen“, zum Beispiel staff.',
   'Everyone who can sign in to this calendar app gets this access.':
     'Alle, die sich in dieser Kalender-App anmelden können, erhalten diesen Zugriff.',
   'Access level': 'Zugriffsstufe',
   'Search people': 'Personen suchen',
   'Choose a person.': 'Wähle eine Person aus.',
-  'Enter the group name: letters, digits, dots, dashes and underscores.':
-    'Gib den Gruppennamen ein: Buchstaben, Ziffern, Punkte, Bindestriche und Unterstriche.',
   'Everyone signed in': 'Alle Angemeldeten',
   'Access rules of {name}': 'Zugriffsregeln für {name}',
   Applied: 'Gilt',

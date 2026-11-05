@@ -158,6 +158,7 @@
                   <AdminAccessAddForm
                     v-if="rules !== null"
                     :users="users"
+                    :groups="groups"
                     :busy="saving"
                     :levels="RESOURCE_RIGHTS"
                     default-level="book"
@@ -220,6 +221,8 @@ const loaded = ref(false)
 const loadError = ref<string | null>(null)
 const resources = ref<AdminResource[]>([])
 const users = ref<AccessUser[]>([])
+/** The groups a rule can name (the Groups page's); empty when they could not be loaded. */
+const groups = ref<{ name: string }[]>([])
 const saving = ref(false)
 const problem = ref<string | null>(null)
 const notice = ref('')
@@ -267,12 +270,14 @@ async function start() {
   }
   if (isAdmin !== true) return
   try {
-    const [list, people] = await Promise.all([
+    const [list, people, known] = await Promise.all([
       api<{ resources: AdminResource[] }>('/api/admin/resources'),
       api<{ users: AccessUser[] }>('/api/admin/access/users').catch(() => ({ users: [] })),
+      api<{ groups: { name: string }[] }>('/api/groups').catch(() => ({ groups: [] })),
     ])
     resources.value = list.resources
     users.value = people.users
+    groups.value = known.groups
     loadError.value = null
     loaded.value = true
   } catch (cause) {

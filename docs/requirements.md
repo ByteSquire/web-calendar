@@ -241,8 +241,11 @@ minimum:
   URL/view for an external audience to browse published events (builds on the
   public visibility level in FR-14).
 - **FR-26a** _(built)_ **Calendar links**: a person can make a read-only, password-protected
-  link to a calendar they can view, for people without an account; it shows the calendar alone
-  (titles, times and places, no descriptions or attendees), and can be withdrawn at any time.
+  link to a calendar they can view, for people without an account, and admins can make one to any
+  calendar on the access page. A link has an access level like a share, "Busy times only" or
+  "Can view", and shows exactly what a share at that level shows, the calendar alone. Its address
+  and password can be shown and copied again by its maker (admins: on the access page), and it can
+  be removed at any time.
 - **FR-27** _(planned)_ The public view is **accessible without organization
   authentication**. Published calendars are served through a dedicated unauthenticated
   endpoint with a property allow-list (never descriptions, attendees or attachments),

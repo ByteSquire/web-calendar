@@ -434,37 +434,55 @@ export const settings: Readonly<Record<string, string>> = {
     'Nach {count} Fehlern in Folge gestoppt. {message}',
 
   // Calendar links
+  'Give people without an account a view of one of your calendars, behind a password. A link shows what a share at its access level shows: the busy times only, or all events with their details.':
+    'Gib Menschen ohne Konto Einblick in einen deiner Kalender, geschützt durch ein Passwort. Ein Link zeigt, was eine Freigabe mit seiner Zugriffsstufe zeigt: nur die Belegt-Zeiten oder alle Termine mit ihren Details.',
+  'It shows no more than you can see, and stops working when you lose access to the calendar or do not sign in to this app for {days}.':
+    'Er zeigt nie mehr, als du sehen kannst, und funktioniert nicht mehr, wenn du den Zugriff auf den Kalender verlierst oder dich {days} lang nicht in dieser App anmeldest.',
+  'Create link': 'Link erstellen',
+  'New link': 'Neuer Link',
+  'Details of {label}': 'Details zu {label}',
+  'Remove link {label}': 'Link {label} entfernen',
+  'Address of {label}': 'Adresse von {label}',
+  'Copy the address of {label}': 'Adresse von {label} kopieren',
+  'Password of {label}': 'Passwort von {label}',
+  Hidden: 'Verborgen',
+  'Show the password of {label}': 'Passwort von {label} anzeigen',
+  'Copy the password of {label}': 'Passwort von {label} kopieren',
+  'The address and the password of this link cannot be shown. Remove it and create a new one if you need them.':
+    'Adresse und Passwort dieses Links können nicht angezeigt werden. Entferne ihn und erstelle einen neuen, wenn du sie brauchst.',
+  'Remove the link “{label}”?': 'Den Link „{label}“ entfernen?',
+  'Remove link': 'Link entfernen',
+  'load the links': 'Das Laden der Links',
+  'There are no links to {name} yet.': 'Es gibt noch keine Links zu {name}.',
+  'made by {name} in Settings': 'erstellt von {name} in den Einstellungen',
+  'made by {name}': 'erstellt von {name}',
+  'Link “{label}” created. Send the address and the password, ideally on different ways.':
+    'Link „{label}“ erstellt. Schicke Adresse und Passwort, am besten auf verschiedenen Wegen.',
+  'This link no longer exists.': 'Diesen Link gibt es nicht mehr.',
+  'Could not copy automatically. The password is selected: press Ctrl+C to copy it.':
+    'Automatisches Kopieren ging nicht. Das Passwort ist markiert: Drücke Strg+C, um es zu kopieren.',
+  'remove the link': 'Das Entfernen des Links',
+  'Link “{label}” removed.': 'Link „{label}“ entfernt.',
+  'The access level': 'Die Zugriffsstufe',
+  'show the password': 'Das Anzeigen des Passworts',
+  'You see this calendar as busy times only, so a link to it can show busy times only.':
+    'Du siehst von diesem Kalender nur die Belegt-Zeiten, also kann ein Link dazu auch nur die Belegt-Zeiten zeigen.',
   'Calendar links': 'Kalenderlinks',
-  'Give people without an account a read-only view of one of your calendars. They open the link and enter the password you choose here.':
-    'Gib Menschen ohne Konto Lesezugriff auf einen deiner Kalender. Sie öffnen den Link und geben das Passwort ein, das du hier wählst.',
-  'The link shows the title, time and place of each event, never descriptions or the people invited; private events show as busy. It shows what you can see, and stops working when you lose access to the calendar or do not sign in to this app for {days}.':
-    'Der Link zeigt Titel, Zeit und Ort jedes Termins, nie Beschreibungen oder Eingeladene; private Termine erscheinen als belegt. Er zeigt, was du sehen kannst, und funktioniert nicht mehr, wenn du den Zugriff auf den Kalender verlierst oder dich {days} lang nicht in dieser App anmeldest.',
-  'New link to “{name}”': 'Neuer Link zu „{name}“',
-  'This address is shown only once. Send it with the password, ideally on different ways. If you lose it, withdraw the link and make a new one.':
-    'Diese Adresse wird nur einmal angezeigt. Schicke sie zusammen mit dem Passwort, am besten auf verschiedenen Wegen. Wenn du sie verlierst, ziehe den Link zurück und erstelle einen neuen.',
   Address: 'Adresse',
   'Who is the link for? Optional; the calendar name if empty.':
     'Für wen ist der Link? Optional; leer bleibt der Name des Kalenders.',
   'At least {min} characters. Visitors need it to open the link.':
     'Mindestens {min} Zeichen. Besucher brauchen es, um den Link zu öffnen.',
   'Show password': 'Passwort anzeigen',
-  'Making…': 'Wird erstellt…',
-  'Make link': 'Link erstellen',
   'Your calendar links': 'Deine Kalenderlinks',
   'Last opened': 'Zuletzt geöffnet',
-  Withdraw: 'Zurückziehen',
-  'Withdraw link {label}': 'Link {label} zurückziehen',
   'You have no calendar links yet.': 'Du hast noch keine Kalenderlinks.',
   'Loading calendar links': 'Kalenderlinks werden geladen',
-  'Withdraw the link “{label}”?': 'Den Link „{label}“ zurückziehen?',
   'The address stops working at once, also for pages that are open. This cannot be undone.':
     'Die Adresse funktioniert sofort nicht mehr, auch auf geöffneten Seiten. Das lässt sich nicht rückgängig machen.',
-  'Withdraw link': 'Link zurückziehen',
   'load your calendar links': 'Das Laden deiner Kalenderlinks',
   'Could not copy automatically. The address is selected: press Ctrl+C to copy it.':
     'Automatisches Kopieren ging nicht. Die Adresse ist markiert: Drücke Strg+C, um sie zu kopieren.',
-  'withdraw the link': 'Das Zurückziehen des Links',
-  'Link “{label}” withdrawn.': 'Link „{label}“ zurückgezogen.',
   'Choose a password of at least {min} characters.':
     'Wähle ein Passwort mit mindestens {min} Zeichen.',
   'The link was not made: {problems}.': 'Der Link wurde nicht erstellt: {problems}.',

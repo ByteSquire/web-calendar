@@ -138,6 +138,9 @@ const KNOWN_FIELD_MESSAGES: Record<string, string> = {
   'has a host name that cannot be resolved': N_(
     'The host name of this address cannot be found. Check it for typos.',
   ),
+  'is more than you can see of this calendar; you see its busy times only': N_(
+    'You see this calendar as busy times only, so a link to it can show busy times only.',
+  ),
 }
 
 /**

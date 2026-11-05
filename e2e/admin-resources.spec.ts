@@ -59,6 +59,11 @@ class MockResources {
         },
       })
     }
+    if (path === '/api/groups') {
+      return route.fulfill({
+        json: { groups: [{ id: 1, name: 'staff', source: 'app', memberCount: 3, member: true }] },
+      })
+    }
     if (!path.startsWith('/api/admin/resources')) return route.fallback()
     const raw = request.postData()
     const body: unknown = raw ? JSON.parse(raw) : undefined

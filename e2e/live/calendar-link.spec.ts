@@ -4,13 +4,16 @@ import Database from 'better-sqlite3'
 import { scan } from '../axe-scan'
 import { APP_ORIGIN, newAppContext, openSignedIn } from './session'
 
-// Calendar links with the real stack (design S8 setup): alice makes a password-protected, read-only
-// link to one of her calendars on the Settings page; a visitor without an account opens it, is
-// refused with a wrong password, sees the calendar alone with the right one (titles and places, no
-// descriptions, a private event as busy, no sidebar, no adding, a menu of looks only), and loses it
-// when alice withdraws the link. The calendar and its events are put into Radicale directly (it
-// trusts X-Remote-User on this test network) and removed at the end; a run that fails half-way
-// leaves "E2E link calendar <number>" behind.
+// Calendar links with the real stack (design S8 setup): alice makes a password-protected "Can view"
+// link to one of her calendars on the Settings page and sees its address and, when asked, its
+// password; a visitor without an account opens it, is refused with a wrong password, sees the
+// calendar alone with the right one (what a read share shows: the description too, and a private
+// event with its title; no sidebar, no adding, a menu of looks only), and loses it when alice
+// removes the link. On the access page alice, an admin, publishes a group calendar at "Busy times
+// only": the visitor sees busy blocks only, and the link reads as the calendar's owner, so it works
+// on when alice's own share ends. The calendars and events are put into Radicale directly (it
+// trusts X-Remote-User on this test network) or made through the API, and removed at the end; a run
+// that fails half-way leaves "E2E link calendar <number>" behind.
 test.describe.configure({ mode: 'serial' })
 
 const STAMP = Date.now()
@@ -193,29 +196,39 @@ test.afterAll(async () => {
   await visitor?.context().close()
 })
 
-test('alice makes a link to her calendar on the Settings page and sees its address once', async () => {
+test('alice makes a link to her calendar on the Settings page and sees its address and password', async () => {
   await alice.goto('/settings')
   const section = alice
     .locator('section')
     .filter({ has: alice.getByRole('heading', { name: 'Calendar links' }) })
   await expect(section).toBeVisible()
+  await section.getByRole('button', { name: 'Create link' }).click()
   await section.getByRole('combobox', { name: /^Calendar/ }).click()
   await alice.getByRole('option', { name: CALENDAR }).click()
   await section.getByRole('textbox', { name: /^Label/ }).fill(LABEL)
+  await expect(section.getByRole('radio', { name: /^Can view/ })).toBeChecked()
   await section.getByRole('textbox', { name: /^Password/ }).fill(PASSWORD)
-  await section.getByRole('button', { name: 'Make link' }).click()
-  const field = section.getByRole('textbox', { name: /^Address/ })
+  await section.getByRole('button', { name: 'Create link' }).click()
+  const field = section.getByRole('textbox', { name: `Address of ${LABEL}` })
   await expect(field).toBeVisible()
   address = await field.inputValue()
   expect(address).toMatch(new RegExp(`^${APP_ORIGIN}/link/[A-Za-z0-9_-]{43}$`))
+  await expect(section).not.toContainText(PASSWORD)
   const { violations } = await new AxeBuilder({ page: alice })
     .include('section:has(#settings-links)')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
   expect(violations.map((violation) => violation.id)).toEqual([])
-  await section.getByRole('button', { name: 'Done' }).click()
-  await expect(section.getByText(LABEL)).toBeVisible()
-  await expect(section.getByRole('textbox', { name: /^Address/ })).toHaveCount(0)
+  // after a reload the address is still there, and the password is asked of the server
+  await alice.reload()
+  await section.getByRole('button', { name: `Details of ${LABEL}` }).click()
+  await expect(section.getByRole('textbox', { name: `Address of ${LABEL}` })).toHaveValue(address)
+  const reveal = alice.waitForResponse((response) => response.url().endsWith('/reveal'))
+  await section.getByRole('button', { name: `Show the password of ${LABEL}` }).click()
+  expect((await reveal).status()).toBe(200)
+  await expect(section.getByRole('textbox', { name: `Password of ${LABEL}` })).toHaveValue(PASSWORD)
+  await section.getByRole('button', { name: `Show the password of ${LABEL}` }).click()
+  await expect(section.getByRole('textbox', { name: `Password of ${LABEL}` })).toHaveCount(0)
 })
 
 test('a visitor is asked for the password and refused with a wrong one', async ({ browser }) => {
@@ -240,20 +253,18 @@ test('with the right password the visitor sees the calendar alone, read-only', a
   await expect(main).toBeVisible()
   await visitor.getByRole('button', { name: 'Day', exact: true }).click()
   await expect(main).toContainText('Team planning')
-  // the private event is there as busy, without its title
-  await expect(main).toContainText('Busy')
-  await expect(main).not.toContainText('Doctor')
+  // "Can view" shows what a read share shows: a private event with its title too
+  await expect(main).toContainText('Doctor appointment')
   // nothing of the app around it
   await expect(visitor.locator('#app-sidebar')).toHaveCount(0)
   await expect(visitor.getByRole('button', { name: /sidebar/i })).toHaveCount(0)
   await expect(visitor.getByRole('button', { name: 'Quick add' })).toHaveCount(0)
   await expect(visitor.getByRole('button', { name: 'Add', exact: true })).toHaveCount(0)
-  // the event sheet shows the title and the place, no description, no Edit
+  // the event sheet shows the title, the place and the description, and no Edit
   await main.getByText('Team planning').first().click()
   const sheet = visitor.getByRole('dialog')
   await expect(sheet).toContainText('Room 4')
-  await expect(sheet).not.toContainText('Secret budget')
-  await expect(sheet).not.toContainText('anna@')
+  await expect(sheet).toContainText('Secret budget numbers')
   await expect(sheet.getByRole('button', { name: 'Edit' })).toHaveCount(0)
   await visitor.keyboard.press('Escape')
   await expect(sheet).toBeHidden()
@@ -299,11 +310,11 @@ test('the page asks nothing of the identity provider, and works while it is down
   }
 })
 
-test('when alice withdraws the link the visitor loses it at once', async () => {
+test('when alice removes the link the visitor loses it at once', async () => {
   await alice.reload()
-  await alice.getByRole('button', { name: `Withdraw link ${LABEL}` }).click()
-  await alice.getByRole('dialog').getByRole('button', { name: 'Withdraw link' }).click()
-  await expect(alice.getByText(`Link “${LABEL}” withdrawn.`)).toBeVisible()
+  await alice.getByRole('button', { name: `Remove link ${LABEL}` }).click()
+  await alice.getByRole('dialog').getByRole('button', { name: 'Remove link' }).click()
+  await expect(alice.getByText(`Link “${LABEL}” removed.`)).toBeVisible()
   // the next read of the open page fails, and the page says why
   await visitor.reload()
   await expect(
@@ -319,9 +330,12 @@ test('the visitor’s page asked only the app, nothing else', () => {
   ).toEqual([])
 })
 
-// A link shows what its maker can see, read as the maker: it ends when the maker's access ends. bob
-// makes a calendar for a group and shares it with alice to read; alice links it; bob takes the
-// share back, and the link stops as soon as the sharing writer has removed the share in Radicale.
+// A link made in Settings shows what its maker can see, read as the maker: it ends when the maker's
+// access ends. bob makes a calendar for a group and shares it with alice to read; alice links it in
+// Settings, and publishes it on the access page at "Busy times only" too; bob takes the share back,
+// and her Settings link stops as soon as the sharing writer has removed the share in Radicale, while
+// the one of the access page (read as the calendar's owner) works on. Given "Busy times only" by an
+// access rule, the calendar shows busy blocks in alice's own view and her link form offers no more.
 test.describe('a link to a calendar shared with its maker', () => {
   const GROUP = `e2e_link_${STAMP}`
   const SHARED = `E2E link shared ${STAMP}`
@@ -332,6 +346,9 @@ test.describe('a link to a calendar shared with its maker', () => {
   let calendarId = 0
   let linkId = 0
   let slug = ''
+  let adminAddress = ''
+  const ADMIN_LABEL = `Front desk ${STAMP}`
+  const ADMIN_PASSWORD = `front desk ${STAMP}`
 
   test.beforeAll(async ({ browser }) => {
     bob = (await openSignedIn(browser, 'bob')).page
@@ -389,12 +406,62 @@ test.describe('a link to a calendar shared with its maker', () => {
     const href = `/caldav${mapped!.split('/').map(encodeURIComponent).join('/')}`
     const link = await api(alice, aliceBearer, 'POST', '/api/calendar-links', {
       calendarHref: href,
+      level: 'read',
       password: PASSWORD,
     })
     expect(link.status).toBe(201)
-    const created = link.body as { slug: string; link: { id: number } }
-    slug = created.slug
+    const created = link.body as { link: { id: number; slug: string } }
+    slug = created.link.slug
     linkId = created.link.id
+  })
+
+  test('on the access page alice sees that link, and publishes the calendar at "Busy times only"', async () => {
+    await alice.goto('/admin/access')
+    await alice.getByRole('button', { name: 'Calendar', exact: true }).click()
+    await alice.getByLabel('Search calendars').fill(SHARED)
+    await alice.getByRole('option', { name: SHARED }).click()
+    await expect(alice.getByRole('heading', { name: `Who has access to ${SHARED}` })).toBeVisible()
+    const links = alice.getByRole('list', { name: 'Links' })
+    // the link alice made in Settings, read as her
+    await expect(links.getByRole('listitem')).toHaveCount(1)
+    await expect(links).toContainText('made by')
+    await expect(links).toContainText('in Settings')
+
+    await alice.getByRole('button', { name: 'Create link' }).click()
+    const form = alice.getByRole('form', { name: 'New link' })
+    await form.getByRole('textbox', { name: /^Label/ }).fill(ADMIN_LABEL)
+    await form.getByRole('radio', { name: /^Busy times only/ }).click()
+    await form.getByRole('textbox', { name: /^Password/ }).fill(ADMIN_PASSWORD)
+    await form.getByRole('button', { name: 'Create link' }).click()
+    const field = alice.getByRole('textbox', { name: `Address of ${ADMIN_LABEL}` })
+    await expect(field).toBeVisible()
+    adminAddress = await field.inputValue()
+    expect(adminAddress).toMatch(new RegExp(`^${APP_ORIGIN}/link/[A-Za-z0-9_-]{43}$`))
+    await expect(links.getByRole('listitem').filter({ hasText: ADMIN_LABEL })).toContainText(
+      'Busy times only',
+    )
+    // hidden until shown; the one just typed needs no call
+    await expect(alice.getByRole('textbox', { name: `Password of ${ADMIN_LABEL}` })).toHaveCount(0)
+    await alice.getByRole('button', { name: `Show the password of ${ADMIN_LABEL}` }).click()
+    await expect(alice.getByRole('textbox', { name: `Password of ${ADMIN_LABEL}` })).toHaveValue(
+      ADMIN_PASSWORD,
+    )
+    const { violations } = await new AxeBuilder({ page: alice })
+      .include('section:has(#access-rules-heading)')
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze()
+    expect(violations.map((violation) => violation.id)).toEqual([])
+  })
+
+  test('a visitor of the access-page link sees busy blocks only', async () => {
+    await visitor.goto(adminAddress)
+    await visitor.getByRole('textbox', { name: /^Password/ }).fill(ADMIN_PASSWORD)
+    await visitor.getByRole('button', { name: 'Open calendar' }).click()
+    const main = visitor.locator('[data-calendar-main]')
+    await expect(main).toBeVisible()
+    await visitor.getByRole('button', { name: 'Day', exact: true }).click()
+    await expect(main).toContainText('Busy')
+    await expect(main).not.toContainText('Shared lunch')
   })
 
   async function readAsVisitor(): Promise<number> {
@@ -410,8 +477,8 @@ test.describe('a link to a calendar shared with its maker', () => {
       { headers: { 'x-calendar-link-session': token } },
     )
     if (events.status() !== 200) return events.status()
-    const body = (await events.json()) as { objects: { data: string }[] }
-    return body.objects.some((object) => object.data.includes('Shared lunch')) ? 200 : 204
+    const body = (await events.json()) as { level: string; objects: string[] }
+    return body.objects.some((object) => object.includes('Shared lunch')) ? 200 : 204
   }
 
   test('a visitor sees the shared calendar through the link', async () => {
@@ -428,6 +495,77 @@ test.describe('a link to a calendar shared with its maker', () => {
     )
     expect(unshared.status).toBe(200)
     await expect.poll(() => readAsVisitor(), { timeout: 30_000 }).toBe(404)
+    // the link of the access page reads as the calendar's owner: it works on
+    const adminSlug = adminAddress.split('/link/')[1]!
+    const session = await visitor.request.post(`${APP_ORIGIN}/api/link/${adminSlug}/session`, {
+      data: { password: ADMIN_PASSWORD },
+    })
+    expect(session.status()).toBe(200)
+    const { token } = (await session.json()) as { token: string }
+    const from = new Date(Date.now() - 86_400_000).toISOString()
+    const to = new Date(Date.now() + 86_400_000).toISOString()
+    const events = await visitor.request.get(
+      `${APP_ORIGIN}/api/link/${adminSlug}/events?from=${from}&to=${to}`,
+      { headers: { 'x-calendar-link-session': token } },
+    )
+    expect(events.status()).toBe(200)
+    const body = (await events.json()) as { level: string; freeBusy: string }
+    expect(body.level).toBe('free_busy')
+    expect(body.freeBusy).toContain('FREEBUSY')
+    expect(body.freeBusy).not.toContain('Shared lunch')
+  })
+
+  test('given "Busy times only" on the access page, alice sees busy blocks and can link busy times only', async () => {
+    // Group calendars are shared to view or edit; "Busy times only" is an access rule (admins).
+    const listed = await api(alice, aliceBearer, 'GET', '/api/admin/access/calendars')
+    expect(listed.status).toBe(200)
+    type Rule = { principalType: string; principal: string | null; permission: string }
+    const current = (listed.body as { calendars: { id: number; rules: Rule[] }[] }).calendars.find(
+      (calendar) => calendar.id === calendarId,
+    )!
+    const shared = await api(
+      alice,
+      aliceBearer,
+      'PUT',
+      `/api/admin/access/calendars/${calendarId}`,
+      {
+        rules: [
+          ...current.rules.map(({ principalType, principal, permission }) => ({
+            principalType,
+            principal,
+            permission,
+          })),
+          { principalType: 'user', principal: aliceSub(), permission: 'free_busy' },
+        ],
+      },
+    )
+    expect(shared.status).toBe(200)
+    await expect.poll(() => pathInHome(aliceSub(), SHARED), { timeout: 30_000 }).not.toBeNull()
+
+    // the calendar shows its busy times, without titles, and is no problem
+    await alice.goto('/')
+    const main = alice.locator('[data-calendar-main]')
+    await expect(main).toBeVisible()
+    await expect(alice.getByRole('switch', { name: SHARED })).toBeChecked()
+    await alice.getByRole('button', { name: 'Day', exact: true }).click()
+    await expect(main).toContainText('Busy')
+    await expect(main).not.toContainText('Shared lunch')
+    await expect(alice.getByText('Access denied')).toHaveCount(0)
+
+    // a link to it offers "Busy times only" alone
+    await alice.goto('/settings')
+    const section = alice
+      .locator('section')
+      .filter({ has: alice.getByRole('heading', { name: 'Calendar links' }) })
+    await section.getByRole('button', { name: 'Create link' }).click()
+    await section.getByRole('combobox', { name: /^Calendar/ }).click()
+    await alice.getByRole('option', { name: SHARED }).click()
+    await expect(section.getByRole('radio', { name: /^Can view/ })).toBeDisabled()
+    await expect(section.getByRole('radio', { name: /^Busy times only/ })).toBeChecked()
+    await expect(section).toContainText(
+      'You see this calendar as busy times only, so a link to it can show busy times only.',
+    )
+    await section.getByRole('button', { name: 'Cancel' }).click()
   })
 })
 

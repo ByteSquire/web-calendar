@@ -4,8 +4,8 @@ import { TODAY, press } from './helpers'
 
 // The page of a calendar link on every screen size, with the public API answered by the test (the
 // demo has no Radicale; e2e/live/calendar-link.spec.ts runs it against the real stack). Checks the
-// password page, the read-only calendar without sidebar or adding, the reduced menu, no sideways
-// scrolling, and axe on both states.
+// password page, the read-only calendar without sidebar or adding at both levels ("Can view" and
+// "Busy times only"), the reduced menu, no sideways scrolling, and axe on both states.
 
 const SLUG = 'A'.repeat(43)
 const PASSWORD = 'correct horse'
@@ -25,7 +25,16 @@ function vcalendar(uid: string, start: string, end: string, extra: string[] = []
   ].join('\r\n')
 }
 
-async function answerApi(page: Page): Promise<void> {
+const FREE_BUSY = [
+  'BEGIN:VCALENDAR',
+  'VERSION:2.0',
+  'BEGIN:VFREEBUSY',
+  'FREEBUSY;FBTYPE=BUSY:20261029T090000Z/20261029T100000Z',
+  'END:VFREEBUSY',
+  'END:VCALENDAR',
+].join('\r\n')
+
+async function answerApi(page: Page, level: 'read' | 'free_busy' = 'read'): Promise<void> {
   await page.route(`**/api/link/${SLUG}/session`, async (route) => {
     const body = route.request().postDataJSON() as { password?: string }
     if (body.password !== PASSWORD) {
@@ -43,31 +52,33 @@ async function answerApi(page: Page): Promise<void> {
         token: 'cls1.1.1.9999999999999.' + 'x'.repeat(43),
         expiresAt: '2099-01-01T00:00:00.000Z',
         calendar: { name: 'Family', color: '#047857' },
+        level,
       },
     })
   })
   await page.route(`**/api/link/${SLUG}/events?**`, (route) =>
     route.fulfill({
-      json: {
-        objects: [
-          {
-            data: vcalendar('one', '20261029T090000Z', '20261029T100000Z', [
-              'SUMMARY:School run',
-              'LOCATION:Main gate',
-            ]),
-            blocked: false,
-          },
-          { data: vcalendar('two', '20261029T130000Z', '20261029T140000Z'), blocked: true },
-        ],
-      },
+      json:
+        level === 'free_busy'
+          ? { level, freeBusy: FREE_BUSY }
+          : {
+              level,
+              objects: [
+                vcalendar('one', '20261029T090000Z', '20261029T100000Z', [
+                  'SUMMARY:School run',
+                  'LOCATION:Main gate',
+                  'DESCRIPTION:Bring the gym bag',
+                ]),
+              ],
+            },
     }),
   )
 }
 
-async function openLinkPage(page: Page): Promise<string[]> {
+async function openLinkPage(page: Page, level: 'read' | 'free_busy' = 'read'): Promise<string[]> {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await answerApi(page)
+  await answerApi(page, level)
   await page.clock.setFixedTime(TODAY)
   await page.goto(`/link/${SLUG}`)
   await expect(page.getByRole('heading', { name: 'A shared calendar' })).toBeVisible()
@@ -97,8 +108,6 @@ test.describe('the page of a calendar link', () => {
     await expect(main).toBeVisible()
     await press(page.getByRole('button', { name: 'Day', exact: true }))
     await expect(main).toContainText('School run')
-    // the object the server marked private is there, as busy
-    await expect(main).toContainText('Busy')
     await expect(page.getByRole('button', { name: /sidebar/i })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Quick add' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Add', exact: true })).toHaveCount(0)
@@ -131,10 +140,27 @@ test.describe('the page of a calendar link', () => {
     await press(main.getByText('School run').first())
     const sheet = page.getByRole('dialog')
     await expect(sheet).toContainText('Main gate')
+    // "Can view" shows what a read share shows, the description too
+    await expect(sheet).toContainText('Bring the gym bag')
     await expect(sheet.getByRole('button', { name: 'Edit' })).toHaveCount(0)
     await expect(sheet.getByRole('button', { name: 'Delete' })).toHaveCount(0)
     await page.keyboard.press('Escape')
     await expect(sheet).toBeHidden()
     await expect(page.getByRole('dialog')).toHaveCount(0)
+  })
+
+  test('at "Busy times only", shows busy blocks without titles, and passes axe', async ({
+    page,
+  }) => {
+    const errors = await openLinkPage(page, 'free_busy')
+    await page.getByRole('textbox', { name: /^Password/ }).fill(PASSWORD)
+    await press(page.getByRole('button', { name: 'Open calendar' }))
+    await press(page.getByRole('button', { name: 'Day', exact: true }))
+    const main = page.locator('[data-calendar-main]')
+    await expect(main).toContainText('Busy')
+    await expect(main).not.toContainText('School run')
+    expect(await noSidewaysScroll(page)).toBe(true)
+    expect(await scan(page)).toEqual([])
+    expect(errors).toEqual([])
   })
 })

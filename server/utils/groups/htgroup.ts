@@ -2,7 +2,29 @@
 // the identity provider sends them (Radicale compares them case-sensitively), so each must pass
 // `isValidSubject`, which also keeps a space, the separator, out of an id.
 import { isValidSubject } from '../auth/subject'
-import { fail, type FileGroup, type Result } from './types'
+
+/** One line of the file: a group and its members (`sub` ids). */
+export interface FileGroup {
+  name: string
+  members: string[]
+}
+
+export type GroupFileFailureKind = 'invalid-content' | 'write-error'
+
+/** Why the file could not be made or written. `message` never holds a token. */
+export interface GroupFileFailure {
+  kind: GroupFileFailureKind
+  message: string
+}
+
+export type Result<T> = { ok: true; value: T } | { ok: false; failure: GroupFileFailure }
+
+export function fail(
+  kind: GroupFileFailureKind,
+  message: string,
+): { ok: false; failure: GroupFileFailure } {
+  return { ok: false, failure: { kind, message } }
+}
 
 const GROUP_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/
 

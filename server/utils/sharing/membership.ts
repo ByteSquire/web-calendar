@@ -1,8 +1,7 @@
 import { stat, readFile } from 'node:fs/promises'
 
-// Who is in which group, as Radicale sees it: the htgroup file the group sync writes. The gateway
-// pre-check and the nightly audit use it so that they agree with Radicale about group shares.
-// The app's tables do not store groups, and the `groups` claim of a token is only known per request.
+// Who is in which group, as Radicale sees it: the group file the app writes. The gateway pre-check
+// and the nightly audit use it so that they agree with Radicale about group shares.
 
 export interface GroupMembership {
   /** The groups the user (a `sub`, case-sensitive like Radicale) is in; empty when the file cannot be read. */

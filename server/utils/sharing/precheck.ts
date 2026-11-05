@@ -1,5 +1,4 @@
 import type { Database } from 'better-sqlite3'
-import { USERS_GROUP } from '../group-sync/config'
 import type { GroupMembership } from './membership'
 import { sharedCalendarId } from './names'
 import { AVAILABILITY_SHARE_NAME } from './types'
@@ -46,17 +45,23 @@ export function createPathPrecheck(db: Database, membership: GroupMembership): P
   )
 
   async function granted(calendarId: number, sub: string, method: string): Promise<boolean> {
-    const groups = await membership.groupsOf(sub)
     const needsWrite = WRITE_METHODS.has(method)
-    return byId.all(calendarId).some((row) => {
-      if (!SHARING_PERMISSIONS.includes(row.permission)) return false
-      if (needsWrite && row.permission !== 'write') return false
-      if (row.principal_type === 'user') return row.principal === sub
-      if (row.principal_type === 'group') {
-        return row.principal !== null && groups.has(row.principal)
+    // The group file is read only when a group rule has to be looked at.
+    let groups: ReadonlySet<string> | undefined
+    for (const row of byId.all(calendarId)) {
+      if (!SHARING_PERMISSIONS.includes(row.permission)) continue
+      if (needsWrite && row.permission !== 'write') continue
+      // Anybody who got past authentication is a person of this app: the group of everyone is the
+      // people who signed in within the window, and a caller who is authenticated now has.
+      if (row.principal_type === 'authenticated') return true
+      if (row.principal_type === 'user') {
+        if (row.principal === sub) return true
+      } else if (row.principal_type === 'group' && row.principal !== null) {
+        groups ??= await membership.groupsOf(sub)
+        if (groups.has(row.principal)) return true
       }
-      return row.principal_type === 'authenticated' && groups.has(USERS_GROUP)
-    })
+    }
+    return false
   }
 
   return async function precheck(sub, request) {
@@ -69,11 +74,8 @@ export function createPathPrecheck(db: Database, membership: GroupMembership): P
       if (collection === undefined) return true
       const id = sharedCalendarId(collection)
       if (id !== null) return granted(id, sub, request.method)
-      if (collection === AVAILABILITY_SHARE_NAME) {
-        return (
-          !WRITE_METHODS.has(request.method) && (await membership.groupsOf(sub)).has(USERS_GROUP)
-        )
-      }
+      // The free/busy share is for everyone who is authenticated, to read only.
+      if (collection === AVAILABILITY_SHARE_NAME) return !WRITE_METHODS.has(request.method)
       return true
     }
     // Another principal's home: only a calendar the rules grant, never the home itself.

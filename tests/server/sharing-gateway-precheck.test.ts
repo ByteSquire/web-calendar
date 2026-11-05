@@ -80,17 +80,72 @@ describe('path pre-check', () => {
     expect(await check(EVE, { method: 'GET', upstreamPath: `/${ALICE}/work/x.ics` })).toBe(true)
   })
 
-  it('lets members see the availability share read-only', async () => {
+  it('lets every authenticated caller see the availability share, read-only', async () => {
     const check = createPathPrecheck(db, membership)
     const path = `/${BOB}/resource-availability/x.ics`
     expect(await check(BOB, { method: 'GET', upstreamPath: path })).toBe(true)
     expect(await check(BOB, { method: 'PUT', upstreamPath: path })).toBe(false)
+    // A person who signed in a moment ago is not in the group file yet; the share is theirs too.
+    const stranger = '11111111-1111-4111-8111-111111111111'
     expect(
-      await check('11111111-1111-4111-8111-111111111111', {
+      await check(stranger, {
         method: 'GET',
-        upstreamPath: '/11111111-1111-4111-8111-111111111111/resource-availability/',
+        upstreamPath: `/${stranger}/resource-availability/`,
+      }),
+    ).toBe(true)
+    // It is still only their own home's name.
+    expect(await check(stranger, { method: 'GET', upstreamPath: path })).toBe(false)
+  })
+
+  it('grants an authenticated rule to anybody, without reading the group file', async () => {
+    const everyone = Number(
+      db
+        .prepare("INSERT INTO calendars (name, kind, collection_path) VALUES ('open', 'shared', ?)")
+        .run(`/${ALICE}/open/`).lastInsertRowid,
+    )
+    addCalendarAcl(db, everyone, {
+      principalType: 'authenticated',
+      principal: null,
+      permission: 'read',
+    })
+    const groupsOf = vi.fn(async () => new Set<string>())
+    const check = createPathPrecheck(db, { groupsOf, all: async () => new Map() })
+    const newcomer = '22222222-2222-4222-8222-222222222222'
+    expect(
+      await check(newcomer, {
+        method: 'GET',
+        upstreamPath: `/${newcomer}/shared-${everyone}/x.ics`,
+      }),
+    ).toBe(true)
+    // Read only, as the rule says.
+    expect(
+      await check(newcomer, {
+        method: 'PUT',
+        upstreamPath: `/${newcomer}/shared-${everyone}/x.ics`,
       }),
     ).toBe(false)
+    expect(groupsOf).not.toHaveBeenCalled()
+  })
+
+  it('still asks the group file for a group rule, also for the group of everyone', async () => {
+    const calendar = Number(
+      db
+        .prepare("INSERT INTO calendars (name, kind, collection_path) VALUES ('all', 'shared', ?)")
+        .run(`/${ALICE}/all/`).lastInsertRowid,
+    )
+    addCalendarAcl(db, calendar, {
+      principalType: 'group',
+      principal: 'web_calendar_users',
+      permission: 'read',
+    })
+    const check = createPathPrecheck(db, membership)
+    const path = (sub: string) => ({
+      method: 'GET',
+      upstreamPath: `/${sub}/shared-${calendar}/x.ics`,
+    })
+    expect(await check(BOB, path(BOB))).toBe(true)
+    const newcomer = '22222222-2222-4222-8222-222222222222'
+    expect(await check(newcomer, path(newcomer))).toBe(false)
   })
 
   it('tells ids apart by case, as Radicale does', async () => {

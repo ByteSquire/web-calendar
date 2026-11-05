@@ -1,5 +1,5 @@
 import { getDb } from '../utils/db'
-import { groupFilePath } from '../utils/group-sync/config'
+import { groupFilePath } from '../utils/groups/config'
 import {
   clampAuditIntervalHours,
   clampReconcileIntervalSec,
@@ -42,7 +42,7 @@ export default defineNitroPlugin((nitroApp) => {
   const auditHours = clampAuditIntervalHours(config.sharing.auditIntervalHours)
   const sharedOwners = parseSharedOwners(config.sharing.sharedOwners)
   const membership = createFileMembership(
-    groupFilePath(config.groupSync.file, process.env.NODE_ENV),
+    groupFilePath(config.groupsFile, process.env.NODE_ENV),
     (message) => console.warn(`[sharing] ${message}`),
   )
 

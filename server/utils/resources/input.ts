@@ -14,7 +14,7 @@ import {
 } from '../api/validation'
 import { isValidSubject } from '../auth/subject'
 import { PathRejection, resolvePublicPath } from '../gateway/paths'
-import { isGroupName } from '../group-sync/format'
+import { isGroupName } from '../groups/htgroup'
 import { splitCollectionPath } from '../sharing/names'
 import type { NewBookingRequest } from './service'
 

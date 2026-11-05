@@ -7,8 +7,8 @@ import {
   nodeGroupFileFs,
   writeGroupFile,
   type GroupFileFs,
-} from '../../server/utils/group-sync/file'
-import { renderGroupFile, validateGroupFileContent } from '../../server/utils/group-sync/format'
+} from '../../server/utils/groups/htgroup-file'
+import { renderGroupFile, validateGroupFileContent } from '../../server/utils/groups/htgroup'
 
 const A = '189c6a24-f9cb-437b-8f58-b5cc8d7f909e'
 const B = '6f9f0e2d-0000-4000-8000-000000000002'
@@ -75,7 +75,7 @@ describe('writeGroupFile', () => {
   const content = `g: ${A}\n`
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), 'group-sync-'))
+    dir = await mkdtemp(join(tmpdir(), 'htgroup-file-'))
     file = join(dir, 'htgroup')
   })
   afterEach(() => rm(dir, { recursive: true, force: true }))

@@ -47,6 +47,15 @@ export function createJobLoop(options: JobLoopOptions): JobLoop {
   let requested = false
   let failures = 0
 
+  /** The wait after a request: the debounce, but never shorter than the backoff of a failing job. */
+  function requestDelay(): number {
+    if (failures === 0) return options.debounceMs
+    return Math.max(
+      options.debounceMs,
+      backoffDelay(failures, options.backoffBaseMs, options.intervalMs),
+    )
+  }
+
   function schedule(ms: number): void {
     if (timer !== undefined) timers.clear(timer)
     timer = timers.set(() => void tick(), ms)
@@ -74,7 +83,7 @@ export function createJobLoop(options: JobLoopOptions): JobLoop {
     if (pending) {
       pending = false
       requested = true
-      schedule(options.debounceMs)
+      schedule(requestDelay())
     } else {
       schedule(
         ok ? options.intervalMs : backoffDelay(failures, options.backoffBaseMs, options.intervalMs),
@@ -99,7 +108,7 @@ export function createJobLoop(options: JobLoopOptions): JobLoop {
       if (running) pending = true
       else if (!requested) {
         requested = true
-        schedule(options.debounceMs)
+        schedule(requestDelay())
       }
     },
   }

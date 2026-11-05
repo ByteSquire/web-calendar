@@ -4,8 +4,7 @@
 import { constants } from 'node:fs'
 import * as nodeFs from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { validateGroupFileContent } from './format'
-import { fail, type Result } from './types'
+import { fail, validateGroupFileContent, type Result } from './htgroup'
 
 /** The file operations used, so a test can make one of them fail. */
 export interface GroupFileFs {

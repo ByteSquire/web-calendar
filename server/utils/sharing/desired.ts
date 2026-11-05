@@ -1,5 +1,5 @@
-import { USERS_GROUP } from '../group-sync/config'
-import { isGroupName } from '../group-sync/format'
+import { USERS_GROUP } from '../groups/config'
+import { isGroupName } from '../groups/htgroup'
 import type { CalendarAclRow, CalendarRow, Permission } from '../../db/types'
 import { groupShareName, splitCollectionPath, userShareName } from './names'
 import {

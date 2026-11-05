@@ -3,7 +3,7 @@
 // pre-check decides who reaches the path; free/busy grants are narrowed away here, because
 // free/busy must not reveal who booked.
 import type { Database } from 'better-sqlite3'
-import { USERS_GROUP } from '../group-sync/config'
+import { USERS_GROUP } from '../groups/config'
 import { sharedCalendarId, splitCollectionPath } from '../sharing/names'
 import { createPathPrecheck } from '../sharing/precheck'
 import { AVAILABILITY_SHARE_NAME } from '../sharing/types'

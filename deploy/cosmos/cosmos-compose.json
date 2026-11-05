@@ -38,7 +38,7 @@
         "name": "appImage",
         "type": "text",
         "label": "App image",
-        "initialValue": "codeberg.org/bytesquire/web-calendar:0.2.0"
+        "initialValue": "codeberg.org/bytesquire/web-calendar:0.2.1"
       },
       {
         "name": "autoUpdateInfo",

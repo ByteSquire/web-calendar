@@ -1,10 +1,12 @@
 // The rules of one calendar as the admin API takes them: closed sets, never free text.
 import type { Database } from 'better-sqlite3'
+import { findGroupByName } from '../../db/groups'
 import type { CalendarAclInput } from '../../db/calendar-acl'
 import type { Permission } from '../../db/types'
 import type { FieldError } from '../api/errors'
 import { FieldErrors, isRecord, readObject, type Parsed } from '../api/validation'
-import { isGroupName, isUuid } from '../group-sync/format'
+import { isValidSubject } from '../auth/subject'
+import { isGroupName } from '../group-sync/format'
 import type { GroupLookup } from './groups'
 
 /** `admin` never reaches Radicale (design §8), `public` belongs to the public view (FR-27). */
@@ -51,8 +53,9 @@ export function parseRulesBody(body: unknown): Parsed<CalendarAclInput[]> {
           ok = false
         }
       } else if (type === 'user') {
-        const sub = typeof raw.principal === 'string' ? raw.principal.toLowerCase() : ''
-        if (isUuid(sub)) principal = sub
+        // Case matters: Radicale tells `Ab` and `ab` apart, so an id is taken as it is.
+        const sub = typeof raw.principal === 'string' ? raw.principal : ''
+        if (isValidSubject(sub)) principal = sub
         else {
           errors.add(`${at}.principal`, 'must be the id of a person')
           ok = false
@@ -128,6 +131,8 @@ export async function checkPrincipals(
       }
     } else if (rule.principalType === 'group' && rule.principal !== null) {
       const name = rule.principal
+      // A group of the app (either source, in `groups`) needs no Kanidm call; only the others are looked up.
+      if (findGroupByName(db, name)) return
       if (!groups) {
         fields.push({ field: at, message: GROUPS_UNCONFIGURED })
         return

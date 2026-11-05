@@ -18,7 +18,7 @@ let calendarId: number
 
 const members = parseGroupFile(`web_calendar_users: ${ALICE} ${BOB} ${EVE}\nteam: ${EVE}\n`)
 const membership: GroupMembership = {
-  groupsOf: async (sub) => members.get(sub.toLowerCase()) ?? new Set<string>(),
+  groupsOf: async (sub) => members.get(sub) ?? new Set<string>(),
   all: async () => members,
 }
 
@@ -91,6 +91,21 @@ describe('path pre-check', () => {
         upstreamPath: '/11111111-1111-4111-8111-111111111111/resource-availability/',
       }),
     ).toBe(false)
+  })
+
+  it('tells ids apart by case, as Radicale does', async () => {
+    const carol = 'Carol@Example.org'
+    addCalendarAcl(db, calendarId, { principalType: 'user', principal: carol, permission: 'read' })
+    const check = createPathPrecheck(db, membership)
+    const path = (home: string) => `/${home}/shared-${calendarId}/x.ics`
+    expect(await check(carol, { method: 'GET', upstreamPath: path(carol) })).toBe(true)
+    const lower = carol.toLowerCase()
+    expect(await check(lower, { method: 'GET', upstreamPath: path(lower) })).toBe(false)
+  })
+
+  it('reads the members of the group file case-sensitively', () => {
+    const parsed = parseGroupFile('team: Ab ab auth0|1 Alice@Example.org\n')
+    expect([...parsed.keys()]).toEqual(['Ab', 'ab', 'auth0|1', 'Alice@Example.org'])
   })
 })
 

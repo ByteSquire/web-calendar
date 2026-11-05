@@ -5,7 +5,7 @@ import { stat, readFile } from 'node:fs/promises'
 // The app's tables do not store groups, and the `groups` claim of a token is only known per request.
 
 export interface GroupMembership {
-  /** The groups the user (a lower-case `sub`) is in; empty when the file cannot be read. */
+  /** The groups the user (a `sub`, case-sensitive like Radicale) is in; empty when the file cannot be read. */
   groupsOf(sub: string): Promise<ReadonlySet<string>>
   /** Every user in the file with their groups. */
   all(): Promise<ReadonlyMap<string, ReadonlySet<string>>>
@@ -20,10 +20,9 @@ export function parseGroupFile(text: string): Map<string, Set<string>> {
     const group = line.slice(0, colon).trim()
     for (const member of line.slice(colon + 1).split(/\s+/)) {
       if (member === '') continue
-      const key = member.toLowerCase()
-      const groups = byMember.get(key) ?? new Set<string>()
+      const groups = byMember.get(member) ?? new Set<string>()
       groups.add(group)
-      byMember.set(key, groups)
+      byMember.set(member, groups)
     }
   }
   return byMember
@@ -59,7 +58,7 @@ export function createFileMembership(
   return {
     all: load,
     async groupsOf(sub) {
-      return (await load()).get(sub.toLowerCase()) ?? new Set<string>()
+      return (await load()).get(sub) ?? new Set<string>()
     },
   }
 }

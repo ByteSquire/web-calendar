@@ -1,6 +1,6 @@
 # Web Calendar — Design
 
-> Status: **Draft v1.7** — companion to `requirements.md` (Draft v1.4).
+> Status: **Draft v1.8** — companion to `requirements.md` (Draft v1.4).
 > This document turns the requirements into a concrete technical design.
 > v1.2 (2026-10-29), after spike S1: the app bundles Radicale and exposes its own authenticated
 > `/caldav/` endpoint (bearer tokens verified locally, app tokens for other clients). Access rules
@@ -17,6 +17,8 @@
 > v1.6 (2026-11-02): a Forgejo Actions workflow publishes the release image to Codeberg's registry;
 > the checks still run on the maintainer's machine (§12, Security backlog).
 > v1.7 (2026-11-05): a GitHub Actions workflow publishes the same image to GitHub's registry (§12).
+> v1.8 (2026-11-05): groups and group calendars: the app keeps groups (its own and imported from
+> Kanidm), members create and share the calendars their group owns (§5, §8, §9).
 
 ---
 
@@ -168,6 +170,8 @@ erDiagram
     users ||--o{ ical_subscriptions : owns
     users ||--o{ calendar_prefs : sets
     users ||--o{ calendars : owns
+    groups ||--o{ group_members : has
+    groups ||--o{ calendars : owns
     calendars ||--o{ calendar_acl : "governed by"
     resources ||--o{ resource_acl : "governed by"
     resources ||--o{ calendar_bookings : "booked through"
@@ -184,7 +188,14 @@ erDiagram
   `last_used_at`. Only the hash is stored; the token is shown once (FR-31).
 - **calendars** — `id` (PK), `name`, `kind` (`personal` | `shared` | `resource`),
   `owner_id` (FK, nullable: shared and resource calendars have no personal owner),
-  `color`, `collection_path` (where Radicale stores it).
+  `group_id` (FK to `groups`, nullable: set for the calendars a group owns, `kind = 'shared'`,
+  no `owner_id`; a group with calendars cannot be deleted), `color`, `collection_path` (where
+  Radicale stores it).
+- **groups** — `id` (PK, never reused), `name` (unique across both sources; the htgroup name, 1 to
+  64 letters, digits, `_`, `.`, `-`, starting with a letter or digit, checked in SQL as well),
+  `source` (`app`: created here, members edited by admins | `kanidm`: imported, read-only).
+- **group_members** — `group_id` (FK, cascade), `sub` (a Kanidm user UUID; by `sub` and not by
+  `users.id`, because a Kanidm member may never have signed in). Primary key (`group_id`, `sub`).
 - **calendar_acl** — `id` (PK), `calendar_id` (FK), `principal_type` (`user` |
   `group` | `authenticated` | `public`), `principal` (a user's `sub` UUID or a group's
   short name), `permission` (`free_busy` | `read` | `write` | `admin`), `applied_at`
@@ -237,7 +248,7 @@ Compared with v1.1, `sessions` is gone (no server-side tokens) and `calendars`,
 mock data still follow the v1.0 model (local ids, `etag`, `isBlocked`) and are
 adapted in Phase 2.
 
-**Built** (`server/db`, migrations `001_init.sql` to `006_access_and_resources.sql`, then `008_booking_sync.sql`; there is no 007): every table above except `published_calendars`. Beyond
+**Built** (`server/db`, migrations `001_init.sql` to `006_access_and_resources.sql`, then `008_booking_sync.sql` and `009_groups.sql`; there is no 007): every table above except `published_calendars`. Beyond
 the list: ids are `AUTOINCREMENT` (views refer to calendar ids in JSON, so ids are never reused);
 `users.username` is unique case-insensitively; `updated_at` is kept by triggers; `calendar_acl` has CHECKs
 tying `principal` to `principal_type`; a personal calendar needs an owner; deleting a user cascades to
@@ -850,6 +861,76 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   the count). Audit actor `system:group-sync`, wired in
   `group-sync/app-ports.ts` (an audit failure never ends a run). The service account and its read-only token are in
   [kanidm-setup.md](kanidm-setup.md) §3.
+- **Groups and group calendars (FR-15a, 2026-11-05)** — a group is a row in `groups` with its
+  members in `group_members` (§5), from one of two sources: **`app`**, created by an admin in the
+  app, members chosen by admins; **`kanidm`**, imported by the group sync and read-only. Everything
+  that decides who may do what reads these tables, never the htgroup file or the userinfo claim.
+  A name is unique across both sources, and the app's group wins: when Kanidm has a group with
+  the name of an app group, the Kanidm one is skipped and the log says so, so a Kanidm admin
+  cannot put members into an app group. The admin group and `web_calendar_users` cannot be
+  taken as names. A group's name cannot be changed, and an app group cannot be deleted while it
+  owns calendars (`409 has_calendars`).
+  - _Sync._ The htgroup file now holds the groups the sync read from Kanidm **and every app
+    group** (members by `sub`). Each run also lists Kanidm's groups (`GET /v1/group`, read-only,
+    the sync account's token as before) and replaces the members of every imported group; built-in
+    groups are skipped (class `builtin`; when Kanidm does not show a class, names starting `idm_`,
+    `system_` or `domain_`). Failing to list or import never fails the run or stops the file
+    write; a Kanidm group that is gone loses its members and its row if it owns no calendars. A
+    group with members in Kanidm of whom **none** can be read as a person keeps its stored
+    members that run (a warning names the group): the usual cause is a sync account without
+    `idm_people_pii_read`, and an empty list would take the access of everybody in the group
+    away. A group a rule still names but Kanidm's list no longer has (it was deleted) is left out
+    of the file with a warning, instead of failing every run and leaving the file stale; if the
+    list itself could not be read, a group that cannot be read still fails the run as before.
+    Without `NUXT_GROUP_SYNC_TOKEN` the file is written from the app groups alone (no Kanidm
+    client, no token revoking); with no groups at all it is left as it is. Every change to app
+    groups or their members requests a run (debounced, 2 s).
+  - _Calendars._ A group's Radicale principal is `_group-<id>` (ids are never reused); its
+    calendars are `/_group-<id>/<uuid>/`. The app creates them as that principal and writes one
+    **fixed rule** per calendar in `calendar_acl`: the owning group with `write`. The sharing
+    writer then maps the calendar into each member's home like any group share, and the gateway
+    pre-check works unchanged. Further shares are ordinary rules, to a **person or a group**,
+    **`read` or `write`** only. The owning rule cannot be removed: neither the groups route nor
+    `PUT /api/admin/access/calendars/:id` accepts a list without it. Discovery lists the group
+    homes and gives the calendars it finds their `group_id`; the **default calendar Radicale
+    makes in every new home is skipped** in a group's home (found by the live test: without it
+    every group had a calendar nobody made, which also blocked deleting the group). The users
+    group (`web_calendar_users`) is imported like any group, so a calendar can be shared with it
+    (everybody), but it **cannot own calendars** (`400`): every person is a member and could
+    otherwise create and delete them. Deleting a group calendar removes its Radicale shares
+    first, then the collection, then the rows, because Radicale refuses to delete a collection a
+    share still maps (`409`, found by the live test); if Radicale is down, the app stops with
+    `502 upstream_unavailable`, leaves the rows and asks the sharing writer to put back the shares
+    it had taken away.
+  - _Who may do what._ Any **member** of a group, and any **admin**, creates, renames, recolours
+    (a colour can be cleared with `null`), deletes and shares that group's calendars; nobody else
+    does (`403`). Only **admins** create and delete app groups and change their members. The
+    decision is made on the server for every request; the page only hides controls. Every change
+    is audited in the same transaction (`group.created`, `group.deleted`, `group.members_replaced`,
+    `group_calendar.created`, `.renamed`, `.deleted`, `.shares_replaced`).
+  - _API._ `GET /api/groups` (every group, for any signed-in person, for the share picker: name,
+    source, member count and whether the caller is a member), `GET /api/groups/:id` (members, calendars with shares; members and admins only),
+    `POST /api/groups`, `DELETE /api/groups/:id`, `PUT /api/groups/:id/members` (the complete
+    list), `POST /api/groups/:id/calendars`, `PATCH` and `DELETE
+/api/groups/:id/calendars/:calendarId`, `PUT .../shares` (the complete list), and `GET
+/api/people` for the pickers. Errors: `400` with the fields, `401`, `403`, `404`, `409`
+    (`duplicate`, `limit_reached`, `has_calendars`), `429`, `502`. Limits: 200 groups, 500
+    members per app group, 50 calendars per group, 100 shares per calendar, calendar names of 1 to
+    100 characters, colours as `#rrggbb`.
+  - _Security notes._ Members may share their group's calendars with **anybody**, including
+    people outside the group; that was chosen on purpose (members manage their calendars fully)
+    and every share is audited. `GET /api/people` gives every signed-in person the **names and user
+    names** of everybody who has signed in once (no e-mail address), and `GET /api/groups` the names
+    and member counts of all groups, for the pickers; only members and admins see a group's members. A change
+    reaches Radicale after the next sharing run (requested at once, debounced 2 s): the live test
+    saw 3 to 6 seconds. Admins can still edit any calendar's rules on `/admin/access`, which also
+    lists group calendars.
+  - _Proof._ Unit tests for the migration, the rules, the sync, every route's authorization and the
+    desired shares and pre-check; a live proof against Radicale 3.9.0 (create as `_group-1`, group
+    share into the members' homes, PROPPATCH of name and colour, colour removal, delete) and the
+    browser test `e2e/live/groups.spec.ts` against the test stack: an admin makes a group and puts
+    bob in it, bob makes a calendar and shares it with alice to read, Radicale lets bob write and
+    refuses alice, then lets her write after "Can edit", and the deletes clear every home.
 - **Team and resource calendars** — owned by a service principal that is not a
   Kanidm user (for example `_team`, `_resources`) and shared to groups. A resource
   calendar is shared so that users see "blocked" entries only (FR-18) with a map share
@@ -979,6 +1060,20 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   A failed save opens the region that holds the error before the focus goes to the field. The
   closed region is hidden, not removed, so nothing typed is lost. Two buttons because the dialogs
   differ in what they ask, not in who may use them; both are for everybody.
+- **Groups page (FR-15a)** — `/groups`, the overflow-menu entry "Groups" for everybody signed in (not
+  in demo mode). It is one page and not an admin screen because the work is the members': they
+  manage their group's calendars, and an admin-only page would have left them without a place.
+  Admin extras sit inside it, per AGENTS.md (no new admin-only control): the "Create group" form
+  above the list, "Delete group" on a row, and the member editor in an open group; the server
+  checks all of them again. The list shows the groups of the person (an admin sees all), each
+  with its source ("Created in this app" or "From Kanidm"); opening one shows its members and its
+  calendars below the list, with focus moved there. Calendars: create (name and a colour from the
+  palette, named so colour is never the only information), edit, delete (confirm dialog) and
+  share. The share dialog adds people from `/api/people` and groups from `/api/groups` with "Can
+  view" or "Can edit"; the owning group's own access is shown and cannot be removed; one "Save
+  sharing" sends the complete list. Imported groups are read-only and say so. Each part loads and
+  reports its own errors, with Retry. Small and large screens offer the same things; the rows
+  and buttons wrap, and every control keeps a 44 px tap target.
 - **Languages (FR-33)** — English and German, with the helper in `app/utils/i18n.ts` and no
   library (the app has no routing by language, no server rendering, and the texts are also made in
   plain TypeScript, so a `t()` that works anywhere was the smaller solution). The English text is

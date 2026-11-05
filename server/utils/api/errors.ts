@@ -7,13 +7,14 @@ export interface FieldError {
   message: string
 }
 
-export type ApiErrorStatus = 400 | 403 | 404 | 409
+export type ApiErrorStatus = 400 | 403 | 404 | 409 | 502
 
 export const API_STATUS_TEXT: Record<ApiErrorStatus, string> = {
   400: 'Bad Request',
   403: 'Forbidden',
   404: 'Not Found',
   409: 'Conflict',
+  502: 'Bad Gateway',
 }
 
 export class ApiError extends Error {
@@ -43,9 +44,17 @@ export function notFound(): ApiError {
   return new ApiError(404, 'Not found')
 }
 
-/** 409: a limit is reached (`limit_reached`) or the name is taken (`duplicate`). */
-export function conflict(code: 'limit_reached' | 'duplicate', message: string): ApiError {
+/** 409: a limit is reached (`limit_reached`), the name is taken (`duplicate`) or the state forbids it. */
+export function conflict(
+  code: 'limit_reached' | 'duplicate' | 'has_calendars',
+  message: string,
+): ApiError {
   return new ApiError(409, message, { code })
+}
+
+/** 502: the calendar server (Radicale) did not do what was asked; nothing was changed here. */
+export function upstreamFailed(message: string): ApiError {
+  return new ApiError(502, message, { code: 'upstream_unavailable' })
 }
 
 /** The 404 of a lookup that found nothing. */

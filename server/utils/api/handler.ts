@@ -61,19 +61,27 @@ function toApiUser(user: User): ApiUser {
  */
 export async function requireAdmin(event: H3Event): Promise<void> {
   const identity = await requireUser(event)
-  const accessToken = bearerToken(event.headers)
-  const { oidcIssuer, adminGroup } = apiConfig()
-  const decision = await decideAdmin({
-    userinfo: getUserinfoClient(),
-    issuer: oidcIssuer,
-    adminGroup,
-    sub: identity.sub,
-    accessToken,
-    tokenExpiresAtMs: tokenExpiresAtMs(accessToken),
-  })
+  const decision = await decideAdminFor(event, identity.sub)
   if (decision.admin) return
   console.warn(`[admin] ${event.path} refused: ${decision.reason}`)
   throw apiErrorToHttp(forbidden())
+}
+
+/**
+ * Whether the caller is in the admin group, asked of the identity provider with the caller's own
+ * token (see `requireAdmin`). Never throws for a refusal; the member frame uses it to decide.
+ */
+export async function decideAdminFor(event: H3Event, sub: string) {
+  const accessToken = bearerToken(event.headers)
+  const { oidcIssuer, adminGroup } = apiConfig()
+  return decideAdmin({
+    userinfo: getUserinfoClient(),
+    issuer: oidcIssuer,
+    adminGroup,
+    sub,
+    accessToken,
+    tokenExpiresAtMs: tokenExpiresAtMs(accessToken),
+  })
 }
 
 export function defineApiHandler<T>(

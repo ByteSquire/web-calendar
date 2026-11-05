@@ -31,6 +31,18 @@ export interface AdminHandlerOptions {
 
 let sharedLimiter: AdminLimiter | undefined
 
+/**
+ * Takes one request from the caller's bucket, or answers 429 with `Retry-After`. Shared by the
+ * admin and the group-member frames: both are "about 60 per minute per user".
+ */
+export function checkRateLimit(event: H3Event, sub: string, limiter?: AdminLimiter): void {
+  const wait = (limiter ?? (sharedLimiter ??= createAdminLimiter())).take(sub)
+  if (wait !== null) {
+    setResponseHeader(event, 'retry-after', wait)
+    throw createError({ statusCode: 429, statusMessage: 'Too Many Requests' })
+  }
+}
+
 const SAFE_REQUEST_ID = /^[A-Za-z0-9._:-]{1,64}$/
 
 /** The caller's `X-Request-Id` when it is short and plain, else a new one. */
@@ -45,12 +57,7 @@ export function defineAdminHandler<T>(
 ) {
   return defineApiHandler(async (event, { db, user, identity }) => {
     // Before the admin check: it costs a call to the identity provider.
-    const limiter = options.limiter ?? (sharedLimiter ??= createAdminLimiter())
-    const wait = limiter.take(identity.sub)
-    if (wait !== null) {
-      setResponseHeader(event, 'retry-after', wait)
-      throw createError({ statusCode: 429, statusMessage: 'Too Many Requests' })
-    }
+    checkRateLimit(event, identity.sub, options.limiter)
     await requireAdmin(event)
     const requestId = requestIdOf(event)
     return handler(event, {

@@ -46,10 +46,14 @@ function xml(owner: string, rows: { name: string; calendar: boolean }[]): string
     (name ? `<ns0:displayname>${name}</ns0:displayname>` : '') +
     `<ns0:resourcetype><ns0:collection />${calendar ? '<ns1:calendar />' : ''}</ns0:resourcetype>` +
     '</ns0:prop><ns0:status>HTTP/1.1 200 OK</ns0:status></ns0:propstat></ns0:response>'
+  // Like Radicale, answer percent-encoded hrefs: an id with `#`, `%` or `&` is a valid user name.
+  const home = `/${encodeURIComponent(owner)}/`
   return (
     '<?xml version="1.0" encoding="utf-8"?><ns0:multistatus xmlns:ns0="DAV:" xmlns:ns1="urn:ietf:params:xml:ns:caldav">' +
-    item(`/${owner}/`, false) +
-    rows.map((row) => item(`/${owner}/${row.name}/`, row.calendar, row.name)).join('') +
+    item(home, false) +
+    rows
+      .map((row) => item(`${home}${encodeURIComponent(row.name)}/`, row.calendar, row.name))
+      .join('') +
     '</ns0:multistatus>'
   )
 }

@@ -69,7 +69,7 @@ export function createConsistencyAudit(options: AuditJobOptions) {
 
     const differences: string[] = []
     for (const sub of users) {
-      const groups = groupsOfAll.get(sub.toLowerCase()) ?? new Set<string>()
+      const groups = groupsOfAll.get(sub) ?? new Set<string>()
       const mine = desired.shares.filter(
         (share: DesiredShare) =>
           share.owner !== sub &&

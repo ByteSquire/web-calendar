@@ -8,12 +8,20 @@ import { applyRules, getAccessCalendar, getCalendarRow } from '../../../../utils
 import { defineAdminHandler } from '../../../../utils/api/admin-handler'
 import { ApiError, found, toBadRequest } from '../../../../utils/api/errors'
 import { expectValid, parseId } from '../../../../utils/api/validation'
+import { calendarOwningGroup, findGroupById } from '../../../../db/groups'
+import { owningRuleProblem } from '../../../../utils/groups/service'
 
 // Sets the complete rule list of one calendar (FR-14). Radicale follows through the port.
 export default defineAdminHandler(async (event, { db, audit, atomic }) => {
   const id = parseId(getRouterParam(event, 'id'))
   found(getCalendarRow(db, id))
   const rules = expectValid(parseRulesBody(await readBody(event)))
+  // A group's own calendar keeps its write rule for the group: without it the group's members lose
+  // the calendar in Radicale, and the rule is not theirs to remove.
+  const owning = calendarOwningGroup(db, id).groupId
+  const owner = owning === null ? null : findGroupById(db, owning)
+  const problem = owner ? owningRuleProblem(owner, rules) : null
+  if (problem) throw toBadRequest([problem])
 
   const kanidm = accessConfig().kanidm
   const existing = listCalendarAcl(db, id).map((row) => ({

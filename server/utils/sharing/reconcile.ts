@@ -13,7 +13,7 @@ import {
   sameShare,
   type DesiredShare,
 } from './desired'
-import { splitCollectionPath } from './names'
+import { groupPrincipal, splitCollectionPath } from './names'
 import { isActingPrincipal, type RadicaleClient } from './radicale-client'
 import {
   RESOURCES_PRINCIPAL,
@@ -189,6 +189,11 @@ export function createSharingReconciler(options: ReconcileOptions): SharingRecon
     for (const user of db.prepare<[], { oidc_sub: string }>('SELECT oidc_sub FROM users').all()) {
       if (isValidSubject(user.oidc_sub) && isActingPrincipal(user.oidc_sub))
         owners.add(user.oidc_sub)
+    }
+    // A group's calendars are shared out of the group principal's home. Every group is listed, so a
+    // share of a deleted calendar is found and removed as well.
+    for (const group of db.prepare<[], { id: number }>('SELECT id FROM groups').all()) {
+      owners.add(groupPrincipal(group.id))
     }
     for (const share of shares) {
       owners.add(share.owner)

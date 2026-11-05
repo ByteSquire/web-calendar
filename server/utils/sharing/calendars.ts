@@ -1,12 +1,20 @@
 import type { Database } from 'better-sqlite3'
-import { isValidSubject } from '../auth/subject'
-import { isShareName } from './names'
+import { isUserSubject } from '../auth/subject'
+import { groupPrincipal, isShareName } from './names'
 import type { RadicaleClient } from './radicale-client'
 import { sharingFail, type SharingResult } from './types'
 
 // Mirrors the Radicale collections of the known users into the `calendars` table, because nothing
 // else fills it and the access UI attaches rules to its rows. Rows are never deleted here: a
 // vanished collection must not cascade away its rules.
+
+/**
+ * The calendar Radicale creates in every new home (`predefined_collections` of deploy/radicale/config).
+ * A user keeps it as their personal calendar. A group's home is made by the app's first request as
+ * the group principal, so the same default would appear there as a calendar nobody asked for, and
+ * the group could not be deleted until someone removed it.
+ */
+const PREDEFINED_CALENDAR = 'def-calendar'
 
 export interface RemoteCalendar {
   /** `/owner/name/`, decoded. */
@@ -68,7 +76,14 @@ interface UserIdRow {
   oidc_sub: string
 }
 
-/** Lists each known user's home (as that user) and each configured service principal's. */
+interface GroupIdRow {
+  id: number
+}
+
+/**
+ * Lists each known user's home (as that user), each group's home (as the group principal) and each
+ * configured service principal's. A calendar found in a group's home belongs to that group.
+ */
 export async function discoverCalendars(
   db: Database,
   client: RadicaleClient,
@@ -77,12 +92,22 @@ export async function discoverCalendars(
   const users = db
     .prepare<[], UserIdRow>('SELECT id, oidc_sub FROM users ORDER BY id')
     .all()
-    .filter((user) => isValidSubject(user.oidc_sub) && !user.oidc_sub.startsWith('.'))
-  const targets = [
-    ...users.map((user) => ({ owner: user.oidc_sub, userId: user.id as number | null })),
-    ...sharedOwners.map((owner) => ({ owner, userId: null })),
+    .filter((user) => isUserSubject(user.oidc_sub, sharedOwners))
+  const groups = db.prepare<[], GroupIdRow>('SELECT id FROM groups ORDER BY id').all()
+  const targets: { owner: string; userId: number | null; groupId: number | null }[] = [
+    ...users.map((user) => ({
+      owner: user.oidc_sub,
+      userId: user.id as number | null,
+      groupId: null,
+    })),
+    ...groups.map((group) => ({
+      owner: groupPrincipal(group.id),
+      userId: null,
+      groupId: group.id,
+    })),
+    ...sharedOwners.map((owner) => ({ owner, userId: null, groupId: null })),
   ]
-  const found: { remote: RemoteCalendar; userId: number | null }[] = []
+  const found: { remote: RemoteCalendar; userId: number | null; groupId: number | null }[] = []
   const listedOwners: string[] = []
   for (const target of targets) {
     const listing = await client.propfind(target.owner, `/${encodeURIComponent(target.owner)}/`, 1)
@@ -98,7 +123,8 @@ export async function discoverCalendars(
     listedOwners.push(target.owner)
     for (const remote of parseHomeListing(listing.value, target.owner)) {
       if (isShareName(remote.name)) continue
-      found.push({ remote, userId: target.userId })
+      if (target.groupId !== null && remote.name === PREDEFINED_CALENDAR) continue
+      found.push({ remote, userId: target.userId, groupId: target.groupId })
     }
   }
 
@@ -106,16 +132,17 @@ export async function discoverCalendars(
     'SELECT id, name FROM calendars WHERE collection_path = ?',
   )
   const insert = db.prepare(
-    'INSERT INTO calendars (name, kind, owner_id, collection_path) VALUES (?, ?, ?, ?)',
+    'INSERT INTO calendars (name, kind, owner_id, collection_path, group_id) VALUES (?, ?, ?, ?, ?)',
   )
   const rename = db.prepare('UPDATE calendars SET name = ? WHERE id = ?')
   let added = 0
   let renamed = 0
   db.transaction(() => {
-    for (const { remote, userId } of found) {
+    for (const { remote, userId, groupId } of found) {
       const row = select.get(remote.path)
       if (!row) {
-        insert.run(remote.displayName, userId === null ? 'shared' : 'personal', userId, remote.path)
+        const kind = userId !== null ? 'personal' : 'shared'
+        insert.run(remote.displayName, kind, userId, remote.path, groupId)
         added += 1
       } else if (row.name !== remote.displayName) {
         rename.run(remote.displayName, row.id)

@@ -100,7 +100,9 @@ export function createBookingEventReader(options: EventReaderOptions): BookingEv
     depth: '0' | '1',
     body: string,
   ): Promise<{ status: number; text: string } | null> {
-    if (!isActingPrincipal(principal) || !isStorePath(path)) return null
+    // The path is the decoded one (`/a#b/work/`); it is checked in the form that goes on the wire,
+    // where `#` and `?` are already `%23` and `%3F`. A user id may hold a `#`.
+    if (!isActingPrincipal(principal) || !isStorePath(encodedPath(path))) return null
     try {
       const response = await doFetch(base + encodedPath(path), {
         method,

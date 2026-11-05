@@ -101,10 +101,11 @@ describe('parseResourceAcl', () => {
         { principalType: 'authenticated', right: 'read' },
       ],
     })
+    // A user id is kept as it is: Radicale and the identity provider tell `Ab` and `ab` apart.
     expect(parsed).toEqual({
       ok: true,
       value: [
-        { principalType: 'user', principal: UUID, right: 'manage' },
+        { principalType: 'user', principal: UUID.toUpperCase(), right: 'manage' },
         { principalType: 'group', principal: 'Facility_Team', right: 'book' },
         { principalType: 'authenticated', principal: null, right: 'read' },
       ],
@@ -115,7 +116,9 @@ describe('parseResourceAcl', () => {
     ['write', { principalType: 'authenticated', right: 'write' }],
     ['admin', { principalType: 'authenticated', right: 'admin' }],
     ['public', { principalType: 'public', right: 'read' }],
-    ['a user that is not a UUID', { principalType: 'user', principal: 'alice', right: 'read' }],
+    ['a user id with a space', { principalType: 'user', principal: 'al ice', right: 'read' }],
+    ['a user id with a slash', { principalType: 'user', principal: 'a/b', right: 'read' }],
+    ['a user id with a leading dot', { principalType: 'user', principal: '.x', right: 'read' }],
     ['a group with a slash', { principalType: 'group', principal: 'a/b', right: 'read' }],
     [
       'authenticated with a principal',

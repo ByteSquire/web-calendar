@@ -51,7 +51,7 @@ export function createPathPrecheck(db: Database, membership: GroupMembership): P
     return byId.all(calendarId).some((row) => {
       if (!SHARING_PERMISSIONS.includes(row.permission)) return false
       if (needsWrite && row.permission !== 'write') return false
-      if (row.principal_type === 'user') return row.principal?.toLowerCase() === sub.toLowerCase()
+      if (row.principal_type === 'user') return row.principal === sub
       if (row.principal_type === 'group') {
         return row.principal !== null && groups.has(row.principal)
       }

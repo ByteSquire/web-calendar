@@ -50,13 +50,31 @@ export interface CalendarRow extends Timestamps {
   owner_id: number | null
   color: string | null
   collection_path: string
+  /** The group that owns the calendar (migration 009); null for every other calendar. */
+  group_id: number | null
+}
+
+export type GroupSource = 'app' | 'kanidm'
+
+export interface GroupRow extends Timestamps {
+  id: number
+  /** The htgroup name and the principal of calendar_acl rules. */
+  name: string
+  source: GroupSource
+}
+
+export interface GroupMemberRow {
+  group_id: number
+  /** The identity provider's `sub`, exactly as sent (case-sensitive). */
+  sub: string
+  created_at: string
 }
 
 export interface CalendarAclRow extends Timestamps {
   id: number
   calendar_id: number
   principal_type: PrincipalType
-  /** A Kanidm `sub` UUID or a group UUID or SPN; null for `authenticated` and `public`. */
+  /** A user's `sub` or a group name; null for `authenticated` and `public`. */
   principal: string | null
   permission: Permission
   /** When Radicale confirmed the share; null until then (migration 006). */

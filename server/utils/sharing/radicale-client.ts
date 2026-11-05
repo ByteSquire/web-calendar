@@ -1,5 +1,5 @@
 import { isValidSubject } from '../auth/subject'
-import { sharingFail, RESOURCES_PRINCIPAL, type RadicaleShare, type SharingResult } from './types'
+import { sharingFail, type RadicaleShare, type SharingResult } from './types'
 
 // The sharing writer's own Radicale client. It is the one component that sends an identity it did
 // not verify, so it is separate from the gateway, never reachable through /caldav/, and refuses any
@@ -8,6 +8,8 @@ import { sharingFail, RESOURCES_PRINCIPAL, type RadicaleShare, type SharingResul
 const DEFAULT_TIMEOUT_MS = 10_000
 const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 const SHARING_API = '/.sharing/v1'
+/** The Apple/Radicale namespace of `calendar-color`, as the app's CalDAV client writes it. */
+const ICAL_NS = 'http://apple.com/ns/ical/'
 
 export type ShareType = 'map' | 'token'
 
@@ -35,17 +37,36 @@ export interface RadicaleClient {
   /** PROPFIND; the multistatus text. */
   propfind(principal: string, path: string, depth: 0 | 1): Promise<SharingResult<string>>
   /** MKCALENDAR; an existing collection is not an error. */
-  makeCalendar(principal: string, path: string, displayName: string): Promise<SharingResult<void>>
+  makeCalendar(
+    principal: string,
+    path: string,
+    displayName: string,
+    color?: string,
+  ): Promise<SharingResult<void>>
+  /** PROPPATCH of the display name (`D:displayname`). */
+  setDisplayName(principal: string, path: string, displayName: string): Promise<SharingResult<void>>
+  /** PROPPATCH of the colour (`ICAL:calendar-color`), `#rrggbb`. */
+  setColor(principal: string, path: string, color: string): Promise<SharingResult<void>>
+  /** PROPPATCH remove of the colour: the calendar has no colour afterwards. */
+  clearColor(principal: string, path: string): Promise<SharingResult<void>>
+  /** DELETE of a whole collection; a missing one is not an error. */
+  deleteCollection(principal: string, path: string): Promise<SharingResult<void>>
   putObject(principal: string, path: string, ics: string): Promise<SharingResult<void>>
   /** A missing object is not an error. */
   deleteObject(principal: string, path: string): Promise<SharingResult<void>>
 }
 
-/** The principals the client may act as: a valid subject (no dot names), never anything else. */
+/** Text for an XML element: the characters that would end it or open markup are dropped. */
+export function xmlSafeText(text: string): string {
+  return text.replace(/[<>&"']/g, '')
+}
+
+/**
+ * The principals the client may act as: a valid subject, never anything else. That includes the
+ * app's own service principals (`_resources`, `_group-<id>`, the shared owners), which have the shape.
+ */
 export function isActingPrincipal(principal: unknown): principal is string {
-  return (
-    principal === RESOURCES_PRINCIPAL || (isValidSubject(principal) && !principal.startsWith('.'))
-  )
+  return isValidSubject(principal)
 }
 
 /** A path in the store: `/a/b/` or `/a/b/c.ics`, segments encoded, no dot segments. */
@@ -188,6 +209,34 @@ export function createRadicaleClient(options: RadicaleClientOptions): RadicaleCl
 
   const ok: SharingResult<void> = { ok: true, value: undefined }
 
+  /**
+   * PROPPATCH with one `set` of the given properties. Radicale answers 207 with one propstat per
+   * property; any of them that is not 200 means the property was refused, so that is a failure.
+   */
+  async function proppatch(
+    principal: string,
+    path: string,
+    props: string,
+    op: 'set' | 'remove' = 'set',
+  ): Promise<SharingResult<void>> {
+    const body =
+      `<?xml version="1.0"?><D:propertyupdate xmlns:D="DAV:" xmlns:ICAL="${ICAL_NS}">` +
+      `<D:${op}><D:prop>${props}</D:prop></D:${op}></D:propertyupdate>`
+    const result = await send(principal, 'PROPPATCH', path, {
+      body,
+      headers: { 'content-type': 'application/xml' },
+    })
+    if (!result.ok) return result
+    const { status, text } = result.value
+    if (status !== 207 && status !== 200) {
+      return sharingFail('rejected', `PROPPATCH answered ${status}`, status)
+    }
+    if (/HTTP\/1\.1 (?!200)\d{3}/.test(text)) {
+      return sharingFail('rejected', 'PROPPATCH refused a property')
+    }
+    return ok
+  }
+
   return {
     async listShares(owner, type) {
       const result = await api(owner, type, 'list', {})
@@ -234,11 +283,14 @@ export function createRadicaleClient(options: RadicaleClientOptions): RadicaleCl
       }
       return { ok: true, value: result.value.text }
     },
-    async makeCalendar(principal, path, displayName) {
-      const name = displayName.replace(/[<>&"']/g, '')
+    async makeCalendar(principal, path, displayName, color) {
+      const name = xmlSafeText(displayName)
+      const colour =
+        color === undefined ? '' : `<ICAL:calendar-color>${color}</ICAL:calendar-color>`
       const body =
-        '<?xml version="1.0"?><C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">' +
-        `<D:set><D:prop><D:displayname>${name}</D:displayname>` +
+        '<?xml version="1.0"?><C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"' +
+        ` xmlns:ICAL="${ICAL_NS}">` +
+        `<D:set><D:prop><D:displayname>${name}</D:displayname>${colour}` +
         '<C:supported-calendar-component-set><C:comp name="VEVENT"/></C:supported-calendar-component-set>' +
         '</D:prop></D:set></C:mkcalendar>'
       const result = await send(principal, 'MKCALENDAR', path, {
@@ -250,6 +302,26 @@ export function createRadicaleClient(options: RadicaleClientOptions): RadicaleCl
       // 405 or 409 is how a server says the collection exists already.
       if (status === 201 || status === 405 || status === 409) return ok
       return sharingFail('rejected', `MKCALENDAR answered ${status}`, status)
+    },
+    setDisplayName(principal, path, displayName) {
+      return proppatch(
+        principal,
+        path,
+        `<D:displayname>${xmlSafeText(displayName)}</D:displayname>`,
+      )
+    },
+    setColor(principal, path, color) {
+      return proppatch(principal, path, `<ICAL:calendar-color>${color}</ICAL:calendar-color>`)
+    },
+    clearColor(principal, path) {
+      return proppatch(principal, path, '<ICAL:calendar-color/>', 'remove')
+    },
+    async deleteCollection(principal, path) {
+      const result = await send(principal, 'DELETE', path)
+      if (!result.ok) return result
+      const { status } = result.value
+      if (status === 200 || status === 204 || status === 404) return ok
+      return sharingFail('rejected', `DELETE answered ${status}`, status)
     },
     async putObject(principal, path, ics) {
       const result = await send(principal, 'PUT', path, {

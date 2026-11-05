@@ -12,6 +12,7 @@ import {
   readText,
   type Parsed,
 } from '../api/validation'
+import { isValidSubject } from '../auth/subject'
 import { PathRejection, resolvePublicPath } from '../gateway/paths'
 import { isGroupName } from '../group-sync/format'
 import { splitCollectionPath } from '../sharing/names'
@@ -29,7 +30,6 @@ const PRINCIPAL_TYPES = [
 const MAX_ACL_RULES = 200
 const MAX_UID_LENGTH = 255
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/
-const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 
 function readInstant(value: unknown, field: string, errors: FieldErrors): string | undefined {
   if (typeof value === 'string' && ISO_INSTANT.test(value) && !Number.isNaN(Date.parse(value))) {
@@ -185,14 +185,11 @@ export function parseResourceAcl(body: unknown): Parsed<ResourceAclInput[]> {
       } else if (principalType !== undefined) {
         const text = typeof raw.principal === 'string' ? raw.principal : ''
         const isGroup = principalType === 'group'
-        // Group names are case-sensitive; only user ids are folded.
-        if (isGroup ? isGroupName(text) : UUID.test(text)) {
-          principal = isGroup ? text : text.toLowerCase()
+        // Group names and user ids are both case-sensitive: Radicale tells `Ab` and `ab` apart.
+        if (isGroup ? isGroupName(text) : isValidSubject(text)) {
+          principal = text
         } else {
-          errors.add(
-            `${at}.principal`,
-            isGroup ? 'must be a group name' : 'must be a user id (UUID)',
-          )
+          errors.add(`${at}.principal`, isGroup ? 'must be a group name' : 'must be a user id')
         }
       }
       if (principalType && right) rules.push({ principalType, principal, right })

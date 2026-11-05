@@ -75,6 +75,8 @@ describe('runMigrations', () => {
       'categories',
       'external_accounts',
       'filters',
+      'group_members',
+      'groups',
       'ical_subscriptions',
       'resource_acl',
       'resources',

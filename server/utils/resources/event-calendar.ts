@@ -52,9 +52,9 @@ export function eventCalendarReader(
      JOIN calendars c ON c.id = a.calendar_id
      WHERE c.collection_path = ? AND a.permission IN ('read', 'write')`,
   )
-  const sub = actor.sub.toLowerCase()
+  const sub = actor.sub
   const grantsDetail = (row: AclRow): boolean => {
-    if (row.principal_type === 'user') return row.principal?.toLowerCase() === sub
+    if (row.principal_type === 'user') return row.principal === sub
     if (row.principal_type === 'group') return row.principal !== null && groups.has(row.principal)
     return row.principal_type === 'authenticated'
   }

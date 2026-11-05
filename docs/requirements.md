@@ -152,6 +152,11 @@ out). Views appear at the **top of the sidebar**.
   see. Views that reference inaccessible calendars omit them.
 - **Public / not-logged-in** visibility exists only through the planned public
   view (FR-26/27), which publishes an explicit list of calendars.
+- **FR-15a** **Groups own calendars.** Admins create groups in the app and choose their
+  members; groups from Kanidm appear next to them, read-only. Every member of a group
+  creates, renames, recolours, deletes and shares the group's calendars, with other
+  people or groups, **read-only or read/write**. A group calendar belongs to the group, not
+  to a person, so it stays when a member leaves. (Design §8 "Groups and group calendars".)
 
 ### 4.5 Resources
 

@@ -215,6 +215,14 @@ export default defineNuxtConfig({
           content: 'Self-hosted web calendar that aggregates multiple calendars into one view.',
         },
       ],
+      // The icon of the tab, of a bookmark and of the iOS home screen (public/, made from
+      // favicon.svg by scripts/make-favicons.mjs). Browsers that take an SVG use it, the last one
+      // listed; the others take the PNG.
+      link: [
+        { rel: 'icon', type: 'image/png', sizes: '32x32', href: '/favicon-32x32.png' },
+        { rel: 'icon', type: 'image/svg+xml', sizes: 'any', href: '/favicon.svg' },
+        { rel: 'apple-touch-icon', sizes: '180x180', href: '/apple-touch-icon.png' },
+      ],
     },
   },
 })

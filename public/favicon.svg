@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- The calendar is the icon "calendar-days" of Lucide (https://lucide.dev), ISC License,
+       Copyright (c) 2026 Lucide Icons and Contributors; the text is in LICENSES/ISC.txt. -->
+  <rect width="32" height="32" rx="7" fill="#2563eb"/>
+  <g transform="translate(2 2) scale(1.1667)" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+    <path d="M8 2v3m8-3v3"/>
+    <rect width="18" height="18" x="3" y="3" rx="2"/>
+    <path d="M3 9h18M8 13h.01M12 13h.01M16 13h.01M8 17h.01M12 17h.01M16 17h.01"/>
+  </g>
+</svg>

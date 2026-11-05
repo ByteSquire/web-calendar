@@ -8,3 +8,11 @@ version = 1
 path = "**"
 SPDX-FileCopyrightText = "2026 ByteSquire"
 SPDX-License-Identifier = "AGPL-3.0-only"
+
+# The favicons draw the Lucide icon "calendar-days" (https://lucide.dev, ISC) on a background that is
+# this project's. The ISC text is in LICENSES/ISC.txt; the README names the icon.
+[[annotations]]
+path = "public/**"
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 ByteSquire", "2026 Lucide Icons and Contributors"]
+SPDX-License-Identifier = "AGPL-3.0-only AND ISC"

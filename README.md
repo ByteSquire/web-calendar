@@ -470,3 +470,7 @@ a copy of `LICENSE`.
 
 FullCalendar Premium (v7) is used under its AGPLv3 license, with its AGPLv3 license key
 (design §2).
+
+The favicons in [`public/`](public/) show the Lucide icon `calendar-days`
+([lucide.dev](https://lucide.dev), ISC license, [`LICENSES/ISC.txt`](LICENSES/ISC.txt)) on a blue
+background. The PNGs are made from `favicon.svg` by [`scripts/make-favicons.mjs`](scripts/make-favicons.mjs).

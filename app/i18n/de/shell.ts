@@ -57,6 +57,8 @@ export const shell: Readonly<Record<string, string>> = {
   'Share with everybody': 'Mit allen teilen',
   'New view name': 'Name der neuen Ansicht',
   'Add view': 'Ansicht hinzufügen',
+  'New calendar name': 'Name des neuen Kalenders',
+  'A calendar with this name already exists.': 'Ein Kalender mit diesem Namen gibt es schon.',
   'New category name': 'Name der neuen Kategorie',
   'Add category': 'Kategorie hinzufügen',
   'New filter name': 'Name des neuen Filters',

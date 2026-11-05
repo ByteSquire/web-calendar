@@ -37,6 +37,8 @@
           />
         </li>
       </ul>
+      <!-- A calendar is made in the person's own home; without a calendar service (demo) there is none. -->
+      <SidebarAddInput v-if="canCreateCalendars" noun="calendar" :submit="submitCalendar" />
     </SidebarSection>
 
     <SidebarSection :title="N_('Resources')">
@@ -114,6 +116,8 @@
 
 <script setup lang="ts">
 import { useAuthFetch } from '~/composables/useAuthFetch'
+import { useCalDav } from '~/composables/useCalDav'
+import { useCalendarSourcesVersion } from '~/composables/useLiveCalendar'
 import { useServerConfigState } from '~/composables/useServerConfigState'
 import {
   deleteSharedView,
@@ -124,6 +128,8 @@ import {
   type AdminViewsApi,
 } from '~/utils/live/admin-views'
 import { N_, t } from '~/utils/i18n'
+import { calendarNameProblem } from '~/utils/groups/model'
+import { describeLoadError } from '~/utils/live/errors'
 import { isLiveConfig } from '~/utils/live/seed'
 import {
   copyName,
@@ -427,6 +433,34 @@ async function confirmDelete() {
 // Selecting the active view again clears it.
 function toggleView(id: string) {
   selectView(selectedViewId.value === id ? null : id)
+}
+
+// ---- New calendars ----------------------------------------------------------------------------
+
+const caldav = useCalDav()
+// The calendar view loads its sources again when this changes, and then lists the new calendar.
+const sourcesVersion = useCalendarSourcesVersion()
+const canCreateCalendars = live && caldav !== null
+
+/** Makes a calendar in the person's own home. Returns what is wrong, or nothing when it was made. */
+async function submitCalendar(name: string): Promise<string | undefined> {
+  if (!caldav) return undefined
+  const problem = calendarNameProblem(name)
+  if (problem) return problem
+  // Two calendars of one name cannot be told apart in the lists, which is what this avoids.
+  const taken = regularCalendars.value.some(
+    (calendar) => calendar.name.toLowerCase() === name.toLowerCase(),
+  )
+  if (taken) return t('A calendar with this name already exists.')
+  try {
+    await caldav.client.createCalendar({ displayName: name })
+  } catch (error) {
+    return t('The calendar could not be created: {problem}', {
+      problem: describeLoadError(error),
+    })
+  }
+  sourcesVersion.value++
+  return undefined
 }
 
 function submitCategory(name: string) {

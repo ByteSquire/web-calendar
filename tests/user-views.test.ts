@@ -200,6 +200,8 @@ describe('SidebarContent without a server (mock data)', () => {
   async function addView(name: string) {
     const input = document.querySelector<HTMLInputElement>('input[placeholder="Add view"]')
     expect(input).not.toBeNull()
+    // The field waits while the last view is being added.
+    await vi.waitFor(() => expect(input!.readOnly).toBe(false))
     input!.value = name
     input!.dispatchEvent(new Event('input', { bubbles: true }))
     document.querySelector<HTMLButtonElement>('button[aria-label="Add view"]')!.click()

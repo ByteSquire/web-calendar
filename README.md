@@ -164,9 +164,10 @@ and client renders match.
 
 ### Production
 
-`docker-compose.yml` runs two services (design §10); Kanidm is an existing external service.
-To run it as a Cosmos ServApp instead, with Kanidm and Radicale optionally included, see
-[`deploy/cosmos/`](deploy/cosmos/README.md).
+`docker-compose.yml` runs two services (design §10); the identity provider (Kanidm, Keycloak, ...)
+is an existing external service, see [`docs/oidc-providers.md`](docs/oidc-providers.md). To run it as
+a Cosmos ServApp instead, with Kanidm and Radicale optionally included and a form field for every
+sign-in, groups and window setting below, see [`deploy/cosmos/`](deploy/cosmos/README.md).
 
 - `web-calendar` is the app (Nuxt 4 / Nitro). It listens on `127.0.0.1:3000`, so put a
   reverse proxy with TLS in front. It runs as the unprivileged `node` user on a read-only
@@ -322,7 +323,7 @@ ports and throwaway passwords, and it is not part of the app.
 ```sh
 cd dev/spike-s1
 ./spike.sh up          # creates test certificates, starts Kanidm and Radicale
-./spike.sh bootstrap   # Kanidm users, groups and OAuth2 clients
+./spike.sh bootstrap   # Kanidm users, groups (incl. idp_team) and OAuth2 clients
 ./spike.sh token alice # a real access token for the test user alice
 ./spike.sh down        # stop; `./spike.sh reset` also deletes the data
 ```

@@ -75,12 +75,25 @@ Notes:
   certificate is there (a few seconds).
 - Upgrade Kanidm one minor version at a time, in both Kanidm containers.
 
-## Kanidm you already run
+## An identity provider you already run
 
-Untick **Install a Kanidm server** and enter the issuer URL of the app's client:
-`https://<your Kanidm>/oauth2/openid/<client id>`. In Kanidm, the client needs the redirect URL
-`https://<app address>/auth/callback`; the groups are in
-[`docs/kanidm-setup.md`](../../docs/kanidm-setup.md).
+Untick **Install a Kanidm server** and enter the issuer URL of your provider, character for
+character as its discovery document writes it. Kanidm: `https://<your Kanidm>/oauth2/openid/<client id>`
+(one issuer per client; the groups and the scope map are in
+[`docs/kanidm-setup.md`](../../docs/kanidm-setup.md)). Keycloak: `https://<keycloak>/realms/<realm>`.
+The client is a public one with the authorization code flow, PKCE and the redirect URL
+`https://<app address>/auth/callback`. What each other provider has to offer (a JWT access token with
+a scope, a groups claim) is in [`docs/oidc-providers.md`](../../docs/oidc-providers.md); the form
+has a field for each setting that differs between providers: **Scopes**, **Required scope**,
+**Further audiences**, **Further key hosts** and **Groups claim**.
+
+## Groups and the sign-in window
+
+The app imports a person's groups from the groups claim at each sign-in; an administrator picks the
+ones to use on the app's **Groups** page. **Groups never offered** hides the built-in groups of
+Kanidm by default; adding an entry that matches a group imported already takes its members out of it
+at their next sign-in. **Sign-in window (days)** is how long after a person's last sign-in their app
+tokens work (1 to 365, 30 by default).
 
 ## Radicale you already run
 
@@ -128,5 +141,9 @@ of Radicale held. It has not been installed in a running Cosmos yet.
 
 On 2026-11-05 the group sync fields (token, interval) were removed from the form and
 `NUXT_GROUP_SYNC_FILE` became `NUXT_GROUPS_FILE`, because groups now come from the sign-in claim and
-the app writes the group file itself. That edit was checked only by reading the template: the
-render test of the 24 combinations has not been run again.
+the app writes the group file itself. The same day the fields for the scopes, the required scope,
+further audiences, further key hosts, the groups claim, the groups never offered and the sign-in
+window were added, and the wording of the issuer, client, admin group and key cache fields was made
+provider-neutral. These edits were checked with a scratch renderer that resolves the `{if}` blocks and
+`{Context.*}` tokens and parses the result as JSON, not with the render test of the 24 combinations,
+which has not been run again.

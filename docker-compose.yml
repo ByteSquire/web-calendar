@@ -1,5 +1,6 @@
 # Example deployment: the web calendar (Nuxt 4 / Nitro, SPA plus CalDAV gateway) and Radicale, its
-# CalDAV store. Kanidm is an existing external service (docs/kanidm-setup.md).
+# CalDAV store. The identity provider (Kanidm, Keycloak, ...) is an existing external service
+# (docs/kanidm-setup.md, docs/oidc-providers.md).
 #
 # Every NUXT_* value below is read from the environment, or from the .env file next to this file
 # (Compose uses it for interpolation), and maps to a runtimeConfig key in nuxt.config.ts. The defaults
@@ -24,7 +25,7 @@ services:
     # has worked examples.
     ports:
       - '127.0.0.1:3000:3000'
-    # default: everything else this service needs (Kanidm, the outbound hosts). radicale: shared
+    # default: everything else this service needs (the identity provider, the outbound hosts). radicale: shared
     # only with the radicale service below, so nothing else on this Docker host can ever send it a
     # request, whatever network another container is later attached to (security review
     # 2026-11-01, finding 8).

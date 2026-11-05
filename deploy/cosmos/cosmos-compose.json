@@ -125,12 +125,12 @@
       {
         "name": "oidcIssuerInfo",
         "type": "info",
-        "label": "Issuer (NUXT_OIDC_ISSUER, required): the issuer URL of the app's client in your Kanidm. An https URL that ends with the client id, for example https://idm.example.org/oauth2/openid/web-calendar (docs/kanidm-setup.md section 2)."
+        "label": "Issuer (NUXT_OIDC_ISSUER, required): the issuer of your identity provider, character for character as its discovery document writes it (a trailing slash included). An https URL. Kanidm: https://idm.example.org/oauth2/openid/web-calendar (one issuer per client, docs/kanidm-setup.md section 2). Keycloak: https://keycloak.example.org/realms/(realm). Other providers and what each needs: docs/oidc-providers.md."
       },
       {
         "name": "oidcIssuer",
         "type": "text",
-        "label": "Kanidm issuer URL",
+        "label": "OIDC issuer URL",
         "initialValue": ""
       }
       {/if}
@@ -138,7 +138,7 @@
       {
         "name": "oidcClientIdInfo",
         "type": "info",
-        "label": "Client id (NUXT_OIDC_CLIENT_ID): the name of the app's OAuth2 client in Kanidm. Change it only if the client has another name; the issuer must end with it."
+        "label": "Client id (NUXT_OIDC_CLIENT_ID): the id of the app's public OAuth2 client at your identity provider. With the bundled Kanidm, or any Kanidm, the issuer must end with it; other providers have one issuer for all clients."
       },
       {
         "name": "oidcClientId",
@@ -149,7 +149,7 @@
       {
         "name": "oidcAllowedClientsInfo",
         "type": "info",
-        "label": "Further clients (NUXT_OIDC_ALLOWED_CLIENTS): other Kanidm clients whose tokens the CalDAV gateway accepts, comma-separated. Empty means only the client above."
+        "label": "Further clients (NUXT_OIDC_ALLOWED_CLIENTS): other clients of the same identity provider whose tokens the CalDAV gateway accepts, comma-separated. Empty means only the client above."
       },
       {
         "name": "oidcAllowedClients",
@@ -160,7 +160,7 @@
       {
         "name": "oidcAdminGroupInfo",
         "type": "info",
-        "label": "Admin group (NUXT_OIDC_ADMIN_GROUP): the Kanidm group whose members are admins of the app. Must not be empty."
+        "label": "Admin group (NUXT_OIDC_ADMIN_GROUP): the group whose members are admins of the app, as the provider writes it in the groups claim: its name, its SPN (name@domain), its id or its path (Keycloak: /name). Case, blanks and symbols count. Must not be empty."
       },
       {
         "name": "oidcAdminGroup",
@@ -171,13 +171,90 @@
       {
         "name": "oidcKeyMaxAgeInfo",
         "type": "info",
-        "label": "Signing key cache (NUXT_OIDC_KEY_MAX_AGE_SEC): seconds the app uses Kanidm's signing keys before it fetches them again. A key Kanidm removed is trusted for at most this long. A whole number, at least 1."
+        "label": "Signing key cache (NUXT_OIDC_KEY_MAX_AGE_SEC): seconds the app uses the provider's signing keys before it fetches them again. A key the provider removed is trusted for at most this long. A whole number, at least 1."
       },
       {
         "name": "oidcKeyMaxAge",
         "type": "text",
         "label": "Signing key cache (seconds)",
         "initialValue": "3600"
+      },
+      {
+        "name": "oidcScopeInfo",
+        "type": "info",
+        "label": "Scopes the browser asks for (NUXT_OIDC_SCOPE): space-separated, must include openid. The default fits Kanidm and Keycloak; groups is what delivers the groups. Microsoft Entra needs the scope of your own API instead (api://(client id)/caldav) and no groups (docs/oidc-providers.md)."
+      },
+      {
+        "name": "oidcScope",
+        "type": "text",
+        "label": "Scopes",
+        "initialValue": "openid profile email groups caldav"
+      },
+      {
+        "name": "oidcRequiredScopeInfo",
+        "type": "info",
+        "label": "Required scope (NUXT_OIDC_REQUIRED_SCOPE): the one scope every access token must carry, in scope or scp. It also keeps ID tokens out. Amazon Cognito: (resource server id)/caldav."
+      },
+      {
+        "name": "oidcRequiredScope",
+        "type": "text",
+        "label": "Required scope",
+        "initialValue": "caldav"
+      },
+      {
+        "name": "oidcAudienceInfo",
+        "type": "info",
+        "label": "Further audiences (NUXT_OIDC_AUDIENCE): extra aud values that make an access token ours, comma-separated: the API identifier of Auth0 or Entra, whose tokens are issued for the API and not for the client. Empty for Kanidm and Keycloak."
+      },
+      {
+        "name": "oidcAudience",
+        "type": "text",
+        "label": "Further audiences",
+        "initialValue": ""
+      },
+      {
+        "name": "oidcJwksHostsInfo",
+        "type": "info",
+        "label": "Key hosts (NUXT_OIDC_JWKS_HOSTS): host names besides the issuer's own that the signing keys may be fetched from, comma-separated, exact names. Empty means the issuer's host only. Naming a host widens whom the app trusts with the keys; the container says so at every start."
+      },
+      {
+        "name": "oidcJwksHosts",
+        "type": "text",
+        "label": "Further key hosts",
+        "initialValue": ""
+      },
+      {
+        "name": "oidcGroupsClaimInfo",
+        "type": "info",
+        "label": "Groups claim (NUXT_OIDC_GROUPS_CLAIM): the claim that lists a person's groups, in userinfo and in the access token. Looked up as written, so cognito:groups or a URL works. Admins pick which of the groups seen at sign-in the app imports, on the Groups page."
+      },
+      {
+        "name": "oidcGroupsClaim",
+        "type": "text",
+        "label": "Groups claim",
+        "initialValue": "groups"
+      },
+      {
+        "name": "oidcGroupsIgnoreInfo",
+        "type": "info",
+        "label": "Groups never offered (NUXT_OIDC_GROUPS_IGNORE): names or prefix*, comma-separated. The default hides Kanidm's built-in groups. Warning: a group that is imported already and matches a new entry is no longer imported; its members are taken out of it at their next sign-in, so nobody reaches its calendars through it (the group, its calendars and rules stay until an admin stops importing it)."
+      },
+      {
+        "name": "oidcGroupsIgnore",
+        "type": "text",
+        "label": "Groups never offered",
+        "initialValue": "idm_*,system_*,domain_*"
+      },
+      {
+        "name": "signinWindowInfo",
+        "type": "info",
+        "label": "Sign-in window (NUXT_SIGNIN_WINDOW_DAYS): days after a person's last sign-in in which their app tokens work and they count as being in the group of everyone (web_calendar_users). A whole number from 1 to 365. Imported and app groups do not expire with it."
+      },
+      {
+        "name": "signinWindowDays",
+        "type": "text",
+        "label": "Sign-in window (days)",
+        "initialValue": "30"
       },
 
       {
@@ -548,7 +625,7 @@
       {
         "type": "info",
         "name": "kanidmExisting",
-        "label": "In your Kanidm, follow docs/kanidm-setup.md: the client {Context.oidcClientId} needs the redirect URL https://{Hostnames.{StaticServiceName}.{StaticServiceName}.host}/auth/callback."
+        "label": "At your identity provider, create a public client {Context.oidcClientId} with the authorization code flow and PKCE and the redirect URL https://{Hostnames.{StaticServiceName}.{StaticServiceName}.host}/auth/callback. Kanidm: follow docs/kanidm-setup.md (the scope map must grant {Context.oidcScope}). Other providers: docs/oidc-providers.md says what the access token and the groups claim need."
       }
       {/if}
       {if not Context.bundleRadicale}
@@ -575,6 +652,13 @@
         "NUXT_OIDC_ALLOWED_CLIENTS={Context.oidcAllowedClients}",
         "NUXT_OIDC_ADMIN_GROUP={Context.oidcAdminGroup}",
         "NUXT_OIDC_KEY_MAX_AGE_SEC={Context.oidcKeyMaxAge}",
+        "NUXT_OIDC_SCOPE={Context.oidcScope}",
+        "NUXT_OIDC_REQUIRED_SCOPE={Context.oidcRequiredScope}",
+        "NUXT_OIDC_AUDIENCE={Context.oidcAudience}",
+        "NUXT_OIDC_JWKS_HOSTS={Context.oidcJwksHosts}",
+        "NUXT_OIDC_GROUPS_CLAIM={Context.oidcGroupsClaim}",
+        "NUXT_OIDC_GROUPS_IGNORE={Context.oidcGroupsIgnore}",
+        "NUXT_SIGNIN_WINDOW_DAYS={Context.signinWindowDays}",
         "NUXT_TOKEN_HASH_KEY={Context.tokenHashKey}",
         "NUXT_TOKEN_HASH_KEYS={Context.tokenHashKeys}",
         "NUXT_EXTERNAL_SEAL_KEY={Context.sealKey}",

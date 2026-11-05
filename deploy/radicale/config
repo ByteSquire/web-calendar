@@ -22,8 +22,10 @@ type = from_file
 file = /etc/radicale/rights
 
 [group]
-# Group membership, one line per group: `readers: user1 user2`. The app writes this file from Kanidm's
-# group membership. Radicale re-reads it on every request, so changes apply without a restart.
+# Group membership, one line per group: `readers: user1 user2`. The app writes this file from its own
+# database: the groups made in the app, the groups imported from the identity provider and
+# web_calendar_users (everyone who signed in within NUXT_SIGNIN_WINDOW_DAYS). Radicale re-reads it on
+# every request, so changes apply without a restart.
 type = htgroup
 htgroup_filename = /etc/radicale/groups/htgroup
 

@@ -34,6 +34,23 @@ export interface KanidmGroup {
   members: string[]
 }
 
+/** A group from Kanidm's group list: `builtin` groups are Kanidm's own and never imported. */
+export interface KanidmListedGroup extends KanidmGroup {
+  builtin: boolean
+}
+
+/** A Kanidm group the sync imports: members are `sub` UUIDs of the persons Kanidm shows. */
+export interface ImportedGroup {
+  name: string
+  members: string[]
+  /**
+   * True when the group has members in Kanidm but none could be read as a person this run (the
+   * sync account most likely lacks `idm_people_pii_read`): the stored members stay as they are
+   * instead of being replaced by an empty list.
+   */
+  keepMembers?: boolean
+}
+
 /** A group of the output file: members are `sub` UUIDs. */
 export interface FileGroup {
   name: string

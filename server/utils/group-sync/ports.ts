@@ -1,5 +1,6 @@
 // What the group sync needs from the rest of the app. The defaults work on their own; the
-// integration replaces them (the ACL's group names, the audit_log table).
+// integration replaces them (the ACL's group names, the audit_log table, the app's groups).
+import type { FileGroup, ImportedGroup } from './types'
 
 export interface GroupSyncAuditEvent {
   action: string
@@ -11,6 +12,18 @@ export interface GroupSyncPorts {
   /** Names of the groups, besides the admin and user groups, that the access rules reference. */
   listExtraGroups(): string[] | Promise<string[]>
   audit(event: GroupSyncAuditEvent): void
+  /**
+   * The app's own groups with their members (`sub` UUIDs). They go into the file whether or not a
+   * Kanidm token is configured, and their names win over a Kanidm group of the same name. Absent:
+   * no app groups.
+   */
+  listCustomGroups?(): FileGroup[]
+  /**
+   * Stores the Kanidm groups that were read (members as `sub` UUIDs, the members Kanidm shows as
+   * persons only) and returns nothing; it writes its own rows in one transaction. Absent: the
+   * groups are not imported.
+   */
+  importKanidmGroups?(groups: ImportedGroup[]): void
   /**
    * Called after a run that read every group and wrote the file: `members` is the `sub` of every
    * member of the users group. Deletes the app tokens, made before `createdBefore` (when the run

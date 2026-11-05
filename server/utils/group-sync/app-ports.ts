@@ -1,5 +1,6 @@
 import type { Database } from 'better-sqlite3'
 import { recordAudit } from '../../db/audit-log'
+import { listCustomGroupsForFile, replaceImportedGroups } from '../../db/groups'
 import { isGroupName } from './format'
 import type { GroupSyncAuditEvent, GroupSyncPorts } from './ports'
 import type { Logger } from './types'
@@ -66,6 +67,10 @@ export function revokeTokensOfNonMembers(
 export function createAppPorts(getDb: () => Database, log: Logger = console): GroupSyncPorts {
   const ports: GroupSyncPorts = {
     listExtraGroups: () => listAclGroupNames(getDb(), log),
+    listCustomGroups: () => listCustomGroupsForFile(getDb()),
+    importKanidmGroups: (groups) => {
+      replaceImportedGroups(getDb(), groups)
+    },
     revokeTokensOfNonMembers: (members, createdBefore) => {
       const gone = revokeTokensOfNonMembers(getDb(), members, createdBefore)
       for (const { username, revoked } of gone) {

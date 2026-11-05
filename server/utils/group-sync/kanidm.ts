@@ -3,7 +3,7 @@
 // read is `null` with HTTP 200, so for a group `null` is a failure, never an empty group; for a
 // person it means "not a person this token can read". The token goes into the Authorization header
 // only; every message built here is scrubbed of it.
-import { fail, type KanidmGroup, type Result } from './types'
+import { fail, type KanidmGroup, type KanidmListedGroup, type Result } from './types'
 
 export interface KanidmClientOptions {
   /** Origin of Kanidm: the origin of the OIDC issuer. */
@@ -14,8 +14,16 @@ export interface KanidmClientOptions {
   maxBytes?: number
 }
 
+/** Kanidm's built-in groups, recognised by their class when the answer shows it. */
+const BUILTIN_NAME = /^(?:idm|system|domain)_/
+
 export interface KanidmClient {
   readGroup(name: string): Promise<Result<KanidmGroup>>
+  /**
+   * Every group the token can read, with the SPNs of its direct members (GET /v1/group). One
+   * malformed entry fails the whole list, so a half answer never looks like removed groups.
+   */
+  listGroups(): Promise<Result<KanidmListedGroup[]>>
   /**
    * The `uuid` (the OIDC `sub`) of the person with this SPN, lower-case, or null when Kanidm answers
    * `null`: not a person (a service account, a nested group), or not readable by the token (the
@@ -146,6 +154,37 @@ export function createKanidmClient(options: KanidmClientOptions): KanidmClient {
         return fail('malformed', `the member list of ${label} is malformed`)
       }
       return { ok: true, value: { name, members } }
+    },
+
+    async listGroups() {
+      const answer = await getJson('/v1/group', 'the group list')
+      if (!answer.ok) return answer
+      if (!Array.isArray(answer.value)) {
+        return fail('malformed', 'the answer for the group list is not a list')
+      }
+      const groups: KanidmListedGroup[] = []
+      for (const entry of answer.value as unknown[]) {
+        const attrs = (entry as { attrs?: unknown } | null)?.attrs
+        if (typeof attrs !== 'object' || attrs === null || Array.isArray(attrs)) {
+          return fail('malformed', 'an entry of the group list has no attrs object')
+        }
+        const record = attrs as Record<string, unknown>
+        const names = stringList(record.name)
+        const members = stringList(record.member)
+        const classes = stringList(record.class)
+        if (!names || names.length !== 1 || !members || !classes) {
+          return fail('malformed', 'an entry of the group list is malformed')
+        }
+        if (members.some((member) => member.trim() === '' || /\s/.test(member))) {
+          return fail('malformed', `the member list of group "${names[0]}" is malformed`)
+        }
+        // Without a visible class, the built-in names are the only sign of a built-in group.
+        const builtin =
+          classes.includes('builtin') ||
+          (record.class === undefined && BUILTIN_NAME.test(names[0]!))
+        groups.push({ name: names[0]!, members, builtin })
+      }
+      return { ok: true, value: groups }
     },
 
     async readPersonUuid(spn) {

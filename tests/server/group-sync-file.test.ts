@@ -14,20 +14,35 @@ const A = '189c6a24-f9cb-437b-8f58-b5cc8d7f909e'
 const B = '6f9f0e2d-0000-4000-8000-000000000002'
 
 describe('renderGroupFile', () => {
-  it('writes sorted htgroup lines with UUID members', () => {
+  it('writes sorted htgroup lines, members unique and exactly as given', () => {
     const out = renderGroupFile([
-      { name: 'web_calendar_users', members: [B, A, A.toUpperCase()] },
+      { name: 'web_calendar_users', members: [B, A, A.toUpperCase(), A] },
       { name: 'calendar_admins', members: [A] },
       { name: 'empty', members: [] },
     ])
+    // Radicale compares members case-sensitively, so the upper-case id is a different person.
     expect(out).toEqual({
       ok: true,
-      value: `calendar_admins: ${A}\nempty:\nweb_calendar_users: ${A} ${B}\n`,
+      value: `calendar_admins: ${A}\nempty:\nweb_calendar_users: ${A.toUpperCase()} ${A} ${B}\n`,
     })
   })
 
-  it('refuses a member that is not a UUID, a bad or repeated group name, and no groups', () => {
-    expect(renderGroupFile([{ name: 'g', members: ['alice@idm.example.org'] }]).ok).toBe(false)
+  it('writes the ids other providers send: mixed case, symbols, an @', () => {
+    const members = ['Zx9_-Qw', 'auth0|5f7c', 'Alice@Example.org', 'u+1=2', 'abc123', 'ABC123']
+    expect(renderGroupFile([{ name: 'g', members }])).toEqual({
+      ok: true,
+      value: `g: ${[...members].sort().join(' ')}\n`,
+    })
+  })
+
+  it.each(['two words', 'a:b', 'a/b', '.hidden', 'tilde~', 'a@b@c', '', 'x'.repeat(256), 'ü'])(
+    'refuses a member that is not a valid user id (%j)',
+    (member) => {
+      expect(renderGroupFile([{ name: 'g', members: [member] }]).ok).toBe(false)
+    },
+  )
+
+  it('refuses a bad or repeated group name, and no groups', () => {
     expect(renderGroupFile([{ name: 'bad name', members: [] }]).ok).toBe(false)
     expect(
       renderGroupFile([
@@ -43,6 +58,14 @@ describe('renderGroupFile', () => {
     expect(validateGroupFileContent(`g: ${A}`).ok).toBe(false)
     expect(validateGroupFileContent(`g: ${A}  ${B}\n`).ok).toBe(false)
     expect(validateGroupFileContent(`g: ${A} ${B}\nh:\n`).ok).toBe(true)
+  })
+
+  it('accepts members of any valid shape and refuses an invalid one', () => {
+    expect(validateGroupFileContent('g: Ab ab auth0|1 Alice@Example.org\n').ok).toBe(true)
+    // `a:b` has the group separator in a member, `.x` is a dot name.
+    expect(validateGroupFileContent('g: a:b\n').ok).toBe(false)
+    expect(validateGroupFileContent('g: ok .x\n').ok).toBe(false)
+    expect(validateGroupFileContent(`g: ${'x'.repeat(256)}\n`).ok).toBe(false)
   })
 })
 

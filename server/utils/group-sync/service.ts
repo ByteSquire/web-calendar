@@ -1,12 +1,20 @@
-// One group sync run: read the groups from Kanidm, map the members to UUIDs, write the file.
-// A run never throws. Any failure leaves the file untouched.
+// One group sync run: read the groups from Kanidm, map the members to UUIDs, import the Kanidm
+// groups into the app's tables (best effort), write the file. A run never throws. Any failure of
+// the file leaves the file untouched.
 import { USERS_GROUP } from './config'
 import { writeGroupFile, type GroupFileFs, nodeGroupFileFs } from './file'
 import { isGroupName, renderGroupFile } from './format'
 import type { KanidmClient } from './kanidm'
 import type { MemberResolver } from './members'
 import type { GroupSyncPorts } from './ports'
-import { fail, type FileGroup, type GroupSyncFailure, type Logger, type Result } from './types'
+import {
+  fail,
+  type FileGroup,
+  type GroupSyncFailure,
+  type KanidmGroup,
+  type Logger,
+  type Result,
+} from './types'
 
 /** Consecutive failed runs after which the log line and the audit event escalate. */
 export const ESCALATE_AFTER_FAILURES = 5
@@ -17,10 +25,14 @@ function nameSome(names: string[]): string {
   return `${names.slice(0, 5).join(', ')}${more}`
 }
 
+/** SPN -> `sub`, or null for a member Kanidm does not show as a person. Kept for one run. */
+type MemberCache = Map<string, string | null>
+
 export interface GroupSyncServiceOptions {
-  client: KanidmClient
-  /** Maps member SPNs to `sub` UUIDs (members.ts). */
-  resolver: MemberResolver
+  /** Null in app-only mode (no token): the file is written from the app's own groups. */
+  client: KanidmClient | null
+  /** Maps member SPNs to `sub` UUIDs (members.ts). Needed with a client. */
+  resolver: MemberResolver | null
   ports: GroupSyncPorts
   log: Logger
   file: string
@@ -36,15 +48,100 @@ export interface GroupSyncService {
 }
 
 export function createGroupSyncService(options: GroupSyncServiceOptions): GroupSyncService {
-  const { log, ports } = options
+  const { log, ports, client, resolver } = options
   let failures = 0
   let alarmRaised = false
   // Members with no UUID: what the last run said, and how long the users group has waited.
   let pendingKey = ''
   let pendingRuns = 0
   let pendingAlarm = false
+  // A custom group that a Kanidm group also has the name of: said once per name, not every run.
+  const warnedCollisions = new Set<string>()
+  // Said once per group name: its Kanidm members cannot be read as persons, or the group is gone.
+  const warnedUnreadable = new Set<string>()
+  const warnedGone = new Set<string>()
+  // Every group name Kanidm listed in this run, or null when the list was not read. A name that
+  // rules still use but Kanidm no longer lists is a deleted group, not a failure to read it.
+  let listedNames: Set<string> | null = null
 
-  async function attempt(): Promise<Result<'written' | 'unchanged'>> {
+  function customGroups(): FileGroup[] {
+    return ports.listCustomGroups?.() ?? []
+  }
+
+  /** Looks up the members that are not in the cache yet; one call to the resolver at most. */
+  async function resolveMembers(spns: string[], cache: MemberCache): Promise<Result<true>> {
+    const missing = spns.filter((spn) => !cache.has(spn))
+    if (missing.length === 0) return { ok: true, value: true }
+    if (!resolver) return fail('malformed', 'no member resolver is configured')
+    const resolution = await resolver(missing)
+    if (!resolution.ok) return resolution
+    for (const spn of missing) cache.set(spn, resolution.value.uuids.get(spn) ?? null)
+    return { ok: true, value: true }
+  }
+
+  /**
+   * Reads the Kanidm group list and stores the non-built-in groups. Best effort: a list, lookup or
+   * store failure is logged and the run goes on, with the file written as before. The members it
+   * looked up are returned, so the file step does not ask Kanidm for them again.
+   */
+  async function importKanidmGroups(cache: MemberCache): Promise<void> {
+    if (!client || !resolver || !ports.importKanidmGroups) return
+    const listed = await client.listGroups()
+    if (!listed.ok) {
+      log.warn(`[group-sync] the Kanidm groups were not imported: ${listed.failure.message}`)
+      return
+    }
+    listedNames = new Set(listed.value.map((group) => group.name))
+    const appNames = new Set(customGroups().map((group) => group.name))
+    const imported: KanidmGroup[] = []
+    for (const group of listed.value) {
+      if (group.builtin || !isGroupName(group.name)) continue
+      if (appNames.has(group.name)) {
+        // A Kanidm admin must not be able to put members into an app group.
+        if (!warnedCollisions.has(group.name)) {
+          warnedCollisions.add(group.name)
+          log.warn(
+            `[group-sync] the Kanidm group "${group.name}" has the name of an app group; the app group wins and the Kanidm group is skipped`,
+          )
+        }
+        continue
+      }
+      imported.push(group)
+    }
+    const spns = [...new Set(imported.flatMap((group) => group.members))].sort()
+    const resolved = await resolveMembers(spns, cache)
+    if (!resolved.ok) {
+      log.warn(`[group-sync] the Kanidm groups were not imported: ${resolved.failure.message}`)
+      return
+    }
+    try {
+      ports.importKanidmGroups(
+        imported.map((group) => {
+          const members = group.members.flatMap((spn) => {
+            const uuid = cache.get(spn)
+            return uuid ? [uuid] : []
+          })
+          // Members in Kanidm but none readable: keep what is stored (an empty list would take the
+          // group's access away from everybody over a missing right of the sync account).
+          if (group.members.length > 0 && members.length === 0) {
+            if (!warnedUnreadable.has(group.name)) {
+              warnedUnreadable.add(group.name)
+              log.warn(
+                `[group-sync] none of the ${group.members.length} member(s) of the Kanidm group "${group.name}" can be read as a person; its stored members are kept (is the sync account in idm_people_pii_read?)`,
+              )
+            }
+            return { name: group.name, members, keepMembers: true }
+          }
+          warnedUnreadable.delete(group.name)
+          return { name: group.name, members }
+        }),
+      )
+    } catch {
+      log.warn('[group-sync] the Kanidm groups could not be stored; they are not imported this run')
+    }
+  }
+
+  async function attempt(cache: MemberCache): Promise<Result<'written' | 'unchanged'>> {
     const startedAt = new Date()
     let extra: string[]
     try {
@@ -56,21 +153,47 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
     const invalid = names.find((name) => !isGroupName(name))
     if (invalid !== undefined) return fail('invalid-content', `group name "${invalid}" is invalid`)
 
-    const answers = await Promise.all(names.map((name) => options.client.readGroup(name)))
-    for (const answer of answers) if (!answer.ok) return answer
-    const groups = answers.flatMap((answer) => (answer.ok ? [answer.value] : []))
+    // An app group answers from the app's own members; only the other names are read from Kanidm.
+    const custom = customGroups()
+    const customNames = new Set(custom.map((group) => group.name))
+    let kanidm: KanidmGroup[] = []
+    if (client) {
+      // The admin group and the users group are always read. Another name that Kanidm's list of
+      // this run does not have is a group that was deleted: it is left out of the file (nobody is
+      // in it) instead of failing every run until someone edits the rule that names it.
+      const toRead = names.filter((name) => {
+        if (customNames.has(name)) return false
+        const gone =
+          listedNames !== null &&
+          !listedNames.has(name) &&
+          name !== options.adminGroup &&
+          name !== USERS_GROUP
+        if (gone && !warnedGone.has(name)) {
+          warnedGone.add(name)
+          log.warn(
+            `[group-sync] the group "${name}" is used by a rule but Kanidm does not list it any more; it is left out of the group file`,
+          )
+        }
+        return !gone
+      })
+      const answers = await Promise.all(toRead.map((name) => client.readGroup(name)))
+      for (const answer of answers) if (!answer.ok) return answer
+      kanidm = answers.flatMap((answer) => (answer.ok ? [answer.value] : []))
+    }
 
-    const spns = [...new Set(groups.flatMap((group) => group.members))].sort()
-    const resolution = await options.resolver(spns)
-    if (!resolution.ok) return resolution
-    const { uuids, pending } = resolution.value
+    const spns = [...new Set(kanidm.flatMap((group) => group.members))].sort()
+    if (client) {
+      const resolved = await resolveMembers(spns, cache)
+      if (!resolved.ok) return resolved
+    }
+    const pending = spns.filter((spn) => cache.get(spn) === null)
     const pendingSet = new Set(pending)
     // A member Kanidm does not show as a person (a service account, a nested group) has no UUID and
     // cannot be put in the file, so they are left out; everybody else's removals and additions go
     // ahead. If NOBODY of the users group can be mapped, the sync account most likely cannot read
     // persons (not in idm_people_pii_read): fail, as an empty file would take the group access away
     // from everyone.
-    const usersMembers = groups.find((group) => group.name === USERS_GROUP)?.members ?? []
+    const usersMembers = kanidm.find((group) => group.name === USERS_GROUP)?.members ?? []
     const usersPending = usersMembers.filter((member) => pendingSet.has(member)).length
     if (usersMembers.length > 0 && usersPending === usersMembers.length) {
       return fail(
@@ -79,13 +202,18 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
       )
     }
     notePending(pending, usersPending)
-    const fileGroups: FileGroup[] = groups.map((group) => ({
-      name: group.name,
-      members: group.members.flatMap((member) => {
-        const uuid = uuids.get(member)
-        return uuid === undefined ? [] : [uuid]
-      }),
-    }))
+    const fileGroups: FileGroup[] = [
+      ...custom,
+      ...kanidm.map((group) => ({
+        name: group.name,
+        members: group.members.flatMap((member) => {
+          const uuid = cache.get(member)
+          return uuid ? [uuid] : []
+        }),
+      })),
+    ]
+    // Nothing to write: app-only mode without an app group. The file keeps what it has.
+    if (fileGroups.length === 0) return { ok: true, value: 'unchanged' }
 
     const rendered = renderGroupFile(fileGroups)
     if (!rendered.ok) return rendered
@@ -98,13 +226,13 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
       ports.audit({
         action: 'group_sync.updated',
         details: {
-          groups: names,
+          groups: fileGroups.map((group) => group.name).sort(),
           members: new Set(spns).size,
           ...(pending.length > 0 ? { pending: pending.length } : {}),
         },
       })
     }
-    if (written.ok) revokeTokensOfRemovedUsers(fileGroups, startedAt, usersPending)
+    if (written.ok && client) revokeTokensOfRemovedUsers(fileGroups, startedAt, usersPending)
     return written
   }
 
@@ -217,8 +345,16 @@ export function createGroupSyncService(options: GroupSyncServiceOptions): GroupS
   return {
     async run() {
       let result: Result<'written' | 'unchanged'>
+      // One cache per run: the import and the file look every member up once.
+      const cache: MemberCache = new Map()
+      listedNames = null
       try {
-        result = await attempt()
+        await importKanidmGroups(cache)
+      } catch {
+        log.warn('[group-sync] the Kanidm groups were not imported: unexpected error')
+      }
+      try {
+        result = await attempt(cache)
       } catch {
         result = fail('write-error', 'unexpected error in the group sync')
       }

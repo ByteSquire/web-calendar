@@ -87,6 +87,7 @@ const {
 } = useCalendarState()
 
 const timeZone = useDisplayTimeZone()
+const linkView = useCalendarLinkView()
 const colorMode = useColorMode()
 const scheme = computed<ColorScheme>(() => (colorMode.value === 'dark' ? 'dark' : 'light'))
 
@@ -177,6 +178,8 @@ function onEventClick(info: EventClickInfo) {
 }
 
 function onDateClick(info: DateClickInfo) {
+  // The page of a calendar link is read-only: a click on a date adds nothing.
+  if (linkView.value) return
   dateTap.hit(quickAddPresetForClick(info.dateStr, info.allDay))
 }
 

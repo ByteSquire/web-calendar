@@ -153,4 +153,18 @@ export const shell: Readonly<Record<string, string>> = {
   'Calendar {name}': 'Kalender {name}',
   to: 'bis',
   'details hidden': 'Details verborgen',
+
+  // The page of a calendar link
+  'A shared calendar': 'Ein geteilter Kalender',
+  'Enter the password you were given to see this calendar.':
+    'Gib das Passwort ein, das du bekommen hast, um diesen Kalender zu sehen.',
+  'Open calendar': 'Kalender öffnen',
+  'The password is not right.': 'Das Passwort stimmt nicht.',
+  'This link does not exist, was withdrawn or does not work at the moment.':
+    'Diesen Link gibt es nicht, er wurde zurückgezogen oder funktioniert gerade nicht.',
+  'Enter the password again.': 'Gib das Passwort noch einmal ein.',
+  'Too many tries. Wait a minute and try again.':
+    'Zu viele Versuche. Warte eine Minute und versuche es dann noch einmal.',
+  'The calendar could not be opened. Try again.':
+    'Der Kalender konnte nicht geöffnet werden. Versuche es noch einmal.',
 }

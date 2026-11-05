@@ -91,7 +91,7 @@
       </dl>
     </template>
 
-    <template v-if="shown && !shown.blocked" #footer>
+    <template v-if="shown && !shown.blocked && !linkView" #footer>
       <div class="flex w-full flex-col gap-2">
         <p v-if="!canWrite" id="event-write-reason" class="text-sm text-muted">
           {{ writeReason }}
@@ -147,6 +147,8 @@ const orgTimeZone = useOrgTimeZone()
 const isDesktop = useIsDesktop()
 const toast = useToast()
 const { live } = useEventWrites()
+// The page of a calendar link is read-only: no Edit, no Delete.
+const linkView = useCalendarLinkView()
 const dialogs = useTemplateRef('dialogs')
 
 const details = computed(() =>

@@ -1,5 +1,6 @@
 <!--
-  Settings: the account, the time zone (FR-32), the language, the app tokens for calendar apps (FR-31), the
+  Settings: the account, the time zone (FR-32), the language, the app tokens for calendar apps (FR-31),
+  the calendar links (read-only pages of one calendar behind a password, not in demo mode), the
   external CalDAV accounts (FR-8, not in demo mode), the iCal subscriptions and the import of an
   .ics file (FR-7). The layout provides the `<main>` that scrolls, so this page is a plain column
   inside it. `/api/me` is loaded here once; the account and time zone sections show it and the
@@ -29,6 +30,8 @@
     <SettingsTimeZoneSection :me="me.data.value" :error="me.error.value" />
     <SettingsLanguageSection />
     <SettingsTokensSection :username="me.data.value?.username ?? null" />
+    <!-- A link reads the calendar on the server as its maker: not in demo mode. -->
+    <SettingsCalendarLinksSection v-if="live" />
     <!-- Needs the login and the server (FR-8): not in demo mode, which has no API behind it. -->
     <SettingsExternalAccountsSection v-if="live" />
     <SettingsSubscriptionsSection />

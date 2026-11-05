@@ -13,5 +13,6 @@ When you make a release whose migrations no earlier release had:
 2. Add the tag to the list in the first `describe` and a `describe('updating from <tag>')` in the
    test, with the migrations that upgrade it (`leftBy('v0.1.0', 'v0.2.0', '<tag>')`).
 
-Pending now: `010_sidebar_order.sql` (users.sidebar_order) is not released yet. Freeze it, in
-`v0.2.1` or whatever tag carries it, when it is released; until then it may still be edited.
+Pending now: `010_sidebar_order.sql` (users.sidebar_order) and `011_calendar_links.sql` (the
+calendar_links table) are not released yet. Freeze them, in `v0.2.1` or whatever tag carries them,
+when they are released; until then they may still be edited.

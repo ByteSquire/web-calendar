@@ -70,6 +70,7 @@ describe('runMigrations', () => {
       'booking_sync',
       'calendar_acl',
       'calendar_bookings',
+      'calendar_links',
       'calendar_prefs',
       'calendars',
       'categories',

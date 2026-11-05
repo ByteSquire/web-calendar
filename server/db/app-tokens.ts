@@ -61,7 +61,7 @@ export interface TokenKeyring {
 /** What the token functions take: a keyring, or one key, which is key version 1. */
 export type TokenHashKeys = string | TokenKeyring
 
-function toKeyring(hashKeys: TokenHashKeys): TokenKeyring {
+export function toKeyring(hashKeys: TokenHashKeys): TokenKeyring {
   if (typeof hashKeys !== 'string') return hashKeys
   const only = { version: 1, key: hashKeys }
   return { current: only, keys: [only] }

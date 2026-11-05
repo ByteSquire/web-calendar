@@ -240,6 +240,9 @@ minimum:
 - **FR-26** _(planned)_ A dedicated **public publishing** experience — a public
   URL/view for an external audience to browse published events (builds on the
   public visibility level in FR-14).
+- **FR-26a** _(built)_ **Calendar links**: a person can make a read-only, password-protected
+  link to a calendar they can view, for people without an account; it shows the calendar alone
+  (titles, times and places, no descriptions or attendees), and can be withdrawn at any time.
 - **FR-27** _(planned)_ The public view is **accessible without organization
   authentication**. Published calendars are served through a dedicated unauthenticated
   endpoint with a property allow-list (never descriptions, attendees or attachments),

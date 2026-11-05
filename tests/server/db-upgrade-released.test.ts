@@ -122,7 +122,11 @@ describe('updating from v0.1.0 (001 to 008)', () => {
 
     const result = upgradeDatabase(db, path, current())
 
-    expect(result.applied).toEqual(['009_groups.sql', '010_sidebar_order.sql'])
+    expect(result.applied).toEqual([
+      '009_groups.sql',
+      '010_sidebar_order.sql',
+      '011_calendar_links.sql',
+    ])
     expect(result.backup).toBe(`${path}.pre-009.bak`)
     expectKept(before, db)
     expectHealthy(db)
@@ -133,6 +137,7 @@ describe('updating from v0.1.0 (001 to 008)', () => {
     ])
     expect(db.prepare('SELECT group_id FROM calendars').pluck().all()).toEqual([null, null, null])
     expect(db.prepare('SELECT sidebar_order FROM users').pluck().all()).toEqual([null, null])
+    expect(db.prepare('SELECT COUNT(*) FROM calendar_links').pluck().get()).toBe(0)
   })
 
   it('leaves a copy of the old database, which still works with the old version', () => {
@@ -189,7 +194,7 @@ describe('updating from v0.2.0 (001 to 009)', () => {
 
     const result = upgradeDatabase(db, path, current())
 
-    expect(result.applied).toEqual(['010_sidebar_order.sql'])
+    expect(result.applied).toEqual(['010_sidebar_order.sql', '011_calendar_links.sql'])
     expect(result.backup).toBe(`${path}.pre-010.bak`)
     expectKept(before, db)
     expectHealthy(db)

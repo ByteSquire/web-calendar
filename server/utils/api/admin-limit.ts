@@ -18,6 +18,8 @@ export interface AdminLimiterOptions {
 export interface AdminLimiter {
   /** Takes a token for `key`; null when allowed, else the whole seconds (>= 1) to wait. */
   take(key: string): number | null
+  /** What `take` would answer, without taking anything (a bucket that is empty says so). */
+  peek(key: string): number | null
   size(): number
 }
 
@@ -67,6 +69,14 @@ export function createAdminLimiter(options: AdminLimiterOptions = {}): AdminLimi
       entries.set(key, bucket)
       makeRoom(now)
       return wait
+    },
+    peek(key) {
+      const bucket = entries.get(key)
+      if (!bucket) return null
+      const tokens = Math.min(burst, bucket.tokens + Math.max(0, clock() - bucket.at) * perMs)
+      return tokens >= 1 - EPSILON
+        ? null
+        : Math.max(1, Math.ceil((1 - tokens) / perMs / 1000 - EPSILON))
     },
     size: () => entries.size,
   }

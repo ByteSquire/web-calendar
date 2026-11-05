@@ -212,6 +212,15 @@
     }
   }
 
+  /* The page of a calendar link has no sidebar: the calendar takes the whole width. */
+  .app-shell.link-view {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell.link-view .main-area {
+    grid-column: 1;
+  }
+
   /* Mobile (< 768 px): a single column. */
   @media (max-width: 767px) {
     .app-shell {

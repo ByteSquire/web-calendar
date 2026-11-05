@@ -52,7 +52,7 @@ function encodedPath(path: string): string {
   return path.split('/').map(encodeURIComponent).join('/')
 }
 
-function decodedHref(href: string): string | null {
+export function decodedHref(href: string): string | null {
   try {
     return decodeURIComponent(href)
   } catch {
@@ -72,28 +72,42 @@ function unescapeXml(text: string): string {
     .replace(/&amp;/g, '&')
 }
 
-function escapeXml(text: string): string {
+export function escapeXml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
-function tagText(block: string, tag: string): string | null {
+export function tagText(block: string, tag: string): string | null {
   const match = new RegExp(`<${NAME}${tag}[^>]*>([\\s\\S]*?)</${NAME}${tag}>`, 'i').exec(block)
   return match ? unescapeXml(match[1] ?? '').trim() : null
 }
 
-function responses(xml: string): string[] {
+export function responses(xml: string): string[] {
   return [
     ...xml.matchAll(new RegExp(`<${NAME}response[ >][\\s\\S]*?</${NAME}response>`, 'gi')),
   ].map((match) => match[0])
 }
 
-export function createBookingEventReader(options: EventReaderOptions): BookingEventReader {
+/** A request to the store as `principal`; null when it could not be made or the answer was too big. */
+export type StoreSend = (
+  principal: string,
+  method: string,
+  path: string,
+  depth: '0' | '1',
+  body: string,
+) => Promise<{ status: number; text: string } | null>
+
+/**
+ * Sends a read to Radicale as `principal` (internal client identity, never reachable from the
+ * browser), refusing principals and paths of the wrong shape. Shared by the readers that read a
+ * calendar as a person: the booking reconcile and the calendar links.
+ */
+export function createStoreSend(options: EventReaderOptions): StoreSend {
   const base = new URL(options.baseUrl).href.replace(/\/+$/, '')
   const doFetch = options.fetch ?? globalThis.fetch
   const timeoutMs = options.timeoutMs ?? 10_000
   const maxBytes = options.maxResponseBytes ?? 4 * 1024 * 1024
 
-  async function send(
+  return async function send(
     principal: string,
     method: string,
     path: string,
@@ -122,6 +136,10 @@ export function createBookingEventReader(options: EventReaderOptions): BookingEv
       return null
     }
   }
+}
+
+export function createBookingEventReader(options: EventReaderOptions): BookingEventReader {
+  const send = createStoreSend(options)
 
   return {
     async stamp(principal, path) {

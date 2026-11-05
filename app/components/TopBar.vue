@@ -3,13 +3,15 @@
   add and the overflow menu. Below 1024 px it has two rows (main.css): the toggle, title and the
   quick-add / add / overflow buttons stay on the first, so they are always visible at 360 px, while the
   date navigation and the view switcher share a second row that scrolls sideways on its own.
-  The root keeps the `top-bar` class the layout places and sizes. While data loads a thin progress
+  On the page of a calendar link (read-only) it has no sidebar toggle, no adding and names the
+  calendar instead of the app. The root keeps the `top-bar` class the layout places and sizes. While data loads a thin progress
   line runs along its lower edge; it is positioned absolutely, so nothing moves when it appears.
 -->
 <template>
   <header class="top-bar">
     <div class="top-bar-nav">
       <UButton
+        v-if="!linkView"
         :icon="sidebarOpen ? 'i-lucide-panel-left-close' : 'i-lucide-panel-left-open'"
         color="neutral"
         variant="ghost"
@@ -21,7 +23,10 @@
     </div>
     <div class="top-bar-title">
       <!-- The name leads back to the calendar (the base address) from every page that has this bar. -->
+      <!-- The page of a calendar link names its calendar; there is no app to go back to. -->
+      <span v-if="linkView" class="hidden truncate lg:inline">{{ linkView.name }}</span>
       <NuxtLink
+        v-else
         to="/"
         class="hidden rounded-sm text-inherit no-underline hover:underline focus-visible:underline lg:inline"
         >Web Calendar</NuxtLink
@@ -41,6 +46,7 @@
     </div>
     <div class="top-bar-actions">
       <UButton
+        v-if="!linkView"
         icon="i-lucide-zap"
         color="primary"
         :aria-label="t('Quick add')"
@@ -49,6 +55,7 @@
         <span class="hidden sm:inline">{{ t('Quick add') }}</span>
       </UButton>
       <UButton
+        v-if="!linkView"
         icon="i-lucide-plus"
         color="primary"
         variant="outline"
@@ -75,6 +82,7 @@ import { t } from '~/utils/i18n'
 
 const { sidebarOpen, toggleSidebar, openQuickAdd, openAddEvent, rangeLabel } = useCalendarState()
 const { loading } = useLiveStatus()
+const linkView = useCalendarLinkView()
 </script>
 
 <style scoped>

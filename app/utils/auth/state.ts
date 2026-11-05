@@ -18,9 +18,17 @@ export function isDemoConfig(config: { demo?: boolean } | null | undefined): boo
   return config?.demo === true
 }
 
-/** The pages that must open without a login: the one that finishes it and the signed-out page. */
+/** The prefix of the page of a calendar link, which a visitor opens with its password. */
+export const CALENDAR_LINK_PREFIX = '/link/'
+
+/**
+ * The pages that must open without a login: the one that finishes it, the signed-out page and the
+ * page of a calendar link.
+ */
 export function isPublicAuthPath(path: string): boolean {
-  return path === AUTH_CALLBACK_PATH || path === SIGNED_OUT_PATH
+  return (
+    path === AUTH_CALLBACK_PATH || path === SIGNED_OUT_PATH || path.startsWith(CALENDAR_LINK_PREFIX)
+  )
 }
 
 export type GuardAction =

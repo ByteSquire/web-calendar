@@ -256,6 +256,11 @@ erDiagram
   `DELETE` stays possible for a later retention job).
 - **published_calendars** _(planned, FR-26/27)_ — `calendar_id`, `published_by`
   (FK), publish settings.
+- **calendar_links** (migration 011, §8 "Calendar links") — `id` (PK), `user_id` (FK, cascade: the
+  maker), `collection_path` (the calendar in the maker's own home, `/<sub>/<collection>/`, decoded),
+  `calendar_name` and `calendar_color` (a copy for the page and the list), `label`, `slug_hash`
+  (unique, SHA-256 hex of the random part of the address, which is shown once), `password_hash`
+  (`scrypt$…`), `last_used_at`. No secret is stored in the clear.
 - **external_accounts** — `id` (PK), `user_id` (FK, cascade), `name`, `url`, `origin`,
   `auth_mode` (`none` | `basic`), `username`, `color`; unique on (`user_id`, `url`), at most
   10 per user (FR-8). Views and preferences refer to `ext:<account id>:<url>`, so they survive a
@@ -273,7 +278,7 @@ Compared with v1.1, `sessions` is gone (no server-side tokens) and `calendars`,
 mock data still follow the v1.0 model (local ids, `etag`, `isBlocked`) and are
 adapted in Phase 2.
 
-**Built** (`server/db`, migrations `001_init.sql` to `006_access_and_resources.sql`, then `008_booking_sync.sql`, `009_groups.sql` and `010_sidebar_order.sql`; there is no 007): every table above except `published_calendars`. Migration 009 was edited in place on 2026-11-05 (sources, `external_id`, the candidates table, the everyone row), because the groups feature had not been released; a development database that ran the earlier 009 has to be deleted (the runner applies a migration by name and does not notice a change). Beyond
+**Built** (`server/db`, migrations `001_init.sql` to `006_access_and_resources.sql`, then `008_booking_sync.sql`, `009_groups.sql`, `010_sidebar_order.sql` and `011_calendar_links.sql`; there is no 007): every table above except `published_calendars`. Migration 009 was edited in place on 2026-11-05 (sources, `external_id`, the candidates table, the everyone row), because the groups feature had not been released; a development database that ran the earlier 009 has to be deleted (the runner applies a migration by name and does not notice a change). Beyond
 the list: ids are `AUTOINCREMENT` (views refer to calendar ids in JSON, so ids are never reused);
 `users.username` is unique case-insensitively; `updated_at` is kept by triggers; `calendar_acl` has CHECKs
 tying `principal` to `principal_type`; a personal calendar needs an owner; deleting a user cascades to
@@ -1141,6 +1146,65 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
 - **Public view** _(planned)_ — no logged-in user, so it reads **only** the calendars
   in `published_calendars` with a service credential, read-only. Decided when the
   feature is scheduled.
+- **Calendar links** (built 2026-11-05) — a person makes a read-only link to one calendar they can
+  view, behind a password they choose, for people without an account (Settings, "Calendar links").
+  This is not the planned public view above: that publishes calendars an admin chose for everybody
+  through a `_public` principal; a link is one person's, carries a password, and reads the calendar
+  **as its maker**, so it never shows more than they see and ends when their access ends.
+  - _Making one_ (`POST /api/calendar-links`, `defineMemberHandler`: per-actor limit, audited as
+    `calendar_link.created`): `calendarHref` is the app's address of the calendar (`/caldav/<sub>/…/`);
+    it must be one calendar in the caller's **own** home (shared and group calendars are mapped
+    there by Radicale), checked with the gateway's path rules (`ownCalendarPath`). "Can view" is what
+    Radicale says: a depth-0 PROPFIND (it must be a calendar) and a `calendar-query` as the caller
+    must succeed, so a free/busy share (403 on a query, the table above) cannot be linked. At most 50
+    links a person; a label of up to 100 characters (default: the calendar's name); a password of 8
+    to 200 characters. The address holds 32 random bytes (base64url); only its SHA-256 is kept, and
+    it is shown once, like an app token. `GET` lists the caller's links (no secrets), `DELETE
+/api/calendar-links/:id` withdraws one of them (audited; another person's answers 404).
+  - _Opening one_ (`POST /api/link/:slug/session`, no sign-in, `server/utils/links/public-handler.ts`:
+    `no-store`, `noindex`): two token buckets count **wrong** passwords only (10 per client address,
+    then one every 10 s; 30 per link from everywhere, then one every 10 s; an address that is no link
+    counts too), so a right password is never refused for what others did, behind a shared proxy
+    address neither. Once a bucket is empty, every try is refused **before** the password is checked
+    (a peek, nothing taken). The client address is the gateway's (`NUXT_GATEWAY_TRUST_FORWARDED_FOR`). The password is
+    checked with scrypt (N=2^15, r=8, p=1, random salt per link); at most 4 checks run at once in the
+    process, one more is refused with 429 at once instead of queueing memory. Unknown, withdrawn and
+    unusable links answer the same 404; a wrong password 401. The answer is a session for the page:
+    `cls1.<key version>.<link id>.<expiry>.<HMAC>`, 8 hours, signed with a key derived from the
+    token hash key (domain-separated, so it never signs what app tokens hash; a rotation keeps
+    working while the old key is listed). The page keeps it in `sessionStorage` (this tab only) and
+    sends it in `X-Calendar-Link-Session`, never as a cookie or in the address.
+  - _Reading_ (`GET /api/link/:slug/events?from&to`, at most 400 days, 120 reads per address then 4
+    a second, at most 2 reads of one maker's links at once because they bypass the gateway's own
+    per-user cap, answers up to 16 MiB for an expanded year): the link is looked up on every read, so a withdrawal ends open pages at once; the
+    session must be of that very link. The maker must have signed in within the sign-in window
+    (`NUXT_SIGNIN_WINDOW_DAYS`), as for app tokens: Radicale never learns that a person left the
+    identity provider. The reader (`server/utils/links/reader.ts`, the booking reader's request code)
+    sends exactly two fixed bodies as the maker (`X-Remote-User` on the internal network): the
+    PROPFIND above and a `calendar-query` REPORT with a time range and `<C:expand>`. A 403 or 404 (the
+    share ended, the calendar is gone) ends the link like a withdrawal.
+  - _What a link shows_ (`server/utils/links/sanitize.ts`): every object is **rebuilt** from an
+    allow-list with ical.js, never passed on: UID, DTSTAMP, DTSTART, DTEND, DURATION, RECURRENCE-ID,
+    STATUS, TRANSP, SUMMARY, LOCATION, and the VTIMEZONEs (STANDARD/DAYLIGHT, no X- properties).
+    Everything else is left out: DESCRIPTION, ORGANIZER, ATTENDEE, ATTACH, URL, CATEGORIES, alarms,
+    every X- property (the app's booking properties among them). An event marked PRIVATE or
+    CONFIDENTIAL keeps its time only and shows as busy. Descriptions are left out on purpose; showing
+    them would be a choice per link.
+  - _The page_ (`/link/:slug`, `app/pages/link/[slug].vue`; the route guard lets `/link/` through
+    without a sign-in): the password, then the calendar alone with the app's own top bar, calendar
+    view and event sheet, made read-only by `useCalendarLinkView()` (§9). It asks nothing of the
+    identity provider and works while it is down (checked live). Not built: a way for an admin to
+    withdraw another person's link (it ends with the maker's sign-in window, their access, or the
+    maker withdrawing it).
+  - Tests: `tests/server/links-units.test.ts` (allow-list, password, session, path rule, range),
+    `tests/server/links-routes.test.ts` (the routes over HTTP: foreign paths, free/busy shares, wrong
+    password, the limit before the check, sessions of other links, withdrawn links, the window),
+    `tests/links-page.test.ts`, `e2e/calendar-link.spec.ts` (demo, every screen size, axe) and
+    `e2e/live/calendar-link.spec.ts` (alice makes a link on the real stack; a visitor is refused,
+    then sees the calendar alone without the description and the private event as busy; withdrawing
+    ends it; a group calendar bob shared with alice works through her link until bob takes the share
+    back; the visitor's page asks only the app, also with the identity provider unreachable). Not
+    checked live: a free/busy share (refused by the unit tests against a fake reader).
 - **Defense in depth** — Radicale listens only on the internal network. A bug in the
   gateway's header handling would let a caller pick their own identity, so the header
   rules in §7 are tested explicitly.
@@ -1173,6 +1237,14 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     in its `⋯` menu (§8, Shared views and Own views). Example of an element that is justified:
     the "Calendar access" page (`/admin/access`), because a rule editor does not fit in a menu
     item; it is still reached from the existing app menu, not from a new button.
+- **Calendar links** (§8) — the page of a link has no sidebar, no Quick add or Add, no adding by a
+  click on a date and no Edit or Delete in the event sheet; the top bar names the calendar (from
+  1024 px) and keeps the date navigation and the view types. Its `⋮` menu holds only the look:
+  Dark mode (and back to the system's), the language (the visitor has no Settings page) and Full
+  screen. The links are made and withdrawn in Settings, next to the app tokens: the same kind of
+  thing (a credential that outlives the session), and the sidebar has no room for a list with
+  secrets; no new element elsewhere. The phone shows the shown period instead of the calendar's
+  name in the top bar, as it does for the app's name; the browser tab names the calendar.
 - **Left sidebar** (default order, top → bottom): **views** (icon + `⋯` menu), **calendars**
   (visibility toggle), **resources** (visibility toggle), **categories** (add
   control), **filters** (add control + chooser). Each section has a heading that is a button and

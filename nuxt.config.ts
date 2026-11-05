@@ -164,7 +164,8 @@ export default defineNuxtConfig({
       maxConcurrentPerUser: '8',
       /**
        * 'true' takes the client address from the last entry of X-Forwarded-For instead of the socket
-       * (NUXT_GATEWAY_TRUST_FORWARDED_FOR), for the throttle of failed Basic logins. Only behind a
+       * (NUXT_GATEWAY_TRUST_FORWARDED_FOR), for the throttle of failed Basic logins and the limits
+       * of calendar links (wrong passwords per address). Only behind a
        * reverse proxy that is the sole way to reach the app and overwrites that header; otherwise a
        * client can name any address. Off, every client behind a proxy shares the proxy's address:
        * correct logins still work, but strangers' failures share one budget.

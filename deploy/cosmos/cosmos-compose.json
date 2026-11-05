@@ -357,7 +357,7 @@
       {
         "name": "trustForwardedForInfo",
         "type": "info",
-        "label": "Trust the proxy (NUXT_GATEWAY_TRUST_FORWARDED_FOR): the failed-login throttle takes the client address from X-Forwarded-For, which the Cosmos proxy adds. Keep it on while Cosmos is the only way to reach the app (this template publishes no port). Off, every client shares the proxy's address and one attacker can lock everyone out of the password login."
+        "label": "Trust the proxy (NUXT_GATEWAY_TRUST_FORWARDED_FOR): the failed-login throttle and the limits of calendar links take the client address from X-Forwarded-For, which the Cosmos proxy adds. Keep it on while Cosmos is the only way to reach the app (this template publishes no port). Off, every client shares the proxy's address and one attacker can lock everyone out of the password login."
       },
       {
         "name": "trustForwardedFor",

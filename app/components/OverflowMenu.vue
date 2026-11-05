@@ -1,6 +1,7 @@
 <!--
   Overflow (⋮) menu (FR-25). Nuxt UI closes it on Escape and on a click outside, moves focus into
-  the menu and returns it to the trigger. Signed in (live mode): the user, the time zone the times
+  the menu and returns it to the trigger. On the page of a calendar link (a visitor, no account):
+  only Dark mode, the language and Full screen. Signed in (live mode): the user, the time zone the times
   are shown in, Refresh (FR-10), Settings, Groups, Calendar access (admins only), Full screen, Dark mode, Help and Sign out. The demo mode
   keeps the placeholder items of the mock-up. "Full screen" is only offered where the browser has
   one for pages (not on iPhone Safari): on a phone it hides the address bar. "Dark mode" is a
@@ -57,7 +58,15 @@ import { useAdminFlag } from '~/composables/useAdminAccess'
 import { useAuth } from '~/composables/useAuth'
 import { useLiveStatus } from '~/composables/useLiveCalendar'
 import { useServerConfigState } from '~/composables/useServerConfigState'
-import { t } from '~/utils/i18n'
+import { browserStore } from '~/utils/browser-store'
+import {
+  LANGUAGE_NAMES,
+  chooseLanguage,
+  detectLocale,
+  languageChoice,
+  t,
+  type LanguageChoice,
+} from '~/utils/i18n'
 import { isLiveConfig } from '~/utils/live/seed'
 
 const toast = useToast()
@@ -70,12 +79,37 @@ const live = isLiveConfig(useServerConfigState().value)
 const fullscreen = useFullscreen()
 const colorMode = useColorMode()
 const adminFlag = useAdminFlag()
+const linkView = useCalendarLinkView()
+
+/** The language, chosen in the menu (the Settings page is not there for a visitor of a link). */
+function languageItems(): DropdownMenuItem[] {
+  const languages = () => navigator.languages ?? [navigator.language]
+  const choices: { value: LanguageChoice; label: string }[] = [
+    {
+      value: 'auto',
+      label: t('Browser language ({language})', {
+        language: LANGUAGE_NAMES[detectLocale(languages())],
+      }),
+    },
+    { value: 'en', label: LANGUAGE_NAMES.en },
+    { value: 'de', label: LANGUAGE_NAMES.de },
+  ]
+  return [
+    { label: t('Language'), type: 'label' },
+    ...choices.map((choice) => ({
+      label: choice.label,
+      type: 'checkbox' as const,
+      checked: languageChoice.value === choice.value,
+      onSelect: () => chooseLanguage(choice.value, browserStore(), languages()),
+    })),
+  ]
+}
 
 // Only to show the entry for the access administration; the admin routes check on the server.
 watch(
   () => auth.status.value,
   (status) => {
-    if (live && status === 'authenticated') void adminFlag.ensure()
+    if (live && status === 'authenticated' && !linkView.value) void adminFlag.ensure()
   },
   { immediate: true },
 )
@@ -145,6 +179,12 @@ const items = computed<DropdownMenuItem[][]>(() => {
         },
       ]
     : []
+  // The page of a calendar link: only the look of the page, for a visitor without an account.
+  if (linkView.value) {
+    return [[darkMode, ...followSystem], languageItems(), fullScreenItems].filter(
+      (group) => group.length > 0,
+    )
+  }
   if (!live) {
     return [
       [

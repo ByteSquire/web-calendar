@@ -432,4 +432,42 @@ export const settings: Readonly<Record<string, string>> = {
     'Das sieht nicht nach einer Kalenderdatei aus. Wähle eine .ics-Datei.',
   'Stopped after {count} failures in a row. {message}':
     'Nach {count} Fehlern in Folge gestoppt. {message}',
+
+  // Calendar links
+  'Calendar links': 'Kalenderlinks',
+  'Give people without an account a read-only view of one of your calendars. They open the link and enter the password you choose here.':
+    'Gib Menschen ohne Konto Lesezugriff auf einen deiner Kalender. Sie öffnen den Link und geben das Passwort ein, das du hier wählst.',
+  'The link shows the title, time and place of each event, never descriptions or the people invited; private events show as busy. It shows what you can see, and stops working when you lose access to the calendar or do not sign in to this app for {days}.':
+    'Der Link zeigt Titel, Zeit und Ort jedes Termins, nie Beschreibungen oder Eingeladene; private Termine erscheinen als belegt. Er zeigt, was du sehen kannst, und funktioniert nicht mehr, wenn du den Zugriff auf den Kalender verlierst oder dich {days} lang nicht in dieser App anmeldest.',
+  'New link to “{name}”': 'Neuer Link zu „{name}“',
+  'This address is shown only once. Send it with the password, ideally on different ways. If you lose it, withdraw the link and make a new one.':
+    'Diese Adresse wird nur einmal angezeigt. Schicke sie zusammen mit dem Passwort, am besten auf verschiedenen Wegen. Wenn du sie verlierst, ziehe den Link zurück und erstelle einen neuen.',
+  Address: 'Adresse',
+  'Who is the link for? Optional; the calendar name if empty.':
+    'Für wen ist der Link? Optional; leer bleibt der Name des Kalenders.',
+  'At least {min} characters. Visitors need it to open the link.':
+    'Mindestens {min} Zeichen. Besucher brauchen es, um den Link zu öffnen.',
+  'Show password': 'Passwort anzeigen',
+  'Making…': 'Wird erstellt…',
+  'Make link': 'Link erstellen',
+  'Your calendar links': 'Deine Kalenderlinks',
+  'Last opened': 'Zuletzt geöffnet',
+  Withdraw: 'Zurückziehen',
+  'Withdraw link {label}': 'Link {label} zurückziehen',
+  'You have no calendar links yet.': 'Du hast noch keine Kalenderlinks.',
+  'Loading calendar links': 'Kalenderlinks werden geladen',
+  'Withdraw the link “{label}”?': 'Den Link „{label}“ zurückziehen?',
+  'The address stops working at once, also for pages that are open. This cannot be undone.':
+    'Die Adresse funktioniert sofort nicht mehr, auch auf geöffneten Seiten. Das lässt sich nicht rückgängig machen.',
+  'Withdraw link': 'Link zurückziehen',
+  'load your calendar links': 'Das Laden deiner Kalenderlinks',
+  'Could not copy automatically. The address is selected: press Ctrl+C to copy it.':
+    'Automatisches Kopieren ging nicht. Die Adresse ist markiert: Drücke Strg+C, um sie zu kopieren.',
+  'withdraw the link': 'Das Zurückziehen des Links',
+  'Link “{label}” withdrawn.': 'Link „{label}“ zurückgezogen.',
+  'Choose a password of at least {min} characters.':
+    'Wähle ein Passwort mit mindestens {min} Zeichen.',
+  'The link was not made: {problems}.': 'Der Link wurde nicht erstellt: {problems}.',
+  'The link was not made.': 'Der Link wurde nicht erstellt.',
+  'make the link': 'Das Erstellen des Links',
 }

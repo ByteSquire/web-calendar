@@ -21,20 +21,14 @@ import {
 } from '../../db/groups'
 import { listCalendarAcl } from '../../db/calendar-acl'
 import type { CalendarRow, GroupRow } from '../../db/types'
-import { USERS_GROUP } from './config'
+import { reservedGroupNames } from './claim'
 import { ApiError, conflict, toBadRequest, type FieldError } from '../api/errors'
 import type { CalendarAclInput } from '../../db/calendar-acl'
 import { MAX_GROUPS, type ShareInput } from './rules'
 
-/** Names no app group may take: the admin group (`oidc.adminGroup`) and the users group. */
-export function reservedGroupNames(adminGroup: string): string[] {
-  return [adminGroup, USERS_GROUP]
-}
-
 /** A new app group: the name must be free of every source and of the reserved names. */
 export function createCustomGroup(db: Database, name: string, adminGroup: string): GroupRow {
-  const reserved = reservedGroupNames(adminGroup).map((item) => item.toLowerCase())
-  if (reserved.includes(name.toLowerCase()) || groupNameTaken(db, name)) {
+  if (reservedGroupNames(adminGroup).includes(name.toLowerCase()) || groupNameTaken(db, name)) {
     throw conflict('duplicate', 'A group with this name already exists or the name is reserved')
   }
   if (countAllGroups(db) >= MAX_GROUPS) {
@@ -149,7 +143,14 @@ export interface CalendarShareView {
 /** The shares of a group calendar as the API shows them (the owning group's own rule is not one). */
 export function calendarView(db: Database, group: GroupRow, row: CalendarRow) {
   const shares: CalendarShareView[] = []
-  for (const rule of listCalendarAcl(db, row.id)) {
+  const rules = listCalendarAcl(db, row.id)
+  const labels = personLabels(
+    db,
+    rules
+      .filter((rule) => rule.principal_type === 'user' && rule.principal !== null)
+      .map((rule) => rule.principal!),
+  )
+  for (const rule of rules) {
     if (rule.permission !== 'read' && rule.permission !== 'write') continue
     if (rule.principal === null) continue
     if (rule.principal_type === 'group') {
@@ -164,7 +165,7 @@ export function calendarView(db: Database, group: GroupRow, row: CalendarRow) {
       shares.push({
         principalType: 'user',
         principal: rule.principal,
-        label: personLabel(db, rule.principal),
+        label: labels.get(rule.principal) ?? UNKNOWN_PERSON,
         permission: rule.permission,
       })
     }
@@ -172,13 +173,21 @@ export function calendarView(db: Database, group: GroupRow, row: CalendarRow) {
   return { id: row.id, name: row.name, color: row.color, shares }
 }
 
-function personLabel(db: Database, sub: string): string {
-  const row = db
-    .prepare<[string], { name: string | null; username: string | null }>(
-      'SELECT name, username FROM users WHERE oidc_sub = ?',
+const UNKNOWN_PERSON = 'Unknown person'
+
+/**
+ * The name to show for each of `subs`, in one query (a calendar has at most
+ * MAX_SHARES_PER_CALENDAR shares): the name, else the username. A sub without a user row is left out.
+ */
+function personLabels(db: Database, subs: readonly string[]): Map<string, string> {
+  const unique = [...new Set(subs)]
+  if (unique.length === 0) return new Map()
+  const rows = db
+    .prepare<string[], { sub: string; name: string | null; username: string | null }>(
+      `SELECT oidc_sub AS sub, name, username FROM users WHERE oidc_sub IN (${unique.map(() => '?').join(', ')})`,
     )
-    .get(sub)
-  return row ? row.name || row.username || 'Unknown person' : 'Unknown person'
+    .all(...unique)
+  return new Map(rows.map((row) => [row.sub, row.name || row.username || UNKNOWN_PERSON]))
 }
 
 /** The full group for a member or an admin: members, calendars and whether the caller may change the members. */

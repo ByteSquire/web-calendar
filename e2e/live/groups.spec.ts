@@ -173,7 +173,8 @@ test('bob sees the group, without the controls of an administrator', async () =>
 test('bob makes a calendar for the group and shares it with alice to read', async () => {
   const create = bob.locator('form').filter({ hasText: 'New calendar' })
   await create.getByLabel('Name').fill(CALENDAR)
-  await bob.getByRole('button', { name: 'Add calendar' }).click()
+  // The form's own button: the sidebar has an "Add calendar" plus of its own, for personal calendars.
+  await create.getByRole('button', { name: 'Add calendar' }).click()
   const calendars = bob.locator('[data-group-calendar]')
   await expect(calendars.filter({ hasText: CALENDAR })).toBeVisible()
 

@@ -43,12 +43,16 @@ export interface RadicaleClient {
     displayName: string,
     color?: string,
   ): Promise<SharingResult<void>>
-  /** PROPPATCH of the display name (`D:displayname`). */
-  setDisplayName(principal: string, path: string, displayName: string): Promise<SharingResult<void>>
-  /** PROPPATCH of the colour (`ICAL:calendar-color`), `#rrggbb`. */
-  setColor(principal: string, path: string, color: string): Promise<SharingResult<void>>
-  /** PROPPATCH remove of the colour: the calendar has no colour afterwards. */
-  clearColor(principal: string, path: string): Promise<SharingResult<void>>
+  /**
+   * One PROPPATCH of the display name and the colour (`#rrggbb` sets it, null removes it); what is
+   * left out is not touched. A PROPPATCH is all or nothing (RFC 4918, 9.2), so a change that fails
+   * changes neither.
+   */
+  updateCalendar(
+    principal: string,
+    path: string,
+    change: { displayName?: string; color?: string | null },
+  ): Promise<SharingResult<void>>
   /** DELETE of a whole collection; a missing one is not an error. */
   deleteCollection(principal: string, path: string): Promise<SharingResult<void>>
   putObject(principal: string, path: string, ics: string): Promise<SharingResult<void>>
@@ -56,9 +60,22 @@ export interface RadicaleClient {
   deleteObject(principal: string, path: string): Promise<SharingResult<void>>
 }
 
-/** Text for an XML element: the characters that would end it or open markup are dropped. */
+/**
+ * Text for an XML element or attribute: the markup characters are written as entities, so a name
+ * such as "R&D" arrives as it is, and the control characters XML 1.0 has no place for are dropped.
+ */
 export function xmlSafeText(text: string): string {
-  return text.replace(/[<>&"']/g, '')
+  return (
+    text
+      // The control characters XML 1.0 forbids are matched on purpose.
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/g, '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;')
+  )
 }
 
 /**
@@ -213,15 +230,17 @@ export function createRadicaleClient(options: RadicaleClientOptions): RadicaleCl
    * PROPPATCH with one `set` of the given properties. Radicale answers 207 with one propstat per
    * property; any of them that is not 200 means the property was refused, so that is a failure.
    */
+  /** One PROPPATCH with the properties to set and the ones to remove (each optional). */
   async function proppatch(
     principal: string,
     path: string,
-    props: string,
-    op: 'set' | 'remove' = 'set',
+    props: { set?: string; remove?: string },
   ): Promise<SharingResult<void>> {
     const body =
       `<?xml version="1.0"?><D:propertyupdate xmlns:D="DAV:" xmlns:ICAL="${ICAL_NS}">` +
-      `<D:${op}><D:prop>${props}</D:prop></D:${op}></D:propertyupdate>`
+      (props.set ? `<D:set><D:prop>${props.set}</D:prop></D:set>` : '') +
+      (props.remove ? `<D:remove><D:prop>${props.remove}</D:prop></D:remove>` : '') +
+      '</D:propertyupdate>'
     const result = await send(principal, 'PROPPATCH', path, {
       body,
       headers: { 'content-type': 'application/xml' },
@@ -286,7 +305,9 @@ export function createRadicaleClient(options: RadicaleClientOptions): RadicaleCl
     async makeCalendar(principal, path, displayName, color) {
       const name = xmlSafeText(displayName)
       const colour =
-        color === undefined ? '' : `<ICAL:calendar-color>${color}</ICAL:calendar-color>`
+        color === undefined
+          ? ''
+          : `<ICAL:calendar-color>${xmlSafeText(color)}</ICAL:calendar-color>`
       const body =
         '<?xml version="1.0"?><C:mkcalendar xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav"' +
         ` xmlns:ICAL="${ICAL_NS}">` +
@@ -303,18 +324,17 @@ export function createRadicaleClient(options: RadicaleClientOptions): RadicaleCl
       if (status === 201 || status === 405 || status === 409) return ok
       return sharingFail('rejected', `MKCALENDAR answered ${status}`, status)
     },
-    setDisplayName(principal, path, displayName) {
-      return proppatch(
-        principal,
-        path,
-        `<D:displayname>${xmlSafeText(displayName)}</D:displayname>`,
-      )
-    },
-    setColor(principal, path, color) {
-      return proppatch(principal, path, `<ICAL:calendar-color>${color}</ICAL:calendar-color>`)
-    },
-    clearColor(principal, path) {
-      return proppatch(principal, path, '<ICAL:calendar-color/>', 'remove')
+    updateCalendar(principal, path, change) {
+      const set =
+        (change.displayName === undefined
+          ? ''
+          : `<D:displayname>${xmlSafeText(change.displayName)}</D:displayname>`) +
+        (typeof change.color === 'string'
+          ? `<ICAL:calendar-color>${xmlSafeText(change.color)}</ICAL:calendar-color>`
+          : '')
+      const remove = change.color === null ? '<ICAL:calendar-color/>' : ''
+      if (set === '' && remove === '') return Promise.resolve(ok)
+      return proppatch(principal, path, { set, remove })
     },
     async deleteCollection(principal, path) {
       const result = await send(principal, 'DELETE', path)

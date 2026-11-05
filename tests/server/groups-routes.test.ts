@@ -7,6 +7,7 @@ import type { Database } from 'better-sqlite3'
 import { createApp, createRouter, toWebHandler, type EventHandler, type H3Event } from 'h3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import peopleGet from '../../server/api/people.get'
+import { MAX_PEOPLE } from '../../server/utils/groups/rules'
 import groupsGet from '../../server/api/groups/index.get'
 import groupsPost from '../../server/api/groups/index.post'
 import groupGet from '../../server/api/groups/[id]/index.get'
@@ -87,8 +88,7 @@ let db: Database
 let handle: (request: Request) => Promise<Response>
 let radicale: {
   makeCalendar: ReturnType<typeof vi.fn>
-  setDisplayName: ReturnType<typeof vi.fn>
-  setColor: ReturnType<typeof vi.fn>
+  updateCalendar: ReturnType<typeof vi.fn>
   deleteCollection: ReturnType<typeof vi.fn>
 }
 let ports: GroupsPorts & {
@@ -144,9 +144,7 @@ beforeEach(() => {
   upsertUser(db, { sub: SUBS.admin, username: 'admin' })
   radicale = {
     makeCalendar: vi.fn(async () => ok),
-    setDisplayName: vi.fn(async () => ok),
-    setColor: vi.fn(async () => ok),
-    clearColor: vi.fn(async () => ok),
+    updateCalendar: vi.fn(async () => ok),
     deleteCollection: vi.fn(async () => ok),
     // The group's home lists one share of the seeded calendar and one of another calendar.
     listShares: vi.fn(async () => ({
@@ -206,6 +204,22 @@ describe('signed-in reads', () => {
     expect(body.people.map((p) => p.sub)).toEqual(expect.arrayContaining([SUBS.alice, SUBS.bob]))
     expect(JSON.stringify(body)).not.toContain('@')
     expect(Object.keys(body.people[0]!).sort()).toEqual(['name', 'sub', 'username'])
+    expect((body as { truncated?: boolean }).truncated).toBe(false)
+  })
+
+  it('says when there are more people than it lists', async () => {
+    const insert = db.prepare('INSERT INTO users (oidc_sub, username) VALUES (?, ?)')
+    db.transaction(() => {
+      for (let index = 0; index < MAX_PEOPLE; index += 1) {
+        insert.run(`00000000-0000-4000-8000-${String(index).padStart(12, '0')}`, `p${index}`)
+      }
+    })()
+    const body = (await (await call('GET', '/api/people', 'bob')).json()) as {
+      people: unknown[]
+      truncated: boolean
+    }
+    expect(body.people).toHaveLength(MAX_PEOPLE)
+    expect(body.truncated).toBe(true)
   })
 
   it("lists every group for any signed-in user, with the caller's membership", async () => {
@@ -417,15 +431,12 @@ describe('group calendars (member or admin)', () => {
       color: '#010203',
     })
     expect(res.status).toBe(200)
-    expect(radicale.setDisplayName).toHaveBeenCalledWith(
+    // one request with both, so Radicale takes both or neither
+    expect(radicale.updateCalendar).toHaveBeenCalledTimes(1)
+    expect(radicale.updateCalendar).toHaveBeenCalledWith(
       `_group-${group}`,
       `/_group-${group}/cal-1/`,
-      'Renamed',
-    )
-    expect(radicale.setColor).toHaveBeenCalledWith(
-      `_group-${group}`,
-      `/_group-${group}/cal-1/`,
-      '#010203',
+      { displayName: 'Renamed', color: '#010203' },
     )
     const other = seedGroup('other_team')
     expect(
@@ -445,8 +456,12 @@ describe('group calendars (member or admin)', () => {
     })
     expect(res.status).toBe(200)
     expect(((await res.json()) as { calendar: { color: string | null } }).calendar.color).toBeNull()
-    expect(radicale.clearColor).toHaveBeenCalledWith(`_group-${group}`, `/_group-${group}/cal-1/`)
-    expect(radicale.setDisplayName).not.toHaveBeenCalled()
+    // the name is the same, so only the colour is in the request
+    expect(radicale.updateCalendar).toHaveBeenCalledWith(
+      `_group-${group}`,
+      `/_group-${group}/cal-1/`,
+      { color: null },
+    )
     expect(db.prepare('SELECT color FROM calendars WHERE id = ?').pluck().get(calendar)).toBeNull()
     const audit = db
       .prepare<[], { action: string; details: string }>(
@@ -468,9 +483,13 @@ describe('group calendars (member or admin)', () => {
       color: null,
     })
     expect(renamed.status).toBe(200)
-    expect(radicale.clearColor).not.toHaveBeenCalled()
-    expect(radicale.setColor).not.toHaveBeenCalled()
-    expect(radicale.setDisplayName).toHaveBeenCalledTimes(1)
+    // the first patch changed nothing, the second only the name
+    expect(radicale.updateCalendar).toHaveBeenCalledTimes(1)
+    expect(radicale.updateCalendar).toHaveBeenCalledWith(
+      `_group-${group}`,
+      `/_group-${group}/cal-1/`,
+      { displayName: 'Renamed' },
+    )
     expect(db.prepare('SELECT name FROM calendars WHERE id = ?').pluck().get(calendar)).toBe(
       'Renamed',
     )
@@ -482,9 +501,11 @@ describe('group calendars (member or admin)', () => {
       name: 'Only name',
     })
     expect(res.status).toBe(200)
-    expect(radicale.setDisplayName).toHaveBeenCalledTimes(1)
-    expect(radicale.setColor).not.toHaveBeenCalled()
-    expect(radicale.clearColor).not.toHaveBeenCalled()
+    expect(radicale.updateCalendar).toHaveBeenCalledWith(
+      `_group-${group}`,
+      `/_group-${group}/cal-1/`,
+      { displayName: 'Only name' },
+    )
     expect(db.prepare('SELECT color FROM calendars WHERE id = ?').pluck().get(calendar)).toBe(
       '#112233',
     )
@@ -492,7 +513,7 @@ describe('group calendars (member or admin)', () => {
 
   it('answers 502 and keeps the colour when Radicale fails to clear it', async () => {
     const { group, calendar } = seedGroup()
-    radicale.clearColor.mockResolvedValueOnce(down)
+    radicale.updateCalendar.mockResolvedValueOnce(down)
     const res = await call('PATCH', `/api/groups/${group}/calendars/${calendar}`, 'alice', {
       color: null,
     })
@@ -502,12 +523,26 @@ describe('group calendars (member or admin)', () => {
     )
   })
 
+  it('keeps the name and the colour when Radicale refuses a change of both', async () => {
+    const { group, calendar } = seedGroup()
+    radicale.updateCalendar.mockResolvedValueOnce(down)
+    const res = await call('PATCH', `/api/groups/${group}/calendars/${calendar}`, 'alice', {
+      name: 'Renamed',
+      color: '#010203',
+    })
+    expect(res.status).toBe(502)
+    expect(db.prepare('SELECT name, color FROM calendars WHERE id = ?').get(calendar)).toEqual({
+      name: 'Team cal',
+      color: '#112233',
+    })
+  })
+
   it('refuses a colour that is not #rrggbb, and a null name', async () => {
     const { group, calendar } = seedGroup()
     const path = `/api/groups/${group}/calendars/${calendar}`
     expect((await call('PATCH', path, 'alice', { color: 'red' })).status).toBe(400)
     expect((await call('PATCH', path, 'alice', { name: null })).status).toBe(400)
-    expect(radicale.clearColor).not.toHaveBeenCalled()
+    expect(radicale.updateCalendar).not.toHaveBeenCalled()
   })
 
   it('answers 400 for a patch that changes nothing', async () => {
@@ -572,6 +607,30 @@ describe('group calendars (member or admin)', () => {
       `${SUBS.bob}:read`,
       'other_team:write',
     ])
+  })
+
+  it('labels each person shared with by name, else username, else as unknown', async () => {
+    const { group, calendar } = seedGroup()
+    const res = await call('PUT', `/api/groups/${group}/calendars/${calendar}/shares`, 'alice', {
+      shares: [
+        { principalType: 'user', principal: SUBS.bob, permission: 'read' },
+        { principalType: 'user', principal: SUBS.admin, permission: 'write' },
+      ],
+    })
+    expect(res.status).toBe(200)
+    // a rule for somebody whose row is gone (it can be left behind by a deleted user)
+    db.prepare(
+      `INSERT INTO calendar_acl (calendar_id, principal_type, principal, permission) VALUES (?, 'user', ?, 'read')`,
+    ).run(calendar, '22222222-2222-4222-8222-222222222222')
+    const detail = (await (await call('GET', `/api/groups/${group}`, 'alice')).json()) as {
+      calendars: { id: number; shares: { principal: string; label: string }[] }[]
+    }
+    const shares = detail.calendars.find((item) => item.id === calendar)!.shares
+    expect(Object.fromEntries(shares.map((share) => [share.principal, share.label]))).toEqual({
+      [SUBS.bob]: 'Bob',
+      [SUBS.admin]: 'admin',
+      '22222222-2222-4222-8222-222222222222': 'Unknown person',
+    })
   })
 
   it('refuses shares that name the owning group, an unknown person or group, or free_busy', async () => {

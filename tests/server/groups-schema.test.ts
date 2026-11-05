@@ -25,6 +25,8 @@ import {
   replaceMembers,
 } from '../../server/utils/groups/service'
 import { signinCutoff } from '../../server/utils/auth/window'
+import { reservedGroupNames } from '../../server/utils/groups/claim'
+import { importCandidate, listCandidates } from '../../server/utils/groups/oidc'
 import { MAX_GROUPS } from '../../server/utils/groups/rules'
 import { apiError, openTestDb } from './api-fixtures'
 
@@ -164,6 +166,43 @@ describe('group rules', () => {
     expect(() => createCustomGroup(db, ADMIN_GROUP, ADMIN_GROUP)).toThrow(/already exists|reserved/)
     expect(() => createCustomGroup(db, 'Calendar_Admins', ADMIN_GROUP)).toThrow(/reserved/)
     expect(() => createCustomGroup(db, 'web_calendar_users', ADMIN_GROUP)).toThrow(/reserved/)
+  })
+
+  it('refuses every name the admin group can have here, whatever form the setting has', () => {
+    // an SPN: an import names the group by the part before the @
+    expect(() =>
+      createCustomGroup(db, 'calendar_admins', 'calendar_admins@idm.example.org'),
+    ).toThrow(/reserved/)
+    // a path: an import joins the segments with dots
+    expect(() => createCustomGroup(db, 'org.admins', '/org/admins')).toThrow(/reserved/)
+    expect(reservedGroupNames('calendar_admins@idm.example.org')).toEqual([
+      'calendar_admins@idm.example.org',
+      'calendar_admins_idm.example.org',
+      'calendar_admins',
+      'web_calendar_users',
+    ])
+    // other names stay free
+    expect(createCustomGroup(db, 'admins_of_rooms', 'calendar_admins@idm.example.org').name).toBe(
+      'admins_of_rooms',
+    )
+  })
+
+  it('never offers or imports the admin group, by its short name or by its id', () => {
+    const add = db.prepare('INSERT INTO oidc_group_candidates (external_id, name) VALUES (?, ?)')
+    add.run('11111111-aaaa-4aaa-8aaa-111111111111', 'calendar_admins')
+    add.run('22222222-bbbb-4bbb-8bbb-222222222222', 'staff')
+    const bySpn = { ignore: [], adminGroup: 'calendar_admins@idm.example.org' }
+    expect(listCandidates(db, bySpn).candidates.map((item) => item.name)).toEqual(['staff'])
+    expect(() => importCandidate(db, '11111111-aaaa-4aaa-8aaa-111111111111', bySpn)).toThrow(
+      apiError(404),
+    )
+    const byId = { ignore: [], adminGroup: '22222222-bbbb-4bbb-8bbb-222222222222' }
+    expect(listCandidates(db, byId).candidates.map((item) => item.name)).toEqual([
+      'calendar_admins',
+    ])
+    expect(() => importCandidate(db, '22222222-bbbb-4bbb-8bbb-222222222222', byId)).toThrow(
+      apiError(404),
+    )
   })
 
   it('refuses a name taken by a group of either source, ignoring case', () => {

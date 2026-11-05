@@ -122,6 +122,14 @@
         retryable
         @retry="people.reload()"
       />
+      <p v-if="people.data.value?.truncated" class="text-sm text-toned">
+        {{
+          t(
+            'Not everybody is offered when you add members or share: the list shows the first {count} people, sorted by name.',
+            { count: people.data.value.people.length },
+          )
+        }}
+      </p>
 
       <div v-if="detailPending" role="status" class="flex flex-col gap-2">
         <span class="sr-only">{{ t('Loading the group') }}</span>
@@ -132,7 +140,7 @@
         <GroupsGroupMembers
           :key="`members-${detail.id}`"
           :group="detail"
-          :people="people.data.value ?? []"
+          :people="people.data.value?.people ?? []"
           :busy="busy"
           :save-members="saveMembers"
         />
@@ -140,7 +148,7 @@
           :key="`calendars-${detail.id}`"
           :group="detail"
           :groups="groups.data.value ?? []"
-          :people="people.data.value ?? []"
+          :people="people.data.value?.people ?? []"
           :busy="busy"
           :create-calendar="createCalendar"
           :update-calendar="updateCalendar"

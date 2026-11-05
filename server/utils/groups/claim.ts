@@ -6,6 +6,7 @@
 // `groups_name` also names; Keycloak writes paths (`/team/ops`) or plain names; Authentik, Authelia,
 // Dex and Okta write names; Entra writes object ids (GUIDs); Zitadel writes an object keyed by
 // role; Cognito's claim is `cognito:groups`; Auth0 uses a namespaced claim.
+import { USERS_GROUP } from './config'
 
 /** A group the claim names. `key` is how the provider identifies it, `name` what the app calls it. */
 export interface ClaimGroup {
@@ -124,6 +125,25 @@ export function matchesAdminGroup(entries: readonly string[], adminGroup: string
     if (parts.length === 2 && parts[0] === adminGroup) return true
     return entry.startsWith('/') && entry.split('/').filter(Boolean).join('.') === adminGroup
   })
+}
+
+/**
+ * The names no group of the app may take (lower case): the group of everyone, and the admin group in
+ * every form a name of this app can have of it. That is the setting as written and, made safe as
+ * every group name is, what an import makes of it: an SPN's part before the `@`, a path's segments
+ * joined by dots. An admin group given by its id has no name to reserve; `isAdminGroupKey` covers it.
+ */
+export function reservedGroupNames(adminGroup: string): string[] {
+  const forms = [adminGroup]
+  if (isSpn(adminGroup)) forms.push(adminGroup.split('@')[0]!)
+  if (adminGroup.startsWith('/')) forms.push(adminGroup.split('/').filter(Boolean).join('.'))
+  const names = forms.flatMap((form) => [form, sanitiseGroupName(form)])
+  return [...new Set([...names, USERS_GROUP].filter(Boolean).map((name) => name.toLowerCase()))]
+}
+
+/** Whether a key of the identity provider (`external_id`) is the admin group as the setting names it. */
+export function isAdminGroupKey(key: string, adminGroup: string): boolean {
+  return adminGroup !== '' && key === adminGroup
 }
 
 /** `name@domain`: one `@`, text on both sides, not a path. */

@@ -214,6 +214,27 @@ describe('for a member', () => {
     expect(radio.length).toBeGreaterThan(0)
   })
 
+  it('says when the people offered are not everybody, and not otherwise', async () => {
+    await mountPage()
+    await vi.waitFor(() => expect(rows()).toHaveLength(2))
+    await openGroup('staff')
+    expect(document.body.textContent).not.toContain('Not everybody is offered')
+
+    app.unmount()
+    document.body.innerHTML = ''
+    const handler = api.handler
+    api.handler = (async (path: string, options?: { method?: string; body?: unknown }) =>
+      path === '/api/people'
+        ? { people: PEOPLE, truncated: true }
+        : handler(path, options)) as Handler
+    await mountPage()
+    await vi.waitFor(() => expect(rows()).toHaveLength(2))
+    await openGroup('staff')
+    expect(document.body.textContent).toContain(
+      `Not everybody is offered when you add members or share: the list shows the first ${PEOPLE.length} people`,
+    )
+  })
+
   it('lists the groups with their source and member count', async () => {
     await mountPage()
     await vi.waitFor(() => expect(rows()).toHaveLength(2))

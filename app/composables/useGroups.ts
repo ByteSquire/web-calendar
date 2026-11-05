@@ -27,8 +27,9 @@ export function useGroups() {
     async () => (await api<{ groups: GroupSummary[] }>('/api/groups')).groups,
     N_('load the groups'),
   )
+  // `truncated`: more people signed in than the server lists (MAX_PEOPLE), so the pickers lack some.
   const people = createResource(
-    async () => (await api<{ people: GroupPerson[] }>('/api/people')).people,
+    () => api<{ people: GroupPerson[]; truncated?: boolean }>('/api/people'),
     N_('load the people'),
   )
 

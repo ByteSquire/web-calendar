@@ -2,6 +2,8 @@
 export const groups: Readonly<Record<string, string>> = {
   // The overflow menu, the page and its list
   Groups: 'Gruppen',
+  'Not everybody is offered when you add members or share: the list shows the first {count} people, sorted by name.':
+    'Beim Hinzufügen von Mitgliedern und beim Teilen wird nicht jede Person angeboten: Die Liste zeigt die ersten {count} Personen, nach Namen sortiert.',
   'Groups share calendars. Open a group to see its members and calendars, create calendars and share them with people or other groups.':
     'Gruppen teilen Kalender. Öffne eine Gruppe, um ihre Mitglieder und Kalender zu sehen, Kalender anzulegen und mit Personen oder anderen Gruppen zu teilen.',
   'Loading groups': 'Gruppen werden geladen',

@@ -105,19 +105,14 @@ export async function updateGroupCalendar(
   const name = input.name ?? current.name
   // Undefined keeps the colour, null clears it, a string sets it.
   const color = input.color === undefined ? current.color : input.color
-  // Radicale is asked only for what changes: a rename of an uncoloured calendar leaves its colour alone.
-  if (name !== current.name) {
-    const renamed = await ctx.radicale.setDisplayName(principal, current.collection_path, name)
-    if (!renamed.ok) throw upstreamFailed(RADICALE_DOWN)
-  }
-  if (color !== current.color) {
-    const recoloured =
-      color === null
-        ? await ctx.radicale.clearColor(principal, current.collection_path)
-        : await ctx.radicale.setColor(principal, current.collection_path, color)
-    if (!recoloured.ok) throw upstreamFailed(RADICALE_DOWN)
-  }
   if (name === current.name && color === current.color) return calendarView(ctx.db, group, current)
+  // Radicale is asked only for what changes (a rename of an uncoloured calendar leaves its colour
+  // alone), in one PROPPATCH: it takes both or neither, so the rows never disagree with it.
+  const changed = await ctx.radicale.updateCalendar(principal, current.collection_path, {
+    ...(name !== current.name ? { displayName: name } : {}),
+    ...(color !== current.color ? { color } : {}),
+  })
+  if (!changed.ok) throw upstreamFailed(RADICALE_DOWN)
   const updated = ctx.atomic(() => {
     const row = updateCalendarNameColor(ctx.db, calendarId, name, color)
     ctx.audit('group_calendar.renamed', `calendar:${calendarId}`, {

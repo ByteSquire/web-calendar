@@ -306,9 +306,11 @@ export function validateEnv(env) {
   // Optional knobs with defaults in nuxt.config.ts; the names are the runtimeConfig keys in env form.
   checkInteger('NUXT_OIDC_KEY_MAX_AGE_SEC', 1)
   // The window after a sign-in in which app tokens work and a person is in the group of everyone.
-  // The server takes the same text (spaces around it are fine) and stops at start on any other.
+  // The server takes the same text (spaces around it are fine) and stops at start on any other. An
+  // empty value is the default (30), as the server reads it: a form that passes every field, such
+  // as the Cosmos template, sets the variable to '' when the field is left empty.
   const windowDays = env.NUXT_SIGNIN_WINDOW_DAYS
-  if (windowDays !== undefined) {
+  if (windowDays !== undefined && windowDays.trim() !== '') {
     const days = /^\d{1,4}$/.test(windowDays.trim()) ? Number(windowDays.trim()) : Number.NaN
     if (!(days >= 1 && days <= 365)) {
       errors.push(
@@ -433,9 +435,14 @@ export function validateEnv(env) {
   }
 
   // The claim the groups are read from: a property name as written, so a namespaced claim
-  // (`cognito:groups`, a URL, a URN) is fine; blanks and control characters are not.
+  // (`cognito:groups`, a URL, a URN) is fine; blanks and control characters are not. Empty is the
+  // default (`groups`), as the server reads it.
   const groupsClaim = env.NUXT_OIDC_GROUPS_CLAIM
-  if (groupsClaim !== undefined && !/^[\x21-\x7e]{1,200}$/.test(groupsClaim)) {
+  if (
+    groupsClaim !== undefined &&
+    groupsClaim !== '' &&
+    !/^[\x21-\x7e]{1,200}$/.test(groupsClaim)
+  ) {
     errors.push(
       'NUXT_OIDC_GROUPS_CLAIM must be the name of one claim, 1 to 200 printable characters ' +
         `without blanks (the default is groups), not ${show(groupsClaim)}`,

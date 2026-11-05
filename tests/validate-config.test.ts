@@ -284,7 +284,11 @@ describe('validateEnv', () => {
       for (const days of ['1', '30', '365', ' 7 ']) expect(run(days).errors).toEqual([])
     })
 
-    it.each(['', '0', '366', '-1', '1.5', '30d', 'many', '1e2', '+5', '0x10', '99999'])(
+    it('takes an empty value as the default, as the server does (a form field left empty)', () => {
+      for (const days of ['', '  ']) expect(run(days).errors).toEqual([])
+    })
+
+    it.each(['0', '366', '-1', '1.5', '30d', 'many', '1e2', '+5', '0x10', '99999'])(
       'refuses %j, saying what is allowed',
       (value) => {
         const { errors } = run(value)
@@ -311,7 +315,11 @@ describe('validateEnv', () => {
       }
     })
 
-    it.each(['', 'two words', 'tab\tin', 'x'.repeat(201), 'ünicode'])(
+    it('takes an empty claim name as the default, as the server does', () => {
+      expect(claim('').errors).toEqual([])
+    })
+
+    it.each([' ', 'two words', 'tab\tin', 'x'.repeat(201), 'ünicode'])(
       'refuses the claim name %j',
       (value) => {
         const { errors } = claim(value)

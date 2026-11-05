@@ -14,8 +14,7 @@ import {
 } from '../../db/groups'
 import type { GroupRow, OidcGroupCandidateRow } from '../../db/types'
 import { conflict, notFound } from '../api/errors'
-import { isIgnored } from './claim'
-import { USERS_GROUP } from './config'
+import { isAdminGroupKey, isIgnored, reservedGroupNames } from './claim'
 import { MAX_GROUPS } from './rules'
 
 /** The most candidates one list holds; a provider with more shows the first and says so. */
@@ -46,10 +45,12 @@ interface CandidateRow extends OidcGroupCandidateRow {
   name_taken: number
 }
 
-/** A name a candidate or an app group cannot take: the admin group and the group of everyone. */
-function isReserved(name: string, adminGroup: string): boolean {
-  const lower = name.toLowerCase()
-  return lower === adminGroup.toLowerCase() || lower === USERS_GROUP
+/** A candidate that is never offered: it is the admin group (by name or key) or the group of everyone. */
+function isReserved(candidate: { name: string; external_id: string }, adminGroup: string): boolean {
+  return (
+    reservedGroupNames(adminGroup).includes(candidate.name.toLowerCase()) ||
+    isAdminGroupKey(candidate.external_id, adminGroup)
+  )
 }
 
 /**
@@ -76,10 +77,7 @@ export function listCandidates(
   const shown: CandidateView[] = []
   for (const row of rows) {
     const imported = row.group_id !== null
-    if (
-      !imported &&
-      (isIgnored(row.name, options.ignore) || isReserved(row.name, options.adminGroup))
-    ) {
+    if (!imported && (isIgnored(row.name, options.ignore) || isReserved(row, options.adminGroup))) {
       continue
     }
     shown.push({
@@ -121,7 +119,7 @@ export function importCandidate(
   if (
     !candidate ||
     isIgnored(candidate.name, options.ignore) ||
-    isReserved(candidate.name, options.adminGroup)
+    isReserved(candidate, options.adminGroup)
   ) {
     throw notFound()
   }

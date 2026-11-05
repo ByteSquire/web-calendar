@@ -4,8 +4,7 @@
 // nobody imported, and the claim never creates a group. Without a change this writes nothing.
 import type { Database } from 'better-sqlite3'
 import { recordAudit } from '../../db/audit-log'
-import { USERS_GROUP } from './config'
-import type { ClaimGroup, ParsedClaim } from './claim'
+import { reservedGroupNames, type ClaimGroup, type ParsedClaim } from './claim'
 
 export const IMPORT_ACTOR = 'system:group-import'
 
@@ -219,7 +218,7 @@ export function importUserGroups(
   const warnings: string[] = []
   for (const message of parsed.warnings) sayOnce(warnings, `[groups] ${message}`)
 
-  const reserved = [options.adminGroup, USERS_GROUP].map((name) => name.toLowerCase())
+  const reserved = reservedGroupNames(options.adminGroup)
   // The fast path reads only; the transaction plans again, because a request may have changed rows.
   if (isEmpty(plan(db, sub, parsed.groups, now, reserved, warnings, parsed.truncated === true))) {
     return { ...NOTHING, warnings }

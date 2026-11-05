@@ -43,17 +43,22 @@ describe('group calendar calls to Radicale', () => {
     expect(sent[0]!.method).toBe('MKCALENDAR')
     expect(sent[0]!.url).toBe('http://radicale.test:5232/_group-1/abc/')
     expect(sent[0]!.user).toBe('_group-1')
-    expect(sent[0]!.body).toContain('<D:displayname>Team plan</D:displayname>')
+    expect(sent[0]!.body).toContain('<D:displayname>Team &lt;plan&gt;</D:displayname>')
     expect(sent[0]!.body).toContain('<ICAL:calendar-color>#aabbcc</ICAL:calendar-color>')
   })
 
-  it('PROPPATCH sets the name and the colour, and a refused property is a failure', async () => {
+  it('PROPPATCH sets the name and the colour in one request, and a refused property is a failure', async () => {
     const { radicale, sent } = client(() => new Response('', { status: 207 }))
-    expect((await radicale.setDisplayName('_group-1', '/_group-1/abc/', 'New')).ok).toBe(true)
-    expect((await radicale.setColor('_group-1', '/_group-1/abc/', '#010203')).ok).toBe(true)
-    expect(sent.map((s) => s.method)).toEqual(['PROPPATCH', 'PROPPATCH'])
-    expect(sent[0]!.body).toContain('<D:displayname>New</D:displayname>')
-    expect(sent[1]!.body).toContain('<ICAL:calendar-color>#010203</ICAL:calendar-color>')
+    const result = await radicale.updateCalendar('_group-1', '/_group-1/abc/', {
+      displayName: 'New',
+      color: '#010203',
+    })
+    expect(result.ok).toBe(true)
+    expect(sent.map((s) => s.method)).toEqual(['PROPPATCH'])
+    expect(sent[0]!.body).toContain(
+      '<D:set><D:prop><D:displayname>New</D:displayname><ICAL:calendar-color>#010203</ICAL:calendar-color></D:prop></D:set>',
+    )
+    expect(sent[0]!.body).not.toContain('<D:remove>')
 
     const refused = client(
       () =>
@@ -63,16 +68,30 @@ describe('group calendar calls to Radicale', () => {
           { status: 207 },
         ),
     )
-    const result = await refused.radicale.setColor('_group-1', '/_group-1/abc/', '#010203')
-    expect(result.ok).toBe(false)
+    const failed = await refused.radicale.updateCalendar('_group-1', '/_group-1/abc/', {
+      color: '#010203',
+    })
+    expect(failed.ok).toBe(false)
   })
 
-  it('clearColor sends a PROPPATCH remove of the colour, not a set', async () => {
+  it('a null colour is a remove, in the same request as a new name', async () => {
     const { radicale, sent } = client(() => new Response('', { status: 207 }))
-    expect((await radicale.clearColor('_group-1', '/_group-1/abc/')).ok).toBe(true)
-    expect(sent[0]!.method).toBe('PROPPATCH')
+    const result = await radicale.updateCalendar('_group-1', '/_group-1/abc/', {
+      displayName: 'Plain',
+      color: null,
+    })
+    expect(result.ok).toBe(true)
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.body).toContain(
+      '<D:set><D:prop><D:displayname>Plain</D:displayname></D:prop></D:set>',
+    )
     expect(sent[0]!.body).toContain('<D:remove><D:prop><ICAL:calendar-color/></D:prop></D:remove>')
-    expect(sent[0]!.body).not.toContain('<D:set>')
+  })
+
+  it('sends nothing when there is nothing to change', async () => {
+    const { radicale, sent } = client(() => new Response('', { status: 207 }))
+    expect((await radicale.updateCalendar('_group-1', '/_group-1/abc/', {})).ok).toBe(true)
+    expect(sent).toEqual([])
   })
 
   it('DELETE of the collection succeeds on 204 and on 404 (already gone)', async () => {
@@ -83,7 +102,17 @@ describe('group calendar calls to Radicale', () => {
     expect((await denied.radicale.deleteCollection('_group-1', '/_group-1/abc/')).ok).toBe(false)
   })
 
-  it('drops the characters that would end an XML element from a name', () => {
-    expect(xmlSafeText(`a<b>&"'c`)).toBe('abc')
+  it('writes the markup characters of a name as entities, so the name arrives as it is', () => {
+    expect(xmlSafeText(`R&D <b>"Anna's"</b>`)).toBe(
+      'R&amp;D &lt;b&gt;&quot;Anna&apos;s&quot;&lt;/b&gt;',
+    )
+    // control characters have no place in XML 1.0; tab and line breaks do
+    expect(xmlSafeText('a\u0000b\u001fc\td\ne')).toBe('abc\td\ne')
+  })
+
+  it('keeps "R&D" in the MKCALENDAR body as an entity, not dropped', async () => {
+    const { radicale, sent } = client(() => new Response('', { status: 201 }))
+    await radicale.makeCalendar('_group-1', '/_group-1/abc/', 'R&D')
+    expect(sent[0]!.body).toContain('<D:displayname>R&amp;D</D:displayname>')
   })
 })

@@ -5,7 +5,7 @@ import { clearNuxtState, useNuxtApp } from '#app'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { SidebarContent, UApp } from '#components'
 import { useServerConfigState } from '~/composables/useServerConfigState'
-import { useSidebarOrderState } from '~/composables/useSidebarOrder'
+import { useSavedSidebarOrder, useSidebarOrderState } from '~/composables/useSidebarOrder'
 import { SIDEBAR_SECTION_IDS, type SidebarSectionId } from '../shared/utils/sidebar-sections'
 
 // The order of the sidebar's sections (FR-21): drawn in the saved order, moved with the arrow
@@ -90,6 +90,27 @@ describe('the order of the sections', () => {
       'Categories',
       'Calendars',
     ])
+  })
+})
+
+describe('the order /api/me brings', () => {
+  const ARRANGED = ['filters', 'views', 'calendars', 'resources', 'categories']
+
+  it('is taken while the person has not changed the order in the page', async () => {
+    await mountSidebar(true)
+    useSavedSidebarOrder()(ARRANGED)
+    await vi.waitFor(() => expect(shown()).toEqual(ARRANGED))
+  })
+
+  it('does not undo a change made in the page: an answer can be older than the change', async () => {
+    await mountSidebar()
+    buttonNamed('Arrange sections')!.click()
+    await vi.waitFor(() => expect(buttonNamed('Move Calendars up')).toBeDefined())
+    buttonNamed('Move Calendars up')!.click()
+    await vi.waitFor(() => expect(puts).toHaveLength(1))
+    // a reload of the calendars asked /api/me before the save, and answers the old order now
+    useSavedSidebarOrder()([...SIDEBAR_SECTION_IDS])
+    expect(useSidebarOrderState().value[0]).toBe('calendars')
   })
 })
 

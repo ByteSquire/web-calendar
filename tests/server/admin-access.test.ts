@@ -39,12 +39,6 @@ vi.mock('../../server/utils/api/config', () => ({
   }),
 }))
 
-const SYNC_TOKEN = 'kanidm-sync-secret-value'
-const settings = vi.hoisted(() => ({ kanidm: null as { origin: string; token: string } | null }))
-vi.mock('../../server/utils/access/config', () => ({
-  accessConfig: () => ({ kanidm: settings.kanidm }),
-}))
-
 // The per-actor limit has its own tests (admin-guard.test.ts).
 vi.mock('../../server/utils/api/admin-limit', () => ({
   createAdminLimiter: () => ({ take: () => null }),
@@ -57,9 +51,6 @@ const GHOST = '33333333-3333-4333-8333-333333333333'
 let db: Database
 let handle: (request: Request) => Promise<Response>
 let userinfoGroups: string[]
-let kanidmGroups: Record<string, string[] | null>
-let kanidmDown: boolean
-let groupLookups: string[]
 const changed = vi.fn()
 
 function addCalendar(name: string, ownerId: number | null = null): number {
@@ -74,10 +65,11 @@ beforeEach(() => {
   db = openTestDb()
   setDb(db)
   userinfoGroups = ['calendar_admins']
-  kanidmGroups = { staff: [] }
-  kanidmDown = false
-  groupLookups = []
-  settings.kanidm = { origin: 'https://idm.test', token: SYNC_TOKEN }
+  // The groups the rules may name are the app's: a group made here and one imported from the provider.
+  db.prepare(`INSERT INTO groups (name, source) VALUES ('staff', 'app')`).run()
+  db.prepare(
+    `INSERT INTO groups (name, source, external_id) VALUES ('from_idp', 'oidc', 'idp-1')`,
+  ).run()
   changed.mockReset()
   setAccessPorts({ onAclChanged: changed })
   upsertUser(db, { sub: BOB, username: 'bob', name: 'Bob Builder', email: 'bob@example.org' })
@@ -92,15 +84,7 @@ beforeEach(() => {
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>(async (input, init) => {
-      const url = String(input)
-      if (url.startsWith('https://idm.test/v1/group/')) {
-        if (kanidmDown) throw new TypeError('fetch failed')
-        const name = decodeURIComponent(url.slice('https://idm.test/v1/group/'.length))
-        groupLookups.push(name)
-        const members = kanidmGroups[name]
-        if (!members) return new Response('null', { status: 200 })
-        return new Response(JSON.stringify({ attrs: { name: [name], member: members } }))
-      }
+      void input
       const auth = new Headers(init?.headers).get('authorization') ?? ''
       const who = auth.replace(/^Bearer test-/, '')
       return new Response(JSON.stringify({ sub: `sub-${who}`, groups: userinfoGroups }))
@@ -189,10 +173,8 @@ describe('reading', () => {
     markCalendarAclApplied(db, [rule.id], new Date('2026-11-01T10:00:00Z'))
 
     const body = (await (await read()).json()) as {
-      groupsAvailable: boolean
       calendars: { name: string; owner: string | null; rules: Record<string, unknown>[] }[]
     }
-    expect(body.groupsAvailable).toBe(true)
     expect(body.calendars.map((c) => [c.name, c.owner])).toEqual([
       ['Alpha', 'Bob Builder'],
       ['Team', null],
@@ -214,12 +196,6 @@ describe('reading', () => {
         appliedAt: null,
       }),
     ])
-  })
-
-  it('says groups are unavailable without a Kanidm token', async () => {
-    settings.kanidm = null
-    const body = (await (await read()).json()) as { groupsAvailable: boolean }
-    expect(body.groupsAvailable).toBe(false)
   })
 
   it('gives the picker names and usernames only', async () => {
@@ -270,7 +246,6 @@ describe('replacing the rules', () => {
       principalTypes: { authenticated: 1, group: 1, user: 1 },
     })
     expect(entry?.details).not.toContain(BOB)
-    expect(entry?.details).not.toContain(SYNC_TOKEN)
   })
 
   it('stores no rule, and asks for no reconcile, when the audit entry cannot be written (finding 10)', async () => {
@@ -412,54 +387,49 @@ describe('what is refused', () => {
 })
 
 describe('groups', () => {
-  const staff = [{ principalType: 'group', principal: 'staff', permission: 'read' }]
+  const rule = (principal: string, permission = 'read') => [
+    { principalType: 'group', principal, permission },
+  ]
 
-  it('accepts a group Kanidm knows, asking with the sync token', async () => {
+  it.each([
+    ['a group made in the app', 'staff'],
+    ['a group imported from the identity provider', 'from_idp'],
+    ['the group of everyone', 'web_calendar_users'],
+  ])('accepts %s', async (_label, name) => {
     const id = addCalendar('Team')
-    expect((await put(id, staff)).status).toBe(200)
-    expect(groupLookups).toEqual(['staff'])
-    const sent = vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes('/v1/group/'))
-    expect(new Headers(sent?.[1]?.headers).get('authorization')).toBe(`Bearer ${SYNC_TOKEN}`)
+    expect((await put(id, rule(name))).status).toBe(200)
+    expect(listCalendarAcl(db, id).map((r) => r.principal)).toEqual([name])
   })
 
-  it('refuses a group Kanidm does not know or hides', async () => {
+  it('refuses a group the app does not have, saying how to get it, and stores nothing', async () => {
     const id = addCalendar('Team')
-    const response = await put(id, [
-      { principalType: 'group', principal: 'nope', permission: 'read' },
-    ])
+    const response = await put(id, rule('only_at_the_provider'))
     expect(response.status).toBe(400)
-    expect(JSON.stringify(await response.json())).toContain('not a Kanidm group')
-    expect(listCalendarAcl(db, id)).toEqual([])
-  })
-
-  it('refuses every group rule when no sync token is configured, and says why', async () => {
-    settings.kanidm = null
-    const id = addCalendar('Team')
-    const response = await put(id, staff)
-    expect(response.status).toBe(400)
-    expect(JSON.stringify(await response.json())).toContain('sync token is not configured')
-    expect(groupLookups).toEqual([])
-    expect(listCalendarAcl(db, id)).toEqual([])
-  })
-
-  it('answers 409 and stores nothing when Kanidm cannot be reached', async () => {
-    kanidmDown = true
-    const id = addCalendar('Team')
-    const response = await put(id, staff)
-    expect(response.status).toBe(409)
+    const text = JSON.stringify(await response.json())
+    expect(text).toContain('not a known group')
+    expect(text).toContain('import it on the Groups page')
     expect(listCalendarAcl(db, id)).toEqual([])
     expect(changed).not.toHaveBeenCalled()
-    expect(JSON.stringify(await response.clone().json())).not.toContain(SYNC_TOKEN)
   })
 
-  it('does not ask again about a group that already has a rule', async () => {
+  it('makes no call to the identity provider for a group, whichever it is', async () => {
+    const id = addCalendar('Team')
+    vi.mocked(fetch).mockClear()
+    await put(id, rule('staff'))
+    await put(id, rule('nope'))
+    // Only the admin check asks userinfo (twice, once per request); nothing else is fetched.
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not ask again about a group that already has a rule, even if it is gone', async () => {
     const id = addCalendar('Team')
     addCalendarAcl(db, id, { principalType: 'group', principal: 'old_group', permission: 'read' })
-    kanidmDown = true
-    const response = await put(id, [
-      { principalType: 'group', principal: 'old_group', permission: 'write' },
-    ])
+    const response = await put(id, rule('old_group', 'write'))
     expect(response.status).toBe(200)
-    expect(groupLookups).toEqual([])
+  })
+
+  it('is case-sensitive about the name: it is a group name of the file Radicale reads', async () => {
+    const id = addCalendar('Team')
+    expect((await put(id, rule('Staff'))).status).toBe(400)
   })
 })

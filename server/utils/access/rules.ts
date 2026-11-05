@@ -6,8 +6,7 @@ import type { Permission } from '../../db/types'
 import type { FieldError } from '../api/errors'
 import { FieldErrors, isRecord, readObject, type Parsed } from '../api/validation'
 import { isValidSubject } from '../auth/subject'
-import { isGroupName } from '../group-sync/format'
-import type { GroupLookup } from './groups'
+import { isGroupName } from '../groups/htgroup'
 
 /** `admin` never reaches Radicale (design §8), `public` belongs to the public view (FR-27). */
 export const ACCESS_PERMISSIONS = [
@@ -85,29 +84,23 @@ export function parseRulesBody(body: unknown): Parsed<CalendarAclInput[]> {
   return errors.ok ? { ok: true, value: rules } : { ok: false, fields: errors.toArray() }
 }
 
-export const GROUPS_UNCONFIGURED =
-  'Groups cannot be checked because the Kanidm sync token is not configured'
-export const GROUPS_UNAVAILABLE = 'Kanidm could not be reached to check this group; try again'
-
 export interface PrincipalCheck {
   fields: FieldError[]
-  /** True when a group could not be looked up (not that it is missing). */
-  unavailable: boolean
 }
 
 /**
  * Checks the principals that are new to the calendar: a person must have signed in once (the
- * `users` table), a group must exist in Kanidm, and the owner needs no rule. Principals already
- * in the calendar's rules are kept as they are, so an old rule never blocks an edit of another.
- * `groups` is null when no sync token is configured: then no group rule is accepted.
+ * `users` table), a group must exist in the app's `groups` table (made here, imported from the
+ * identity provider, or the group of everyone), and the owner needs no rule. A group that only
+ * the provider has is imported by an admin on the Groups page first. Principals already in the
+ * calendar's rules are kept as they are, so an old rule never blocks an edit of another.
  */
-export async function checkPrincipals(
+export function checkPrincipals(
   db: Database,
   calendarId: number,
   rules: readonly CalendarAclInput[],
   existing: readonly CalendarAclInput[],
-  groups: GroupLookup | null,
-): Promise<PrincipalCheck> {
+): PrincipalCheck {
   const known = new Set(existing.map((rule) => `${rule.principalType}\u0000${rule.principal}`))
   const owner = db
     .prepare<[number], { sub: string }>(
@@ -118,8 +111,6 @@ export async function checkPrincipals(
     'SELECT 1 AS one FROM users WHERE oidc_sub = ?',
   )
   const fields: FieldError[] = []
-  let unavailable = false
-  const pending: Promise<void>[] = []
   rules.forEach((rule, index) => {
     const at = `rules[${index}].principal`
     if (known.has(`${rule.principalType}\u0000${rule.principal}`)) return
@@ -130,25 +121,13 @@ export async function checkPrincipals(
         fields.push({ field: at, message: 'is not a known person (they must have signed in once)' })
       }
     } else if (rule.principalType === 'group' && rule.principal !== null) {
-      const name = rule.principal
-      // A group of the app (either source, in `groups`) needs no Kanidm call; only the others are looked up.
-      if (findGroupByName(db, name)) return
-      if (!groups) {
-        fields.push({ field: at, message: GROUPS_UNCONFIGURED })
-        return
+      if (!findGroupByName(db, rule.principal)) {
+        fields.push({ field: at, message: GROUP_UNKNOWN })
       }
-      pending.push(
-        groups(name).then((answer) => {
-          if (answer === 'missing') fields.push({ field: at, message: 'is not a Kanidm group' })
-          else if (answer === 'unavailable') {
-            unavailable = true
-            fields.push({ field: at, message: GROUPS_UNAVAILABLE })
-          }
-        }),
-      )
     }
   })
-  await Promise.all(pending)
-  fields.sort((a, b) => (a.field < b.field ? -1 : a.field > b.field ? 1 : 0))
-  return { fields, unavailable }
+  return { fields }
 }
+
+export const GROUP_UNKNOWN =
+  'is not a known group; an administrator can import it on the Groups page'

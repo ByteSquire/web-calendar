@@ -1,7 +1,8 @@
 <!--
   Groups (for everybody signed in): the groups a person is in, with their members and calendars.
   Members create, rename, recolour, delete and share their group's calendars. Admins also create
-  custom groups, change their members and delete them; imported Kanidm groups stay read-only. The
+  custom groups, change their members and delete them, and import groups of the identity provider
+  (their members follow each sign-in); imported groups and the group of everyone stay read-only. The
   page shows admin controls to admins only, and the server checks every change again. Each part
   loads and reports its own errors, so one failing call leaves the rest of the page working.
   Choosing a group opens it below the list, and focus moves there, as on the resources page.
@@ -149,6 +150,34 @@
       </template>
     </section>
 
+    <GroupsOidcGroups
+      v-if="admin"
+      :candidates="candidates.data.value?.candidates ?? null"
+      :truncated="candidates.data.value?.truncated === true"
+      :loading="candidates.pending.value"
+      :error="candidates.error.value"
+      :busy="busy"
+      @reload="candidates.reload()"
+      @import="importCandidate"
+      @stop="askStopImporting"
+    />
+
+    <SettingsConfirmModal
+      :open="stoppingCandidate !== null"
+      :title="t('Stop importing {name}?', { name: stoppingCandidate?.name ?? '' })"
+      :description="
+        t(
+          'The group, its members and the access rules that name it are removed here. Groups that still own calendars cannot be removed; delete their calendars first. The group stays in the list and can be imported again.',
+        )
+      "
+      :confirm-label="t('Stop importing')"
+      :busy="busy"
+      :error="stopImportingError"
+      :fallback="pageHeading"
+      @update:open="(open) => (open ? undefined : closeStopImporting())"
+      @confirm="confirmStopImporting"
+    />
+
     <SettingsConfirmModal
       :open="deletingGroup !== null"
       :title="t('Delete {name}?', { name: deletingGroup?.name ?? '' })"
@@ -176,6 +205,7 @@ import { describeError } from '~/utils/settings/api-errors'
 import {
   sourceLabel,
   type CalendarShare,
+  type OidcCandidate,
   type GroupCalendar,
   type GroupDetail,
   type GroupPerson,
@@ -187,7 +217,7 @@ useHead({ title: () => t('Groups') })
 
 const { admin: adminFlag, ensure } = useAdminFlag()
 const api = useGroups()
-const { groups, people } = api
+const { groups, people, candidates } = api
 
 const checking = ref(true)
 const busy = ref(false)
@@ -201,6 +231,8 @@ const detailSection = ref<HTMLElement | null>(null)
 const pageHeading = ref<HTMLElement | null>(null)
 const deletingGroup = ref<GroupSummary | null>(null)
 const deleteGroupError = ref<string | null>(null)
+const stoppingCandidate = ref<OidcCandidate | null>(null)
+const stopImportingError = ref<string | null>(null)
 
 const admin = computed(() => adminFlag.value === true)
 // The server lists every group (the share dialog needs their names); the page shows a person
@@ -218,7 +250,7 @@ async function start() {
   checking.value = true
   await ensure()
   checking.value = false
-  await Promise.all([groups.reload(), people.reload()])
+  await Promise.all([groups.reload(), people.reload(), admin.value ? candidates.reload() : null])
 }
 
 onMounted(start)
@@ -328,6 +360,59 @@ async function confirmDeleteGroup() {
   })
   if (answer === true) deletingGroup.value = null
   else deleteGroupError.value = answer
+}
+
+/** Marks one candidate in the loaded list as imported (or not), as the server just saved it. */
+function markCandidate(id: string, groupId: number | null) {
+  candidates.update((data) => ({
+    ...data,
+    candidates: data.candidates.map((item) =>
+      item.id === id
+        ? { ...item, imported: groupId !== null, groupId, memberCount: 0, blocked: null }
+        : item,
+    ),
+  }))
+}
+
+async function importCandidate(candidate: OidcCandidate): Promise<void> {
+  const answer = await run(async () => {
+    const created = await api.importGroup(candidate.id)
+    groups.update((all) => [...all, created].sort((a, b) => a.name.localeCompare(b.name)))
+    markCandidate(candidate.id, created.id)
+    return t('{name} was imported. Its members are added as they sign in.', {
+      name: created.name,
+    })
+  })
+  if (answer !== true) problem.value = answer
+}
+
+function askStopImporting(candidate: OidcCandidate) {
+  stopImportingError.value = null
+  stoppingCandidate.value = candidate
+}
+
+function closeStopImporting() {
+  if (busy.value) return
+  stoppingCandidate.value = null
+}
+
+async function confirmStopImporting() {
+  const candidate = stoppingCandidate.value
+  if (!candidate || candidate.groupId === null) return
+  const groupId = candidate.groupId
+  stopImportingError.value = null
+  const answer = await run(async () => {
+    await api.stopImporting(groupId)
+    groups.update((all) => all.filter((item) => item.id !== groupId))
+    markCandidate(candidate.id, null)
+    if (selectedId.value === groupId) {
+      selectedId.value = null
+      detail.value = null
+    }
+    return t('{name} is not imported any more.', { name: candidate.name })
+  })
+  if (answer === true) stoppingCandidate.value = null
+  else stopImportingError.value = answer
 }
 
 async function saveMembers(members: string[]): Promise<true | string> {

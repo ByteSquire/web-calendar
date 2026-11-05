@@ -86,7 +86,6 @@
 
         <AdminAccessAddForm
           :users="access.users.data.value ?? []"
-          :groups-available="groupsAvailable"
           :busy="saving"
           :levels="ACCESS_LEVELS"
           default-level="read"
@@ -129,7 +128,6 @@ const calendarItems = computed(() =>
 const current = computed(
   () => access.calendars.data.value?.calendars.find((item) => item.id === selectedId.value) ?? null,
 )
-const groupsAvailable = computed(() => access.calendars.data.value?.groupsAvailable === true)
 const pendingCount = computed(
   () => current.value?.rules.filter((rule) => !rule.applied).length ?? 0,
 )

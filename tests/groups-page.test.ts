@@ -8,7 +8,7 @@ import { clearNuxtState } from '#app'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { UApp } from '#components'
 import GroupsPage from '~/pages/groups.vue'
-import type { GroupDetail, GroupSummary } from '~/utils/groups/model'
+import type { GroupDetail, GroupSummary, OidcCandidate } from '~/utils/groups/model'
 
 type Handler = (path: string, options?: { method?: string; body?: unknown }) => Promise<unknown>
 const api = vi.hoisted(() => ({ handler: null as null | Handler }))
@@ -29,42 +29,86 @@ let admin = false
 let groups: GroupSummary[]
 let details: Record<number, GroupDetail>
 let failGroups = false
+let candidateList: OidcCandidate[]
+let stopFailure: unknown = null
 const calls: { path: string; method: string; body: unknown }[] = []
 let app: Awaited<ReturnType<typeof mountSuspended>>
 
 const start = (): GroupSummary[] => [
   { id: 1, name: 'staff', source: 'app', memberCount: 1, member: true },
-  { id: 2, name: 'it', source: 'kanidm', memberCount: 2, member: true },
+  { id: 2, name: 'it', source: 'oidc', memberCount: 2, member: true },
 ]
 
 function detailOf(id: number): GroupDetail {
   return {
     id,
-    name: id === 1 ? 'staff' : 'it',
-    source: id === 1 ? 'app' : 'kanidm',
+    name: id === 1 ? 'staff' : id === 2 ? 'it' : 'web_calendar_users',
+    source: id === 1 ? 'app' : id === 2 ? 'oidc' : 'everyone',
     canManageMembers: id === 1 && admin,
     members: id === 1 ? [{ sub: 'sub-me', name: 'Me', username: 'me' }] : [],
-    calendars: [
-      {
-        id: 10,
-        name: 'Team calendar',
-        color: '#047857',
-        shares: [
-          {
-            principalType: 'group',
-            principal: id === 1 ? 'staff' : 'it',
-            label: 'staff',
-            permission: 'write',
-          },
-        ],
-      },
-    ],
+    calendars:
+      id === 3
+        ? []
+        : [
+            {
+              id: 10,
+              name: 'Team calendar',
+              color: '#047857',
+              shares: [
+                {
+                  principalType: 'group',
+                  principal: id === 1 ? 'staff' : 'it',
+                  label: 'staff',
+                  permission: 'write',
+                },
+              ],
+            },
+          ],
   }
 }
 
 beforeEach(() => {
   admin = false
   failGroups = false
+  stopFailure = null
+  candidateList = [
+    {
+      id: 'k-ops',
+      name: 'ops',
+      imported: false,
+      groupId: null,
+      memberCount: 0,
+      lastSeenAt: '2026-11-01T10:00:00.000Z',
+      blocked: null,
+    },
+    {
+      id: 'k-it',
+      name: 'it',
+      imported: true,
+      groupId: 2,
+      memberCount: 2,
+      lastSeenAt: '2026-11-01T10:00:00.000Z',
+      blocked: null,
+    },
+    {
+      id: 'k-staff',
+      name: 'Staff',
+      imported: false,
+      groupId: null,
+      memberCount: 0,
+      lastSeenAt: '2026-11-01T10:00:00.000Z',
+      blocked: 'name_taken',
+    },
+    {
+      id: 'k-twin1',
+      name: 'twin',
+      imported: false,
+      groupId: null,
+      memberCount: 0,
+      lastSeenAt: '2026-11-01T10:00:00.000Z',
+      blocked: 'conflict',
+    },
+  ]
   calls.length = 0
   groups = start()
   details = { 1: detailOf(1), 2: detailOf(2) }
@@ -79,6 +123,21 @@ beforeEach(() => {
         throw Object.assign(new Error('boom'), { statusCode: 500 })
       }
       return { groups }
+    }
+    if (path === '/api/groups/oidc' && method === 'GET') {
+      return { candidates: candidateList, truncated: false }
+    }
+    if (path === '/api/groups/oidc' && method === 'POST') {
+      const { externalId } = options?.body as { externalId: string }
+      const candidate = candidateList.find((item) => item.id === externalId)!
+      return {
+        group: { id: 7, name: candidate.name, source: 'oidc', memberCount: 0, member: false },
+      }
+    }
+    const stop = /^\/api\/groups\/oidc\/(\d+)$/.exec(path)
+    if (stop && method === 'DELETE') {
+      if (stopFailure) throw stopFailure
+      return { removed: { calendarRules: 1, resourceRules: 0 } }
     }
     const group = /^\/api\/groups\/(\d+)$/.exec(path)
     if (group && method === 'GET') return details[Number(group[1])]
@@ -160,7 +219,7 @@ describe('for a member', () => {
     await vi.waitFor(() => expect(rows()).toHaveLength(2))
     expect(rows()[0]).toContain('staff')
     expect(rows()[0]).toContain('Created in this app')
-    expect(rows()[1]).toContain('From Kanidm')
+    expect(rows()[1]).toContain('From your identity provider')
     expect(rows()[1]).toContain('2 members')
     // Only admins get the create form and the delete buttons.
     expect(document.querySelector('#group-create-heading')).toBeNull()
@@ -290,8 +349,136 @@ describe('for an admin', () => {
     await mountPage()
     await vi.waitFor(() => expect(rows()).toHaveLength(2))
     await openGroup('it')
-    expect(document.querySelector('[data-kanidm-note]')).not.toBeNull()
+    expect(document.querySelector('[data-imported-note]')).not.toBeNull()
     expect(button(/^Remove /)).toBeUndefined()
     expect(button(/^Save members$/)).toBeUndefined()
+  })
+
+  it('shows the group of everyone with a note, no member list and no way to change it', async () => {
+    groups.push({
+      id: 3,
+      name: 'web_calendar_users',
+      source: 'everyone',
+      memberCount: 5,
+      member: true,
+    })
+    details[3] = detailOf(3)
+    await mountPage()
+    await vi.waitFor(() => expect(rows()).toHaveLength(3))
+    expect(rows()[2]).toContain('Built in')
+    expect(rows()[2]).toContain('5 members')
+    // It owns no calendars, so wait for its note instead of a calendar (as `openGroup` does).
+    button(/^Open web_calendar_users$/)!.click()
+    await vi.waitFor(() => expect(document.querySelector('[data-everyone-note]')).not.toBeNull())
+    expect(document.querySelector('[data-imported-note]')).toBeNull()
+    expect(document.querySelector('[data-members-none]')).toBeNull()
+    expect(document.querySelector('[data-group-member]')).toBeNull()
+    expect(button(/^Save members$/)).toBeUndefined()
+    expect(button(/^Add$/)).toBeUndefined()
+  })
+})
+
+describe('groups from the identity provider', () => {
+  const section = () => document.querySelector('[data-oidc-groups]')
+  const candidateRows = () =>
+    [...document.querySelectorAll('[data-oidc-group]')].map((li) => text(li))
+
+  it('is not on the page for a member, and the list is never asked for', async () => {
+    await mountPage()
+    await vi.waitFor(() => expect(rows()).toHaveLength(2))
+    expect(section()).toBeNull()
+    expect(calls.some((call) => call.path.startsWith('/api/groups/oidc'))).toBe(false)
+  })
+
+  describe('for an admin', () => {
+    beforeEach(() => {
+      admin = true
+    })
+
+    it('lists the candidates with their state, and why one cannot be imported', async () => {
+      await mountPage()
+      await vi.waitFor(() => expect(candidateRows()).toHaveLength(4))
+      const list = candidateRows()
+      expect(list[0]).toContain('ops')
+      expect(list[0]).toContain('Not imported')
+      expect(list[1]).toContain('Imported · 2 members')
+      expect(list[2]).toContain('A group here has this name already.')
+      expect(list[3]).toContain('has to be renamed there first')
+      expect(button(/^Import ops$/)!.disabled).toBe(false)
+      expect(button(/^Import Staff$/)!.disabled).toBe(true)
+      expect(button(/^Import twin$/)!.disabled).toBe(true)
+      expect(button(/^Stop importing it$/)).toBeDefined()
+      expect(button(/^Import it$/)).toBeUndefined()
+    })
+
+    it('says when nothing has been seen yet', async () => {
+      candidateList = []
+      await mountPage()
+      await vi.waitFor(() => expect(document.querySelector('[data-oidc-none]')).not.toBeNull())
+    })
+
+    it('imports a group: sends the key, adds it to the groups and marks it imported', async () => {
+      await mountPage()
+      await vi.waitFor(() => expect(candidateRows()).toHaveLength(4))
+      button(/^Import ops$/)!.click()
+      await vi.waitFor(() => expect(sent('POST')).toHaveLength(1))
+      expect(sent('POST')[0]).toMatchObject({
+        path: '/api/groups/oidc',
+        body: { externalId: 'k-ops' },
+      })
+      await vi.waitFor(() => expect(candidateRows()[0]).toContain('Imported · 0 members'))
+      expect(rows().join(' ')).toContain('ops')
+      expect(document.querySelector('[role="status"]')?.textContent).toContain('ops was imported')
+      expect(button(/^Stop importing ops$/)).toBeDefined()
+    })
+
+    it('asks before it stops importing, and sends nothing when cancelled', async () => {
+      await mountPage()
+      await vi.waitFor(() => expect(candidateRows()).toHaveLength(4))
+      button(/^Stop importing it$/)!.click()
+      await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
+      expect(text(document.querySelector('[role="dialog"]'))).toContain('Stop importing it?')
+      button(/^Cancel$/)!.click()
+      await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull())
+      expect(sent('DELETE')).toHaveLength(0)
+    })
+
+    it('stops importing after the confirmation: the group goes, the candidate stays', async () => {
+      await mountPage()
+      await vi.waitFor(() => expect(rows()).toHaveLength(2))
+      button(/^Stop importing it$/)!.click()
+      await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
+      const confirm = [
+        ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
+      ].find((item) => text(item) === 'Stop importing')!
+      confirm.click()
+      await vi.waitFor(() => expect(sent('DELETE')).toHaveLength(1))
+      expect(sent('DELETE')[0]!.path).toBe('/api/groups/oidc/2')
+      await vi.waitFor(() => expect(rows()).toHaveLength(1))
+      expect(candidateRows()[1]).toContain('Not imported')
+      expect(button(/^Import it$/)).toBeDefined()
+    })
+
+    it('shows the server’s words in the dialog when stopping is refused, and keeps the group', async () => {
+      stopFailure = Object.assign(new Error('conflict'), {
+        statusCode: 409,
+        data: {
+          code: 'has_calendars',
+          message: 'The group still owns calendars; delete them first',
+        },
+      })
+      await mountPage()
+      await vi.waitFor(() => expect(rows()).toHaveLength(2))
+      button(/^Stop importing it$/)!.click()
+      await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
+      ;[...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
+        .find((item) => text(item) === 'Stop importing')!
+        .click()
+      await vi.waitFor(() =>
+        expect(text(document.querySelector('[role="dialog"]'))).toContain('still owns calendars'),
+      )
+      expect(rows()).toHaveLength(2)
+      expect(candidateRows()[1]).toContain('Imported')
+    })
   })
 })

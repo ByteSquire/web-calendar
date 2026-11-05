@@ -19,8 +19,7 @@ vi.mock('~/composables/useAuthFetch', () => ({
 const Shell = defineComponent({ render: () => h(UApp, null, { default: () => h(AccessPage) }) })
 
 const ME = { id: 1, sub: 's', username: 'alice', name: 'Alice', email: null, timeZone: null }
-const calendars = (groupsAvailable = true): AccessCalendarsResponse => ({
-  groupsAvailable,
+const calendars = (): AccessCalendarsResponse => ({
   calendars: [
     {
       id: 5,
@@ -54,7 +53,6 @@ const calendars = (groupsAvailable = true): AccessCalendarsResponse => ({
 
 const calls: { path: string; method: string; body: unknown }[] = []
 let admin = true
-let groups = true
 let saveFailure: unknown = null
 let app: Awaited<ReturnType<typeof mountSuspended>>
 let replace: ReturnType<typeof vi.fn>
@@ -62,14 +60,13 @@ let replace: ReturnType<typeof vi.fn>
 beforeEach(() => {
   calls.length = 0
   admin = true
-  groups = true
   saveFailure = null
   replace = vi.fn(async () => undefined)
   vi.spyOn(useRouter(), 'replace').mockImplementation(replace as never)
   api.handler = async (path, options) => {
     calls.push({ path, method: options?.method ?? 'GET', body: options?.body })
     if (path === '/api/me') return { ...ME, isAdmin: admin }
-    if (path === '/api/admin/access/calendars' && !options?.method) return calendars(groups)
+    if (path === '/api/admin/access/calendars' && !options?.method) return calendars()
     if (path === '/api/admin/access/users')
       return { users: [{ sub: 'u-bob', name: 'Bob Builder', username: 'bob' }] }
     if (options?.method === 'PUT') {
@@ -79,7 +76,7 @@ beforeEach(() => {
           rules: { principalType: string; principal: string | null; permission: string }[]
         }
       ).rules
-      const base = calendars(groups).calendars[0]!
+      const base = calendars().calendars[0]!
       return {
         changed: true,
         calendar: {
@@ -215,7 +212,14 @@ describe('as an admin', () => {
       data: {
         statusCode: 400,
         message: 'The request is not valid',
-        data: { fields: [{ field: 'rules[2].principal', message: 'is not a Kanidm group' }] },
+        data: {
+          fields: [
+            {
+              field: 'rules[2].principal',
+              message: 'is not a known group; an administrator can import it on the Groups page',
+            },
+          ],
+        },
       },
     }
     await mountPage()
@@ -230,17 +234,16 @@ describe('as an admin', () => {
     button(/^Add access$/)!.click()
     await vi.waitFor(() =>
       expect(text(document.querySelector('[role="alert"]'))).toContain(
-        'Nothing was changed. Group nope is not a Kanidm group.',
+        'Nothing was changed. Group nope is not a known group; an administrator can import it on the Groups page.',
       ),
     )
     expect(rules()).toHaveLength(2)
   })
 
-  it('disables the group choice when the server cannot check groups', async () => {
-    groups = false
+  it('offers the group choice always: the groups are the app’s own, no server setting is needed', async () => {
     await mountPage()
     await vi.waitFor(() => expect(rules()).toHaveLength(2))
-    expect(radio('A group').hasAttribute('disabled')).toBe(true)
-    expect(text(document.body)).toContain('no Kanidm token')
+    expect(radio('A group').hasAttribute('disabled')).toBe(false)
+    expect(text(document.body)).not.toContain('Kanidm')
   })
 })

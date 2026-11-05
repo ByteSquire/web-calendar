@@ -146,7 +146,6 @@
         <AdminAccessAddForm
           v-if="rules !== null"
           :users="users"
-          :groups-available="true"
           :busy="saving"
           :levels="RESOURCE_RIGHTS"
           default-level="book"

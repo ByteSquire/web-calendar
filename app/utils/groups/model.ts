@@ -1,9 +1,24 @@
 // Groups and their calendars (the groups page): the shapes of server/api/groups/**, the rules the
 // browser checks before it sends (the server checks them again and decides), and the words for
 // them. The shapes are written out here so the browser bundle stays free of server code.
-import { N_, t, tv } from '~/utils/i18n'
+import { N_, t, tc, tv } from '~/utils/i18n'
 
-export type GroupSource = 'app' | 'kanidm'
+/** `app`: made here; `oidc`: imported from the identity provider; `everyone`: built in. */
+export type GroupSource = 'app' | 'oidc' | 'everyone'
+/** A group the identity provider's claims have shown, as `/api/groups/oidc` lists it. */
+export interface OidcCandidate {
+  /** The provider's key for the group: what an import names. */
+  id: string
+  name: string
+  imported: boolean
+  /** The imported group's id (what Stop importing names), else null. */
+  groupId: number | null
+  memberCount: number
+  lastSeenAt: string
+  /** Why Import is not possible; null when it is. */
+  blocked: 'conflict' | 'name_taken' | null
+}
+
 export type SharePrincipalType = 'user' | 'group'
 export type SharePermission = 'read' | 'write'
 
@@ -82,8 +97,24 @@ export function isColor(value: string): boolean {
   return value === '' || COLOR.test(value)
 }
 
+/** The state of a candidate in words: imported (with its members), blocked (and why) or free. */
+export function candidateStatus(candidate: OidcCandidate): string {
+  if (candidate.imported) {
+    return tc('Imported · {count} member | Imported · {count} members', candidate.memberCount)
+  }
+  if (candidate.blocked === 'conflict') {
+    return t(
+      'Two groups of the identity provider have this name. One has to be renamed there first.',
+    )
+  }
+  if (candidate.blocked === 'name_taken') return t('A group here has this name already.')
+  return t('Not imported')
+}
+
 export function sourceLabel(source: GroupSource): string {
-  return source === 'kanidm' ? t('From Kanidm') : t('Created in this app')
+  if (source === 'oidc') return t('From your identity provider')
+  if (source === 'everyone') return t('Built in')
+  return t('Created in this app')
 }
 
 export const SHARE_PERMISSIONS: readonly { value: SharePermission; label: string; help: string }[] =

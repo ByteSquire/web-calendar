@@ -29,8 +29,6 @@ export interface AccessCalendar {
 
 export interface AccessCalendarsResponse {
   calendars: AccessCalendar[]
-  /** False when the server has no Kanidm token: group rules are refused. */
-  groupsAvailable: boolean
 }
 
 export interface AccessUser {
@@ -81,7 +79,7 @@ export function principalKind(type: AccessPrincipalType): string {
 
 const GROUP_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/
 
-/** The same shape the server accepts; the server and Kanidm still decide. */
+/** The same shape the server accepts; the server still decides. */
 export function isGroupName(text: string): boolean {
   return GROUP_NAME.test(text)
 }

@@ -24,14 +24,12 @@ export const admin: Readonly<Record<string, string>> = {
   'Nobody matches. People appear here after they signed in once.':
     'Niemand passt. Personen erscheinen hier, nachdem sie sich einmal angemeldet haben.',
   'Group name': 'Gruppenname',
-  'The short name of the group in Kanidm, for example staff.':
-    'Der Kurzname der Gruppe in Kanidm, zum Beispiel staff.',
+  'The name of a group from the Groups page, for example staff.':
+    'Der Name einer Gruppe von der Seite „Gruppen“, zum Beispiel staff.',
   'Everyone who can sign in to this calendar app gets this access.':
     'Alle, die sich in dieser Kalender-App anmelden können, erhalten diesen Zugriff.',
   'Access level': 'Zugriffsstufe',
   'Search people': 'Personen suchen',
-  'Not available: the server has no Kanidm token to check groups with.':
-    'Nicht verfügbar: Der Server hat kein Kanidm-Token, um Gruppen zu prüfen.',
   'Choose a person.': 'Wähle eine Person aus.',
   'Enter the group name: letters, digits, dots, dashes and underscores.':
     'Gib den Gruppennamen ein: Buchstaben, Ziffern, Punkte, Bindestriche und Unterstriche.',

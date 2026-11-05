@@ -29,8 +29,8 @@ export const groups: Readonly<Record<string, string>> = {
 
   // Create a group (admins)
   'Create a group': 'Gruppe anlegen',
-  'Members of a group can create and share its calendars. Its members are chosen here; Kanidm groups are imported and cannot be changed here.':
-    'Mitglieder einer Gruppe können deren Kalender anlegen und teilen. Die Mitglieder wählst du hier aus; Gruppen aus Kanidm werden übernommen und lassen sich hier nicht ändern.',
+  'Members of a group can create and share its calendars. Its members are chosen here; groups from your identity provider cannot be changed here.':
+    'Mitglieder einer Gruppe können deren Kalender anlegen und teilen. Die Mitglieder wählst du hier aus; Gruppen aus deinem Identitätsanbieter lassen sich hier nicht ändern.',
   'Letters, digits, dots, dashes and underscores. It cannot be changed later.':
     'Buchstaben, Ziffern, Punkte, Bindestriche und Unterstriche. Der Name lässt sich später nicht ändern.',
   'Create group': 'Gruppe anlegen',
@@ -39,9 +39,37 @@ export const groups: Readonly<Record<string, string>> = {
 
   // Members
   Members: 'Mitglieder',
-  'From Kanidm': 'Aus Kanidm',
-  'This group is imported from Kanidm. Its members are changed there, not here. The list is updated from Kanidm regularly.':
-    'Diese Gruppe wird aus Kanidm übernommen. Ihre Mitglieder werden dort geändert, nicht hier. Die Liste wird regelmäßig aus Kanidm aktualisiert.',
+  'From your identity provider': 'Aus deinem Identitätsanbieter',
+  'Built in': 'Eingebaut',
+  'This group is imported from your identity provider. Its members are changed there, not here. A person is added or removed when they sign in.':
+    'Diese Gruppe wird aus deinem Identitätsanbieter übernommen. Ihre Mitglieder werden dort geändert, nicht hier. Eine Person wird beim Anmelden hinzugefügt oder entfernt.',
+  'Everyone whose last sign-in was at most {days} ago is in this group. It is built by the app and cannot be changed.':
+    'Alle, deren letzte Anmeldung höchstens {days} zurückliegt, sind in dieser Gruppe. Die App bildet sie selbst; sie lässt sich nicht ändern.',
+
+  // Groups from the identity provider (admins)
+  'Groups from your identity provider': 'Gruppen aus deinem Identitätsanbieter',
+  'These are the groups your identity provider named when people signed in. A group appears here after one of its members signed in. Import a group to use it here: its members are then added and removed as they sign in.':
+    'Das sind die Gruppen, die dein Identitätsanbieter bei Anmeldungen genannt hat. Eine Gruppe erscheint hier, sobald sich eines ihrer Mitglieder angemeldet hat. Importiere eine Gruppe, um sie hier zu verwenden: Ihre Mitglieder werden dann beim Anmelden hinzugefügt und entfernt.',
+  'Loading the groups of your identity provider':
+    'Gruppen deines Identitätsanbieters werden geladen',
+  'load the groups of your identity provider': 'Das Laden der Gruppen deines Identitätsanbieters',
+  'No groups have been seen yet.': 'Bisher wurden keine Gruppen gesehen.',
+  Import: 'Importieren',
+  'Import {name}': '{name} importieren',
+  'Stop importing': 'Import beenden',
+  'Stop importing {name}': 'Import von {name} beenden',
+  'Stop importing {name}?': 'Import von {name} beenden?',
+  'The group, its members and the access rules that name it are removed here. Groups that still own calendars cannot be removed; delete their calendars first. The group stays in the list and can be imported again.':
+    'Die Gruppe, ihre Mitglieder und die Zugriffsregeln, die sie nennen, werden hier entfernt. Gruppen, die noch Kalender besitzen, lassen sich nicht entfernen; lösche zuerst deren Kalender. Die Gruppe bleibt in der Liste und lässt sich erneut importieren.',
+  'Only the first groups are shown.': 'Nur die ersten Gruppen werden angezeigt.',
+  'Imported · {count} member | Imported · {count} members':
+    'Importiert · {count} Mitglied | Importiert · {count} Mitglieder',
+  'Two groups of the identity provider have this name. One has to be renamed there first.':
+    'Zwei Gruppen des Identitätsanbieters haben diesen Namen. Eine muss dort zuerst umbenannt werden.',
+  'A group here has this name already.': 'Eine Gruppe hier hat diesen Namen schon.',
+  '{name} was imported. Its members are added as they sign in.':
+    '{name} wurde importiert. Die Mitglieder werden beim Anmelden hinzugefügt.',
+  '{name} is not imported any more.': '{name} wird nicht mehr importiert.',
   'This group has no members yet.': 'Diese Gruppe hat noch keine Mitglieder.',
   'Remove {name} from {group}': '{name} aus {group} entfernen',
   'Add a member': 'Mitglied hinzufügen',

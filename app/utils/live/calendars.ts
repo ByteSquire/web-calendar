@@ -9,10 +9,10 @@ import type { ApiCalendarPref, ApiIcalSubscription } from './api-types'
 import { normalizeHexColor, paletteColor } from './palette'
 
 /**
- * The collection every member of `web_calendar_users` finds in their home once the group sync works:
- * the booked times of the resources, shared free/busy only (design §5, §8). Third-party CalDAV
- * clients may list it; the web app reads availability through its own API, so it is no calendar of
- * the sidebar, and a full read of it is refused by Radicale (403).
+ * The collection every member of `web_calendar_users` finds in their home once the group file the
+ * app writes lists them: the booked times of the resources, shared free/busy only (design §5, §8).
+ * Third-party CalDAV clients may list it; the web app reads availability through its own API, so it
+ * is no calendar of the sidebar, and a full read of it is refused by Radicale (403).
  */
 export const AVAILABILITY_COLLECTION = 'resource-availability'
 

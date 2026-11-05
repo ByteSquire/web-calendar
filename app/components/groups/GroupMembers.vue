@@ -1,6 +1,7 @@
 <!--
-  The members of a group. Imported (Kanidm) groups and groups the person may not change are a
-  plain list with a marker that says where they are managed. Admins on a custom group get a list
+  The members of a group. Groups from the identity provider and groups the person may not change
+  are a plain list with a marker that says where they are managed; the built-in group of everyone
+  who signed in recently has no list, only the note. Admins on a custom group get a list
   they edit and save as one complete list (PUT members); removing a person is a button that names
   them, and adding picks from the people who signed in once.
 -->
@@ -9,28 +10,44 @@
     <div class="flex flex-wrap items-center gap-2">
       <h3 id="group-members-heading" class="text-lg font-semibold">{{ t('Members') }}</h3>
       <UBadge
-        v-if="group.source === 'kanidm'"
-        :label="t('From Kanidm')"
-        icon="i-lucide-cloud"
+        v-if="group.source !== 'app'"
+        :label="sourceLabel(group.source)"
+        :icon="group.source === 'oidc' ? 'i-lucide-cloud' : 'i-lucide-users'"
         color="neutral"
         variant="outline"
       />
     </div>
 
-    <p v-if="group.source === 'kanidm'" class="text-sm text-toned" data-kanidm-note>
+    <p v-if="group.source === 'oidc'" class="text-sm text-toned" data-imported-note>
       {{
         t(
-          'This group is imported from Kanidm. Its members are changed there, not here. The list is updated from Kanidm regularly.',
+          'This group is imported from your identity provider. Its members are changed there, not here. A person is added or removed when they sign in.',
+        )
+      }}
+    </p>
+    <p v-else-if="group.source === 'everyone'" class="text-sm text-toned" data-everyone-note>
+      {{
+        t(
+          'Everyone whose last sign-in was at most {days} ago is in this group. It is built by the app and cannot be changed.',
+          { days: tc('{count} day | {count} days', windowDays) },
         )
       }}
     </p>
 
     <SettingsErrorAlert v-if="alert" :message="alert" />
 
-    <p v-if="draft.length === 0" class="text-toned" data-members-none>
+    <p
+      v-if="group.source !== 'everyone' && draft.length === 0"
+      class="text-toned"
+      data-members-none
+    >
       {{ t('This group has no members yet.') }}
     </p>
-    <ul v-else :aria-label="t('Members')" class="flex flex-col gap-2">
+    <ul
+      v-else-if="group.source !== 'everyone'"
+      :aria-label="t('Members')"
+      class="flex flex-col gap-2"
+    >
       <li
         v-for="sub in draft"
         :key="sub"
@@ -107,8 +124,14 @@
 
 <script setup lang="ts">
 import { userLabel } from '~/utils/admin/access'
-import { t } from '~/utils/i18n'
-import { addMember, removeMember, type GroupDetail, type GroupPerson } from '~/utils/groups/model'
+import { t, tc } from '~/utils/i18n'
+import {
+  addMember,
+  removeMember,
+  sourceLabel,
+  type GroupDetail,
+  type GroupPerson,
+} from '~/utils/groups/model'
 
 const props = defineProps<{
   group: GroupDetail
@@ -117,6 +140,10 @@ const props = defineProps<{
   /** Saves the complete member list; true when it worked, else the words for the failure. */
   saveMembers: (members: string[]) => Promise<true | string>
 }>()
+
+// How long a sign-in keeps a person in the group of everyone (NUXT_SIGNIN_WINDOW_DAYS).
+const serverConfig = useServerConfigState()
+const windowDays = computed(() => serverConfig.value?.signinWindowDays ?? 30)
 
 // Only custom groups whose members the person may change (the server says so); the buttons are
 // hidden, the server still decides.

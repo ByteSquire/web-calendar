@@ -15,7 +15,7 @@
     <p class="text-sm text-toned">
       {{
         t(
-          'Members of a group can create and share its calendars. Its members are chosen here; Kanidm groups are imported and cannot be changed here.',
+          'Members of a group can create and share its calendars. Its members are chosen here; groups from your identity provider cannot be changed here.',
         )
       }}
     </p>

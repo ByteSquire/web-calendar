@@ -21,7 +21,7 @@ interface MockCalendar {
 interface MockGroup {
   id: number
   name: string
-  source: 'app' | 'kanidm'
+  source: 'app' | 'oidc' | 'everyone'
   members: { sub: string; name: string | null; username: string | null }[]
   calendars: MockCalendar[]
 }
@@ -31,7 +31,47 @@ const PEOPLE = [
   { sub: 'sub-bob', name: 'Bob Builder', username: 'bob' },
 ]
 
+interface MockCandidate {
+  id: string
+  name: string
+  imported: boolean
+  groupId: number | null
+  memberCount: number
+  lastSeenAt: string
+  blocked: 'conflict' | 'name_taken' | null
+}
+
 class MockGroups {
+  /** What the provider's claims have shown (`/api/groups/oidc`). */
+  candidates: MockCandidate[] = [
+    {
+      id: 'k-it',
+      name: 'it',
+      imported: true,
+      groupId: 2,
+      memberCount: 1,
+      lastSeenAt: '2026-11-01T10:00:00.000Z',
+      blocked: null,
+    },
+    {
+      id: 'k-ops',
+      name: 'ops',
+      imported: false,
+      groupId: null,
+      memberCount: 0,
+      lastSeenAt: '2026-11-01T10:00:00.000Z',
+      blocked: null,
+    },
+    {
+      id: 'k-staff',
+      name: 'Staff',
+      imported: false,
+      groupId: null,
+      memberCount: 0,
+      lastSeenAt: '2026-11-01T10:00:00.000Z',
+      blocked: 'name_taken',
+    },
+  ]
   calls: { method: string; path: string; body: unknown }[] = []
   /** Answers the next list requests with an error, then works again (ofetch retries a GET once). */
   failListRequests = 0
@@ -55,7 +95,7 @@ class MockGroups {
     {
       id: 2,
       name: 'it',
-      source: 'kanidm',
+      source: 'oidc',
       members: [{ sub: 'sub-bob', name: 'Bob Builder', username: 'bob' }],
       calendars: [],
     },
@@ -103,6 +143,37 @@ class MockGroups {
         return route.fulfill({ status: 500, json: { statusCode: 500, message: 'Boom' } })
       }
       return route.fulfill({ json: { groups: this.groups.map((group) => this.summary(group)) } })
+    }
+    if (path === '/api/groups/oidc' && method === 'GET') {
+      if (!this.admin) return route.fulfill({ status: 403, json: { statusCode: 403 } })
+      return route.fulfill({ json: { candidates: this.candidates, truncated: false } })
+    }
+    if (path === '/api/groups/oidc' && method === 'POST') {
+      const candidate = this.candidates.find(
+        (item) => item.id === (body as { externalId: string }).externalId,
+      )!
+      const created: MockGroup = {
+        id: this.nextId++,
+        name: candidate.name,
+        source: 'oidc',
+        members: [],
+        calendars: [],
+      }
+      this.groups.push(created)
+      candidate.imported = true
+      candidate.groupId = created.id
+      return route.fulfill({ status: 201, json: { group: this.summary(created) } })
+    }
+    const stop = /^\/api\/groups\/oidc\/(\d+)$/.exec(path)
+    if (stop && method === 'DELETE') {
+      this.groups = this.groups.filter((item) => item.id !== Number(stop[1]))
+      for (const candidate of this.candidates) {
+        if (candidate.groupId === Number(stop[1])) {
+          candidate.imported = false
+          candidate.groupId = null
+        }
+      }
+      return route.fulfill({ json: { removed: { calendarRules: 0, resourceRules: 0 } } })
     }
     if (path === '/api/groups' && method === 'POST') {
       const name = (body as { name: string }).name
@@ -220,7 +291,7 @@ const groupRow = (page: Page, name: string) =>
 
 async function openGroup(page: Page, name: string) {
   await press(page.getByRole('button', { name: `Open ${name}` }))
-  await expect(page.getByRole('heading', { name, level: 2 })).toBeVisible()
+  await expect(page.getByRole('heading', { name, level: 2, exact: true })).toBeVisible()
 }
 
 /** Chooses an option of a select menu: its trigger is a button named after the label. */
@@ -333,9 +404,38 @@ test.describe('groups for an admin', () => {
   test('shows the imported group read-only, without member controls', async ({ page }) => {
     await openPage(page, true)
     await openGroup(page, 'it')
-    await expect(page.getByText('This group is imported from Kanidm.')).toBeVisible()
+    await expect(
+      page.getByText('This group is imported from your identity provider.'),
+    ).toBeVisible()
     await expect(page.getByRole('button', { name: /^Remove / })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Save members' })).toHaveCount(0)
+  })
+
+  test('imports a group of the identity provider and stops importing it', async ({ page }) => {
+    const api = await openPage(page, true)
+    const section = page.locator('[data-oidc-groups]')
+    await expect(section.locator('[data-oidc-group]')).toHaveCount(3)
+    await expect(section.getByRole('button', { name: 'Import Staff' })).toBeDisabled()
+    await press(section.getByRole('button', { name: 'Import ops' }))
+    await expect(section.getByText('Imported · 0 members')).toBeVisible()
+    await expect(page.locator('[data-group]').filter({ hasText: 'ops' })).toHaveCount(1)
+    expect(
+      api.calls.find((call) => call.method === 'POST' && call.path === '/api/groups/oidc')?.body,
+    ).toEqual({ externalId: 'k-ops' })
+
+    await press(section.getByRole('button', { name: 'Stop importing ops' }))
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('Stop importing ops?')
+    await dialog.getByRole('button', { name: 'Stop importing' }).click()
+    await expect(page.locator('[data-group]').filter({ hasText: 'ops' })).toHaveCount(0)
+    await expect(section.getByRole('button', { name: 'Import ops' })).toBeEnabled()
+  })
+
+  test('has no section of the identity provider for a member', async ({ page }) => {
+    const api = await openPage(page, false)
+    await expect(page.locator('[data-group]').first()).toBeVisible()
+    await expect(page.locator('[data-oidc-groups]')).toHaveCount(0)
+    expect(api.calls.some((call) => call.path === '/api/groups/oidc')).toBe(false)
   })
 
   test('shows the reason when a group with calendars cannot be deleted', async ({ page }) => {
@@ -374,6 +474,17 @@ test.describe('keyboard and German', () => {
       await expect(page.getByRole('button', { name: 'Gruppe anlegen' })).toBeVisible()
       await expect(page.getByText('Create group')).toHaveCount(0)
     })
+  })
+
+  test('has no accessibility violations on the section of the identity provider', async ({
+    page,
+  }) => {
+    await openPage(page, true)
+    await expect(page.locator('[data-oidc-group]').first()).toBeVisible()
+    const { violations } = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze()
+    expect(violations.map((violation) => violation.id)).toEqual([])
   })
 
   test('has no accessibility violations on the open group', async ({ page }) => {

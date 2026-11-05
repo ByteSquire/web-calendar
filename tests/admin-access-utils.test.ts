@@ -109,10 +109,15 @@ describe('describeSaveProblem', () => {
 
   it('names the rule the server rejected', () => {
     const cause = failure(400, {
-      fields: [{ field: 'rules[1].principal', message: 'is not a Kanidm group' }],
+      fields: [
+        {
+          field: 'rules[1].principal',
+          message: 'is not a known group; an administrator can import it on the Groups page',
+        },
+      ],
     })
     expect(describeSaveProblem(cause, sent, labelOf)).toBe(
-      'Nothing was changed. <nope> is not a Kanidm group.',
+      'Nothing was changed. <nope> is not a known group; an administrator can import it on the Groups page.',
     )
   })
 

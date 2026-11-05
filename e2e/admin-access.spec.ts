@@ -78,7 +78,7 @@ class MockAccess {
     const body: unknown = raw ? JSON.parse(raw) : undefined
     this.calls.push({ method, path, body })
     if (path === '/api/admin/access/calendars' && method === 'GET') {
-      return route.fulfill({ json: { calendars: [this.calendar()], groupsAvailable: true } })
+      return route.fulfill({ json: { calendars: [this.calendar()] } })
     }
     if (path === '/api/admin/access/users') {
       return route.fulfill({

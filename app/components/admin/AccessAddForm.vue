@@ -1,6 +1,6 @@
 <!--
-  Adds a rule for a person (picked from the people who signed in once), a group (its Kanidm short
-  name) or everyone signed in, with a plain description of each level. Adding someone who has a
+  Adds a rule for a person (picked from the people who signed in once), a group (its name as the Groups page
+  shows it) or everyone signed in, with a plain description of each level. Adding someone who has a
   rule already changes their level. The parent saves and says whether it worked; only then are the
   inputs cleared.
 -->
@@ -41,7 +41,7 @@
     <UFormField
       v-else-if="type === 'group'"
       :label="t('Group name')"
-      :help="t('The short name of the group in Kanidm, for example staff.')"
+      :help="t('The name of a group from the Groups page, for example staff.')"
       :error="problem"
       required
     >
@@ -85,7 +85,6 @@ import {
 
 const props = defineProps<{
   users: readonly AccessUser[]
-  groupsAvailable: boolean
   busy: boolean
   /** The levels to choose from (calendars: read/write, resources: read/book/manage). */
   levels: readonly { value: P; label: string; help: string }[]
@@ -113,16 +112,7 @@ const permission = ref(props.defaultLevel) as Ref<P>
 const problem = ref<string | undefined>(undefined)
 
 const whoItems = computed(() =>
-  PRINCIPAL_CHOICES.map((choice) =>
-    choice.value === 'group' && !props.groupsAvailable
-      ? {
-          ...choice,
-          label: tv(choice.label),
-          disabled: true,
-          description: t('Not available: the server has no Kanidm token to check groups with.'),
-        }
-      : { ...choice, label: tv(choice.label) },
-  ),
+  PRINCIPAL_CHOICES.map((choice) => ({ ...choice, label: tv(choice.label) })),
 )
 // Nuxt UI types the radio group by its items; a plain string keeps that simple while the saved rule
 // keeps the caller's own level type `P`.

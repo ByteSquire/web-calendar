@@ -11,6 +11,9 @@ import groupsGet from '../../server/api/groups/index.get'
 import groupsPost from '../../server/api/groups/index.post'
 import groupGet from '../../server/api/groups/[id]/index.get'
 import groupDelete from '../../server/api/groups/[id]/index.delete'
+import oidcGet from '../../server/api/groups/oidc/index.get'
+import oidcPost from '../../server/api/groups/oidc/index.post'
+import oidcDelete from '../../server/api/groups/oidc/[id].delete'
 import membersPut from '../../server/api/groups/[id]/members.put'
 import calendarPost from '../../server/api/groups/[id]/calendars/index.post'
 import calendarPatch from '../../server/api/groups/[id]/calendars/[calendarId]/index.patch'
@@ -54,6 +57,8 @@ vi.mock('../../server/utils/api/config', () => ({
     tokenHashKey: 'test-hash-key',
     oidcIssuer: 'https://idm.test/oauth2/openid/web-calendar',
     adminGroup: 'calendar_admins',
+    groupsIgnore: ['idm_*', 'system_*'],
+    signinWindowMs: 30 * 24 * 60 * 60 * 1000,
   }),
 }))
 
@@ -66,6 +71,9 @@ const ROUTES: [method: string, path: string, handler: EventHandler][] = [
   ['GET', '/api/people', peopleGet],
   ['GET', '/api/groups', groupsGet],
   ['POST', '/api/groups', groupsPost],
+  ['GET', '/api/groups/oidc', oidcGet],
+  ['POST', '/api/groups/oidc', oidcPost],
+  ['DELETE', '/api/groups/oidc/:id', oidcDelete],
   ['GET', '/api/groups/:id', groupGet],
   ['DELETE', '/api/groups/:id', groupDelete],
   ['PUT', '/api/groups/:id/members', membersPut],
@@ -144,8 +152,8 @@ beforeEach(() => {
     listShares: vi.fn(async () => ({
       ok: true,
       value: [
-        { pathMapped: '/_group-1/cal-1/', pathOrToken: '/alice/shared-1-team_a/', user: ':team_a' },
-        { pathMapped: '/_group-1/other/', pathOrToken: '/bob/shared-2-x/', user: ':team_b' },
+        { pathMapped: '/_group-2/cal-1/', pathOrToken: '/alice/shared-1-team_a/', user: ':team_a' },
+        { pathMapped: '/_group-2/other/', pathOrToken: '/bob/shared-2-x/', user: ':team_b' },
       ],
     })),
     deleteShare: vi.fn(async () => ok),
@@ -204,13 +212,28 @@ describe('signed-in reads', () => {
     seedGroup()
     const res = await call('GET', '/api/groups', 'bob')
     expect(res.status).toBe(200)
+    // The migration's own group of everyone comes with the one made here: it holds the people who
+    // signed in within the window, bob (the caller) among them.
+    const people = db.prepare('SELECT COUNT(*) FROM users').pluck().get() as number
     expect(await res.json()).toEqual({
-      groups: [{ id: 1, name: 'team_a', source: 'app', memberCount: 1, member: false }],
+      groups: [
+        { id: 2, name: 'team_a', source: 'app', memberCount: 1, member: false },
+        {
+          id: 1,
+          name: 'web_calendar_users',
+          source: 'everyone',
+          memberCount: people,
+          member: true,
+        },
+      ],
     })
     const alice = (await (await call('GET', '/api/groups', 'alice')).json()) as {
-      groups: { member: boolean }[]
+      groups: { name: string; member: boolean }[]
     }
-    expect(alice.groups[0]!.member).toBe(true)
+    expect(alice.groups.map((g) => [g.name, g.member])).toEqual([
+      ['team_a', true],
+      ['web_calendar_users', true],
+    ])
   })
 })
 
@@ -265,7 +288,8 @@ describe('admin-only group routes', () => {
     db.prepare('DELETE FROM calendars WHERE id = ?').run(calendar)
     expect((await call('DELETE', `/api/groups/${group}`, 'alice')).status).toBe(403)
     expect((await call('DELETE', `/api/groups/${group}`, 'admin')).status).toBe(200)
-    expect(db.prepare('SELECT COUNT(*) AS n FROM groups').pluck().get()).toBe(0)
+    // Only the group of everyone, which the migration made, is left.
+    expect(db.prepare('SELECT source FROM groups').pluck().all()).toEqual(['everyone'])
   })
 
   it('refuses to delete a group that still owns calendars (409)', async () => {
@@ -335,11 +359,12 @@ describe('group calendars (member or admin)', () => {
   })
 
   it('refuses to create a calendar in the group of all users, for a member and an admin', async () => {
-    const group = Number(
-      db.prepare(`INSERT INTO groups (name, source) VALUES ('web_calendar_users', 'kanidm')`).run()
-        .lastInsertRowid,
-    )
-    db.prepare('INSERT INTO group_members (group_id, sub) VALUES (?, ?)').run(group, SUBS.alice)
+    // The group of everyone is a row of the migration; nobody is stored in it, a person who signed
+    // in recently counts as in it, and an admin may act in every group.
+    const group = db
+      .prepare(`SELECT id FROM groups WHERE source = 'everyone'`)
+      .pluck()
+      .get() as number
     for (const who of ['alice', 'admin'] as const) {
       const res = await call('POST', `/api/groups/${group}/calendars`, who, { name: 'Everyone' })
       expect(res.status).toBe(400)
@@ -498,7 +523,7 @@ describe('group calendars (member or admin)', () => {
     expect(res.status).toBe(200)
     // Radicale refuses to delete a mapped collection: only this calendar's share goes.
     expect(radicale.deleteShare).toHaveBeenCalledTimes(1)
-    expect(radicale.deleteShare).toHaveBeenCalledWith('_group-1', 'map', '/alice/shared-1-team_a/')
+    expect(radicale.deleteShare).toHaveBeenCalledWith('_group-2', 'map', '/alice/shared-1-team_a/')
     expect(radicale.deleteShare.mock.invocationCallOrder[0]!).toBeLessThan(
       radicale.deleteCollection.mock.invocationCallOrder[0]!,
     )
@@ -529,7 +554,9 @@ describe('group calendars (member or admin)', () => {
 
   it('replaces the extra shares and keeps the owning group write rule', async () => {
     const { group, calendar } = seedGroup()
-    db.prepare(`INSERT INTO groups (name, source) VALUES ('other_team', 'kanidm')`).run()
+    db.prepare(
+      `INSERT INTO groups (name, source, external_id) VALUES ('other_team', 'oidc', 'other-team-id')`,
+    ).run()
     const res = await call('PUT', `/api/groups/${group}/calendars/${calendar}/shares`, 'alice', {
       shares: [
         { principalType: 'user', principal: SUBS.bob, permission: 'read' },
@@ -585,5 +612,274 @@ describe('group calendars (member or admin)', () => {
       ).status,
     ).toBe(400)
     expect((await call('PUT', path, 'bob', { shares: [] })).status).toBe(403)
+  })
+})
+
+describe('groups of the identity provider (admins only)', () => {
+  const seenGroup = (key: string, name: string, extra: { conflict?: number } = {}) =>
+    db
+      .prepare(`INSERT INTO oidc_group_candidates (external_id, name, conflict) VALUES (?, ?, ?)`)
+      .run(key, name, extra.conflict ?? 0)
+  const importBody = (externalId: unknown) => ({ externalId })
+  const groupRow = (key: string) =>
+    db.prepare(`SELECT id, name, source FROM groups WHERE external_id = ?`).get(key) as
+      { id: number; name: string; source: string } | undefined
+
+  describe('who may call', () => {
+    it.each([
+      ['GET', '/api/groups/oidc', undefined],
+      ['POST', '/api/groups/oidc', importBody('x')],
+      ['DELETE', '/api/groups/oidc/1', undefined],
+    ])('%s %s answers 403 for a member and for somebody else', async (method, path, body) => {
+      seenGroup('x', 'x')
+      for (const who of ['alice', 'bob'] as const) {
+        expect((await call(method, path, who, body)).status).toBe(403)
+      }
+      expect(groupRow('x')).toBeUndefined()
+      expect(ports.onGroupsChanged).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('the list', () => {
+    it('shows what the claims have shown, by name, with the state of each', async () => {
+      seenGroup('b-key', 'beta')
+      seenGroup('a-key', 'Alpha')
+      seenGroup('imported-key', 'gamma')
+      const { group } = seedGroup('mine')
+      void group
+      seenGroup('taken-key', 'MINE')
+      seenGroup('c1', 'twin', { conflict: 1 })
+      seenGroup('c2', 'twin', { conflict: 1 })
+      const id = Number(
+        db
+          .prepare(
+            `INSERT INTO groups (name, source, external_id) VALUES ('gamma', 'oidc', 'imported-key')`,
+          )
+          .run().lastInsertRowid,
+      )
+      db.prepare('INSERT INTO group_members (group_id, sub) VALUES (?, ?)').run(id, SUBS.bob)
+      const res = await call('GET', '/api/groups/oidc', 'admin')
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as {
+        candidates: Record<string, unknown>[]
+        truncated: boolean
+      }
+      expect(body.truncated).toBe(false)
+      expect(body.candidates.map((c) => [c.name, c.imported, c.blocked, c.memberCount])).toEqual([
+        ['Alpha', false, null, 0],
+        ['beta', false, null, 0],
+        ['gamma', true, null, 1],
+        ['MINE', false, 'name_taken', 0],
+        ['twin', false, 'conflict', 0],
+        ['twin', false, 'conflict', 0],
+      ])
+      expect(body.candidates.find((c) => c.name === 'gamma')).toMatchObject({
+        id: 'imported-key',
+        groupId: id,
+      })
+    })
+
+    it('never offers built-in groups, the admin group or the group of everyone', async () => {
+      for (const [key, name] of [
+        ['k1', 'idm_admins'],
+        ['k2', 'SYSTEM_x'],
+        ['k3', ADMIN_GROUP],
+        ['k4', 'Calendar_Admins'],
+        ['k5', 'web_calendar_users'],
+        ['k6', 'fine'],
+      ] as const) {
+        seenGroup(key, name)
+      }
+      const body = (await (await call('GET', '/api/groups/oidc', 'admin')).json()) as {
+        candidates: { name: string }[]
+      }
+      expect(body.candidates.map((c) => c.name)).toEqual(['fine'])
+    })
+
+    it('says so when there are more than it shows', async () => {
+      const insert = db.prepare(
+        `INSERT INTO oidc_group_candidates (external_id, name) VALUES (?, ?)`,
+      )
+      for (let i = 0; i < 1001; i += 1) insert.run(`k${i}`, `g${String(i).padStart(4, '0')}`)
+      const body = (await (await call('GET', '/api/groups/oidc', 'admin')).json()) as {
+        candidates: unknown[]
+        truncated: boolean
+      }
+      expect(body.candidates).toHaveLength(1000)
+      expect(body.truncated).toBe(true)
+    })
+  })
+
+  describe('importing', () => {
+    it('makes an imported group of the candidate, without members, and asks for the file', async () => {
+      seenGroup('idp-1', 'ops')
+      const res = await call('POST', '/api/groups/oidc', 'admin', importBody('idp-1'))
+      expect(res.status).toBe(201)
+      const body = (await res.json()) as { group: Record<string, unknown> }
+      expect(body.group).toMatchObject({
+        name: 'ops',
+        source: 'oidc',
+        memberCount: 0,
+        member: false,
+      })
+      expect(groupRow('idp-1')).toMatchObject({ name: 'ops', source: 'oidc' })
+      expect(db.prepare('SELECT COUNT(*) FROM group_members').pluck().get()).toBe(0)
+      expect(ports.onGroupsChanged).toHaveBeenCalledTimes(1)
+      const entry = db
+        .prepare(`SELECT actor_sub, action, target, details FROM audit_log`)
+        .get() as { actor_sub: string; action: string; target: string; details: string }
+      expect(entry).toMatchObject({ actor_sub: SUBS.admin, action: 'group.oidc_imported' })
+      expect(JSON.parse(entry.details)).toMatchObject({ name: 'ops' })
+    })
+
+    it('refuses a second import of the same group, a name that is taken and a shared name', async () => {
+      seenGroup('idp-1', 'ops')
+      expect((await call('POST', '/api/groups/oidc', 'admin', importBody('idp-1'))).status).toBe(
+        201,
+      )
+      expect((await call('POST', '/api/groups/oidc', 'admin', importBody('idp-1'))).status).toBe(
+        409,
+      )
+
+      seedGroup('team')
+      seenGroup('idp-2', 'Team')
+      expect((await call('POST', '/api/groups/oidc', 'admin', importBody('idp-2'))).status).toBe(
+        409,
+      )
+
+      seenGroup('idp-3', 'twin', { conflict: 1 })
+      seenGroup('idp-4', 'twin', { conflict: 1 })
+      for (const key of ['idp-3', 'idp-4']) {
+        expect((await call('POST', '/api/groups/oidc', 'admin', importBody(key))).status).toBe(409)
+      }
+      expect(groupRow('idp-2')).toBeUndefined()
+      expect(groupRow('idp-3')).toBeUndefined()
+      expect(ports.onGroupsChanged).toHaveBeenCalledTimes(1)
+    })
+
+    it('answers 404 for a key the claims never showed, and for names that are never offered', async () => {
+      for (const [key, name] of [
+        ['k1', 'idm_admins'],
+        ['k2', ADMIN_GROUP],
+        ['k3', 'web_calendar_users'],
+      ] as const) {
+        seenGroup(key, name)
+        expect((await call('POST', '/api/groups/oidc', 'admin', importBody(key))).status).toBe(404)
+      }
+      expect((await call('POST', '/api/groups/oidc', 'admin', importBody('unknown'))).status).toBe(
+        404,
+      )
+      expect(db.prepare(`SELECT COUNT(*) FROM groups WHERE source = 'oidc'`).pluck().get()).toBe(0)
+    })
+
+    it('stops at the group limit', async () => {
+      const insert = db.prepare(`INSERT INTO groups (name, source) VALUES (?, 'app')`)
+      for (let i = 0; i < 200; i += 1) insert.run(`g${i}`)
+      seenGroup('idp-1', 'one_more')
+      expect((await call('POST', '/api/groups/oidc', 'admin', importBody('idp-1'))).status).toBe(
+        409,
+      )
+    })
+
+    it.each([[undefined], [null], [5], [''], ['x'.repeat(256)], [['a']]])(
+      'answers 400 for the key %j',
+      async (key) => {
+        const res = await call('POST', '/api/groups/oidc', 'admin', importBody(key))
+        expect(res.status).toBe(400)
+      },
+    )
+
+    it('matches the key as sent: not trimmed, not case-folded', async () => {
+      seenGroup('Key With Blank ', 'blanky')
+      expect(
+        (await call('POST', '/api/groups/oidc', 'admin', importBody('Key With Blank'))).status,
+      ).toBe(404)
+      expect(
+        (await call('POST', '/api/groups/oidc', 'admin', importBody('key with blank '))).status,
+      ).toBe(404)
+      expect(
+        (await call('POST', '/api/groups/oidc', 'admin', importBody('Key With Blank '))).status,
+      ).toBe(201)
+    })
+  })
+
+  describe('stopping', () => {
+    function importedGroup(key: string, name: string) {
+      seenGroup(key, name)
+      return Number(
+        db
+          .prepare(`INSERT INTO groups (name, source, external_id) VALUES (?, 'oidc', ?)`)
+          .run(name, key).lastInsertRowid,
+      )
+    }
+
+    it('removes the group, its members and the rules that name it, and keeps the candidate', async () => {
+      const id = importedGroup('idp-1', 'ops')
+      db.prepare('INSERT INTO group_members (group_id, sub) VALUES (?, ?)').run(id, SUBS.alice)
+      const calendar = Number(
+        db
+          .prepare(
+            `INSERT INTO calendars (name, kind, collection_path) VALUES ('c', 'shared', '/x/')`,
+          )
+          .run().lastInsertRowid,
+      )
+      db.prepare(
+        `INSERT INTO calendar_acl (calendar_id, principal_type, principal, permission)
+         VALUES (?, 'group', 'ops', 'read')`,
+      ).run(calendar)
+      const res = await call('DELETE', `/api/groups/oidc/${id}`, 'admin')
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ removed: { calendarRules: 1, resourceRules: 0 } })
+      expect(groupRow('idp-1')).toBeUndefined()
+      expect(db.prepare('SELECT COUNT(*) FROM group_members').pluck().get()).toBe(0)
+      expect(db.prepare('SELECT COUNT(*) FROM calendar_acl').pluck().get()).toBe(0)
+      expect(
+        db
+          .prepare(`SELECT COUNT(*) FROM oidc_group_candidates WHERE external_id = 'idp-1'`)
+          .pluck()
+          .get(),
+      ).toBe(1)
+      expect(ports.onGroupsChanged).toHaveBeenCalledTimes(1)
+      expect(ports.onSharesChanged).toHaveBeenCalledTimes(1)
+      expect(db.prepare(`SELECT action FROM audit_log`).pluck().all()).toEqual([
+        'group.oidc_import_stopped',
+      ])
+      // It can be imported again.
+      expect((await call('POST', '/api/groups/oidc', 'admin', importBody('idp-1'))).status).toBe(
+        201,
+      )
+    })
+
+    it('refuses while the group owns calendars', async () => {
+      const id = importedGroup('idp-1', 'ops')
+      db.prepare(
+        `INSERT INTO calendars (name, kind, collection_path, group_id)
+         VALUES ('c', 'shared', '/_group-${id}/c/', ?)`,
+      ).run(id)
+      const res = await call('DELETE', `/api/groups/oidc/${id}`, 'admin')
+      expect(res.status).toBe(409)
+      expect(JSON.stringify(await res.json())).toContain('has_calendars')
+      expect(groupRow('idp-1')).toBeDefined()
+    })
+
+    it('answers 404 for a group that is not an imported one, or does not exist', async () => {
+      const { group } = seedGroup('mine')
+      const everyone = db
+        .prepare(`SELECT id FROM groups WHERE source = 'everyone'`)
+        .pluck()
+        .get() as number
+      for (const id of [group, everyone, 9999]) {
+        expect((await call('DELETE', `/api/groups/oidc/${id}`, 'admin')).status).toBe(404)
+      }
+      expect(db.prepare(`SELECT COUNT(*) FROM groups`).pluck().get()).toBe(2)
+      expect((await call('DELETE', '/api/groups/oidc/abc', 'admin')).status).toBe(404)
+    })
+
+    it('is the only way to delete one: the route for app groups refuses it', async () => {
+      const id = importedGroup('idp-1', 'ops')
+      const res = await call('DELETE', `/api/groups/${id}`, 'admin')
+      expect(res.status).toBe(403)
+      expect(groupRow('idp-1')).toBeDefined()
+    })
   })
 })

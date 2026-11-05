@@ -8,6 +8,7 @@ import type {
   GroupDetail,
   GroupPerson,
   GroupSummary,
+  OidcCandidate,
   SharePermission,
   SharePrincipalType,
 } from '~/utils/groups/model'
@@ -31,9 +32,25 @@ export function useGroups() {
     N_('load the people'),
   )
 
+  // Admins only: the server answers 403 to anybody else, so the page loads it for admins alone.
+  const candidates = createResource(
+    () => api<{ candidates: OidcCandidate[]; truncated: boolean }>('/api/groups/oidc'),
+    N_('load the groups of your identity provider'),
+  )
+
   return {
     groups,
     people,
+    candidates,
+    importGroup: async (externalId: string) =>
+      (
+        await api<{ group: GroupSummary }>('/api/groups/oidc', {
+          method: 'POST',
+          body: { externalId },
+        })
+      ).group,
+    stopImporting: (groupId: number) =>
+      api<unknown>(`/api/groups/oidc/${groupId}`, { method: 'DELETE' }),
     loadGroup: (id: number) => api<GroupDetail>(`/api/groups/${id}`),
     createGroup: async (name: string) =>
       (await api<{ group: GroupSummary }>('/api/groups', { method: 'POST', body: { name } })).group,

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import Database from 'better-sqlite3'
-import { writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { openSignedIn } from './session'
 
 // Groups and their calendars with the real stack (design §8 "Groups"): alice (an administrator)
@@ -139,7 +139,7 @@ test.beforeAll(async ({ browser }) => {
 test.afterAll(async () => {
   await alice.context().close()
   await bob.context().close()
-  // The group file of the test stack goes back to empty (the sync keeps the last group otherwise).
+  // The group file of the test stack goes back to empty (the app writes it again at its next change).
   writeFileSync(GROUP_FILE, '')
 })
 
@@ -255,6 +255,77 @@ test('deleting the calendar and the group removes them from every home', async (
   await alice.getByRole('button', { name: `Delete group ${GROUP}` }).click()
   await alice.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
   await expect(alice.locator('[data-group]').filter({ hasText: GROUP })).toHaveCount(0)
+})
+
+// A group of the identity provider (the test stack's Kanidm has `idp_team` with bob in it, made by
+// `./spike.sh bootstrap`): the groups claim of bob's sign-in made it a candidate, alice imports it
+// on the Groups page, and bob becomes a member at his next /api/me; the group file then lists him.
+const IDP_GROUP = 'idp_team'
+
+function groupFileLine(name: string): string | undefined {
+  return readFileSync(GROUP_FILE, 'utf8')
+    .split('\n')
+    .find((line) => line.startsWith(`${name}:`))
+}
+
+test('alice is offered the group of the identity provider, and not Kanidm’s own groups', async () => {
+  await openGroupsPage(alice)
+  const section = alice.locator('[data-oidc-groups]')
+  await expect(section.locator('[data-oidc-group]').filter({ hasText: IDP_GROUP })).toBeVisible()
+  await expect(section.locator('[data-oidc-group]').filter({ hasText: IDP_GROUP })).toContainText(
+    'Not imported',
+  )
+  // The built-in groups (idm_*), the admin group and the group of everyone are never candidates.
+  const names = await section.locator('[data-oidc-group] .font-medium').allTextContents()
+  expect(names.filter((name) => /^(idm_|system_|domain_)/.test(name))).toEqual([])
+  expect(names).not.toContain('calendar_admins')
+  expect(names).not.toContain('web_calendar_users')
+})
+
+test('nobody is in the file for the group before it is imported', () => {
+  expect(groupFileLine(IDP_GROUP)).toBeUndefined()
+})
+
+test('alice imports it, and bob is a member when he opens the page, and in the group file', async () => {
+  const section = alice.locator('[data-oidc-groups]')
+  await alice.getByRole('button', { name: `Import ${IDP_GROUP}`, exact: true }).click()
+  await expect(section.locator('[data-oidc-group]').filter({ hasText: IDP_GROUP })).toContainText(
+    'Imported',
+  )
+  await expect(alice.locator('[data-group]').filter({ hasText: IDP_GROUP })).toContainText(
+    'From your identity provider',
+  )
+
+  // Opening the page asks /api/me, which reads bob's groups from Kanidm and joins him.
+  await openGroupsPage(bob)
+  const row = bob.locator('[data-group]').filter({ hasText: IDP_GROUP })
+  await expect(row).toBeVisible()
+  await expect(row).toContainText('You are a member')
+  await expect
+    .poll(() => groupFileLine(IDP_GROUP), { timeout: 20_000 })
+    .toBe(`${IDP_GROUP}: ${bobSub}`)
+  // The group of everyone lists both people who signed in.
+  await expect
+    .poll(() => groupFileLine('web_calendar_users'), { timeout: 20_000 })
+    .toContain(bobSub)
+  expect(groupFileLine('web_calendar_users')).toContain(aliceSub)
+
+  // The group is read-only for its members: no member controls, only the note.
+  await bob.getByRole('button', { name: `Open ${IDP_GROUP}` }).click()
+  await expect(bob.locator('[data-imported-note]')).toBeVisible()
+  await expect(bob.getByRole('button', { name: 'Save members' })).toHaveCount(0)
+})
+
+test('alice stops importing it, and the group is gone from the app and from the file', async () => {
+  await openGroupsPage(alice)
+  const section = alice.locator('[data-oidc-groups]')
+  await alice.getByRole('button', { name: `Stop importing ${IDP_GROUP}`, exact: true }).click()
+  await alice.getByRole('dialog').getByRole('button', { name: 'Stop importing' }).click()
+  await expect(section.locator('[data-oidc-group]').filter({ hasText: IDP_GROUP })).toContainText(
+    'Not imported',
+  )
+  await expect(alice.locator('[data-group]').filter({ hasText: IDP_GROUP })).toHaveCount(0)
+  await expect.poll(() => groupFileLine(IDP_GROUP), { timeout: 20_000 }).toBeUndefined()
 })
 
 test('no script or console errors came up', () => {

@@ -305,6 +305,17 @@ export function validateEnv(env) {
 
   // Optional knobs with defaults in nuxt.config.ts; the names are the runtimeConfig keys in env form.
   checkInteger('NUXT_OIDC_KEY_MAX_AGE_SEC', 1)
+  // The window after a sign-in in which app tokens work and a person is in the group of everyone.
+  // The server takes the same text (spaces around it are fine) and stops at start on any other.
+  const windowDays = env.NUXT_SIGNIN_WINDOW_DAYS
+  if (windowDays !== undefined) {
+    const days = /^\d{1,4}$/.test(windowDays.trim()) ? Number(windowDays.trim()) : Number.NaN
+    if (!(days >= 1 && days <= 365)) {
+      errors.push(
+        `NUXT_SIGNIN_WINDOW_DAYS must be a whole number of days from 1 to 365, not ${show(windowDays)}`,
+      )
+    }
+  }
   checkInteger('NUXT_GATEWAY_MAX_BODY_BYTES', 1)
   checkInteger('NUXT_GATEWAY_MAX_CONCURRENT_PER_USER', 1)
   checkBoolean('NUXT_GATEWAY_TRUST_FORWARDED_FOR')
@@ -421,6 +432,32 @@ export function validateEnv(env) {
     }
   }
 
+  // The claim the groups are read from: a property name as written, so a namespaced claim
+  // (`cognito:groups`, a URL, a URN) is fine; blanks and control characters are not.
+  const groupsClaim = env.NUXT_OIDC_GROUPS_CLAIM
+  if (groupsClaim !== undefined && !/^[\x21-\x7e]{1,200}$/.test(groupsClaim)) {
+    errors.push(
+      'NUXT_OIDC_GROUPS_CLAIM must be the name of one claim, 1 to 200 printable characters ' +
+        `without blanks (the default is groups), not ${show(groupsClaim)}`,
+    )
+  }
+
+  // Groups that are never offered: names the group file accepts, each optionally ending in `*`.
+  const groupsIgnore = env.NUXT_OIDC_GROUPS_IGNORE
+  if (groupsIgnore !== undefined) {
+    const bad = groupsIgnore
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry !== '' && !/^[A-Za-z0-9_.-]{1,64}\*?$/.test(entry))
+    if (bad.length > 0) {
+      errors.push(
+        'NUXT_OIDC_GROUPS_IGNORE must be a comma-separated list of group names, each optionally ' +
+          'ending in * (letters, digits, dot, dash and underscore; a lone * would hide every ' +
+          `group): ${bad.map(show).join(', ')}`,
+      )
+    }
+  }
+
   // L3: the SSRF guard of the iCal proxy is off with this one; only tests want that.
   if (env.NUXT_ICAL_PROXY_ALLOW_PRIVATE === 'true') {
     if (env.NODE_ENV !== 'production') {
@@ -455,21 +492,28 @@ export function validateEnv(env) {
     errors.push(`TZ must be an IANA time zone such as Europe/Berlin, not "${timeZone}"`)
   }
 
-  if (!get('NUXT_GROUP_SYNC_TOKEN')) {
+  // The old pull-based group sync is gone: groups come from the sign-in claim and the app writes
+  // the group file itself. Only the names are said, never a value (the token was a secret).
+  const oldSyncSettings = Object.keys(env)
+    .filter((name) => name.startsWith('NUXT_GROUP_SYNC_') && env[name] !== undefined)
+    .sort()
+  if (oldSyncSettings.length > 0) {
+    const many = oldSyncSettings.length > 1
     warnings.push(
-      "NUXT_GROUP_SYNC_TOKEN is not set: Radicale's group file is not filled from Kanidm, so " +
-        'group changes never reach it',
+      `${oldSyncSettings.join(', ')} ${many ? 'are' : 'is'} set but ignored now: groups come ` +
+        'from the sign-in claim and the app writes the group file itself (NUXT_GROUPS_FILE). ' +
+        `Remove ${many ? 'them' : 'it'} from the environment.`,
     )
+  }
+  if (env.NUXT_GROUPS_FILE !== undefined && !get('NUXT_GROUPS_FILE')) {
+    errors.push('NUXT_GROUPS_FILE must be a file path; leave it unset for the default')
   }
 
   // One purpose per key (security review 2026-11-01, finding 5): a value shared between the
-  // token hash key, the seal key and the group-sync token would let compromising one of them
-  // compromise another.
-  const groupSyncToken = get('NUXT_GROUP_SYNC_TOKEN')
+  // token hash key and the seal key would let compromising one of them compromise the other.
   const namedSecrets = [
     ...tokenHashKeyValues(env).map((value) => ({ name: 'NUXT_TOKEN_HASH_KEY(S)', value })),
     ...(sealKey !== '' ? [{ name: 'NUXT_EXTERNAL_SEAL_KEY', value: sealKey }] : []),
-    ...(groupSyncToken !== '' ? [{ name: 'NUXT_GROUP_SYNC_TOKEN', value: groupSyncToken }] : []),
   ]
   for (let i = 0; i < namedSecrets.length; i += 1) {
     for (let j = i + 1; j < namedSecrets.length; j += 1) {
@@ -481,17 +525,6 @@ export function validateEnv(env) {
         )
       }
     }
-  }
-  // The interval is a security setting: a removed member keeps access for up to this long.
-  checkInteger('NUXT_GROUP_SYNC_INTERVAL_SEC', 1)
-  const syncInterval = env.NUXT_GROUP_SYNC_INTERVAL_SEC
-  if (syncInterval !== undefined && /^\d{1,15}$/.test(syncInterval) && Number(syncInterval) > 300) {
-    errors.push(
-      `NUXT_GROUP_SYNC_INTERVAL_SEC must be at most 300 (a removed member keeps access that long), not ${show(syncInterval)}`,
-    )
-  }
-  if (env.NUXT_GROUP_SYNC_FILE !== undefined && !get('NUXT_GROUP_SYNC_FILE')) {
-    errors.push('NUXT_GROUP_SYNC_FILE must be a file path; leave it unset for the default')
   }
 
   // The sharing writer: a longer reconcile interval would leave a share change unapplied for longer.

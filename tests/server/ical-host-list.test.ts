@@ -168,7 +168,6 @@ describe('server/validate-config.mjs agrees with the server on the same table', 
     NUXT_OIDC_ISSUER: 'https://idm.example.org/oauth2/openid/web-calendar',
     NUXT_TOKEN_HASH_KEY: 'k'.repeat(32),
     NUXT_RADICALE_URL: 'http://radicale:5232',
-    NUXT_GROUP_SYNC_TOKEN: 'sync-token',
   }
   const check = (text: string) =>
     validateEnv({ ...valid, NUXT_OUTBOUND_ALLOWED_HOSTS: text }).errors

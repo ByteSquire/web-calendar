@@ -212,29 +212,6 @@
         "type": "password",
         "label": "External account key",
         "initialValue": ""
-      },
-
-      {
-        "name": "groupSyncTokenInfo",
-        "type": "info",
-        "label": "Group sync token (NUXT_GROUP_SYNC_TOKEN): the read-only API token of the Kanidm service account that copies group membership to Radicale (docs/kanidm-setup.md section 3). You only get it after setting Kanidm up: leave it empty now and add it later in the app container's environment. Without it, group shares do not work."
-      },
-      {
-        "name": "groupSyncToken",
-        "type": "password",
-        "label": "Group sync token",
-        "initialValue": ""
-      },
-      {
-        "name": "groupSyncIntervalInfo",
-        "type": "info",
-        "label": "Group sync interval (NUXT_GROUP_SYNC_INTERVAL_SEC): seconds between group-sync runs. A removed group member keeps access for up to this long; at most 300."
-      },
-      {
-        "name": "groupSyncInterval",
-        "type": "text",
-        "label": "Group sync interval (seconds)",
-        "initialValue": "60"
       }
       {if not Context.bundleRadicale}
       ,
@@ -489,7 +466,7 @@
       {
         "name": "groupsInfo",
         "type": "info",
-        "label": "Group file, mounted at /groups: the file htgroup, which the app writes from Kanidm's groups and Radicale reads. With your own Radicale, pick a volume or folder that Radicale reads too. Default: the volume (service name)-groups, or the folder (Cosmos storage)/(service name)/groups."
+        "label": "Group file, mounted at /groups: the file htgroup, which the app writes from its own groups (imported at sign-in) and Radicale reads. With your own Radicale, pick a volume or folder that Radicale reads too. Default: the volume (service name)-groups, or the folder (Cosmos storage)/(service name)/groups."
       },
       {if Context.useHostFolders}
       {
@@ -564,14 +541,14 @@
       {
         "type": "info",
         "name": "kanidmSetup",
-        "label": "Set Kanidm up: 1. Get the admin password with: docker exec {ServiceName}-kanidm kanidmd recover-account idm_admin. 2. Follow docs/kanidm-setup.md with the server https://{Hostnames.{StaticServiceName}-kanidm.{StaticServiceName}-kanidm.host}: create the groups, the client {Context.oidcClientId} with the redirect URL https://{Hostnames.{StaticServiceName}.{StaticServiceName}.host}/auth/callback, and the group-sync account. 3. Put its token into NUXT_GROUP_SYNC_TOKEN in the environment of the container {ServiceName} and restart it."
+        "label": "Set Kanidm up: 1. Get the admin password with: docker exec {ServiceName}-kanidm kanidmd recover-account idm_admin. 2. Follow docs/kanidm-setup.md with the server https://{Hostnames.{StaticServiceName}-kanidm.{StaticServiceName}-kanidm.host}: create the groups and the client {Context.oidcClientId} with the redirect URL https://{Hostnames.{StaticServiceName}.{StaticServiceName}.host}/auth/callback."
       }
       {else}
       ,
       {
         "type": "info",
         "name": "kanidmExisting",
-        "label": "In your Kanidm, follow docs/kanidm-setup.md: the client {Context.oidcClientId} needs the redirect URL https://{Hostnames.{StaticServiceName}.{StaticServiceName}.host}/auth/callback. Put the group-sync token into NUXT_GROUP_SYNC_TOKEN in the environment of the container {ServiceName} if you have not yet."
+        "label": "In your Kanidm, follow docs/kanidm-setup.md: the client {Context.oidcClientId} needs the redirect URL https://{Hostnames.{StaticServiceName}.{StaticServiceName}.host}/auth/callback."
       }
       {/if}
       {if not Context.bundleRadicale}
@@ -601,9 +578,7 @@
         "NUXT_TOKEN_HASH_KEY={Context.tokenHashKey}",
         "NUXT_TOKEN_HASH_KEYS={Context.tokenHashKeys}",
         "NUXT_EXTERNAL_SEAL_KEY={Context.sealKey}",
-        "NUXT_GROUP_SYNC_TOKEN={Context.groupSyncToken}",
-        "NUXT_GROUP_SYNC_INTERVAL_SEC={Context.groupSyncInterval}",
-        "NUXT_GROUP_SYNC_FILE=/groups/htgroup",
+        "NUXT_GROUPS_FILE=/groups/htgroup",
         "NUXT_DB_PATH=/data/web-calendar.db",
         "NUXT_RADICALE_URL={if Context.bundleRadicale}http://{ServiceName}-radicale:5232{else}{Context.radicaleUrl}{/if}",
         "NUXT_GATEWAY_CORS_ORIGINS={Context.gatewayCors}",

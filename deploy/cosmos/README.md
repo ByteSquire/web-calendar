@@ -46,7 +46,7 @@ missing folders and gives the app's and Radicale's folders to uid 1000):
 | Default volume / folder                      | Mounted at                        | Contents                                                    | Back up |
 | -------------------------------------------- | --------------------------------- | ----------------------------------------------------------- | ------- |
 | `<name>-data` / `…/<name>/data`              | app `/data`                       | SQLite database (app tokens, access rules, bookings, audit) | yes     |
-| `<name>-groups` / `…/<name>/groups`          | app `/groups`, Radicale read-only | Radicale's group file, rewritten by the group sync          | no      |
+| `<name>-groups` / `…/<name>/groups`          | app `/groups`, Radicale read-only | Radicale's group file, written by the app from its groups   | no      |
 | `<name>-radicale-data` / `…/<name>/radicale` | Radicale `/var/lib/radicale`      | All calendars and `sharing.csv` (authorization state)       | yes     |
 | `<name>-kanidm-data` / `…/<name>/kanidm`     | Kanidm `/data`                    | Kanidm database and its TLS certificate                     | yes     |
 
@@ -58,12 +58,8 @@ place of the Compose volume. Never copy the SQLite file while the app runs.
 
 1. Get the admin password: `docker exec <name>-kanidm kanidmd recover-account idm_admin`.
 2. Follow [`docs/kanidm-setup.md`](../../docs/kanidm-setup.md) with the server
-   `https://<Kanidm address>`: the groups, the OAuth2 client with the redirect URL
-   `https://<app address>/auth/callback`, and the group-sync account (it needs
-   `idm_people_pii_read`).
-3. Put the sync token into `NUXT_GROUP_SYNC_TOKEN` in the environment of the `<name>` container in
-   Cosmos and save, so Cosmos recreates it. The token expires within 90 days; rotate it the same
-   way.
+   `https://<Kanidm address>`: the groups, and the OAuth2 client with the redirect URL
+   `https://<app address>/auth/callback`.
 
 Notes:
 
@@ -83,7 +79,7 @@ Notes:
 
 Untick **Install a Kanidm server** and enter the issuer URL of the app's client:
 `https://<your Kanidm>/oauth2/openid/<client id>`. In Kanidm, the client needs the redirect URL
-`https://<app address>/auth/callback`; the groups and the group-sync account are in
+`https://<app address>/auth/callback`; the groups are in
 [`docs/kanidm-setup.md`](../../docs/kanidm-setup.md).
 
 ## Radicale you already run
@@ -129,3 +125,8 @@ choices (Kanidm, Radicale, host folders, outbound hosts) render to valid JSON wi
 services, settings, storage and networks. The full stack (app, Radicale, Kanidm) started with
 volumes and with host folders when created and started the way Cosmos does it, and the isolation
 of Radicale held. It has not been installed in a running Cosmos yet.
+
+On 2026-11-05 the group sync fields (token, interval) were removed from the form and
+`NUXT_GROUP_SYNC_FILE` became `NUXT_GROUPS_FILE`, because groups now come from the sign-in claim and
+the app writes the group file itself. That edit was checked only by reading the template: the
+render test of the 24 combinations has not been run again.

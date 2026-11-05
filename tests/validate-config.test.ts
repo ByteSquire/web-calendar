@@ -12,7 +12,6 @@ const valid = {
   NUXT_OIDC_ISSUER: 'https://idm.example.org/oauth2/openid/web-calendar',
   NUXT_TOKEN_HASH_KEY: 'k'.repeat(32),
   NUXT_RADICALE_URL: 'http://radicale:5232',
-  NUXT_GROUP_SYNC_TOKEN: 'sync-token',
 }
 
 describe('validateEnv', () => {
@@ -275,6 +274,65 @@ describe('validateEnv', () => {
       expect(errors).toHaveLength(1)
       expect(errors[0]).toContain('NUXT_OIDC_ADMIN_GROUP')
     })
+  })
+
+  describe('NUXT_SIGNIN_WINDOW_DAYS', () => {
+    const run = (value: string) => validateEnv({ ...valid, NUXT_SIGNIN_WINDOW_DAYS: value })
+
+    it('is fine unset, and from 1 to 365 days with spaces around it', () => {
+      expect(validateEnv(valid).errors).toEqual([])
+      for (const days of ['1', '30', '365', ' 7 ']) expect(run(days).errors).toEqual([])
+    })
+
+    it.each(['', '0', '366', '-1', '1.5', '30d', 'many', '1e2', '+5', '0x10', '99999'])(
+      'refuses %j, saying what is allowed',
+      (value) => {
+        const { errors } = run(value)
+        expect(errors).toHaveLength(1)
+        expect(errors[0]).toContain('NUXT_SIGNIN_WINDOW_DAYS')
+        expect(errors[0]).toContain('1 to 365')
+      },
+    )
+  })
+
+  describe('NUXT_OIDC_GROUPS_CLAIM and NUXT_OIDC_GROUPS_IGNORE', () => {
+    const claim = (value: string) => validateEnv({ ...valid, NUXT_OIDC_GROUPS_CLAIM: value })
+    const ignore = (value: string) => validateEnv({ ...valid, NUXT_OIDC_GROUPS_IGNORE: value })
+
+    it('are fine unset, and the claim may be a namespaced name', () => {
+      expect(validateEnv(valid)).toMatchObject({ errors: [], warnings: [] })
+      for (const name of [
+        'groups',
+        'cognito:groups',
+        'https://example.org/claims/groups',
+        'urn:x:y',
+      ]) {
+        expect(claim(name).errors).toEqual([])
+      }
+    })
+
+    it.each(['', 'two words', 'tab\tin', 'x'.repeat(201), 'ünicode'])(
+      'refuses the claim name %j',
+      (value) => {
+        const { errors } = claim(value)
+        expect(errors).toHaveLength(1)
+        expect(errors[0]).toContain('NUXT_OIDC_GROUPS_CLAIM')
+      },
+    )
+
+    it('takes names and prefix patterns, with blanks and empty entries tolerated', () => {
+      expect(ignore('idm_*, system_* ,,domain_*, staff').errors).toEqual([])
+      expect(ignore('').errors).toEqual([])
+    })
+
+    it.each(['*', 'a b', 'a*b', 'a/b', 'ünicode', 'x**', 'good, bad name'])(
+      'refuses the ignore entry %j, naming the setting',
+      (value) => {
+        const { errors } = ignore(value)
+        expect(errors).toHaveLength(1)
+        expect(errors[0]).toContain('NUXT_OIDC_GROUPS_IGNORE')
+      },
+    )
   })
 
   describe('NUXT_OIDC_JWKS_HOSTS', () => {
@@ -543,25 +601,14 @@ describe('validateEnv', () => {
   describe('one purpose per key (security review 2026-11-01, finding 5)', () => {
     const sealKey = Buffer.from(Array.from({ length: 32 }, (_, i) => i + 1)).toString('hex')
 
-    it('refuses the seal key reused as the group-sync token', () => {
-      const { errors } = validateEnv({
-        ...valid,
-        NUXT_EXTERNAL_SEAL_KEY: sealKey,
-        NUXT_GROUP_SYNC_TOKEN: sealKey,
-      })
-      expect(errors).toEqual([
-        'NUXT_EXTERNAL_SEAL_KEY and NUXT_GROUP_SYNC_TOKEN must not be the same value: each secret has one purpose',
-      ])
-    })
-
-    it('refuses the token hash key reused as the seal key or the group-sync token', () => {
+    it('refuses the token hash key reused as the seal key', () => {
       const shared = 'k'.repeat(32)
       expect(
-        validateEnv({ ...valid, NUXT_TOKEN_HASH_KEY: shared, NUXT_GROUP_SYNC_TOKEN: shared })
+        validateEnv({ ...valid, NUXT_TOKEN_HASH_KEY: shared, NUXT_EXTERNAL_SEAL_KEY: shared })
           .errors,
-      ).toEqual([
-        'NUXT_TOKEN_HASH_KEY(S) and NUXT_GROUP_SYNC_TOKEN must not be the same value: each secret has one purpose',
-      ])
+      ).toContain(
+        'NUXT_TOKEN_HASH_KEY(S) and NUXT_EXTERNAL_SEAL_KEY must not be the same value: each secret has one purpose',
+      )
     })
 
     it('does not mind two DIFFERENT token hash key versions sharing a purpose', () => {
@@ -570,14 +617,11 @@ describe('validateEnv', () => {
       ).toEqual([])
     })
 
-    it('accepts three different values', () => {
-      expect(
-        validateEnv({
-          ...valid,
-          NUXT_EXTERNAL_SEAL_KEY: sealKey,
-          NUXT_GROUP_SYNC_TOKEN: 'a-different-sync-token',
-        }),
-      ).toEqual({ errors: [], warnings: [] })
+    it('accepts two different values', () => {
+      expect(validateEnv({ ...valid, NUXT_EXTERNAL_SEAL_KEY: sealKey })).toEqual({
+        errors: [],
+        warnings: [],
+      })
     })
   })
 
@@ -592,32 +636,56 @@ describe('validateEnv', () => {
     })
   })
 
-  it('warns, but does not fail, when the group sync token is missing', () => {
-    const { errors, warnings } = validateEnv({ ...valid, NUXT_GROUP_SYNC_TOKEN: '' })
-    expect(errors).toEqual([])
-    expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain('NUXT_GROUP_SYNC_TOKEN')
+  describe('the removed group sync settings', () => {
+    it('warns, but does not fail, for each one that is still set, and names them without values', () => {
+      const { errors, warnings } = validateEnv({
+        ...valid,
+        NUXT_GROUP_SYNC_TOKEN: 'sync-token-secret',
+        NUXT_GROUP_SYNC_INTERVAL_SEC: '60',
+        NUXT_GROUP_SYNC_FILE: '/groups/htgroup',
+      })
+      expect(errors).toEqual([])
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain(
+        'NUXT_GROUP_SYNC_FILE, NUXT_GROUP_SYNC_INTERVAL_SEC, NUXT_GROUP_SYNC_TOKEN are set but ignored',
+      )
+      expect(warnings[0]).toContain('sign-in claim')
+      expect(warnings[0]).toContain('NUXT_GROUPS_FILE')
+      expect(warnings[0]).not.toContain('sync-token-secret')
+    })
+
+    it('warns for a single one, an empty one included, and never refuses its value', () => {
+      for (const value of ['', ' ', '301', 'abc']) {
+        const { errors, warnings } = validateEnv({ ...valid, NUXT_GROUP_SYNC_INTERVAL_SEC: value })
+        expect(errors).toEqual([])
+        expect(warnings).toHaveLength(1)
+        expect(warnings[0]).toContain('NUXT_GROUP_SYNC_INTERVAL_SEC is set but ignored')
+        expect(warnings[0]).toContain('Remove it')
+      }
+    })
+
+    it('is quiet when none is set, and the token no longer takes part in the key check', () => {
+      expect(validateEnv(valid).warnings).toEqual([])
+      const shared = 'k'.repeat(32)
+      expect(validateEnv({ ...valid, NUXT_GROUP_SYNC_TOKEN: shared }).errors).toEqual([])
+    })
   })
 
-  it('accepts a group sync interval from 1 to 300 seconds and refuses others', () => {
-    for (const ok of ['1', '60', '300']) {
-      expect(validateEnv({ ...valid, NUXT_GROUP_SYNC_INTERVAL_SEC: ok }).errors).toEqual([])
-    }
-    for (const bad of ['301', '3600', '0', '-5', '1.5', 'abc', '']) {
-      const { errors } = validateEnv({ ...valid, NUXT_GROUP_SYNC_INTERVAL_SEC: bad })
-      expect(errors).toHaveLength(1)
-      expect(errors[0]).toContain('NUXT_GROUP_SYNC_INTERVAL_SEC')
-    }
-    expect(validateEnv({ ...valid, NUXT_GROUP_SYNC_INTERVAL_SEC: '301' }).errors[0]).toContain(
-      'at most 300',
-    )
-  })
+  describe('NUXT_GROUPS_FILE', () => {
+    it('accepts a set file path and an unset one', () => {
+      expect(validateEnv({ ...valid, NUXT_GROUPS_FILE: '/groups/htgroup' })).toEqual({
+        errors: [],
+        warnings: [],
+      })
+      expect(validateEnv(valid).errors).toEqual([])
+    })
 
-  it('refuses an empty group file path but accepts a set one', () => {
-    expect(validateEnv({ ...valid, NUXT_GROUP_SYNC_FILE: '/groups/htgroup' }).errors).toEqual([])
-    const { errors } = validateEnv({ ...valid, NUXT_GROUP_SYNC_FILE: ' ' })
-    expect(errors).toHaveLength(1)
-    expect(errors[0]).toContain('NUXT_GROUP_SYNC_FILE')
+    it.each(['', ' ', '  \t '])('refuses the empty path %j', (value) => {
+      const { errors } = validateEnv({ ...valid, NUXT_GROUPS_FILE: value })
+      expect(errors).toEqual([
+        'NUXT_GROUPS_FILE must be a file path; leave it unset for the default',
+      ])
+    })
   })
 })
 
@@ -696,10 +764,17 @@ describe('validate-config.mjs as a script', () => {
     expect(result.stderr).toContain('NUXT_OIDC_ISSUER is required')
   })
 
-  it('prints a warning for a missing group sync token and still exits 0', () => {
-    const result = run({ ...valid, NUXT_GROUP_SYNC_TOKEN: '' })
+  it('prints a warning for a removed group sync setting and still exits 0', () => {
+    const result = run({ ...valid, NUXT_GROUP_SYNC_TOKEN: 'sync-token-secret' })
     expect(result.status).toBe(0)
-    expect(result.stderr).toContain('NUXT_GROUP_SYNC_TOKEN')
+    expect(result.stderr).toContain('NUXT_GROUP_SYNC_TOKEN is set but ignored')
+    expect(result.stderr).not.toContain('sync-token-secret')
+  })
+
+  it('exits 1 for an empty NUXT_GROUPS_FILE', () => {
+    const result = run({ ...valid, NUXT_GROUPS_FILE: ' ' })
+    expect(result.status).toBe(1)
+    expect(result.stderr).toContain('NUXT_GROUPS_FILE must be a file path')
   })
 
   it('prints the problems of a bad optional variable and exits 1', () => {
@@ -770,7 +845,10 @@ describe('the examples list what the validator knows (L2)', () => {
     'NUXT_OIDC_ADMIN_GROUP',
     'NUXT_OIDC_SCOPE',
     'NUXT_OIDC_REQUIRED_SCOPE',
+    'NUXT_OIDC_GROUPS_CLAIM',
+    'NUXT_OIDC_GROUPS_IGNORE',
     'NUXT_OIDC_KEY_MAX_AGE_SEC',
+    'NUXT_SIGNIN_WINDOW_DAYS',
     'NUXT_GATEWAY_MAX_BODY_BYTES',
     'NUXT_GATEWAY_MAX_CONCURRENT_PER_USER',
     'NUXT_GATEWAY_TRUST_FORWARDED_FOR',
@@ -800,6 +878,13 @@ describe('the examples list what the validator knows (L2)', () => {
   it('says what the host list is for, and that the seal key voids the seals when changed', () => {
     expect(envExample).toMatch(/script[\s\S]{0,1500}# NUXT_OUTBOUND_ALLOWED_HOSTS=/i)
     expect(envExample).toMatch(/voids[\s\S]{0,800}# NUXT_EXTERNAL_SEAL_KEY=/i)
+  })
+
+  it('lists NUXT_GROUPS_FILE and no longer any group sync setting', () => {
+    expect(envExample).toMatch(/^#? ?NUXT_GROUPS_FILE=/m)
+    expect(compose).toMatch(/^\s+NUXT_GROUPS_FILE: \/groups\/htgroup$/m)
+    expect(envExample).not.toContain('GROUP_SYNC')
+    expect(compose).not.toContain('GROUP_SYNC')
   })
 
   it('every variable the validator checks has a default that passes', () => {

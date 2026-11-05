@@ -6,7 +6,6 @@
 #   ./spike.sh bootstrap                  create Kanidm test users, groups and OAuth2 clients
 #   ./spike.sh token <user>               browserless login as the SPA client; print the tokens
 #   ./spike.sh radicale <user> <METHOD> <path> [options]   call Radicale directly as that user
-#   ./spike.sh groups <group>             list a group's members with the read-only sync token
 #   ./spike.sh kanidm <cli args>          run the Kanidm CLI as idm_admin
 #   ./spike.sh status | logs [service] | down | reset
 #
@@ -159,14 +158,10 @@ cmd_bootstrap() {
   done
   "${k[@]}" group add-members calendar_admins alice
 
-  # Group sync account. It must be in idm_group_admins to read groups (Kanidm has no read-only group
-  # for it); its API token is read-only by default, which is what keeps it from writing.
-  "${k[@]}" service-account create calendar-sync 'Calendar group sync' idm_admins
-  "${k[@]}" group add-members idm_group_admins calendar-sync
-  # It reads each member's uuid (the OIDC sub) from their person entry, which needs this group.
-  "${k[@]}" group add-members idm_people_pii_read calendar-sync
-  secret_set GROUP_SYNC_TOKEN "$("${k[@]}" service-account api-token generate calendar-sync 'group sync (read-only)' |
-    grep -o 'eyJ[A-Za-z0-9._-]*' | head -1)"
+  # A group of the identity provider for the live groups spec: the app lists it as a candidate and
+  # an admin imports it; bob is in it.
+  "${k[@]}" group create idp_team
+  "${k[@]}" group add-members idp_team bob
 
   # The SPA's own client: public, PKCE. The custom scope "caldav" is what the gateway will require;
   # the server verifies the client's JWTs locally, so it needs no client of its own.
@@ -199,12 +194,6 @@ cmd_radicale() {
   pytool spike_client.py dav --url "http://radicale:5232$path" --remote-user "$user" --method "$method" "$@"
 }
 
-cmd_groups() {
-  local group="${1:?usage: groups <group>}"
-  pytool spike_client.py dav --url "$IDM_URL/v1/group/$group" --method GET \
-    --token "$(secret_get GROUP_SYNC_TOKEN)" --limit 6000
-}
-
 # Run any Kanidm CLI command as idm_admin, e.g. ./spike.sh kanidm system oauth2 list
 cmd_kanidm() {
   KPW="$(secret_get KANIDM_IDM_ADMIN_PASSWORD)" kcli login -D idm_admin >/dev/null
@@ -229,11 +218,10 @@ case "${1:-}" in
   bootstrap) cmd_bootstrap ;;
   token) shift; cmd_token "$@" ;;
   radicale) shift; cmd_radicale "$@" ;;
-  groups) shift; cmd_groups "$@" ;;
   kanidm) shift; cmd_kanidm "$@" ;;
   status) cmd_status ;;
   logs) shift; dc logs -f "$@" ;;
   down) cmd_down ;;
   reset) cmd_reset ;;
-  *) sed -n '2,13p' "${BASH_SOURCE[0]}"; exit 1 ;;
+  *) sed -n '2,12p' "${BASH_SOURCE[0]}"; exit 1 ;;
 esac

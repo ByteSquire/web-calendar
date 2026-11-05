@@ -50,12 +50,11 @@ character such as `!` is written as `\!`, and the backslash is not part of the p
 value from the file by hand; read it with `sh -c '. .local/secrets.env && printf %s "$ALICE_PASSWORD"'`
 (for example `... | wl-copy` to put it on the clipboard).
 
-| What                   | Name            | Notes                                                                                                                                                   |
-| ---------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Kanidm users           | `alice`, `bob`  | Both in `web_calendar_users`; `alice` also in `calendar_admins`                                                                                         |
-| Kanidm OAuth2 client   | `web-calendar`  | Public, PKCE. The SPA's login. Scopes `openid profile email groups caldav`; localhost redirects allowed, callback `http://localhost:3000/auth/callback` |
-| Kanidm admin           | `idm_admin`     | Break-glass account, password recovered at bootstrap                                                                                                    |
-| Kanidm service account | `calendar-sync` | In `idm_group_admins` and `idm_people_pii_read`; read-only API token in `secrets.env` (`GROUP_SYNC_TOKEN`)                                              |
+| What                 | Name           | Notes                                                                                                                                                   |
+| -------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kanidm users         | `alice`, `bob` | Both in `web_calendar_users`; `alice` also in `calendar_admins`                                                                                         |
+| Kanidm OAuth2 client | `web-calendar` | Public, PKCE. The SPA's login. Scopes `openid profile email groups caldav`; localhost redirects allowed, callback `http://localhost:3000/auth/callback` |
+| Kanidm admin         | `idm_admin`    | Break-glass account, password recovered at bootstrap                                                                                                    |
 
 ## Commands
 
@@ -66,7 +65,6 @@ value from the file by hand; read it with `sh -c '. .local/secrets.env && printf
 | `./spike.sh bootstrap`                         | Create users, groups, OAuth2 clients and passwords                         |
 | `./spike.sh token alice`                       | Log in without a browser and print the SPA client's token response         |
 | `./spike.sh radicale alice METHOD /path/ [..]` | Call Radicale directly, as the gateway will (sends `X-Remote-User: alice`) |
-| `./spike.sh groups <group>`                    | List a group's members with the read-only sync token                       |
 | `./spike.sh kanidm <args>`                     | Run the Kanidm CLI as `idm_admin`, for example `system oauth2 list`        |
 | `./spike.sh logs [service]`, `status`, `down`  | Inspect and stop                                                           |
 | `./spike.sh reset`                             | Delete containers, volumes and `.local/`                                   |
@@ -122,8 +120,8 @@ Tested against Radicale 3.9.0 here; the design (§8) has the summary.
   locally instead, so the stack has no introspection client.
 - A new service account cannot read groups (`GET /v1/group/<name>` returns `null`), also in
   `idm_service_desk`. In `idm_group_admins`, its read-only API token reads group members and cannot write
-  (403). `bootstrap` creates this account (`calendar-sync`) and `./spike.sh groups <group>` uses its token
-  (design §12, S9).
+  (403). The app no longer needs such an account (groups come from the sign-in claim), so `bootstrap`
+  does not create one any more; read a group with `./spike.sh kanidm group get <group>` (design §12, S9).
 
 ### S1, earlier stack with OpenCloud and oauth2-proxy (2026-10-29)
 

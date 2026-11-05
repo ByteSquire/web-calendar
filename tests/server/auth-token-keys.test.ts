@@ -164,7 +164,6 @@ describe('validate-config.mjs and parseTokenKeyring agree (the script cannot imp
   const required = {
     NUXT_OIDC_ISSUER: 'https://idm.example.org/oauth2/openid/web-calendar',
     NUXT_RADICALE_URL: 'http://radicale:5232',
-    NUXT_GROUP_SYNC_TOKEN: 'sync-token',
   }
   const entries = (count: number) =>
     Array.from({ length: count }, (_, i) => `${i + 2}:${NEW}`).join(',')

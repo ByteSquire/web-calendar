@@ -159,7 +159,7 @@ describe('overflow menu', () => {
   it('shows the user, the zone, Refresh, Settings, Help and Sign out when signed in', async () => {
     useState('cal-user').value = { id: '7', name: 'Alice', email: 'alice@example.org' }
     await open()
-    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Dark mode', 'Help', 'Sign out'])
+    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Groups', 'Dark mode', 'Help', 'Sign out'])
     const menu = text(document.querySelector('[role="menu"]'))!
     expect(menu).toContain('Alice')
     expect(menu).toContain('alice@example.org')
@@ -176,7 +176,7 @@ describe('overflow menu', () => {
       { id: 'res-1', name: 'Room A', type: 'room', calendarId: 'cal-1' },
     ] as typeof resources.value
     await open()
-    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Dark mode', 'Help', 'Sign out'])
+    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Groups', 'Dark mode', 'Help', 'Sign out'])
     expect(document.querySelector('[href="/resources/requests"]')).toBeNull()
   })
 
@@ -219,6 +219,7 @@ describe('overflow menu', () => {
       expect(menuItems()).toEqual([
         'Refresh',
         'Settings',
+        'Groups',
         'Full screen',
         'Dark mode',
         'Help',

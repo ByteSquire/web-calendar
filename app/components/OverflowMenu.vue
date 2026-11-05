@@ -1,7 +1,7 @@
 <!--
   Overflow (⋮) menu (FR-25). Nuxt UI closes it on Escape and on a click outside, moves focus into
   the menu and returns it to the trigger. Signed in (live mode): the user, the time zone the times
-  are shown in, Refresh (FR-10), Settings, Calendar access (admins only), Full screen, Dark mode, Help and Sign out. The demo mode
+  are shown in, Refresh (FR-10), Settings, Groups, Calendar access (admins only), Full screen, Dark mode, Help and Sign out. The demo mode
   keeps the placeholder items of the mock-up. "Full screen" is only offered where the browser has
   one for pages (not on iPhone Safari): on a phone it hides the address bar. "Dark mode" is a
   switch: it shows the scheme in use, which is the system's until it is flipped, and from then on
@@ -196,6 +196,8 @@ const items = computed<DropdownMenuItem[][]>(() => {
     ],
     [
       { label: t('Settings'), icon: 'i-lucide-settings', to: '/settings' },
+      // Groups and their calendars: for everybody signed in (the server limits what each may do).
+      { label: t('Groups'), icon: 'i-lucide-users-round', to: '/groups' },
       ...(adminFlag.admin.value === true
         ? [{ label: t('Calendar access'), icon: 'i-lucide-shield-check', to: '/admin/access' }]
         : []),

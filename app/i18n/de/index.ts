@@ -5,6 +5,7 @@ import { common } from './common'
 import { data } from './data'
 import { dates } from './dates'
 import { events } from './events'
+import { groups } from './groups'
 import { settings } from './settings'
 import { shell } from './shell'
 
@@ -17,6 +18,7 @@ export const AREAS: Record<string, Readonly<Record<string, string>>> = {
   settings,
   admin,
   data,
+  groups,
 }
 
 export const de: Readonly<Record<string, string>> = Object.assign({}, ...Object.values(AREAS))

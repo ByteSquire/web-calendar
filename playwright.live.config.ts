@@ -49,6 +49,9 @@ export default defineConfig({
       // Production refuses an empty host list unless this is true (security review 2026-11-01).
       NUXT_OUTBOUND_ALLOW_ANY_HOST: 'true',
       NUXT_DB_PATH: '/tmp/e2e-live.db',
+      // The group file the test stack's Radicale reads (dev/spike-s1/.local/rules): without a sync
+      // token the app writes its own groups there, which the groups spec needs for group shares.
+      NUXT_GROUP_SYNC_FILE: resolve('dev/spike-s1/.local/rules/groups'),
       NUXT_OIDC_ISSUER: 'https://idm.localhost:8443/oauth2/openid/web-calendar',
       NUXT_RADICALE_URL: 'http://radicale:5232',
       NUXT_TOKEN_HASH_KEY: 'e2e-live-key-e2e-live-key-e2e-live-key',

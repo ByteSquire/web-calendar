@@ -93,7 +93,10 @@ export async function discoverCalendars(
     .prepare<[], UserIdRow>('SELECT id, oidc_sub FROM users ORDER BY id')
     .all()
     .filter((user) => isUserSubject(user.oidc_sub, sharedOwners))
-  const groups = db.prepare<[], GroupIdRow>('SELECT id FROM groups ORDER BY id').all()
+  // The group of everyone owns no calendar (it can only be shared with), so it has no home to list.
+  const groups = db
+    .prepare<[], GroupIdRow>(`SELECT id FROM groups WHERE source <> 'everyone' ORDER BY id`)
+    .all()
   const targets: { owner: string; userId: number | null; groupId: number | null }[] = [
     ...users.map((user) => ({
       owner: user.oidc_sub,

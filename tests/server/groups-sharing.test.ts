@@ -5,7 +5,7 @@
 // refuses an outsider.
 import { fileURLToPath } from 'node:url'
 import type { Database } from 'better-sqlite3'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addCalendarAcl, listAllCalendarAcl } from '../../server/db/calendar-acl'
 import { openDatabase } from '../../server/db/connection'
 import { loadMigrationsFromDir, runMigrations } from '../../server/db/migrate'
@@ -13,13 +13,16 @@ import type { CalendarRow } from '../../server/db/types'
 import { computeDesiredShares } from '../../server/utils/sharing/desired'
 import { parseGroupFile, type GroupMembership } from '../../server/utils/sharing/membership'
 import { createPathPrecheck } from '../../server/utils/sharing/precheck'
+import type { RadicaleClient } from '../../server/utils/sharing/radicale-client'
+import { sharingFail } from '../../server/utils/sharing/types'
 
 const ALICE = '8f1c2b0e-4d51-4c7e-9a52-0b6f3c1d2e77' // member of team_a (the owning group)
 const BOB = '3d9a7e51-0c2b-4f86-b1aa-6e4d8c0f9a12' // member of team_b (a write share)
 const CARA = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d' // a read-only user share
 const EVE = '5b2e9c14-6a3d-4e08-8f71-2c9d4a7b1e30' // nobody
 
-const COLLECTION = '/_group-1/0c1d2e3f-4a5b-4c6d-8e7f-900112233445/'
+// The group made below is group 2: the migration's group of everyone is group 1 and owns no calendar.
+const COLLECTION = '/_group-2/0c1d2e3f-4a5b-4c6d-8e7f-900112233445/'
 let db: Database
 let calendarId: number
 
@@ -82,9 +85,9 @@ describe('desired shares of a group calendar', () => {
     expect(shares).toEqual(
       expect.arrayContaining([
         // Radicale's names: a group share is `:group` with `rw` (write) or `r` (read).
-        { owner: '_group-1', kind: 'group', user: ':team_a', permissions: 'rw' },
-        { owner: '_group-1', kind: 'group', user: ':team_b', permissions: 'rw' },
-        { owner: '_group-1', kind: 'user', user: CARA, permissions: 'r' },
+        { owner: '_group-2', kind: 'group', user: ':team_a', permissions: 'rw' },
+        { owner: '_group-2', kind: 'group', user: ':team_b', permissions: 'rw' },
+        { owner: '_group-2', kind: 'user', user: CARA, permissions: 'r' },
       ]),
     )
     expect(shares).toHaveLength(3)
@@ -97,7 +100,7 @@ describe('desired shares of a group calendar', () => {
 })
 
 describe('gateway pre-check of a group calendar', () => {
-  const path = `/_group-1/0c1d2e3f-4a5b-4c6d-8e7f-900112233445/event.ics`
+  const path = `/_group-2/0c1d2e3f-4a5b-4c6d-8e7f-900112233445/event.ics`
   const shared = (sub: string) => `/${sub}/shared-${calendarId}/event.ics`
 
   it('lets a member of the owning group read and write the calendar', async () => {
@@ -159,16 +162,25 @@ describe('discovery in a group home', () => {
     const radicale = await startFakeRadicale()
     try {
       db.prepare('DELETE FROM calendars').run()
-      radicale.calendars.set('_group-1', new Set(['def-calendar', 'kitchen']))
+      radicale.calendars.set('_group-2', new Set(['def-calendar', 'kitchen']))
       const client = createRadicaleClient({ baseUrl: radicale.url })
       const result = await discoverCalendars(db, client, [])
       expect(result.ok).toBe(true)
       const rows = db
         .prepare('SELECT collection_path AS path, group_id AS groupId FROM calendars')
         .all()
-      expect(rows).toEqual([{ path: '/_group-1/kitchen/', groupId: 1 }])
+      expect(rows).toEqual([{ path: '/_group-2/kitchen/', groupId: 2 }])
     } finally {
       await radicale.close()
     }
+  })
+
+  it('lists the home of a group that can own calendars, and not the one of everyone', async () => {
+    const { discoverCalendars } = await import('../../server/utils/sharing/calendars')
+    // No home exists yet (404): the run goes on, and the calls say whose homes it asked for.
+    const propfind = vi.fn(async () => sharingFail('rejected', 'not found', 404))
+    const result = await discoverCalendars(db, { propfind } as unknown as RadicaleClient, [])
+    expect(result.ok).toBe(true)
+    expect(propfind.mock.calls.map((call) => call[0])).toEqual(['_group-2'])
   })
 })

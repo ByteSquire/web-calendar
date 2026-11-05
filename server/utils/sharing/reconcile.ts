@@ -191,8 +191,11 @@ export function createSharingReconciler(options: ReconcileOptions): SharingRecon
         owners.add(user.oidc_sub)
     }
     // A group's calendars are shared out of the group principal's home. Every group is listed, so a
-    // share of a deleted calendar is found and removed as well.
-    for (const group of db.prepare<[], { id: number }>('SELECT id FROM groups').all()) {
+    // share of a deleted calendar is found and removed as well. The group of everyone owns no
+    // calendar, so it has no home.
+    for (const group of db
+      .prepare<[], { id: number }>(`SELECT id FROM groups WHERE source <> 'everyone'`)
+      .all()) {
       owners.add(groupPrincipal(group.id))
     }
     for (const share of shares) {

@@ -22,6 +22,14 @@
           <template v-else>{{ part.text }}</template>
         </template>
       </p>
+      <p class="text-sm text-toned" data-signin-window>
+        {{
+          t(
+            'An app token stops working if you do not sign in to this app for {days}. Signing in again makes it work again.',
+            { days: tc('{count} day | {count} days', windowDays) },
+          )
+        }}
+      </p>
       <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
         <dt class="text-toned">{{ t('Server address') }}</dt>
         <dd>
@@ -244,7 +252,7 @@
 
 <script setup lang="ts">
 import { useAuthFetch } from '~/composables/useAuthFetch'
-import { N_, t, tparts } from '~/utils/i18n'
+import { N_, t, tc, tparts } from '~/utils/i18n'
 import { describeError, describeTokenCreateError, parseApiError } from '~/utils/settings/api-errors'
 import { formatDate, formatDateTime } from '~/utils/settings/format'
 import { createResource } from '~/utils/settings/resource'
@@ -259,6 +267,9 @@ defineProps<{
 }>()
 
 const api = useAuthFetch()
+const serverConfig = useServerConfigState()
+/** How long after the last sign-in a token works (NUXT_SIGNIN_WINDOW_DAYS); 30 until it is known. */
+const windowDays = computed(() => serverConfig.value?.signinWindowDays ?? 30)
 const displayZone = useDisplayTimeZone()
 const origin = useRequestURL().origin
 const serverAddress = caldavAddress(origin)

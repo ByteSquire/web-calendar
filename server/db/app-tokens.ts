@@ -1,5 +1,6 @@
 import { createHmac, randomBytes } from 'node:crypto'
 import type { Database } from 'better-sqlite3'
+import { signinCutoff } from '../utils/auth/window'
 import type { AppTokenRow } from './types'
 
 /** FR-31: at most this many unexpired tokens per user. */
@@ -167,6 +168,7 @@ export function verifyAppToken(
   hashKeys: TokenHashKeys,
   username: string,
   token: string,
+  windowMs: number,
   now = new Date(),
 ): VerifiedAppToken | null {
   const keyring = toKeyring(hashKeys)
@@ -178,10 +180,12 @@ export function verifyAppToken(
         user_id: number
         oidc_sub: string
         username: string
+        last_seen_at: string | null
       }
     >(
       // users.username compares case-insensitively.
-      `SELECT t.id, t.token_hash, t.key_version, t.expires_at, u.id AS user_id, u.oidc_sub, u.username
+      `SELECT t.id, t.token_hash, t.key_version, t.expires_at, u.id AS user_id, u.oidc_sub, u.username,
+              u.last_seen_at
        FROM app_tokens t JOIN users u ON u.id = t.user_id
        WHERE t.token_hash IN (${hashes.map(() => '?').join(', ')}) AND u.username = ?`,
     )
@@ -192,6 +196,11 @@ export function verifyAppToken(
     ),
   )
   if (!row || row.expires_at <= now.toISOString()) return null
+  // The owner must have signed in within the window (NUXT_SIGNIN_WINDOW_DAYS): a token cannot
+  // outlive the person's presence at the identity provider by more than that. Only a sign-in to the
+  // web app or an OIDC bearer call renews it; using this token does not. Seen exactly at the
+  // cutoff still counts. Both sides are ISO text of the same shape, so they compare as times.
+  if (row.last_seen_at === null || row.last_seen_at < signinCutoff(windowMs, now)) return null
 
   if (row.key_version !== keyring.current.version) {
     // Guarded by the old version, so two logins at once cannot undo each other.

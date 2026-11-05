@@ -72,6 +72,35 @@ describe('explanation', () => {
     expect(codes).toContain('alice')
   })
 
+  const setWindow = (days: number) => {
+    useServerConfigState().value = {
+      oidc: { issuer: '', clientId: '', scope: '' },
+      timezone: 'UTC',
+      demo: false,
+      signinWindowDays: days,
+    }
+  }
+  const note = () => document.querySelector('[data-signin-window]')?.textContent?.trim()
+
+  it('says how long after the last sign-in a token works, from the server setting', async () => {
+    setWindow(14)
+    await mountSection()
+    expect(note()).toBe(
+      'An app token stops working if you do not sign in to this app for 14 days. Signing in again makes it work again.',
+    )
+  })
+
+  it('does not say "1 days"', async () => {
+    setWindow(1)
+    await mountSection()
+    expect(note()).toContain('for 1 day.')
+  })
+
+  it('assumes the default of 30 days until the settings are known', async () => {
+    await mountSection()
+    expect(document.querySelector('[data-signin-window]')?.textContent).toContain('30 days')
+  })
+
   it('does not invent a user name while /api/me has not answered', async () => {
     app = await mountSuspended(
       defineComponent({

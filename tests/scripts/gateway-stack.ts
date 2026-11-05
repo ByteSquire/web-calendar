@@ -58,7 +58,8 @@ export async function startGatewayStack() {
     authenticate: (headers, context) =>
       authenticateRequest(headers, {
         verifier,
-        verifyAppToken: (username, token) => verifyAppToken(db, HASH_KEY, username, token),
+        verifyAppToken: (username, token) =>
+          verifyAppToken(db, HASH_KEY, username, token, 30 * 24 * 60 * 60 * 1000),
         basicThrottle: throttle,
         clientAddress: context.clientAddress,
       }),
@@ -96,6 +97,7 @@ export async function startGatewayStack() {
           oidc: { issuer: idp.issuer, clientId: idp.clientId, scope: 'openid caldav' },
           demo: false,
           timezone: process.env.TZ || 'Europe/Berlin',
+          signinWindowDays: 30,
         }
       }
       if (path === '/.well-known/caldav') {

@@ -14,6 +14,8 @@ import { apiError, createUsers, openTestDb } from './api-fixtures'
 
 const KEY = 'test-hash-key'
 const NOW = new Date('2026-10-30T10:00:00.000Z')
+/** Far wider than the tests' clocks, so these tests are about tokens, not about the window. */
+const WINDOW = 3650 * 24 * 60 * 60 * 1000
 
 let db: Database
 let alice: number
@@ -71,8 +73,10 @@ describe('createToken', () => {
       expiresAt: '2027-10-30T10:00:00.000Z',
     })
     // the token works for CalDAV Basic auth under the owner's name
-    expect(verifyAppToken(db, KEY, 'alice', created.token, NOW)).toMatchObject({ userId: alice })
-    expect(verifyAppToken(db, KEY, 'bob', created.token, NOW)).toBeNull()
+    expect(verifyAppToken(db, KEY, 'alice', created.token, WINDOW, NOW)).toMatchObject({
+      userId: alice,
+    })
+    expect(verifyAppToken(db, KEY, 'bob', created.token, WINDOW, NOW)).toBeNull()
   })
 
   it('answers 400 with the field for a bad label and creates nothing', () => {
@@ -154,7 +158,7 @@ describe('listTokens', () => {
   it('shows when a token was last used', () => {
     const { id, token } = createToken(db, KEY, alice, { label: 'phone' }, NOW)
     const used = new Date('2026-10-31T08:00:00.000Z')
-    verifyAppToken(db, KEY, 'alice', token, used)
+    verifyAppToken(db, KEY, 'alice', token, WINDOW, used)
     expect(listTokens(db, alice, NOW).tokens.find((t) => t.id === id)?.lastUsedAt).toBe(
       used.toISOString(),
     )
@@ -166,14 +170,14 @@ describe('revokeToken', () => {
     const { id, token } = createToken(db, KEY, alice, { label: 'phone' }, NOW)
     revokeToken(db, alice, String(id))
     expect(listTokens(db, alice, NOW).tokens).toEqual([])
-    expect(verifyAppToken(db, KEY, 'alice', token, NOW)).toBeNull()
+    expect(verifyAppToken(db, KEY, 'alice', token, WINDOW, NOW)).toBeNull()
   })
 
   it('answers 404 for the token of another user and leaves it alone', () => {
     const mine = createToken(db, KEY, alice, { label: 'alice' }, NOW)
     expect(() => revokeToken(db, bob, String(mine.id))).toThrow(apiError(404))
     expect(listTokens(db, alice, NOW).tokens).toHaveLength(1)
-    expect(verifyAppToken(db, KEY, 'alice', mine.token, NOW)).not.toBeNull()
+    expect(verifyAppToken(db, KEY, 'alice', mine.token, WINDOW, NOW)).not.toBeNull()
   })
 
   it('answers 404 for an unknown id, a repeat and ids that are no numbers', () => {
@@ -199,15 +203,15 @@ describe('revokeAllTokens', () => {
     const laptop = createToken(db, KEY, alice, { label: 'laptop' }, NOW)
     expect(revokeAllTokens(db, alice)).toEqual({ revoked: 2 })
     expect(listTokens(db, alice, NOW).tokens).toEqual([])
-    expect(verifyAppToken(db, KEY, 'alice', phone.token, NOW)).toBeNull()
-    expect(verifyAppToken(db, KEY, 'alice', laptop.token, NOW)).toBeNull()
+    expect(verifyAppToken(db, KEY, 'alice', phone.token, WINDOW, NOW)).toBeNull()
+    expect(verifyAppToken(db, KEY, 'alice', laptop.token, WINDOW, NOW)).toBeNull()
   })
 
   it('leaves another user untouched and reports zero for an empty list', () => {
     const mine = createToken(db, KEY, alice, { label: 'alice' }, NOW)
     expect(revokeAllTokens(db, bob)).toEqual({ revoked: 0 })
     expect(listTokens(db, alice, NOW).tokens).toHaveLength(1)
-    expect(verifyAppToken(db, KEY, 'alice', mine.token, NOW)).not.toBeNull()
+    expect(verifyAppToken(db, KEY, 'alice', mine.token, WINDOW, NOW)).not.toBeNull()
   })
 
   it('frees every slot, so a full user can create tokens again', () => {

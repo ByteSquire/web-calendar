@@ -9,6 +9,8 @@ export interface ServerConfig {
   timezone: string
   /** Demo mode: no login, mock data. */
   demo: boolean
+  /** Days after a person's last sign-in that their app tokens still work. */
+  signinWindowDays: number
 }
 
 // Named so that plugins that need the settings (the login) can depend on it.
@@ -24,6 +26,7 @@ export default defineNuxtPlugin({
         oidc: { issuer: '', clientId: '', scope: '' },
         timezone: DEFAULT_TIME_ZONE,
         demo: false,
+        signinWindowDays: 30,
       }
     }
   },

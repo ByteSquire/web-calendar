@@ -98,6 +98,9 @@ export const settings: Readonly<Record<string, string>> = {
 
   // ---- Tokens
   'App tokens': 'App-Tokens',
+  'An app token stops working if you do not sign in to this app for {days}. Signing in again makes it work again.':
+    'Ein App-Token funktioniert nicht mehr, wenn du dich {days} lang nicht in dieser App angemeldet hast. Nach einer erneuten Anmeldung funktioniert es wieder.',
+  '{count} day | {count} days': '{count} Tag | {count} Tage',
   'Calendar apps such as Thunderbird, DAVx5 or iOS Calendar cannot use single sign-on. Create an app token for each app and enter it as the {password}.':
     'Kalender-Apps wie Thunderbird, DAVx5 oder der iOS-Kalender können kein Single Sign-on nutzen. Erstelle für jede App ein App-Token und gib es als {password} ein.',
   password: 'Passwort',

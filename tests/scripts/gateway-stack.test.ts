@@ -285,7 +285,7 @@ describe('the fake Radicale’s record', () => {
 describe('the public config of the stand-in server', () => {
   it('has the shape of /api/config and redirects the well-known URL', async () => {
     const config = (await (await call('GET', '/api/config')).json()) as Record<string, unknown>
-    expect(Object.keys(config).sort()).toEqual(['demo', 'oidc', 'timezone'])
+    expect(Object.keys(config).sort()).toEqual(['demo', 'oidc', 'signinWindowDays', 'timezone'])
     const redirect = await fetch(`${stack.base}/.well-known/caldav`, { redirect: 'manual' })
     expect(redirect.status).toBe(301)
     expect(redirect.headers.get('location')).toBe('/caldav/')

@@ -69,9 +69,12 @@ describe('the startup checks (L2, server/plugins/startup.ts)', () => {
   let demo: unknown
 
   /** Installs the checks and returns once the promise requests wait for is settled. */
-  async function start() {
+  async function start(signinWindowDays?: unknown) {
     hooks = {}
-    installStartupChecks({ hook: (name, fn) => void (hooks[name] = fn) }, { demo })
+    installStartupChecks(
+      { hook: (name, fn) => void (hooks[name] = fn) },
+      { demo, signinWindowDays },
+    )
     await hooks.request?.()
   }
 
@@ -88,6 +91,20 @@ describe('the startup checks (L2, server/plugins/startup.ts)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.clearAllMocks()
+  })
+
+  it.each(['0', '366', 'abc', '1.5'])(
+    'exits when the sign-in window is %j, naming the setting',
+    async (value) => {
+      await start(value)
+      expect(exit).toHaveBeenCalledWith(1)
+      expect(JSON.stringify(error.mock.calls)).toContain('NUXT_SIGNIN_WINDOW_DAYS')
+    },
+  )
+
+  it.each([undefined, '', '1', '30', 365])('starts with the sign-in window %j', async (value) => {
+    await start(value)
+    expect(exit).not.toHaveBeenCalled()
   })
 
   it('lets a good configuration start and holds requests until the checks are done', async () => {

@@ -6,6 +6,10 @@ import { installExternalStartupChecks } from '../utils/external/startup'
 export default defineNitroPlugin((nitroApp) => {
   // The build renders the SPA shell through this server; it has no config to check.
   if (import.meta.prerender) return
-  installStartupChecks(nitroApp.hooks, { demo: useRuntimeConfig().demo })
+  const config = useRuntimeConfig()
+  installStartupChecks(nitroApp.hooks, {
+    demo: config.demo,
+    signinWindowDays: config.signinWindowDays,
+  })
   installExternalStartupChecks(nitroApp.hooks)
 })

@@ -1,5 +1,6 @@
 import { AuthError } from '../auth/errors'
 import { authenticateCalDav } from '../auth/nitro'
+import { parseSigninWindowDays } from '../auth/window'
 import { handleGatewayRequest } from '../gateway/nitro'
 import { getIcalProxy } from '../ical-proxy/nitro'
 import { createSelfTestEvent, runStartupChecks } from './startup-checks'
@@ -14,7 +15,10 @@ export interface RequestHooks {
   hook(name: 'request', handler: () => Promise<void>): unknown
 }
 
-export function installStartupChecks(hooks: RequestHooks, options: { demo: unknown }): void {
+export function installStartupChecks(
+  hooks: RequestHooks,
+  options: { demo: unknown; signinWindowDays?: unknown },
+): void {
   if (options.demo === true || String(options.demo) === 'true') {
     console.warn(
       '[config] WARNING: DEMO MODE (NUXT_DEMO=true). The SPA skips the login and shows mock data. ' +
@@ -48,6 +52,11 @@ export function installStartupChecks(hooks: RequestHooks, options: { demo: unkno
         },
       },
       { name: 'iCal proxy (NUXT_ICAL_PROXY_*)', run: () => getIcalProxy() },
+      // A number of days from 1 to 365; the window bounds the app tokens and the group of everyone.
+      {
+        name: 'Sign-in window (NUXT_SIGNIN_WINDOW_DAYS)',
+        run: () => parseSigninWindowDays(options.signinWindowDays),
+      },
     ])
     if (failures.length > 0) {
       throw new Error(failures.map((failure) => `\n  - ${failure}`).join(''))

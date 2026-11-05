@@ -129,7 +129,7 @@ describe.skipIf(!enabled)('CalDAV gateway against Kanidm and Radicale', () => {
       const reply = await raw('GET', '/api/config')
       expect(reply.status).toBe(200)
       const config = JSON.parse(reply.body) as Record<string, unknown>
-      expect(Object.keys(config).sort()).toEqual(['demo', 'oidc', 'timezone'])
+      expect(Object.keys(config).sort()).toEqual(['demo', 'oidc', 'signinWindowDays', 'timezone'])
       expect(config.demo).toBe(false)
       expect(Object.keys(config.oidc as object).sort()).toEqual(['clientId', 'issuer', 'scope'])
       expect(config.timezone).toBe(process.env.TZ || 'Europe/Berlin')

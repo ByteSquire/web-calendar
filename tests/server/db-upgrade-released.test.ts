@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { findCalendarLinkById, listCalendarLinksOfCalendar } from '../../server/db/calendar-links'
 import { openDatabase } from '../../server/db/connection'
 import { loadMigrationsFromDir, runMigrations, type Migration } from '../../server/db/migrate'
 import { findUserBySub, setUserSidebarOrder } from '../../server/db/users'
@@ -89,7 +90,7 @@ function expectHealthy(database: Database.Database): void {
 }
 
 describe('the migrations that were released', () => {
-  it.each(['v0.1.0', 'v0.2.0'])('are unchanged: %s', (tag) => {
+  it.each(['v0.1.0', 'v0.2.0', 'v0.2.1'])('are unchanged: %s', (tag) => {
     // A migration that a database has applied is never edited (the runner goes by name and would not
     // run it again): a change is a new migration. Compare byte for byte with what was released.
     const files = readdirSync(released(tag)).filter((name) => name !== 'data.sql')
@@ -103,7 +104,9 @@ describe('the migrations that were released', () => {
 
   it('are all there, and no number is used twice', () => {
     const names = current().map((migration) => migration.name)
-    for (const migration of frozen('v0.1.0', 'v0.2.0')) expect(names).toContain(migration.name)
+    for (const migration of frozen('v0.1.0', 'v0.2.0', 'v0.2.1')) {
+      expect(names).toContain(migration.name)
+    }
     const numbers = names.map((name) => name.slice(0, 3))
     expect(new Set(numbers).size).toBe(numbers.length)
   })
@@ -204,5 +207,43 @@ describe('updating from v0.2.0 (001 to 009)', () => {
     expectKept(before, db)
     expectHealthy(db)
     expect(db.prepare('SELECT sidebar_order FROM users').pluck().all()).toEqual([null, null])
+  })
+})
+
+describe('updating from v0.2.1 (001 to 012)', () => {
+  it('finds nothing to do, keeps every row, and the code reads the links and the sidebar order', () => {
+    leftBy('v0.1.0', 'v0.2.0', 'v0.2.1')
+    db = openDatabase(path)
+    const before = snapshot(db)
+    expect(before.calendar_links!.rows).toHaveLength(4)
+    expect(appliedMigrations(db)).toHaveLength(11)
+
+    // A later release adds its migrations here, like the tests above.
+    expect(upgradeDatabase(db, path, current())).toEqual({ applied: [], backup: null })
+    expectKept(before, db)
+    expectHealthy(db)
+
+    expect(findUserBySub(db, 'sub-alice')!.sidebarOrder).toEqual([
+      'filters',
+      'views',
+      'calendars',
+      'resources',
+      'categories',
+    ])
+    // the links of the access page's calendar: one made in Settings, one an admin made there
+    expect(
+      listCalendarLinksOfCalendar(db, 4).map((link) => [link.label, link.reads_as, link.level]),
+    ).toEqual([
+      ['Reception', 'owner', 'free_busy'],
+      ['Front desk', 'maker', 'free_busy'],
+    ])
+    // a link from before 012 has its defaults and no sealed copy
+    expect(findCalendarLinkById(db, 4)).toMatchObject({
+      level: 'read',
+      reads_as: 'maker',
+      calendar_id: null,
+      secret_sealed: null,
+      maker_username: 'alice',
+    })
   })
 })

@@ -13,7 +13,6 @@ When you make a release whose migrations no earlier release had:
 2. Add the tag to the list in the first `describe` and a `describe('updating from <tag>')` in the
    test, with the migrations that upgrade it (`leftBy('v0.1.0', 'v0.2.0', '<tag>')`).
 
-Pending now: `010_sidebar_order.sql` (users.sidebar_order), `011_calendar_links.sql` (the
-calendar_links table) and `012_calendar_link_levels.sql` (a link's level, whom it reads as, its
-calendar of the access page and the sealed address and password) are not released yet. Freeze them, in `v0.2.1` or whatever tag carries them,
-when they are released; until then they may still be edited.
+Pending now: nothing. Every migration up to `012_calendar_link_levels.sql` is released (`v0.2.1`
+froze 010 to 012). A new migration may be edited until the release that carries it, and is frozen
+here then.

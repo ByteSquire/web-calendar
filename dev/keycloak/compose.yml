@@ -1,0 +1,30 @@
+# A throwaway Keycloak for the OIDC proof of the token verifier (docs/oidc-providers.md): the
+# integration test tests/integration/keycloak.integration.test.ts makes its own realms in it over the
+# admin API and signs in with real tokens. Development mode, plain http, a known admin password: for
+# the test network only, never for anything real.
+#
+#   docker compose -f dev/keycloak/compose.yml up -d
+#   docker network connect webcal-keycloak-test <the dev container>
+#   KEYCLOAK_URL=http://keycloak:8080 npx vitest run tests/integration/keycloak.integration.test.ts
+#   docker compose -f dev/keycloak/compose.yml down
+name: webcal-keycloak-test
+
+services:
+  keycloak:
+    # Pinned: the claims the verifier reads (header typ, payload typ, azp, the group mapper's
+    # output) are what this version writes.
+    image: quay.io/keycloak/keycloak:26.8.1
+    command: start-dev
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # The issuer follows the host name a request used, which is what the test needs.
+      KC_HOSTNAME_STRICT: 'false'
+    ports:
+      - '127.0.0.1:8180:8080'
+    networks:
+      - keycloak-test
+
+networks:
+  keycloak-test:
+    name: webcal-keycloak-test

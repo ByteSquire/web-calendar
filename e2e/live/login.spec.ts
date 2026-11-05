@@ -13,6 +13,8 @@ test.describe.configure({ mode: 'serial' })
 
 let page: Page
 let problems: string[] = []
+/** The newest tokens Kanidm's token endpoint sent to the page: the app keeps them in memory only. */
+const tokens: { accessToken?: string; idToken?: string } = {}
 
 test.beforeAll(async ({ browser }) => {
   page = await (await newAppContext(browser)).newPage()
@@ -20,6 +22,15 @@ test.beforeAll(async ({ browser }) => {
   // runs at real speed until a test moves it.
   await page.clock.install()
   problems = collectAppProblems(page)
+  page.on('response', async (response) => {
+    if (!response.url().includes('/oauth2/token')) return
+    const body = (await response.json().catch(() => null)) as {
+      access_token?: string
+      id_token?: string
+    } | null
+    if (body?.access_token) tokens.accessToken = body.access_token
+    if (body?.id_token) tokens.idToken = body.id_token
+  })
 })
 
 test.afterAll(async () => {
@@ -75,6 +86,21 @@ test('the settings page loads the user and their app tokens through the API', as
   await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
   await expect(page.locator('main.main-area')).toContainText('alice')
   await expect(page.getByRole('heading', { name: 'App tokens' })).toBeVisible()
+})
+
+test('the real ID token is no access token: the gateway and the API refuse it', async () => {
+  expect(tokens.accessToken, 'the token response was seen').toBeTruthy()
+  expect(tokens.idToken, 'the token response had an ID token').toBeTruthy()
+  const ask = (token: string, method: string, path: string) =>
+    page.request.fetch(path, { method, headers: { authorization: `Bearer ${token}`, depth: '0' } })
+  // The access token Kanidm issued gets through both.
+  expect((await ask(tokens.accessToken!, 'PROPFIND', '/caldav/')).status()).toBe(207)
+  expect((await ask(tokens.accessToken!, 'GET', '/api/me')).status()).toBe(200)
+  // Its ID token has the same issuer, keys, `aud` and `azp`, and no scope: refused as a bad token.
+  const gateway = await ask(tokens.idToken!, 'PROPFIND', '/caldav/')
+  expect(gateway.status()).toBe(401)
+  expect(gateway.headers()['www-authenticate']).toContain('invalid_token')
+  expect((await ask(tokens.idToken!, 'GET', '/api/me')).status()).toBe(401)
 })
 
 test('signing out ends the session in this tab', async () => {

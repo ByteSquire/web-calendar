@@ -22,8 +22,8 @@
 //
 // What the fakes are: the fake Radicale (scripts/lib/fake-radicale.mjs) answers like Radicale 3.9
 // for the requests of the test and records what reaches it; the fake identity provider
-// (scripts/lib/fake-idp.mjs) generates an ES256 key per run, publishes it at
-// `<issuer>/public_key.jwk` like Kanidm, answers `userinfo` and signs tokens for alice and bob. The
+// (scripts/lib/fake-idp.mjs) generates an ES256 key per run, publishes a discovery document and the
+// key at `<issuer>/public_key.jwk` like Kanidm, answers `userinfo` and signs tokens for alice and bob. The
 // app token for the Basic-auth tests is made through the app's own API, so the build's database
 // and API are exercised too. The server is started with only the environment this script gives it.
 //

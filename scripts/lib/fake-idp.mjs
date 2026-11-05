@@ -1,7 +1,8 @@
 // A stand-in for Kanidm's OAuth2 client endpoints, for the gateway tests against the production
-// build (scripts/test-gateway-prod.mjs): the signing keys at `<issuer>/public_key.jwk`, `userinfo`,
-// and access tokens it signs itself. The keys are generated per run, so a token only works for the
-// run that made it. Plain HTTP on the loopback interface: the server under test checks no scheme.
+// build (scripts/test-gateway-prod.mjs): the discovery document, the signing keys at
+// `<issuer>/public_key.jwk`, `userinfo`, and access tokens it signs itself. The keys are generated
+// per run, so a token only works for the run that made it. Plain HTTP on the loopback interface: the
+// server under test requires https only of an https issuer.
 import { randomBytes, randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import { SignJWT, exportJWK, generateKeyPair } from 'jose'
@@ -38,6 +39,17 @@ export async function startFakeIdp(options = {}) {
   const base = `/oauth2/openid/${clientId}`
   const server = createServer((request, response) => {
     const path = (request.url ?? '').split('?')[0]
+    if (request.method === 'GET' && path === `${base}/.well-known/openid-configuration`) {
+      // What Kanidm publishes per client (checked against a real one): the issuer is the client's.
+      response.writeHead(200, { 'content-type': 'application/json' }).end(
+        JSON.stringify({
+          issuer,
+          jwks_uri: `${issuer}/public_key.jwk`,
+          userinfo_endpoint: `${issuer}/userinfo`,
+        }),
+      )
+      return
+    }
     if (request.method === 'GET' && path === `${base}/public_key.jwk`) {
       response
         .writeHead(200, { 'content-type': 'application/json' })
@@ -79,11 +91,12 @@ export async function startFakeIdp(options = {}) {
    * A token shaped like the ones Kanidm issues (tests/server/auth-fixtures.ts, checked against a
    * real one): `at+jwt`, `aud` and `client_id` the client, 900 s, scope `caldav` among others.
    * @param {FakeUser} user
-   * @param {{ idToken?: boolean }} [tokenOptions] an ID token has no `typ` and is no access token
+   * @param {{ idToken?: boolean }} [tokenOptions] an ID token is shaped like Kanidm's (checked
+   *   against a real one): no `typ`, `azp` instead of `client_id`, and `scopes` instead of `scope`
    */
   async function mint(user, tokenOptions = {}) {
     const now = Math.floor(Date.now() / 1000)
-    const claims = {
+    const common = {
       iss: issuer,
       sub: user.sub,
       aud: clientId,
@@ -91,14 +104,17 @@ export async function startFakeIdp(options = {}) {
       nbf: now,
       iat: now,
       jti: randomUUID(),
-      client_id: clientId,
       auth_time: now,
-      scope: 'caldav email groups openid profile',
     }
-    const header = tokenOptions.idToken
-      ? { alg: 'ES256', kid }
-      : { alg: 'ES256', kid, typ: 'at+jwt' }
-    return new SignJWT(claims).setProtectedHeader(header).sign(privateKey)
+    const scopes = ['caldav', 'email', 'groups', 'openid', 'profile']
+    if (tokenOptions.idToken) {
+      return new SignJWT({ ...common, azp: clientId, scopes, email: user.email })
+        .setProtectedHeader({ alg: 'ES256', kid })
+        .sign(privateKey)
+    }
+    return new SignJWT({ ...common, client_id: clientId, scope: scopes.join(' ') })
+      .setProtectedHeader({ alg: 'ES256', kid, typ: 'at+jwt' })
+      .sign(privateKey)
   }
 
   return {

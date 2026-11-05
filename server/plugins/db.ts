@@ -1,5 +1,6 @@
 import { openDatabase } from '../db/connection'
-import { runMigrations, type Migration } from '../db/migrate'
+import type { Migration } from '../db/migrate'
+import { upgradeDatabase } from '../db/upgrade'
 import { setDb } from '../utils/db'
 
 // Nitro bundles server/db/migrations as the server asset "migrations" (see nuxt.config.ts), so the
@@ -26,7 +27,9 @@ export default defineNitroPlugin((nitroApp) => {
   async function start(): Promise<void> {
     const db = openDatabase(dbPath)
     try {
-      const applied = runMigrations(db, await loadBundledMigrations())
+      // The database of an earlier version is copied and migrated here, before the first request.
+      const { applied, backup } = upgradeDatabase(db, dbPath, await loadBundledMigrations())
+      if (backup) console.info(`[db] Copied the database to ${backup} before upgrading it`)
       if (applied.length > 0) console.info(`[db] Applied migrations: ${applied.join(', ')}`)
     } catch (error) {
       db.close()

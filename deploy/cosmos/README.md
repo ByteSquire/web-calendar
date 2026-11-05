@@ -50,7 +50,11 @@ missing folders and gives the app's and Radicale's folders to uid 1000):
 | `<name>-radicale-data` / `…/<name>/radicale` | Radicale `/var/lib/radicale`      | All calendars and `sharing.csv` (authorization state)       | yes     |
 | `<name>-kanidm-data` / `…/<name>/kanidm`     | Kanidm `/data`                    | Kanidm database and its TLS certificate                     | yes     |
 
-Back up the app database with [`scripts/backup-db.mjs`](../../scripts/backup-db.mjs), as the
+Updating the ServApp (a new image) upgrades the database in `<name>-data` by itself at start: the
+app first copies it to `web-calendar.db.pre-<number>.bak` in the same folder, and stops with the
+reason, the database unchanged, if the copy or a migration fails. Going back to an older image
+means putting that copy in place of `web-calendar.db` (see
+[Updating](../../README.md#production)). Back up the app database with [`scripts/backup-db.mjs`](../../scripts/backup-db.mjs), as the
 [main README](../../README.md#production) shows, with `-v <name>-data:/data` (or the host folder) in
 place of the Compose volume. Never copy the SQLite file while the app runs.
 

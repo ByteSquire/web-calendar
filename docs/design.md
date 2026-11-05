@@ -1490,6 +1490,27 @@ volumes:
   `NUXT_OIDC_GROUPS_CLAIM`, `NUXT_OIDC_GROUPS_IGNORE` and `NUXT_GROUPS_FILE`, and warns when a
   `NUXT_GROUP_SYNC_*` setting of the removed sync is still set (it is ignored). Security settings: `NUXT_OUTBOUND_ALLOWED_HOSTS` (required in production, or
   `NUXT_OUTBOUND_ALLOW_ANY_HOST=true`), `NUXT_EXTERNAL_SEAL_KEY` (optional) (64 hex characters or base64 of 32 bytes); a malformed value stops the server.
+- **Upgrade of the database** (`server/db/upgrade.ts`, used by `server/plugins/db.ts` before the
+  first request) — a person updates the image and starts it on the old volume. At start: (1) a
+  database that has migrations this version does not know is refused (`NewerDatabaseError`;
+  old code on a newer schema is how data is damaged), and the message names the copy to go back to;
+  (2) if migrations are new and the database already has a history, it is copied to
+  `<file>.pre-<number of the first new migration>.bak` with `VACUUM INTO` (consistent, includes the
+  `-wal` file), the copy is checked with `integrity_check`, gets mode 0600 and replaces an earlier
+  copy of the same point (a start that failed is tried again from the same state); if the copy
+  fails nothing is changed (`UpgradeBackupError`); a new database and `:memory:` get none; the five
+  newest points are kept; (3) the migrations are applied, each with its `schema_migrations` row in
+  one transaction, so one that fails leaves the database as it was before it (`runMigrations`), and
+  the process exits with the reason, as it does for any database error. The runner goes by file
+  name, so **a migration that a release has shipped is never edited** (migration 009 was, on
+  2026-11-05, before any release had it; that cost a deleted development database): a change is a
+  new migration. `tests/server/db-upgrade-released.test.ts` compares the shipped files byte for
+  byte with `tests/server/fixtures/released/<tag>/` and runs the real upgrade from each released
+  schema, filled with rows in every table, checking every row, `integrity_check` and
+  `foreign_key_check`. Migration 006 is the model for a migration that cannot keep rows: it refuses
+  to run (with the reason in the error) rather than drop data. Not covered: two containers on one
+  volume (not supported), a volume that is full in the middle of a migration (SQLite rolls back; the
+  copy is made first), and a database that ran an unreleased development version of a migration.
 - **Persistence and backup** — the SQLite file and Radicale's data are the two things
   to back up. The SQLite file is in WAL mode, so it is copied with `VACUUM INTO`
   (`scripts/backup-db.mjs`, `npm run backup`; it checks the copy and never changes the

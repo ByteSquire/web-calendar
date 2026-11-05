@@ -254,6 +254,20 @@ docker run --rm --user 1000:1000 -v web-calendar_web-calendar-data:/data \
   node:24-bookworm-slim node /scripts/backup-db.mjs /data/web-calendar.db /backups
 ```
 
+**Updating.** Pull the new image and start it on the same volume: the database of the earlier
+version is upgraded at start, with nothing to run by hand. Before the first change the app copies
+the database to `web-calendar.db.pre-<number>.bak` in the data volume (the number is that of the
+first new migration; mode 0600; the five newest are kept), then applies the new migrations, each in
+a transaction of its own. The log says `[db] Copied the database to …` and `[db] Applied
+migrations: …`. If the copy fails (no room on the volume, say) or a migration fails, the app stops
+at start with the reason and the database is as it was. To go back to the earlier version: stop
+the app, put the `.bak` copy in place of `web-calendar.db` (delete the old `-wal` and `-shm` files)
+and start the earlier image. An earlier image started on a database that a later version has
+already upgraded refuses to run and names that copy, because old code on a new schema is how data is
+damaged. One app container per data volume: SQLite is a single-writer file, so do not run replicas
+on the same volume. `.bak` files are database copies: they count for the backups (keep them as
+protected as the database) and can be deleted once the new version has proved itself.
+
 `radicale-data` includes `sharing.csv`, which is authorization state, so back it up too. Keep the
 token hash key apart from the backups, encrypt the backups, and after a restore let the sharing
 writer reconcile (it does at start). For a restore, stop the app, replace `web-calendar.db` with
@@ -407,7 +421,9 @@ Once:
 Each release:
 
 1. Set `version` in `package.json` (here `0.2.0`), run the
-   [release checks](#release-checks-run-on-your-machine) and commit.
+   [release checks](#release-checks-run-on-your-machine) and commit. If the release has migrations
+   that no earlier release had, freeze them for the upgrade tests
+   (`tests/server/fixtures/released/README.md`).
 2. Tag the commit with the same version and push the tag:
 
    ```sh

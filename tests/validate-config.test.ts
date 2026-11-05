@@ -65,22 +65,54 @@ describe('validateEnv', () => {
       ])
     })
 
-    it('rejects a trailing slash', () => {
-      expect(check('https://idm.example.org/oauth2/openid/web-calendar/')).toEqual([
-        'NUXT_OIDC_ISSUER must not end with a slash',
-      ])
+    const warnings = (issuer: string, extra: Record<string, string> = {}) =>
+      validateEnv({ ...valid, NUXT_OIDC_ISSUER: issuer, ...extra }).warnings
+
+    it('takes a trailing slash: the issuer is used as the provider writes it (Auth0, Authentik)', () => {
+      expect(check('https://tenant.auth0.example/')).toEqual([])
+      expect(check('https://idm.example.org/application/o/calendar/')).toEqual([])
     })
 
-    it('rejects an issuer without a client segment', () => {
-      expect(check('https://idm.example.org')).toEqual([
-        'NUXT_OIDC_ISSUER must end with the client id "web-calendar"',
-      ])
+    it('takes issuers of other providers, which have no client segment', () => {
+      for (const issuer of [
+        'https://idm.example.org',
+        'https://keycloak.example.org/realms/team',
+        'https://cognito-idp.eu-west-1.amazonaws.com/eu-west-1_AbCdEf',
+        'https://login.microsoftonline.com/6f1c2b0e-4d51-4c7e-9a52-0b6f3c1d2e77/v2.0',
+      ]) {
+        expect(check(issuer), issuer).toEqual([])
+        expect(warnings(issuer), issuer).toEqual([])
+      }
     })
 
-    it('rejects a client segment that differs from NUXT_OIDC_CLIENT_ID', () => {
-      expect(check('https://idm.example.org/oauth2/openid/other')).toEqual([
-        'NUXT_OIDC_ISSUER ends with "other", but NUXT_OIDC_CLIENT_ID is "web-calendar"',
-      ])
+    it('takes a client segment that differs from NUXT_OIDC_CLIENT_ID', () => {
+      expect(check('https://idm.example.org/oauth2/openid/other')).toEqual([])
+    })
+
+    it('rejects a query or a fragment', () => {
+      for (const issuer of [
+        'https://idm.example.org/realms/team?x=1',
+        'https://idm.example.org/realms/team#top',
+        'https://idm.example.org/realms/team?',
+      ]) {
+        expect(check(issuer), issuer).toEqual([
+          'NUXT_OIDC_ISSUER must not have a query or a fragment',
+        ])
+      }
+    })
+
+    it('warns about further clients only where the issuer does not end with the client id', () => {
+      const further = { NUXT_OIDC_ALLOWED_CLIENTS: 'web-calendar, other-app' }
+      // Kanidm layout: one issuer per client, derived from this one. Nothing to say.
+      expect(warnings('https://idm.example.org/oauth2/openid/web-calendar', further)).toEqual([])
+      // Any other layout: all the clients share the issuer.
+      const shared = warnings('https://keycloak.example.org/realms/team', further)
+      expect(shared).toHaveLength(1)
+      expect(shared[0]).toContain('other-app')
+      expect(shared[0]).toContain('share')
+      expect(warnings('https://tenant.auth0.example/', further)).toHaveLength(1)
+      // No further client: no remark.
+      expect(warnings('https://keycloak.example.org/realms/team')).toEqual([])
     })
 
     it('compares the last segment with a configured client id', () => {
@@ -230,9 +262,11 @@ describe('validateEnv', () => {
   describe('NUXT_OIDC_ADMIN_GROUP', () => {
     const check = (value: string) => validateEnv({ ...valid, NUXT_OIDC_ADMIN_GROUP: value }).errors
 
-    it('accepts a group name or an SPN, and an unset value', () => {
+    it('accepts a group name, an SPN, a path or an id, and an unset value', () => {
       expect(check('calendar_admins')).toEqual([])
       expect(check('calendar_admins@idm.example.org')).toEqual([])
+      expect(check('/team/calendar-admins')).toEqual([])
+      expect(check('6f1c2b0e-4d51-4c7e-9a52-0b6f3c1d2e77')).toEqual([])
       expect(validateEnv(valid).errors).toEqual([])
     })
 
@@ -241,6 +275,78 @@ describe('validateEnv', () => {
       expect(errors).toHaveLength(1)
       expect(errors[0]).toContain('NUXT_OIDC_ADMIN_GROUP')
     })
+  })
+
+  describe('NUXT_OIDC_JWKS_HOSTS', () => {
+    const run = (value: string) => validateEnv({ ...valid, NUXT_OIDC_JWKS_HOSTS: value })
+
+    it('is empty by default, and says nothing when empty', () => {
+      expect(validateEnv(valid)).toMatchObject({ errors: [], warnings: [] })
+      expect(run('')).toMatchObject({ errors: [], warnings: [] })
+      expect(run(' , ')).toMatchObject({ errors: [], warnings: [] })
+    })
+
+    it('takes exact host names, in any case, and says at every start which it trusts', () => {
+      const { errors, warnings } = run('www.googleapis.com, Login.MicrosoftOnline.com,')
+      expect(errors).toEqual([])
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain('www.googleapis.com, login.microsoftonline.com')
+    })
+
+    it.each([
+      '*.googleapis.com',
+      '*',
+      'https://www.googleapis.com',
+      'www.googleapis.com/oauth2',
+      'www.googleapis.com:443',
+      'user@www.googleapis.com',
+      'two words',
+      'under_score.example.test',
+      '-bad.example.test',
+      '1.2.3',
+    ])('rejects %j', (value) => {
+      const { errors } = run(`ok.example.test, ${value}`)
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('NUXT_OIDC_JWKS_HOSTS')
+    })
+  })
+
+  describe('NUXT_OIDC_SCOPE, NUXT_OIDC_REQUIRED_SCOPE and NUXT_OIDC_AUDIENCE', () => {
+    const check = (env: Record<string, string>) => validateEnv({ ...valid, ...env }).errors
+
+    it('accept sensible values and unset ones', () => {
+      expect(check({ NUXT_OIDC_SCOPE: 'openid profile email groups caldav' })).toEqual([])
+      expect(check({ NUXT_OIDC_SCOPE: 'openid api://6f1c2b0e/caldav' })).toEqual([])
+      expect(check({ NUXT_OIDC_REQUIRED_SCOPE: 'calendar/caldav' })).toEqual([])
+      expect(check({ NUXT_OIDC_AUDIENCE: '' })).toEqual([])
+      expect(
+        check({ NUXT_OIDC_AUDIENCE: 'https://calendar.example.org/api, api://calendar,' }),
+      ).toEqual([])
+    })
+
+    it.each(['', '   ', 'profile email caldav'])('reject the scope %j without openid', (scope) => {
+      const errors = check({ NUXT_OIDC_SCOPE: scope })
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toContain('NUXT_OIDC_SCOPE')
+    })
+
+    it.each(['', ' ', 'two words', ' caldav', 'caldav ', 'cal\tdav'])(
+      'reject the required scope %j',
+      (scope) => {
+        const errors = check({ NUXT_OIDC_REQUIRED_SCOPE: scope })
+        expect(errors).toHaveLength(1)
+        expect(errors[0]).toContain('NUXT_OIDC_REQUIRED_SCOPE')
+      },
+    )
+
+    it.each(['https://api example.org', 'a, b c', 'a\u0000b'])(
+      'reject the audience %j',
+      (value) => {
+        const errors = check({ NUXT_OIDC_AUDIENCE: value })
+        expect(errors).toHaveLength(1)
+        expect(errors[0]).toContain('NUXT_OIDC_AUDIENCE')
+      },
+    )
   })
 
   describe('NUXT_ICAL_PROXY_ALLOW_PRIVATE in production (L3)', () => {
@@ -662,6 +768,8 @@ describe('the examples list what the validator knows (L2)', () => {
 
   const optional = [
     'NUXT_OIDC_ADMIN_GROUP',
+    'NUXT_OIDC_SCOPE',
+    'NUXT_OIDC_REQUIRED_SCOPE',
     'NUXT_OIDC_KEY_MAX_AGE_SEC',
     'NUXT_GATEWAY_MAX_BODY_BYTES',
     'NUXT_GATEWAY_MAX_CONCURRENT_PER_USER',
@@ -679,13 +787,15 @@ describe('the examples list what the validator knows (L2)', () => {
     expect(compose).toMatch(new RegExp(`^\\s+${name}: `, 'm'))
   })
 
-  it.each(['NUXT_OUTBOUND_ALLOWED_HOSTS', 'NUXT_EXTERNAL_SEAL_KEY'])(
-    '%s (empty by default) is in .env.example and in docker-compose.yml',
-    (name) => {
-      expect(envExample).toMatch(new RegExp(`^#? ?${name}=`, 'm'))
-      expect(compose).toMatch(new RegExp(`^\\s+${name}: '\\$\\{${name}:-\\}'`, 'm'))
-    },
-  )
+  it.each([
+    'NUXT_OUTBOUND_ALLOWED_HOSTS',
+    'NUXT_EXTERNAL_SEAL_KEY',
+    'NUXT_OIDC_AUDIENCE',
+    'NUXT_OIDC_JWKS_HOSTS',
+  ])('%s (empty by default) is in .env.example and in docker-compose.yml', (name) => {
+    expect(envExample).toMatch(new RegExp(`^#? ?${name}=`, 'm'))
+    expect(compose).toMatch(new RegExp(`^\\s+${name}: '\\$\\{${name}:-\\}'`, 'm'))
+  })
 
   it('says what the host list is for, and that the seal key voids the seals when changed', () => {
     expect(envExample).toMatch(/script[\s\S]{0,1500}# NUXT_OUTBOUND_ALLOWED_HOSTS=/i)

@@ -27,7 +27,7 @@ client's JWTs with the keys Kanidm publishes.
 ```sh
 kanidm system oauth2 create-public web-calendar 'Web Calendar' https://calendar.example.org
 kanidm system oauth2 add-redirect-url web-calendar https://calendar.example.org/auth/callback
-kanidm system oauth2 update-scope-map web-calendar web_calendar_users openid profile email groups_name caldav
+kanidm system oauth2 update-scope-map web-calendar web_calendar_users openid profile email groups caldav
 kanidm system oauth2 prefer-short-username web-calendar
 ```
 
@@ -35,10 +35,14 @@ kanidm system oauth2 prefer-short-username web-calendar
   any program on the user's machine receive login codes.
 - `caldav` is a custom scope. The gateway requires it, so only members of the mapped group can get a
   token it accepts. Kanidm accepted this scope name in the test stack.
-- `groups_name` adds group names to the ID token and the userinfo response. The test stack used
-  `groups groups_name groups_spn` together; `groups_name` alone is untested.
+- `groups` adds the groups, as UUID and SPN, to the ID token and the userinfo response; the app's
+  default scope (`NUXT_OIDC_SCOPE`) asks for it, and the admin check matches the SPN
+  (`calendar_admins@idm.example.org`). A client set up with `groups_name` before this version needs
+  its scope map updated once with the command above; otherwise set `NUXT_OIDC_SCOPE` to
+  `openid profile email groups_name caldav`, which keeps working.
 - A public client cannot skip the consent prompt. Users see it once, and again when the scopes change.
-- The issuer is `https://idm.example.org/oauth2/openid/web-calendar`; the signing keys are at
+- The issuer is `https://idm.example.org/oauth2/openid/web-calendar`; the app finds the signing keys
+  through its discovery document (`<issuer>/.well-known/openid-configuration`), which names
   `<issuer>/public_key.jwk`.
 - The browser talks to Kanidm itself (the discovery document and the token request), so Kanidm
   must be reachable from the user's browser under the name in the issuer. Kanidm's CORS answers
@@ -66,6 +70,12 @@ The server then reads a group with `GET /v1/group/<name>` and a bearer token (th
 attribute lists SPNs such as `alice@idm.example.org`), and each member's `uuid` with
 `GET /v1/person/<spn>/_attr/uuid`. Reading a person needs `idm_people_pii_read`: without it Kanidm
 answers `null` (tested on Kanidm 1.11.2).
+
+To show Kanidm's groups on the app's Groups page, the sync also lists them with `GET /v1/group` and
+the same token (read-only, nothing more to grant; tested on Kanidm 1.11.2 with this account). Built-in
+groups (class `builtin`, or names starting `idm_`, `system_` or `domain_`) are not imported. If the
+list fails, the log says so and the groups already imported stay; sharing keeps working, because the
+groups that rules and logins need are read one by one as before.
 
 Why `idm_group_admins`: in the test stack a fresh service account **could not read groups** (the call
 returned `null`), also as a member of `idm_service_desk`, and Kanidm 1.11.2 has no built-in read-only

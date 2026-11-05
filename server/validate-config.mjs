@@ -255,7 +255,8 @@ export function validateEnv(env) {
   const issuer = get('NUXT_OIDC_ISSUER')
   if (!issuer) {
     errors.push(
-      'NUXT_OIDC_ISSUER is required, for example https://idm.example.org/oauth2/openid/web-calendar',
+      'NUXT_OIDC_ISSUER is required, for example https://idm.example.org/oauth2/openid/web-calendar ' +
+        'or https://keycloak.example.org/realms/team',
     )
   } else {
     const url = parseUrl(issuer)
@@ -263,15 +264,28 @@ export function validateEnv(env) {
       errors.push('NUXT_OIDC_ISSUER is not a valid URL')
     } else if (url.protocol !== 'https:') {
       errors.push('NUXT_OIDC_ISSUER must be an https URL')
-    } else if (issuer.endsWith('/')) {
-      errors.push('NUXT_OIDC_ISSUER must not end with a slash')
+    } else if (
+      url.search !== '' ||
+      url.hash !== '' ||
+      issuer.endsWith('?') ||
+      issuer.endsWith('#')
+    ) {
+      errors.push('NUXT_OIDC_ISSUER must not have a query or a fragment')
     } else {
+      // The issuer is used exactly as the provider's discovery document writes it, a trailing slash
+      // included (Authentik, Auth0 and Entra v1 have one). Only Kanidm has an issuer per client; it
+      // matters when several clients are allowed, because they then share one issuer.
       const lastSegment = url.pathname.split('/').filter(Boolean).at(-1)
-      if (!lastSegment) {
-        errors.push(`NUXT_OIDC_ISSUER must end with the client id "${clientId}"`)
-      } else if (lastSegment !== clientId) {
-        errors.push(
-          `NUXT_OIDC_ISSUER ends with "${lastSegment}", but NUXT_OIDC_CLIENT_ID is "${clientId}"`,
+      const further = get('NUXT_OIDC_ALLOWED_CLIENTS')
+        .split(',')
+        .map((id) => id.trim())
+        .filter((id) => id !== '' && id !== clientId)
+      if (further.length > 0 && (issuer.endsWith('/') || lastSegment !== clientId)) {
+        warnings.push(
+          `NUXT_OIDC_ALLOWED_CLIENTS lists ${further.join(', ')} besides "${clientId}", and ` +
+            'NUXT_OIDC_ISSUER does not end with the client id, so all of them are taken to share ' +
+            'this issuer (right for Keycloak, Authentik, Auth0; Kanidm has one issuer per client ' +
+            'and needs the client id at the end)',
         )
       }
     }
@@ -344,9 +358,67 @@ export function validateEnv(env) {
   const adminGroup = env.NUXT_OIDC_ADMIN_GROUP
   if (adminGroup !== undefined && (adminGroup.trim() === '' || adminGroup !== adminGroup.trim())) {
     errors.push(
-      'NUXT_OIDC_ADMIN_GROUP must be the name of the Kanidm admin group, without blanks around ' +
-        `it (it is empty or padded: ${show(adminGroup)}); nobody could be an admin with it`,
+      'NUXT_OIDC_ADMIN_GROUP must be the name, SPN, id or path of the admin group as the ' +
+        `provider writes it in the groups claim, without blanks around it (it is empty or padded: ${show(adminGroup)}); ` +
+        'nobody could be an admin with it',
     )
+  }
+
+  // The scope the SPA asks for, the scope every access token must carry, and the extra audiences.
+  const scope = env.NUXT_OIDC_SCOPE
+  if (scope !== undefined) {
+    const scopes = scope.split(/\s+/).filter(Boolean)
+    if (!scopes.includes('openid')) {
+      errors.push(
+        `NUXT_OIDC_SCOPE must be space-separated scopes and include openid, not ${show(scope)}`,
+      )
+    }
+  }
+  const requiredScope = env.NUXT_OIDC_REQUIRED_SCOPE
+  if (requiredScope !== undefined && !/^[\x21-\x7e]+$/.test(requiredScope)) {
+    errors.push(
+      'NUXT_OIDC_REQUIRED_SCOPE must be one scope without blanks (the default is caldav) that ' +
+        `every access token carries, not ${show(requiredScope)}`,
+    )
+  }
+  const audience = env.NUXT_OIDC_AUDIENCE
+  if (audience !== undefined) {
+    const entries = audience.split(',').map((entry) => entry.trim())
+    // A blank or a control character inside an entry: not printable ASCII without a space.
+    if (
+      entries.some((entry) => [...entry].some((ch) => ch <= ' ' || ch === '\x7f' || /\s/.test(ch)))
+    ) {
+      errors.push(
+        'NUXT_OIDC_AUDIENCE must be a comma-separated list of values without blanks inside, ' +
+          `such as the API identifier https://calendar.example.org/api, not ${show(audience)}`,
+      )
+    }
+  }
+
+  // Hosts besides the issuer's that the signing keys may come from: exact host names. Naming one
+  // widens whom the server trusts with the keys, so it is said at every start.
+  const jwksHosts = env.NUXT_OIDC_JWKS_HOSTS
+  if (jwksHosts !== undefined) {
+    const entries = jwksHosts
+      .split(',')
+      .map((entry) => entry.trim().toLowerCase())
+      .filter((entry) => entry !== '')
+    const problems = entries
+      .map((entry) => [entry, hostNameProblem(entry)])
+      .filter(([, problem]) => problem !== null)
+    if (problems.length > 0) {
+      errors.push(
+        'NUXT_OIDC_JWKS_HOSTS must be a comma-separated list of exact host names such as ' +
+          `www.googleapis.com (no wildcard, port or path): ${problems
+            .map(([entry, problem]) => `${show(entry)} ${problem}`)
+            .join('; ')}`,
+      )
+    } else if (entries.length > 0) {
+      warnings.push(
+        `NUXT_OIDC_JWKS_HOSTS lists ${entries.join(', ')}: the signing keys of the identity ` +
+          "provider may be fetched from there as well as from the issuer's own host",
+      )
+    }
   }
 
   // L3: the SSRF guard of the iCal proxy is off with this one; only tests want that.

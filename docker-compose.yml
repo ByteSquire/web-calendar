@@ -32,7 +32,8 @@ services:
       - default
       - radicale
     environment:
-      # OIDC (generic; currently Kanidm). The issuer ends with the app's own public client.
+      # OIDC (generic: Kanidm, Keycloak, ...). The issuer as the provider's discovery document writes
+      # it; for Kanidm it ends with the app's own public client.
       NUXT_OIDC_ISSUER: '${NUXT_OIDC_ISSUER:-}'
       NUXT_OIDC_CLIENT_ID: '${NUXT_OIDC_CLIENT_ID:-web-calendar}'
       # Further clients whose JWTs the gateway accepts (comma-separated); empty means the client above.
@@ -46,9 +47,17 @@ services:
       NUXT_GROUP_SYNC_TOKEN: '${NUXT_GROUP_SYNC_TOKEN:-}'
       NUXT_GROUP_SYNC_INTERVAL_SEC: '${NUXT_GROUP_SYNC_INTERVAL_SEC:-60}'
       NUXT_GROUP_SYNC_FILE: /groups/htgroup
-      # Kanidm group whose members are admins (short name or SPN); must not be empty.
+      # Group whose members are admins (name, SPN, id or path as the provider writes it); not empty.
       NUXT_OIDC_ADMIN_GROUP: '${NUXT_OIDC_ADMIN_GROUP:-calendar_admins}'
-      # Seconds the cached Kanidm signing keys are used before they are fetched again.
+      # Scopes the browser asks for, and the scope every access token must carry (also what keeps
+      # ID tokens out). Providers differ: see docs/oidc-providers.md.
+      NUXT_OIDC_SCOPE: '${NUXT_OIDC_SCOPE:-openid profile email groups caldav}'
+      NUXT_OIDC_REQUIRED_SCOPE: '${NUXT_OIDC_REQUIRED_SCOPE:-caldav}'
+      # Further `aud` values that make an access token ours (Auth0, Entra API identifiers), comma-separated.
+      NUXT_OIDC_AUDIENCE: '${NUXT_OIDC_AUDIENCE:-}'
+      # Host names besides the issuer's own that the signing keys may come from (comma-separated).
+      NUXT_OIDC_JWKS_HOSTS: '${NUXT_OIDC_JWKS_HOSTS:-}'
+      # Seconds the cached signing keys are used before they are fetched again.
       NUXT_OIDC_KEY_MAX_AGE_SEC: '${NUXT_OIDC_KEY_MAX_AGE_SEC:-3600}'
       # CalDAV gateway
       NUXT_GATEWAY_CORS_ORIGINS: '${NUXT_GATEWAY_CORS_ORIGINS:-}'

@@ -1,6 +1,8 @@
 // Row types of the tables in migrations/*.sql, written by hand (design §12). Columns keep
 // their database names; booleans are 0/1 and timestamps are ISO 8601 UTC strings.
 
+import type { SidebarSectionId } from '../../shared/utils/sidebar-sections'
+
 export type CalendarKind = 'personal' | 'shared' | 'resource'
 export type PrincipalType = 'user' | 'group' | 'authenticated' | 'public'
 export type Permission = 'free_busy' | 'read' | 'write' | 'admin'
@@ -30,6 +32,8 @@ export interface UserRow extends Timestamps {
   last_seen_at: string | null
   /** An IANA zone name the user chose (FR-32); null means the browser's zone. */
   time_zone: string | null
+  /** The order of the sidebar's sections (FR-21), a JSON list of ids; null means the default. */
+  sidebar_order: string | null
 }
 
 export interface AppTokenRow extends Timestamps {
@@ -200,4 +204,6 @@ export interface User {
   lastSeenAt: string | null
   /** The zone the user chose to see times in (FR-32); null means the browser's zone. */
   timeZone: string | null
+  /** The order the user keeps the sidebar's sections in (FR-21), complete; null means the default. */
+  sidebarOrder: SidebarSectionId[] | null
 }

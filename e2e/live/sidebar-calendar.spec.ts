@@ -3,8 +3,8 @@ import { expect, test, type Page } from '@playwright/test'
 import Database from 'better-sqlite3'
 import { openSignedIn } from './session'
 
-// "Add calendar" in the sidebar with the real stack (design S8 setup): a text field and a plus, like
-// the ones for views, categories and filters. The calendar is made in alice's own home through the
+// "Add calendar" in the sidebar with the real stack (design S8 setup): a plus in the heading of the
+// section that shows a text field, like the ones for views, categories and filters. The calendar is made in alice's own home through the
 // CalDAV gateway and shows up in the sidebar without a reload. Nothing in the app deletes a personal
 // calendar, so the test asks Radicale directly (it trusts X-Remote-User on this test network) and
 // removes the one it made; a run that fails half-way leaves "E2E sidebar calendar <number>".
@@ -56,35 +56,49 @@ async function findCollection(sub: string): Promise<string | null> {
   return null
 }
 
-test('the calendars section has a labelled field and a plus', async () => {
-  await expect(calendarsSection().getByLabel('New calendar name')).toBeVisible()
-  await expect(calendarsSection().getByRole('button', { name: 'Add calendar' })).toBeVisible()
+const plus = () => calendarsSection().getByRole('button', { name: 'Add calendar', exact: true })
+const field = () => calendarsSection().getByLabel('New calendar name')
+
+test('the calendars section has a plus that shows a labelled field, and Escape closes it', async () => {
+  await expect(plus()).toBeVisible()
+  await expect(plus()).toHaveAttribute('aria-expanded', 'false')
+  await expect(field()).toHaveCount(0)
+
+  await plus().click()
+  await expect(plus()).toHaveAttribute('aria-expanded', 'true')
+  await expect(field()).toBeVisible()
+  await expect(field()).toBeFocused()
   const { violations } = await new AxeBuilder({ page })
     .include('#app-sidebar')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
   expect(violations.map((violation) => violation.id)).toEqual([])
+
+  await field().press('Escape')
+  await expect(field()).toHaveCount(0)
+  await expect(plus()).toBeFocused()
 })
 
 test('refuses the name of a calendar that is there already', async () => {
-  const field = calendarsSection().getByLabel('New calendar name')
+  await plus().click()
   // The first calendar in the list, whatever its name is.
   const existing = (await calendarsSection().locator('ul li').first().innerText()).trim()
   expect(existing).not.toBe('')
-  await field.fill(existing)
-  await field.press('Enter')
+  await field().fill(existing)
+  await field().press('Enter')
   await expect(calendarsSection()).toContainText('A calendar with this name already exists.')
-  await field.fill('')
+  // the field stays open, with the name, for a better one
+  await expect(field()).toHaveValue(existing)
+  await field().fill('')
 })
 
-test('makes a calendar with Enter, lists it without a reload and empties the field', async () => {
-  const field = calendarsSection().getByLabel('New calendar name')
-  await field.fill(NAME)
-  await field.press('Enter')
+test('makes a calendar with Enter, lists it without a reload and closes the field', async () => {
+  await field().fill(NAME)
+  await field().press('Enter')
   await expect(calendarsSection().getByText(NAME, { exact: true })).toBeVisible()
-  await expect(field).toHaveValue('')
-  // The focus stays where the person typed.
-  await expect(field).toBeFocused()
+  await expect(field()).toHaveCount(0)
+  // The focus goes back to the plus.
+  await expect(plus()).toBeFocused()
   expect(await findCollection(aliceSub())).not.toBeNull()
 })
 

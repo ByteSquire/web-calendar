@@ -99,7 +99,7 @@ describe('SidebarContent', () => {
     expect(headingButton('Categories').getAttribute('aria-expanded')).toBe('false')
     expect(headingButton('Filters').getAttribute('aria-expanded')).toBe('true')
     // the content is hidden, not removed
-    expect(body('Categories').querySelector('input')).not.toBeNull()
+    expect(body('Categories').querySelector('ul')).not.toBeNull()
     headingButton('Categories').click()
     await vi.waitFor(() => expect(body('Categories').style.display).not.toBe('none'))
     expect(headingButton('Categories').getAttribute('aria-expanded')).toBe('true')

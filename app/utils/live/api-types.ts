@@ -9,6 +9,8 @@ export interface ApiMe {
   email: string | null
   isAdmin: boolean
   timeZone: string | null
+  /** The order of the sidebar's sections (FR-21); null means the default. */
+  sidebarOrder: string[] | null
 }
 
 export interface ApiViewCalendar {

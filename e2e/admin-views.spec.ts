@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { openApp, press } from './helpers'
+import { openAddField, openApp, press } from './helpers'
 
 // The demo app has no server: the shared-view controls work on the local mock list.
 
@@ -19,8 +19,9 @@ test.describe('shared views', () => {
     // there is one input for adding a view: a shared one is made by sharing an own view
     await expect(page.getByLabel('New shared view name')).toHaveCount(0)
 
-    await page.getByLabel('New view name', { exact: true }).first().fill('Ops')
-    await press(page.getByRole('button', { name: 'Add view', exact: true }).first())
+    const field = await openAddField(page, 'Add view', 'New view name')
+    await field.fill('Ops')
+    await field.press('Enter')
     const row = page
       .locator('li')
       .filter({ has: page.getByRole('button', { name: 'Ops', exact: true }) })
@@ -66,8 +67,10 @@ test.describe('shared views', () => {
   test('refuses to unshare a view while an own view has the same name', async ({ page }) => {
     await openApp(page)
     await showSidebar(page)
-    await page.getByLabel('New view name', { exact: true }).first().fill('All staff')
-    await press(page.getByRole('button', { name: 'Add view', exact: true }).first())
+    const field = await openAddField(page, 'Add view', 'New view name')
+    await field.fill('All staff')
+    await field.press('Enter')
+    await expect(field).toBeHidden()
     await press(page.getByRole('button', { name: 'Actions for view All staff' }).first())
     await page.getByRole('menuitem', { name: 'Unshare', exact: true }).click()
     await expect(

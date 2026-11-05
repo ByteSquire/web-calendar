@@ -1,93 +1,140 @@
 <!--
   Sidebar body (FR-21): views, calendars, resources, categories, filters, all from the shared
-  calendar state. Rendered inside the desktop column and inside the mobile slideover.
+  calendar state. Rendered inside the desktop column and inside the mobile slideover. The sections
+  come in the order the person keeps them in (saved for the account). They are dragged by their
+  headings (a long press first on a touch screen); the list with arrow buttons that arranges them
+  without dragging replaces the sections until it is closed.
 -->
 <template>
-  <div class="flex flex-col gap-3 p-2">
+  <div
+    ref="root"
+    class="flex flex-col gap-3 p-2"
+    @pointerdown="drag.onPointerDown"
+    @contextmenu="drag.onContextMenu"
+  >
     <SidebarProblems />
 
-    <SidebarSection :title="N_('Views')">
-      <ul>
-        <li v-for="view in views" :key="view.id">
-          <SidebarViewItem
-            :view="view"
-            :selected="view.id === selectedViewId"
-            :can-manage="isAdmin"
-            @select="toggleView(view.id)"
-            @rename="startRename(view)"
-            @update="updateFromSelection(view)"
-            @delete="startDelete(view)"
-            @copy="copyView(view)"
-            @share="shareView(view)"
-            @unshare="unshareSharedView(view)"
-          />
-        </li>
-      </ul>
-      <SidebarAddInput noun="view" :submit="submitOwnView" />
-    </SidebarSection>
+    <SidebarArrange v-if="arranging" @done="stopArranging" />
+    <template v-else>
+      <!-- In the order the person keeps them in: the page order is the reading and Tab order. -->
+      <template v-for="id in order" :key="id">
+        <SidebarSection
+          v-if="id === 'views'"
+          :data-section-id="id"
+          :title="SECTION_TITLES.views"
+          add-noun="view"
+          :add-submit="submitOwnView"
+        >
+          <ul>
+            <li v-for="view in views" :key="view.id">
+              <SidebarViewItem
+                :view="view"
+                :selected="view.id === selectedViewId"
+                :can-manage="isAdmin"
+                @select="toggleView(view.id)"
+                @rename="startRename(view)"
+                @update="updateFromSelection(view)"
+                @delete="startDelete(view)"
+                @copy="copyView(view)"
+                @share="shareView(view)"
+                @unshare="unshareSharedView(view)"
+              />
+            </li>
+          </ul>
+        </SidebarSection>
 
-    <SidebarSection :title="N_('Calendars')">
-      <ul>
-        <li v-for="calendar in regularCalendars" :key="calendar.id">
-          <SidebarToggleRow
-            :label="calendar.name"
-            :color="calendar.color"
-            :model-value="visibleCalendarIds.includes(calendar.id)"
-            @update:model-value="setCalendarVisible(calendar.id, $event)"
-          />
-        </li>
-      </ul>
-      <!-- A calendar is made in the person's own home; without a calendar service (demo) there is none. -->
-      <SidebarAddInput v-if="canCreateCalendars" noun="calendar" :submit="submitCalendar" />
-    </SidebarSection>
+        <SidebarSection
+          v-else-if="id === 'calendars'"
+          :data-section-id="id"
+          :title="SECTION_TITLES.calendars"
+          :add-noun="canCreateCalendars ? 'calendar' : undefined"
+          :add-submit="submitCalendar"
+        >
+          <ul>
+            <li v-for="calendar in regularCalendars" :key="calendar.id">
+              <SidebarToggleRow
+                :label="calendar.name"
+                :color="calendar.color"
+                :model-value="visibleCalendarIds.includes(calendar.id)"
+                @update:model-value="setCalendarVisible(calendar.id, $event)"
+              />
+            </li>
+          </ul>
+        </SidebarSection>
 
-    <SidebarSection :title="N_('Resources')">
-      <ul>
-        <li v-for="resource in resources" :key="resource.id">
-          <SidebarToggleRow
-            :label="resource.name"
-            :icon="resourceIconName(resource.type)"
-            :color="calendarById.get(resource.calendarId)?.color"
-            :model-value="visibleResourceIds.includes(resource.id)"
-            @update:model-value="setResourceVisible(resource.id, $event)"
-          />
-        </li>
-      </ul>
-      <NuxtLink
-        to="/resources/requests"
-        class="inline-flex min-h-11 items-center gap-1.5 px-2 underline"
-      >
-        <UIcon name="i-lucide-inbox" class="size-4" aria-hidden="true" />
-        {{ t('Resource bookings') }}
-      </NuxtLink>
-    </SidebarSection>
+        <SidebarSection
+          v-else-if="id === 'resources'"
+          :data-section-id="id"
+          :title="SECTION_TITLES.resources"
+        >
+          <ul>
+            <li v-for="resource in resources" :key="resource.id">
+              <SidebarToggleRow
+                :label="resource.name"
+                :icon="resourceIconName(resource.type)"
+                :color="calendarById.get(resource.calendarId)?.color"
+                :model-value="visibleResourceIds.includes(resource.id)"
+                @update:model-value="setResourceVisible(resource.id, $event)"
+              />
+            </li>
+          </ul>
+          <NuxtLink
+            to="/resources/requests"
+            class="inline-flex min-h-11 items-center gap-1.5 px-2 underline"
+          >
+            <UIcon name="i-lucide-inbox" class="size-4" aria-hidden="true" />
+            {{ t('Resource bookings') }}
+          </NuxtLink>
+        </SidebarSection>
 
-    <SidebarSection :title="N_('Categories')">
-      <ul>
-        <li v-for="category in categories" :key="category.id">
-          <SidebarToggleRow
-            :label="category.name"
-            :color="category.color"
-            :model-value="selectedCategoryIds.includes(category.id)"
-            @update:model-value="setCategorySelected(category.id, $event)"
-          />
-        </li>
-      </ul>
-      <SidebarAddInput noun="category" :submit="submitCategory" />
-    </SidebarSection>
+        <SidebarSection
+          v-else-if="id === 'categories'"
+          :data-section-id="id"
+          :title="SECTION_TITLES.categories"
+          add-noun="category"
+          :add-submit="submitCategory"
+        >
+          <ul>
+            <li v-for="category in categories" :key="category.id">
+              <SidebarToggleRow
+                :label="category.name"
+                :color="category.color"
+                :model-value="selectedCategoryIds.includes(category.id)"
+                @update:model-value="setCategorySelected(category.id, $event)"
+              />
+            </li>
+          </ul>
+        </SidebarSection>
 
-    <SidebarSection :title="N_('Filters')">
-      <ul>
-        <li v-for="filter in filters" :key="filter.id">
-          <SidebarToggleRow
-            :label="filter.name"
-            :model-value="activeFilterIds.includes(filter.id)"
-            @update:model-value="setFilterActive(filter.id, $event)"
-          />
-        </li>
-      </ul>
-      <SidebarAddInput noun="filter" :submit="submitFilter" />
-    </SidebarSection>
+        <SidebarSection
+          v-else-if="id === 'filters'"
+          :data-section-id="id"
+          :title="SECTION_TITLES.filters"
+          add-noun="filter"
+          :add-submit="submitFilter"
+        >
+          <ul>
+            <li v-for="filter in filters" :key="filter.id">
+              <SidebarToggleRow
+                :label="filter.name"
+                :model-value="activeFilterIds.includes(filter.id)"
+                @update:model-value="setFilterActive(filter.id, $event)"
+              />
+            </li>
+          </ul>
+        </SidebarSection>
+      </template>
+
+      <UButton
+        ref="arrangeButton"
+        :label="t('Arrange sections')"
+        icon="i-lucide-arrow-up-down"
+        color="neutral"
+        variant="ghost"
+        class="min-h-11 self-start text-toned"
+        @click="arranging = true"
+      />
+    </template>
 
     <AdminViewRenameModal
       :open="renaming !== null"
@@ -127,7 +174,8 @@ import {
   updateSharedView,
   type AdminViewsApi,
 } from '~/utils/live/admin-views'
-import { N_, t } from '~/utils/i18n'
+import { t } from '~/utils/i18n'
+import { SECTION_TITLES } from '~/utils/sidebar-sections'
 import { calendarNameProblem } from '~/utils/groups/model'
 import { describeLoadError } from '~/utils/live/errors'
 import { isLiveConfig } from '~/utils/live/seed'
@@ -430,6 +478,20 @@ async function confirmDelete() {
   }
 }
 
+// ---- Order of the sections --------------------------------------------------------------------
+
+const root = useTemplateRef<HTMLElement>('root')
+const drag = useSidebarDrag(root)
+const { order } = useSidebarOrder()
+const arranging = ref(false)
+const arrangeButton = useTemplateRef<{ $el: HTMLElement }>('arrangeButton')
+
+async function stopArranging() {
+  arranging.value = false
+  await nextTick()
+  arrangeButton.value?.$el.focus()
+}
+
 // Selecting the active view again clears it.
 function toggleView(id: string) {
   selectView(selectedViewId.value === id ? null : id)
@@ -440,6 +502,7 @@ function toggleView(id: string) {
 const caldav = useCalDav()
 // The calendar view loads its sources again when this changes, and then lists the new calendar.
 const sourcesVersion = useCalendarSourcesVersion()
+// A calendar is made in the person's own home; without a calendar service (demo) there is none.
 const canCreateCalendars = live && caldav !== null
 
 /** Makes a calendar in the person's own home. Returns what is wrong, or nothing when it was made. */

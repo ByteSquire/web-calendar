@@ -44,8 +44,10 @@ async function reload(page: Page): Promise<void> {
 }
 
 test('alice makes a view and shares it with everybody from its menu', async () => {
-  await alice.getByLabel('New view name', { exact: true }).fill(SHARED)
   await alice.getByRole('button', { name: 'Add view', exact: true }).click()
+  const field = alice.getByLabel('New view name', { exact: true })
+  await field.fill(SHARED)
+  await field.press('Enter')
   await expect(viewButton(alice, SHARED)).toBeVisible()
   await expect(alice.locator('li').filter({ has: viewButton(alice, SHARED) })).not.toContainText(
     'Shared',
@@ -77,7 +79,7 @@ test('bob sees it with the badge and a menu with one item', async () => {
   await expect(viewButton(bob, SHARED)).toBeVisible()
   await expect(bob.locator('li').filter({ has: viewButton(bob, SHARED) })).toContainText('Shared')
   // he may add a view of his own, and has no way to make a shared one
-  await expect(bob.getByLabel('New view name', { exact: true })).toBeVisible()
+  await expect(bob.getByRole('button', { name: 'Add view', exact: true })).toBeVisible()
   await expect(bob.getByLabel('New shared view name', { exact: true })).toHaveCount(0)
 
   await actions(bob, SHARED).click()

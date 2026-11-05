@@ -372,6 +372,7 @@ describe('users', () => {
       isAdmin: false,
       lastSeenAt: now.toISOString(),
       timeZone: null,
+      sidebarOrder: null,
     })
   })
 

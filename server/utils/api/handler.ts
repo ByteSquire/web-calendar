@@ -49,6 +49,7 @@ function toApiUser(user: User): ApiUser {
     email: user.email,
     lastSeenAt: user.lastSeenAt,
     timeZone: user.timeZone,
+    sidebarOrder: user.sidebarOrder,
   }
 }
 

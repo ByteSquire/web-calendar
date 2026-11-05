@@ -117,6 +117,8 @@ export interface LiveDeps {
    * browser's zone. The display zone follows it, and the events are then loaded in the new zone.
    */
   setUserTimeZone?: (zone: string | null) => void
+  /** Receives the saved order of the sidebar's sections (FR-21), or null for the default. */
+  setSidebarOrder?: (order: string[] | null) => void
   /** Bumped by the settings screen when sources change; see `useState('calendar-sources-version')`. */
   sourcesVersion: Ref<number>
   /** Called with the keys of problems that were not there before. */
@@ -289,6 +291,7 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
       if (me.status === 'fulfilled') {
         store.currentUser.value = toUser(me.value)
         deps.setUserTimeZone?.(me.value.timeZone)
+        deps.setSidebarOrder?.(me.value.sidebarOrder ?? null)
       } else fail(SOURCE_KEYS.me, me)
 
       if (prefs.status === 'rejected') fail(SOURCE_KEYS.prefs, prefs)

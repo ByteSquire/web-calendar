@@ -63,6 +63,13 @@ export const shell: Readonly<Record<string, string>> = {
   'Add category': 'Kategorie hinzufügen',
   'New filter name': 'Name des neuen Filters',
   'Add filter': 'Filter hinzufügen',
+  'Arrange sections': 'Bereiche anordnen',
+  'Move a section up or down. The order is saved for your account.':
+    'Verschiebe einen Bereich nach oben oder nach unten. Die Reihenfolge wird in deinem Konto gespeichert.',
+  'Move {name} up': '{name} nach oben verschieben',
+  'Move {name} down': '{name} nach unten verschieben',
+  '{name}: number {position} of {total}': '{name}: Platz {position} von {total}',
+  'save the order of the sections': 'Das Speichern der Reihenfolge der Bereiche',
   'Rename view': 'Ansicht umbenennen',
   'Rename shared view': 'Geteilte Ansicht umbenennen',
   'Everybody sees the new name.': 'Alle sehen den neuen Namen.',

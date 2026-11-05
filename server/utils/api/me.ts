@@ -1,6 +1,7 @@
 // GET /api/me (FR-13): the app user of the caller. The `users` row is created by `requireAppUser`;
 // here the profile and the admin flag are refreshed from the OIDC userinfo endpoint, best effort.
 import type { Database } from 'better-sqlite3'
+import type { SidebarSectionId } from '../../../shared/utils/sidebar-sections'
 import { upsertUser } from '../../db/users'
 import type { User } from '../../db/types'
 import { matchesAdminGroup, parseGroupsClaim } from '../groups/claim'
@@ -22,6 +23,8 @@ export interface Me {
   isAdmin: boolean
   /** The IANA zone the user chose to see times in (FR-32); null means the browser's zone. */
   timeZone: string | null
+  /** The order the user keeps the sidebar's sections in (FR-21), complete; null means the default. */
+  sidebarOrder: SidebarSectionId[] | null
 }
 
 export interface ResolveMeOptions {
@@ -53,6 +56,7 @@ function toMe(user: Omit<User, 'isAdmin'>, isAdmin: boolean): Me {
     email: user.email,
     isAdmin,
     timeZone: user.timeZone,
+    sidebarOrder: user.sidebarOrder,
   }
 }
 

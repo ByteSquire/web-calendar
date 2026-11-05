@@ -9,9 +9,9 @@ import { useServerConfigState } from '~/composables/useServerConfigState'
 import { DavError } from '../app/utils/caldav/errors'
 import type { Calendar } from '../shared/types/calendar'
 
-// "Add calendar" in the sidebar: a text field and a plus, like the ones for views, categories and
-// filters. It makes a calendar in the person's own home and lists it, and is not there where there
-// is no calendar service (demo mode).
+// "Add calendar" in the sidebar: a plus in the heading of the section that shows a text field, like
+// the ones for views, categories and filters. It makes a calendar in the person's own home and
+// lists it, and is not there where there is no calendar service (demo mode).
 
 vi.mock('~/composables/useAuthFetch', () => ({
   // The sidebar asks /api/me whether the person is an admin; it is not.
@@ -91,49 +91,96 @@ const calendarsSection = () =>
 const input = () =>
   calendarsSection()?.querySelector<HTMLInputElement>('input[type="text"], input:not([type])') ??
   null
-const addButton = () =>
+// The plus to the right of the heading, and the button that sends the field.
+const plus = () =>
   calendarsSection()?.querySelector<HTMLButtonElement>('button[aria-label="Add calendar"]') ?? null
+const sendButton = () =>
+  calendarsSection()?.querySelector<HTMLButtonElement>('form button[type="submit"]') ?? null
+
+async function reveal() {
+  plus()!.click()
+  await vi.waitFor(() => expect(input()).not.toBeNull())
+}
 
 async function submit(name: string) {
+  if (!input()) await reveal()
   const field = input()!
   field.value = name
   field.dispatchEvent(new Event('input', { bubbles: true }))
   await nextTick()
-  addButton()!.click()
+  sendButton()!.click()
 }
 
-describe('the plus in the calendars section', () => {
-  it('has a labelled text field and an "Add calendar" button, like views and categories', async () => {
+describe('the plus in the heading of the calendars section', () => {
+  it('is a button next to the heading, not inside it, and shows no field until it is pressed', async () => {
     await mountSidebar()
-    expect(input()).not.toBeNull()
-    expect(addButton()).not.toBeNull()
+    expect(plus()).not.toBeNull()
+    expect(calendarsSection()!.querySelector('h2')!.contains(plus())).toBe(false)
+    expect(plus()!.getAttribute('aria-expanded')).toBe('false')
+    expect(input()).toBeNull()
+  })
+
+  it('shows a labelled text field under the heading, and the plus says it is expanded', async () => {
+    await mountSidebar()
+    await reveal()
+    expect(plus()!.getAttribute('aria-expanded')).toBe('true')
+    const controlled = document.getElementById(plus()!.getAttribute('aria-controls')!)
+    expect(controlled?.contains(input())).toBe(true)
     const label = [...(calendarsSection()?.querySelectorAll('label') ?? [])].find(
       (item) => text(item) === 'New calendar name',
     )
     expect(label).toBeDefined()
     expect(label!.getAttribute('for')).toBe(input()!.id)
+    // The focus is in the field, ready to type.
+    expect(document.activeElement).toBe(input())
+  })
+
+  it('closes the field with the plus again, with Escape, and puts the focus back on the plus', async () => {
+    await mountSidebar()
+    await reveal()
+    plus()!.click()
+    await vi.waitFor(() => expect(input()).toBeNull())
+    expect(plus()!.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(plus())
+
+    await reveal()
+    input()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await vi.waitFor(() => expect(input()).toBeNull())
+    expect(document.activeElement).toBe(plus())
+  })
+
+  it('opens a folded section first, so that the field is seen', async () => {
+    await mountSidebar()
+    const fold = calendarsSection()!.querySelector<HTMLButtonElement>('h2 button')!
+    fold.click()
+    await vi.waitFor(() => expect(fold.getAttribute('aria-expanded')).toBe('false'))
+    plus()!.click()
+    await vi.waitFor(() => expect(fold.getAttribute('aria-expanded')).toBe('true'))
+    await vi.waitFor(() => expect(input()).not.toBeNull())
   })
 
   it('is not there in demo mode, where there is no calendar service', async () => {
     await mountSidebar(true)
-    expect(addButton()).toBeNull()
+    expect(plus()).toBeNull()
     expect(input()).toBeNull()
   })
 
-  it('makes the calendar with the trimmed name, empties the field and loads the sources again', async () => {
+  it('makes the calendar with the trimmed name, closes the field and loads the sources again', async () => {
     await mountSidebar()
     const before = sourcesVersion()
     await submit('  Holidays  ')
     await vi.waitFor(() => expect(made).toEqual([{ displayName: 'Holidays' }]))
-    await vi.waitFor(() => expect(input()!.value).toBe(''))
+    await vi.waitFor(() => expect(input()).toBeNull())
     expect(sourcesVersion()).toBe(before + 1)
+    expect(document.activeElement).toBe(plus())
   })
 
-  it('does nothing for an empty name', async () => {
+  it('does nothing for an empty name and keeps the field open', async () => {
     await mountSidebar()
     await submit('   ')
     await nextTick()
     expect(made).toEqual([])
+    expect(input()).not.toBeNull()
   })
 
   it('refuses a name that a calendar has already, in any case, and keeps what was typed', async () => {
@@ -180,11 +227,11 @@ describe('the plus in the calendars section', () => {
     await vi.waitFor(() => expect(input()!.readOnly).toBe(true))
     // Read-only, not disabled: the keyboard focus can stay in the field.
     expect(input()!.disabled).toBe(false)
-    addButton()!.click()
-    addButton()!.click()
+    sendButton()!.click()
+    sendButton()!.click()
     release()
     await vi.waitFor(() => expect(made).toHaveLength(1))
-    await vi.waitFor(() => expect(input()!.readOnly).toBe(false))
+    await vi.waitFor(() => expect(input()).toBeNull())
     expect(made).toEqual([{ displayName: 'Holidays' }])
   })
 })

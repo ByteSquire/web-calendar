@@ -42,6 +42,18 @@ export async function press(locator: Locator): Promise<void> {
 }
 
 /**
+ * Presses the plus of a sidebar section (`add` is its name, such as "Add view") and returns the
+ * field that shows: under the heading on a large screen, in a pop-up on a small one. Enter in the
+ * field adds, and the field closes when the entry was accepted.
+ */
+export async function openAddField(page: Page, add: string, label: string): Promise<Locator> {
+  await press(page.getByRole('button', { name: add, exact: true }).first())
+  const field = page.getByLabel(label, { exact: true })
+  await expect(field).toBeVisible()
+  return field
+}
+
+/**
  * Where the focus is once a dialog has opened: on `control` (its first or safest one), or, on a
  * touch screen, on the dialog itself, so that no keyboard opens and no ring shows under the finger.
  */

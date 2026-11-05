@@ -190,7 +190,8 @@ minimum:
 - **FR-21** A **left sidebar** with, from top to bottom: **views** (each with an
   icon and a `⋯` menu), **calendars** (each with a visibility toggle),
   **resources** (each with a visibility toggle), **categories** (with an add
-  control), and **filters** (with an add control and a chooser).
+  control), and **filters** (with an add control and a chooser). Each section can be folded,
+  and each person can put the sections in the order they like (saved for their account).
 - **FR-22** A **view-type switcher** offering at least **day, 5-day, week,
   month, year, split, and list** views.
 - **FR-23** **Date navigation** — previous, **today**, and next.

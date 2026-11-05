@@ -8,6 +8,7 @@ import { useCalDav } from '~/composables/useCalDav'
 import { useCalendarState } from '~/composables/useCalendarState'
 import { useExternalAccess } from '~/composables/useExternalAccess'
 import { useResourceUpdates } from '~/composables/useResourceUpdates'
+import { useSidebarOrderState } from '~/composables/useSidebarOrder'
 import { useServerConfigState } from '~/composables/useServerConfigState'
 import { t } from '~/utils/i18n'
 import { fetchIcsText } from '~/utils/live/ics'
@@ -15,6 +16,7 @@ import { createLiveLoader, type LiveLoader } from '~/utils/live/loader'
 import { isLiveConfig } from '~/utils/live/seed'
 import { createLiveStatusState } from '~/utils/live/status'
 import type { ResourceRight } from '~/utils/resources/types'
+import { completeSidebarOrder } from '../../shared/utils/sidebar-sections'
 
 // One loader per app: the layout creates it, `useLiveStatus` reaches it from anywhere.
 const loaders = new WeakMap<object, LiveLoader>()
@@ -66,6 +68,7 @@ export function useLiveCalendar(): void {
   const displayTimeZone = useDisplayTimeZone()
   const orgTimeZone = useOrgTimeZone()
   const userTimeZone = useUserTimeZone()
+  const sidebarOrder = useSidebarOrderState()
   const toast = useToast()
   const updates = useResourceUpdates()
   const rights = useState<Record<string, ResourceRight>>('resource-rights', () => ({}))
@@ -89,6 +92,9 @@ export function useLiveCalendar(): void {
     orgTimeZone: () => orgTimeZone.value,
     setUserTimeZone: (zone) => {
       userTimeZone.value = zone
+    },
+    setSidebarOrder: (order) => {
+      sidebarOrder.value = completeSidebarOrder(order)
     },
     sourcesVersion: useCalendarSourcesVersion(),
     notifyProblems: (keys) => {

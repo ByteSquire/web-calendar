@@ -115,9 +115,15 @@ describe('SidebarContent without a server (mock data)', () => {
     render: () => h(UApp, null, { default: () => h(SidebarContent) }),
   })
 
-  it('has one input for adding a view, and none for a shared view', async () => {
+  it('has one plus for adding a view, and none for a shared view', async () => {
     await mount(Shell, { attachTo: document.body })
-    expect(document.querySelector('input[placeholder="Add view"]')).not.toBeNull()
-    expect(document.querySelector('input[placeholder="Add shared view"]')).toBeNull()
+    expect(document.querySelectorAll('section button[aria-label="Add view"]')).toHaveLength(1)
+    expect(document.querySelector('button[aria-label="Add shared view"]')).toBeNull()
+    // The field shows when the plus is pressed.
+    expect(document.querySelector('input[placeholder="Add view"]')).toBeNull()
+    document.querySelector<HTMLButtonElement>('section button[aria-label="Add view"]')!.click()
+    await vi.waitFor(() =>
+      expect(document.querySelector('input[placeholder="Add view"]')).not.toBeNull(),
+    )
   })
 })

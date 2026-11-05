@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3'
+import { completeSidebarOrder, type SidebarSectionId } from '../../shared/utils/sidebar-sections'
 import { found } from '../utils/api/errors'
 import type { User, UserRow } from './types'
 
@@ -22,6 +23,17 @@ function toUser(row: UserRow): User {
     isAdmin: row.is_admin === 1,
     lastSeenAt: row.last_seen_at,
     timeZone: row.time_zone,
+    sidebarOrder: readSidebarOrder(row.sidebar_order),
+  }
+}
+
+/** The stored order, complete; null when none was stored or the column holds something else. */
+function readSidebarOrder(stored: string | null): SidebarSectionId[] | null {
+  if (stored === null) return null
+  try {
+    return completeSidebarOrder(JSON.parse(stored))
+  } catch {
+    return null
   }
 }
 
@@ -86,6 +98,23 @@ export function setUserTimeZone(
     )
     .get(timeZone, userId)
   return found(row).time_zone
+}
+
+/**
+ * Stores the order the user keeps the sidebar's sections in (FR-21). The ids are checked by the
+ * caller (server/utils/api/sidebar-order.ts). Returns the stored order, complete.
+ */
+export function setUserSidebarOrder(
+  db: Database,
+  userId: number,
+  order: readonly SidebarSectionId[],
+): SidebarSectionId[] {
+  const row = db
+    .prepare<[string, number], Pick<UserRow, 'sidebar_order'>>(
+      'UPDATE users SET sidebar_order = ? WHERE id = ? RETURNING sidebar_order',
+    )
+    .get(JSON.stringify(order), userId)
+  return readSidebarOrder(found(row).sidebar_order) ?? completeSidebarOrder(null)
 }
 
 export function findUserBySub(db: Database, sub: string): User | null {

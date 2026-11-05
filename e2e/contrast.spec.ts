@@ -110,6 +110,8 @@ test.describe('controls as drawn', () => {
 
   test('the placeholder of a field reads 4.5:1', async ({ page }) => {
     await openApp(page)
+    // The sidebar's fields show when the plus of their section is pressed.
+    await press(page.getByRole('button', { name: 'Add category', exact: true }))
     const field = page.locator('#app-sidebar input[placeholder]').first()
     await expect(field).toBeVisible()
     await settle(page)

@@ -120,7 +120,16 @@ describe('the admin guard', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
     expect(await response.json()).toEqual({
       ok: true,
-      userKeys: ['email', 'id', 'lastSeenAt', 'name', 'sub', 'timeZone', 'username'],
+      userKeys: [
+        'email',
+        'id',
+        'lastSeenAt',
+        'name',
+        'sidebarOrder',
+        'sub',
+        'timeZone',
+        'username',
+      ],
     })
   })
 

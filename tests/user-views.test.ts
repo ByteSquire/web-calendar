@@ -198,13 +198,19 @@ describe('SidebarContent without a server (mock data)', () => {
   })
 
   async function addView(name: string) {
-    const input = document.querySelector<HTMLInputElement>('input[placeholder="Add view"]')
-    expect(input).not.toBeNull()
+    // The field is under the heading once the plus is pressed, and closes when a view is added.
+    if (!document.querySelector('input[placeholder="Add view"]')) {
+      document.querySelector<HTMLButtonElement>('section button[aria-label="Add view"]')!.click()
+    }
+    await vi.waitFor(() =>
+      expect(document.querySelector('input[placeholder="Add view"]')).not.toBeNull(),
+    )
+    const input = document.querySelector<HTMLInputElement>('input[placeholder="Add view"]')!
     // The field waits while the last view is being added.
-    await vi.waitFor(() => expect(input!.readOnly).toBe(false))
-    input!.value = name
-    input!.dispatchEvent(new Event('input', { bubbles: true }))
-    document.querySelector<HTMLButtonElement>('button[aria-label="Add view"]')!.click()
+    await vi.waitFor(() => expect(input.readOnly).toBe(false))
+    input.value = name
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.closest('form')!.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
   }
 
   it("adds a view of the user's own from the selection, not a shared one", async () => {
@@ -222,6 +228,10 @@ describe('SidebarContent without a server (mock data)', () => {
     const { views } = useCalendarState()
     await addView('Mine')
     await vi.waitFor(() => expect(views.value.some((view) => view.name === 'Mine')).toBe(true))
+    // The field closes once the view is added.
+    await vi.waitFor(() =>
+      expect(document.querySelector('input[placeholder="Add view"]')).toBeNull(),
+    )
     const before = views.value.length
     await addView('Mine')
     await vi.waitFor(() =>

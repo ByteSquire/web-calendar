@@ -190,7 +190,8 @@ erDiagram
 
 - **users** — `id` (PK), `oidc_sub` (unique), `username`, `name`, `email`,
   `is_admin` (a note, never authorization), `last_seen_at`, `time_zone` (an override of the browser's
-  zone, FR-32; NULL means the browser's). Created on first use. `oidc_sub` is the provider's user id,
+  zone, FR-32; NULL means the browser's), `sidebar_order` (the order the user keeps the sidebar's
+  sections in, FR-21: a JSON list of section ids; NULL means the default order). Created on first use. `oidc_sub` is the provider's user id,
   any id Radicale accepts as a user name, case-sensitive (§6). `last_seen_at` is the **sign-in
   window** (§6): it is renewed by a bearer call to `/api/**` and by an OIDC bearer call to `/caldav/`,
   never by an app token. There is no roles table: admin comes from the identity provider's groups
@@ -272,7 +273,7 @@ Compared with v1.1, `sessions` is gone (no server-side tokens) and `calendars`,
 mock data still follow the v1.0 model (local ids, `etag`, `isBlocked`) and are
 adapted in Phase 2.
 
-**Built** (`server/db`, migrations `001_init.sql` to `006_access_and_resources.sql`, then `008_booking_sync.sql` and `009_groups.sql`; there is no 007): every table above except `published_calendars`. Migration 009 was edited in place on 2026-11-05 (sources, `external_id`, the candidates table, the everyone row), because the groups feature had not been released; a development database that ran the earlier 009 has to be deleted (the runner applies a migration by name and does not notice a change). Beyond
+**Built** (`server/db`, migrations `001_init.sql` to `006_access_and_resources.sql`, then `008_booking_sync.sql`, `009_groups.sql` and `010_sidebar_order.sql`; there is no 007): every table above except `published_calendars`. Migration 009 was edited in place on 2026-11-05 (sources, `external_id`, the candidates table, the everyone row), because the groups feature had not been released; a development database that ran the earlier 009 has to be deleted (the runner applies a migration by name and does not notice a change). Beyond
 the list: ids are `AUTOINCREMENT` (views refer to calendar ids in JSON, so ids are never reused);
 `users.username` is unique case-insensitively; `updated_at` is kept by triggers; `calendar_acl` has CHECKs
 tying `principal` to `principal_type`; a personal calendar needs an owner; deleting a user cascades to
@@ -1120,8 +1121,8 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   change the local list only.
 - **Own views (FR-2, FR-21)** — every user adds, renames, duplicates and deletes their own views
   through `POST /api/views`, `PUT` and `DELETE /api/views/:id` (at most 100 per user; another user's
-  view and a shared one answer `404`). The sidebar has one "Add view" input (the view starts as the
-  calendars now shown) below the list of views. "Duplicate" on an own view and "Copy to my views"
+  view and a shared one answer `404`). The sidebar has one "Add view" plus in the heading of the views section, which shows a name
+  field (the view starts as the calendars now shown). "Duplicate" on an own view and "Copy to my views"
   on a shared one make a copy of the user's own, named "<name> (copy)" ("(copy 2)" and on when
   taken), with the same calendars; an own view may hold external calendars, a shared one never.
   "Share with everybody" (administrators only, in the menu of their own views) makes a shared view
@@ -1172,12 +1173,51 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     in its `⋯` menu (§8, Shared views and Own views). Example of an element that is justified:
     the "Calendar access" page (`/admin/access`), because a rule editor does not fit in a menu
     item; it is still reached from the existing app menu, not from a new button.
-- **Left sidebar** (top → bottom): **views** (icon + `⋯` menu), **calendars**
+- **Left sidebar** (default order, top → bottom): **views** (icon + `⋯` menu), **calendars**
   (visibility toggle), **resources** (visibility toggle), **categories** (add
   control), **filters** (add control + chooser). Each section has a heading that is a button and
   folds the section away (chevron down while open, to the right while closed; `aria-expanded`); the
   closed sections are remembered in this browser (`localStorage`, `app/utils/sidebar-sections.ts`),
   the same on the column and in the drawer. A closed section is hidden, not removed.
+  - _The plus (FR-21)_: the sections that add something (views, calendars, categories, filters)
+    have a small plus to the right of the heading, a button of its own beside the fold button and
+    not inside the heading, 44 px square, named "Add view", "Add calendar" and so on. This
+    replaced a text field and a button that stayed under every list: the field now takes no room
+    until it is wanted. On a large screen the plus shows the field under the heading (the plus
+    turns into a cross; `aria-expanded`, `aria-controls`), with the focus in it; Enter adds and
+    closes it, Escape or the cross closes it, and the focus goes back to the plus. A refusal (a name
+    that is taken, a failed request) keeps the field open with the message. A folded section is
+    opened first, so that the new entry is seen. On a small screen (the drawer, below 768 px) the
+    plus opens a pop-up near the top of the screen with the labelled field, Cancel and Add, because
+    the on-screen keyboard would cover a field low on the page; the focus goes to the field, which
+    deliberately goes against `keepFocusOffControlsOnTouch` (the tap was made to type), Android's
+    Back gesture closes the pop-up (`useBackDismiss`), and the focus returns to the plus. The
+    calendars plus is absent without a calendar service (demo mode), as the field was.
+  - _Order (FR-21)_: a person arranges the sections as they like. The order is **saved for the
+    account** (`users.sidebar_order`, `/api/me` returns `sidebarOrder`, `PUT /api/me/sidebar-order`
+    takes `{ order: string[] }`: known section ids, each at most once, the rest follow in their
+    default order), so it is the same in every browser and after signing in again; the live loader
+    puts it into `useSidebarOrderState()`, and until `/api/me` has answered the default order is
+    drawn. The sections are in the page in that order, so reading and Tab order follow what is
+    seen (never CSS `order`). A failed save is told in a toast and the new order stays on the
+    screen until the next load; saves are sent one after the other. In demo mode the order lives in
+    the page only. The fold state stays in the browser; moving it to the account too is a small
+    change if wanted.
+  - _Dragging (FR-21)_: a heading is the handle (`app/composables/useSidebarDrag.ts`, pointer
+    events, no library). Mouse and pen: press and move more than 6 px, at any time. Touch: **press
+    and hold** (450 ms, with a short vibration where the device has one), then drag; a finger that
+    moves first is scrolling and nothing happens. While a section is in the hand every section
+    shows only its heading, so the whole list fits and any place is reachable; the dragged heading
+    follows the pointer, the others make room as it passes them, letting go keeps and saves the
+    order, Escape or a cancelled touch puts everything back. The click that ends a drag does not
+    fold the section. The plus beside the heading does not start a drag. Not verified on a real
+    touch screen (Playwright cannot press and hold; the specs send pointer events).
+  - _Arrange sections (FR-21)_: a quiet "Arrange sections" button at the end of the sidebar
+    replaces the sections with a list, each with "Move … up" and "Move … down" (44 px), a status
+    line that says where the section went ("Calendars: number 1 of 5") and Done. It exists because
+    dragging is not enough on its own (WCAG 2.5.7 asks for a way without dragging, and a keyboard
+    or a screen reader cannot drag). It is the one new permanent element of this change; the
+    alternatives (arrows on every heading, a hidden shortcut) cost more room or cannot be found.
 - **View-type switcher** (FR-22): **day, 5-day, week, month, year, split, list**.
 - **Date navigation** (FR-23): previous / **today** / next.
 - **Quick-add** (FR-24), **Add** and **overflow (`⋮`) menu** (FR-25). Quick add is lean: title,

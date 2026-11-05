@@ -138,6 +138,7 @@ function setup(options: {
           email: null,
           isAdmin: false,
           timeZone: null,
+          sidebarOrder: null,
         }
       return path === '/api/calendar-prefs'
         ? { prefs: [] }

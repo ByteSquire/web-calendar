@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { openApp, press } from './helpers'
+import { openAddField, openApp, press } from './helpers'
 
 // A user's own views (FR-2, FR-21) in the demo, which has no server: they change the local list.
 // Every view has a menu: a user's own view offers Rename, Duplicate and Delete (no more "the
@@ -17,9 +17,12 @@ const viewButton = (page: Page, name: string) =>
   page.getByRole('button', { name, exact: true }).first()
 
 async function addView(page: Page, name: string): Promise<void> {
-  await page.getByLabel('New view name', { exact: true }).first().fill(name)
-  await press(page.getByRole('button', { name: 'Add view', exact: true }).first())
+  const field = await openAddField(page, 'Add view', 'New view name')
+  await field.fill(name)
+  await field.press('Enter')
   await expect(viewButton(page, name)).toBeVisible()
+  // the field closes once the view is added
+  await expect(field).toBeHidden()
 }
 
 // The menu item is clicked, not tapped: Playwright's tap in WebKit sends a second click to the spot
@@ -73,9 +76,15 @@ test.describe('own views', () => {
     await openApp(page)
     await showSidebar(page)
     await addView(page, 'Mine')
-    await page.getByLabel('New view name', { exact: true }).first().fill('Mine')
-    await press(page.getByRole('button', { name: 'Add view', exact: true }).first())
+    const field = await openAddField(page, 'Add view', 'New view name')
+    await field.fill('Mine')
+    await field.press('Enter')
+    // the field stays open with the reason
     await expect(page.getByText('A view with this name already exists.').first()).toBeVisible()
+    await expect(field).toHaveValue('Mine')
+    // closed again (Escape), the list holds the one view of that name
+    await field.press('Escape')
+    await expect(field).toBeHidden()
     await expect(viewButton(page, 'Mine')).toHaveCount(1)
   })
 

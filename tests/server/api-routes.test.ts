@@ -210,6 +210,7 @@ describe('GET /api/me', () => {
         email: null,
         isAdmin: false,
         timeZone: null,
+        sidebarOrder: null,
       },
     })
   })
@@ -364,6 +365,7 @@ describe('the admin check (requireAdmin)', () => {
       'id',
       'lastSeenAt',
       'name',
+      'sidebarOrder',
       'sub',
       'timeZone',
       'username',

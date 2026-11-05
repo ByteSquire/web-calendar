@@ -137,6 +137,7 @@ function harness(setup: Setup = {}) {
       email: 'alice@example.org',
       isAdmin: false,
       timeZone: null,
+      sidebarOrder: null,
     },
     prefs: setup.prefs ?? [],
     categories: setup.categories ?? [],

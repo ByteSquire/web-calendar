@@ -80,6 +80,18 @@ Confidence is how sure the finding is real, not its severity.
    not looked up locally at all (§5), which removes this class of mismatch. Tests:
    `tests/server/group-sync-service.test.ts` (also checked by breaking the code).
 
+   _Superseded 2026-11-05 by the sign-in window._ The group sync, `revokeTokensOfNonMembers` and the
+   `group_sync.tokens_revoked` audit event no longer exist, and neither does the proof above (it
+   ran against that code). `verifyAppToken` now refuses a token whose owner has not signed in to the
+   web app, or with an OIDC bearer token at `/caldav/`, within `NUXT_SIGNIN_WINDOW_DAYS` (default 30,
+   1 to 365); using the token does not renew the window. The finding's scenario therefore ends at the
+   window, not within one sync interval, and it needs no group sync or token. The worst case is now
+   weaker in time (up to the window after the owner's last sign-in, where the sync deleted the tokens
+   within about a minute) and stronger in coverage (it also holds with no Kanidm credential at all);
+   no admin control cuts a token off sooner except the owner's own "Revoke all". Design §6 and
+   `docs/security-review.md` §7.2 describe the new control. The text above is kept as the record of
+   the 2026-11-01 review.
+
 3. **Low, confidence 90. No "revoke all" for app tokens.** Guide §4 and §7.7 ask for it; only
    per-token delete exists (`server/api/app-tokens/[id].delete.ts`, max 10 tokens). FR-31 says "individually and
    all at once". **Fixed**: `DELETE /api/app-tokens` (revokes all of the caller's tokens, answers
@@ -100,6 +112,8 @@ Confidence is how sure the finding is real, not its severity.
    `NUXT_GROUP_SYNC_TOKEN` can be set to the same value; the guide says one purpose per key.
    **Fixed**: `server/validate-config.mjs` now fails startup if two of the three purposes share a
    value (several token hash key versions may share one). Tests: `tests/validate-config.test.ts`.
+   _Note 2026-11-05:_ `NUXT_GROUP_SYNC_TOKEN` no longer exists (the group sync was removed), so the
+   purposes that must differ are the token hash key and the seal key.
 
 6. **Low, confidence 60. No overall cap on a user's live resource bookings.**
    `server/db/bookings.ts:92-98` caps 10 pending/approved bookings **per start day**, uncapped
@@ -204,3 +218,7 @@ No finding is open. What the gate did not prove:
   `tests/server/group-sync-kanidm.test.ts`. **Proven live** against the test Kanidm: with an empty
   `users` table the file got alice's and bob's UUIDs; without the grant every run failed with the
   message naming it and no file was written; a write with the token still answers 403.
+  _Superseded 2026-11-05:_ the sync and its account are gone. Members of imported groups are now
+  stored by the `sub` the person's own token carries, so no name is mapped to an id any more (the
+  class of finding is gone, a different trust is in its place: `docs/security-review.md` §7.2). The
+  `docs/kanidm-setup.md` §3 cited above no longer describes a sync account.

@@ -16,8 +16,11 @@ kanidm group add-members web_calendar_users alice bob
 kanidm group add-members calendar_admins alice
 ```
 
-The group names are configurable in the app. `web_calendar_users` also serves as the "all users"
-principal when sharing a calendar with everyone.
+`web_calendar_users` is the group the scope map in section 2 grants the login scopes to, so it decides
+who may sign in. The admin group's name is `NUXT_OIDC_ADMIN_GROUP` in the app. The app has its own
+group of the name `web_calendar_users` (everyone who signed in within the last
+`NUXT_SIGNIN_WINDOW_DAYS` days, built from sign-ins); it is not this Kanidm group, and the app never
+imports a group of that name or of the admin group's name.
 
 ## 2. The app's OAuth2 client
 
@@ -36,10 +39,9 @@ kanidm system oauth2 prefer-short-username web-calendar
 - `caldav` is a custom scope. The gateway requires it, so only members of the mapped group can get a
   token it accepts. Kanidm accepted this scope name in the test stack.
 - `groups` adds the groups, as UUID and SPN, to the ID token and the userinfo response; the app's
-  default scope (`NUXT_OIDC_SCOPE`) asks for it, and the admin check matches the SPN
-  (`calendar_admins@idm.example.org`). A client set up with `groups_name` before this version needs
-  its scope map updated once with the command above; otherwise set `NUXT_OIDC_SCOPE` to
-  `openid profile email groups_name caldav`, which keeps working.
+  default scope (`NUXT_OIDC_SCOPE`) asks for it. Both the admin check and the groups of the Groups
+  page are read from there (see "Groups in the app" below). The admin check matches the SPN's part
+  before the `@`, so `NUXT_OIDC_ADMIN_GROUP=calendar_admins` works.
 - A public client cannot skip the consent prompt. Users see it once, and again when the scopes change.
 - The issuer is `https://idm.example.org/oauth2/openid/web-calendar`; the app finds the signing keys
   through its discovery document (`<issuer>/.well-known/openid-configuration`), which names
@@ -54,96 +56,45 @@ kanidm system oauth2 prefer-short-username web-calendar
 Check from the app side, as a user: the access token is an ES256 JWT valid for 900 s, `scope` contains
 `caldav`, and `aud` and `client_id` equal `web-calendar`.
 
-## 3. Group sync account
+### Groups in the app
 
-Radicale's group file needs the members of whole groups, refreshed every 60 s. The sync uses a
-service account with a **read-only API token**:
+The app needs no Kanidm account, token or polling of its own for groups. It reads the `groups`
+claim of the person's own userinfo answer when they sign in to the web app, and at most every five
+minutes while a calendar app signs in to `/caldav/` with an OIDC bearer token that carries the
+`groups` scope. What it does with the claim, and what it does not do, is in
+[design.md](design.md) §8 (Groups).
 
-```sh
-kanidm service-account create calendar-sync 'Calendar group sync' idm_admins
-kanidm group add-members idm_group_admins calendar-sync
-kanidm group add-members idm_people_pii_read calendar-sync
-kanidm service-account api-token generate calendar-sync 'group sync'   # read-only by default
-```
+- Kanidm's `groups` scope sends, for each group of the person, its UUID and its SPN
+  (`team@idm.example.org`). The app keys the group by the UUID and names it after the SPN's part before
+  the `@`, so a group renamed in Kanidm is renamed in the app and its shares follow. The built-in groups
+  (`idm_*`, `system_*`, `domain_*`) are never offered; `NUXT_OIDC_GROUPS_IGNORE` changes that list.
+- A group shows up on the Groups page (an admin sees "Groups from your identity provider") only after
+  one of its members has signed in with the `groups` scope. An admin imports it; its members join as
+  each of them signs in again, so right after an import the group is empty. Nothing is imported
+  that no admin picked.
+- A Kanidm group that has the app's reserved names, `web_calendar_users` (the login gate above) or the
+  admin group, is not offered.
 
-The server then reads a group with `GET /v1/group/<name>` and a bearer token (the `member`
-attribute lists SPNs such as `alice@idm.example.org`), and each member's `uuid` with
-`GET /v1/person/<spn>/_attr/uuid`. Reading a person needs `idm_people_pii_read`: without it Kanidm
-answers `null` (tested on Kanidm 1.11.2).
+**Existing installs: update the scope map once.** An install set up with `groups_name` needs the
+command in the block above (`openid profile email groups caldav`); people see the consent prompt
+again because the scopes changed. Until then, either set `NUXT_OIDC_SCOPE` to
+`openid profile email groups_name caldav`, which keeps working but sends only names, so the groups are
+keyed by name (a rename in Kanidm is then a new group, and the old one loses its members as people
+sign in); or `groups_spn`, which keys by SPN and has the same property. The UUID pairs of `groups`
+are what makes a rename safe.
 
-To show Kanidm's groups on the app's Groups page, the sync also lists them with `GET /v1/group` and
-the same token (read-only, nothing more to grant; tested on Kanidm 1.11.2 with this account). Built-in
-groups (class `builtin`, or names starting `idm_`, `system_` or `domain_`) are not imported. If the
-list fails, the log says so and the groups already imported stay; sharing keeps working, because the
-groups that rules and logins need are read one by one as before.
+**If you ran the group sync.** It is gone. `NUXT_GROUP_SYNC_TOKEN`, `NUXT_GROUP_SYNC_INTERVAL_SEC`
+and `NUXT_GROUP_SYNC_FILE` are ignored (the container logs a warning at start while one is set);
+remove them. `NUXT_GROUPS_FILE` replaces the file path. The `calendar-sync` service account and its
+API token are not used any more. Revoke the token with
+`kanidm service-account api-token list calendar-sync` and
+`kanidm service-account api-token destroy calendar-sync <token-uuid>` (the commands of the old
+rotation runbook). Taking the account out of `idm_group_admins` and `idm_people_pii_read`
+(`kanidm group remove-members <group> calendar-sync`) and deleting it
+(`kanidm service-account delete calendar-sync`) are the obvious next steps; those two commands were
+not run for this document.
 
-Why `idm_group_admins`: in the test stack a fresh service account **could not read groups** (the call
-returned `null`), also as a member of `idm_service_desk`, and Kanidm 1.11.2 has no built-in read-only
-group for it and no CLI to define a custom access profile. `idm_group_admins` grants group read and
-write, so the safety net is the **token**: tokens are read-only unless generated with `--readwrite`,
-and a write attempt with the read-only token returned 403 with the membership unchanged (tested).
-
-- Never generate a `--readwrite` token for this account, and give the token an expiry (the generate
-  command takes an optional RFC 3339 time) so it can be rotated.
-- The account has no password, so it cannot log in; only its tokens can act.
-- If you prefer least privilege over this workaround, the alternatives are Kanidm's LDAP interface
-  with a service-account bind, or a future read-only built-in group (design §12, S9).
-
-**Residual risk of `idm_group_admins`.** Whoever holds the token can read every group, and anyone who
-obtains a _read-write_ token for this account (or who can add a token to it) can change any group's
-members, including `calendar_admins` and the groups that gate other systems. The sync only ever sends
-reads and its token is read-only, but the account is more powerful than its job. Keep the token in the
-environment only: it is never logged, put into an error text or returned by the app.
-
-**The token expires.** Generate it with an expiry of at most 90 days:
-
-```sh
-kanidm service-account api-token generate calendar-sync 'group sync <date>' 2026-12-31T00:00:00+00:00
-```
-
-**Rotation runbook** (calendar it every 60 days):
-
-1. Generate a new token as above (the old one keeps working).
-2. Put it into `NUXT_GROUP_SYNC_TOKEN` and restart the app. The log shows no `ALARM` line, and the
-   group file's modified time or `htgroup.prev` shows the next run (or check
-   `docker compose logs web-calendar | grep group-sync`).
-3. Revoke the old one: `kanidm service-account api-token list calendar-sync`, then
-   `kanidm service-account api-token destroy calendar-sync <token-uuid>`.
-
-**Leavers.** After each good run the sync deletes the app tokens of every user who is no longer a
-member of `web_calendar_users` (removed from the group, or disabled or deleted in Kanidm), and
-writes one `group_sync.tokens_revoked` audit event per user. A user's sign-in with their Kanidm
-account ends within minutes anyway; the app tokens are what this closes. If the users group is
-empty, nobody's tokens are deleted. Without `NUXT_GROUP_SYNC_TOKEN` there is no sync, and no
-removal.
-
-**The alarm.** An HTTP 401 or 403 from Kanidm means the token expired, was revoked or lost the right.
-The sync logs `[group-sync] ALARM` at error level every run and writes one audit event
-`group_sync.unauthorized`. The group file stays as it was, so removed members keep access: rotate the
-token at once. Five failed runs in a row (any reason) log an error and write `group_sync.failing`;
-the first good run afterwards writes `group_sync.recovered`.
-
-**Members and UUIDs.** Kanidm lists group members as SPNs, but names can be renamed and given to
-someone else, so the sync asks Kanidm for each member's `uuid` (the `sub` of their sign-in) on every
-run, at most 8 requests at a time, and caches nothing. A member who has never signed in is in the
-file at once. A member Kanidm does not show as a person (a service account, a nested group) is left
-out, with a warning naming them; everybody else's changes go ahead. While such a member is in
-`web_calendar_users`, app tokens of removed users are not revoked (after five runs the log says so
-as an error and `group_sync.members_pending` is audited). If nobody of that group can be read as a
-person, the run fails and the file stays as it was: the log asks whether the account is in
-`idm_people_pii_read`.
-
-**Residual risk of `idm_people_pii_read`.** Whoever holds the token can read every person's entry,
-including mail addresses and legal names, although the sync only asks for `uuid`. The group grants
-reading only. Kanidm 1.11.2 has no narrower built-in group that shows a person's `uuid`.
-
-**Target state: the LDAP read-only bind.** Kanidm's LDAP interface is read-only by construction and a
-service-account bind there needs neither `idm_group_admins` nor `idm_people_pii_read`; it also returns
-`entryuuid` for members. The
-sync is built on the API token because adding an LDAP library is out of scope for now; replace
-`server/utils/group-sync/kanidm.ts` and `members.ts` when you switch.
-
-## 4. Test users in development only
+## 3. Test users in development only
 
 The test stack relaxes the credential policy so users can log in with a password alone:
 

@@ -140,8 +140,8 @@ and client renders match.
   and the built app ran against the test stack's Kanidm and Radicale (the live e2e, and a booking
   and reconcile drive; not yet run: production, or a database with data): the audit log, access
   administration (`/admin/access`, menu entry "Calendar access", admins only), shared views managed
-  by admins from the sidebar, the sharing writer, the group sync, groups with their own
-  calendars (`/groups`, menu entry "Groups") and resources
+  by admins from the sidebar, the sharing writer, groups imported from the sign-in claim and the
+  group file the app writes, groups with their own calendars (`/groups`, menu entry "Groups") and resources
   (bookings and availability blocks, availability reads, the booking form, the page
   `/resources/requests` for requests and "My bookings", the administrator page `/admin/resources`,
   and the reconcile of moved or deleted booking events). The app speaks English and German: the
@@ -181,14 +181,20 @@ To run it as a Cosmos ServApp instead, with Kanidm and Radicale optionally inclu
   bind-mounted read-only. Calendars live on the `radicale-data` volume.
 - Radicale's group file is in the `radicale-groups` volume. Radicale refuses to start
   without it, so the app creates an empty one at `/groups/htgroup` when it starts, and
-  Radicale starts only after the app is healthy. Radicale mounts the volume read-only; the
-  app's group sync rewrites the file every `NUXT_GROUP_SYNC_INTERVAL_SEC` seconds (60 by
-  default, 300 at most) and keeps the previous version as `htgroup.prev`. The members are
-  Kanidm `sub` UUIDs, read from Kanidm on every run (the sync account needs
-  `idm_people_pii_read`); a member Kanidm does not show as a person is left out of the file (the
-  log says who), and app tokens of removed users are not revoked while such a member is in
-  `web_calendar_users`. A group change seen in `/api/me` triggers a run at once. See
-  [`docs/kanidm-setup.md`](docs/kanidm-setup.md) section 3 for the token.
+  Radicale starts only after the app is healthy. Radicale mounts the volume read-only; the app
+  writes the file itself, from its database, at start, two seconds after a change, when a person
+  new to the file signs in, and every hour, and only when the content differs. It keeps the previous
+  version as `htgroup.prev` and leaves the file as it was when a write fails. `NUXT_GROUPS_FILE`
+  changes the path. The file lists the app's groups, the groups imported from the identity provider
+  (below) and `web_calendar_users`, everyone who signed in within the last
+  `NUXT_SIGNIN_WINDOW_DAYS` days. No service account or token at the identity provider is needed.
+- **Sign-in window.** An app token (for Thunderbird, phones) works only while its owner has signed in
+  within the last `NUXT_SIGNIN_WINDOW_DAYS` days (30 by default, 1 to 365). Signing in to the web app,
+  or with an OIDC bearer token from a calendar app, renews it; using the app token does not. A token
+  past the window is refused and works again after the owner signs in. This is the only thing that ends
+  the app tokens of someone who left the identity provider: it can take up to the window after their
+  last sign-in, and no administrator control shortens it. Imported and app groups are not bounded by
+  the window.
 - The sharing writer turns the access rules (`calendar_acl`) into Radicale map shares at start, after
   every access change and every `NUXT_SHARING_RECONCILE_INTERVAL_SEC` seconds. It talks to Radicale
   through its own internal client (never through `/caldav/`), removes any share the database does
@@ -197,19 +203,30 @@ To run it as a Cosmos ServApp instead, with Kanidm and Radicale optionally inclu
   a path. Shared calendars appear in a member's home as `shared-<id>`; do not name your own
   calendars like that.
 - **Groups.** The page `/groups` (menu entry "Groups", for everybody signed in) lists the groups a
-  person is in. Admins create groups there and choose their members. The groups of Kanidm appear
-  next to them, read-only; if Kanidm has a group named like one made in the app, the app's wins.
-  Every member of a group creates, renames, recolours, deletes and shares the calendars the group
-  owns, with people or other groups, to view or to edit; a group's calendar belongs to the group,
-  so it stays when a member leaves. A group with calendars cannot be deleted, and its name cannot
-  be changed. The group sync writes the app's groups into Radicale's group file together with
-  Kanidm's; without `NUXT_GROUP_SYNC_TOKEN` the file holds the app's groups alone. A member sees a
+  person is in. Admins create groups there and choose their members. They can also import groups
+  from the identity provider: at each sign-in the app reads the person's `groups` claim (the claim's
+  name is `NUXT_OIDC_GROUPS_CLAIM`), and the groups it sees appear under "Groups from your identity
+  provider", which only admins see, once one of their members has signed in. An admin imports the ones
+  to use; an imported group is read-only and its members are added and removed as each person signs in,
+  so it starts empty and its membership is as old as the last sign-in. A calendar app that signs in
+  with an OIDC bearer token refreshes that in the background, at most every five minutes, if its token
+  carries the groups scope. Groups named by `NUXT_OIDC_GROUPS_IGNORE` (Kanidm's built-in ones by
+  default), the admin group and `web_calendar_users` are never offered; if the identity provider has a
+  group named like one made in the app, the app's wins and the other cannot be imported. Which
+  providers send what, and which key an imported group has (a rename at the provider only follows when
+  the provider sends an id): [`docs/oidc-providers.md`](docs/oidc-providers.md). The built-in group
+  `web_calendar_users` is everyone who signed in within the window; it can be shared with but owns no
+  calendars and has no member list. Every member of a group creates, renames, recolours, deletes and
+  shares the calendars the group owns, with people or other groups, to view or to edit; a group's
+  calendar belongs to the group, so it stays when a member leaves. A group with calendars cannot be
+  deleted, and the name of an app group cannot be changed. A member sees a
   new calendar or share within a few seconds. Members can share a calendar with anybody; every
-  share is in the audit log. Design: `docs/design.md` §8 "Groups and group calendars".
+  share is in the audit log. Design: `docs/design.md` §8 "Groups" and "Groups and group calendars".
 
 Set up:
 
-1. Create the groups and the OAuth2 client in Kanidm: [`docs/kanidm-setup.md`](docs/kanidm-setup.md).
+1. Create the groups and the OAuth2 client in Kanidm: [`docs/kanidm-setup.md`](docs/kanidm-setup.md)
+   (another provider: [`docs/oidc-providers.md`](docs/oidc-providers.md)).
 2. Copy `.env.example` to `.env`, set `NUXT_OIDC_ISSUER`, generate the token key
    (`openssl rand -base64 48`), and set `NUXT_OUTBOUND_ALLOWED_HOSTS` to the hosts your users may
    subscribe to or connect to (the container refuses to start with an empty list, unless you
@@ -266,9 +283,10 @@ in `nuxt.config.ts`; an empty value in `.env` falls back to them.
 | `NUXT_OIDC_REQUIRED_SCOPE`              | no            | `caldav`                             | Scope every access token must carry, in `scope` or `scp`; ID tokens have none, which keeps them out                                                                                      |
 | `NUXT_OIDC_AUDIENCE`                    | no            | empty                                | Further `aud` values that make an access token ours, comma-separated (the API identifier of Auth0 or Entra)                                                                              |
 | `NUXT_OIDC_JWKS_HOSTS`                  | no            | empty (the issuer's host)            | Host names besides the issuer's own that the signing keys may be fetched from, comma-separated; the server warns at every start when it is set                                           |
-| `NUXT_GROUP_SYNC_TOKEN`                 | no            |                                      | Read-only Kanidm API token for the group sync (the container warns and starts without it; then the group file stays empty). Expires within 90 days: rotate it                            |
-| `NUXT_GROUP_SYNC_INTERVAL_SEC`          | no            | `60`                                 | Seconds between group syncs, at most `300`; a removed member keeps access for up to this long                                                                                            |
-| `NUXT_GROUP_SYNC_FILE`                  | no            | `/groups/htgroup`                    | Radicale's group file (`.data/htgroup` outside production)                                                                                                                               |
+| `NUXT_GROUPS_FILE`                      | no            | `/groups/htgroup`                    | Radicale's group file, written by the app from its database (`.data/htgroup` outside production). Replaces `NUXT_GROUP_SYNC_FILE`; the old `NUXT_GROUP_SYNC_*` are ignored               |
+| `NUXT_SIGNIN_WINDOW_DAYS`               | no            | `30`                                 | Days after a person's last sign-in in which their app tokens work and they are in `web_calendar_users`, 1 to 365; a web or OIDC bearer sign-in renews it, an app token does not          |
+| `NUXT_OIDC_GROUPS_CLAIM`                | no            | `groups`                             | The claim that lists a person's groups, in userinfo and the access token, as written (`cognito:groups` works). Groups are imported from it at sign-in                                    |
+| `NUXT_OIDC_GROUPS_IGNORE`               | no            | `idm_*,system_*,domain_*`            | Groups never offered for import: names or `prefix*`, comma-separated, case ignored. The default hides Kanidm's built-in groups                                                           |
 | `NUXT_SHARING_RECONCILE_INTERVAL_SEC`   | no            | `300`                                | Seconds between sharing reconciles (access rules to Radicale shares), at most `900`; an access change also triggers one                                                                  |
 | `NUXT_SHARING_AUDIT_INTERVAL_HOURS`     | no            | `24`                                 | Hours between the consistency audits that list every home as each user and compare with the access rules (1 to 168)                                                                      |
 | `NUXT_SHARING_SHARED_OWNERS`            | no            | empty                                | Service principals (`_team`, comma-separated) whose calendars are mirrored as shared calendars                                                                                           |

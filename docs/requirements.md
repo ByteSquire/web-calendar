@@ -153,8 +153,11 @@ out). Views appear at the **top of the sidebar**.
 - **Public / not-logged-in** visibility exists only through the planned public
   view (FR-26/27), which publishes an explicit list of calendars.
 - **FR-15a** **Groups own calendars.** Admins create groups in the app and choose their
-  members; groups from Kanidm appear next to them, read-only. Every member of a group
-  creates, renames, recolours, deletes and shares the group's calendars, with other
+  members. Admins can also import groups from the identity provider: they pick among the
+  groups people bring when they sign in, and an imported group is read-only, its members
+  following each person's next sign-in. A built-in group, everyone who signed in within the
+  last 30 days (configurable), can be shared with but owns no calendars. Every member of a
+  group creates, renames, recolours, deletes and shares the group's calendars, with other
   people or groups, **read-only or read/write**. A group calendar belongs to the group, not
   to a person, so it stays when a member leaves. (Design §8 "Groups and group calendars".)
 
@@ -225,7 +228,9 @@ minimum:
   others sign in with a username and an **app token**.
 - **FR-31** Users **create, list and revoke app tokens** in the app. A token is
   shown once, **expires after one year**, is limited to **10 per user**, and is
-  stored only in hashed form. Tokens can be revoked individually and all at once, the
+  stored only in hashed form. It works only while its owner has signed in within the
+  last 30 days (configurable, 1 to 365): signing in to the web app, or with an OIDC
+  bearer token from a calendar app, renews that; using the token does not. Tokens can be revoked individually and all at once, the
   list shows the last use, and the hashing key can be rotated without invalidating
   existing tokens.
 
@@ -254,7 +259,8 @@ minimum:
   endpoint. Bearer tokens are **verified locally** against the identity provider's
   published signing keys, restricted to an allow-list of clients and a required
   scope, and never stored. A revoked bearer token works until it expires (up to 15
-  minutes); app tokens are hashed, expire and are revoked immediately. In the
+  minutes); app tokens are hashed, expire, are revoked immediately and stop working when
+  their owner has not signed in within the sign-in window. In the
   browser, tokens live in memory only. Every response of the app carries a
   `Content-Security-Policy` (`script-src 'self'`, `frame-ancestors 'none'`,
   `object-src 'none'`, `base-uri 'none'`), `X-Content-Type-Options: nosniff` and
@@ -375,8 +381,10 @@ the **order** of delivery):
   `Europe/Berlin` by default, set with `TZ`; viewers see their own zone (FR-32). Editing a recurring event **asks every time** (this instance,
   this and following, or the whole series, with "this instance" preselected). App
   tokens last **1 year**, at most **10 per user**. An outage shows an **error**, never
-  stale data. Group membership for Radicale is synced from Kanidm every **60 s**
-  (a service account with a read-only API token: design §12, S9). Real-client tests: Thunderbird,
+  stale data. Group membership for Radicale comes from the groups claim
+  of each person's sign-in (imported groups, picked by admins) and from the groups the app keeps
+  itself; the app writes Radicale's group file. It needs no service account at the identity
+  provider (design §8; this replaced a 60 s poll of Kanidm on 2026-11-05). Real-client tests: Thunderbird,
   DAVx5 (Android) and iOS/macOS Calendar.
 - **Open — Public view credentials.** How the planned public view reads published
   calendars without a logged-in user (likely a service credential limited to an

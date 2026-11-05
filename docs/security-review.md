@@ -42,6 +42,10 @@ Requirements: NFR-2, NFR-7. Design: §6, §7, §8.
 - **A cached copy of authorization is a trap.** A stored `is_admin` is one `if` away from becoming
   authorization. Decide admin rights per request from fresh userinfo and fail closed without a
   `groups` claim.
+- **Read the person's own claim before asking for a service account.** The group sync needed a
+  Kanidm account in `idm_group_admins` and one with `idm_people_pii_read`, and a token to rotate and
+  alarm on. Groups from the person's own sign-in need no credential at the provider. The price is
+  staleness and trust in the provider's claim (§7.2); decide that trade knowingly.
 - **Fail at start, not at the first request.** Lazily parsed config gave `500` on every
   authenticated request while the health check stayed green. Validate every security setting at
   startup, and let the health check exercise the verifier.
@@ -66,9 +70,10 @@ Requirements: NFR-2, NFR-7. Design: §6, §7, §8.
 | Access rules and shares                      | SQLite (`calendar_acl`), Radicale `sharing.csv`             | drift apart (Phase 3)                                                     |
 | Access and refresh tokens of the user        | browser memory only                                         | reach storage, logs, URLs or a third party                                |
 | App tokens (third-party clients)             | SQLite, hashed with the token hash key                      | be stored or logged in the clear                                          |
-| Token hash key, seal key, group-sync token   | environment                                                 | be logged, returned, or shared between purposes                           |
+| Token hash key, seal key                     | environment                                                 | be logged, returned, or shared between purposes                           |
 | Passwords of external CalDAV accounts (FR-8) | typed once, then only as a sealed credential in the browser | be stored on the server, logged, or sent to any origin but the account's  |
-| User profile, admin flag                     | SQLite, Kanidm userinfo                                     | be used for authorization from a stored copy                              |
+| User profile, admin flag                     | SQLite, the provider's userinfo                             | be used for authorization from a stored copy                              |
+| Group memberships (imported groups)          | SQLite (`group_members`), the group file                    | come from anything but a person's own verified claim                      |
 | Backups of all of the above                  | operator                                                    | be restorable into a state that grants more access                        |
 
 ## 4. Inbound surfaces
@@ -79,8 +84,8 @@ limits, output encoding and headers, rate limits, logging.
 | Surface                                                 | Auth                                   | Audit                                                                                                           |
 | ------------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `/` and all pages (SPA shell)                           | none                                   | CSP and the other headers on the production build; no secret in the shell; `Cache-Control`                      |
-| `/api/config`                                           | none                                   | only non-secret settings (issuer, client id, scope, demo flag, organization zone)                               |
-| `/api/me`, `/api/me/time-zone`                          | bearer                                 | token verification, userinfo amplification, input validation                                                    |
+| `/api/config`                                           | none                                   | only non-secret settings (issuer, client id, scope, demo flag, organization zone, sign-in window days)          |
+| `/api/me`, `/api/me/time-zone`                          | bearer                                 | token verification, userinfo amplification, input validation, the groups import (claim parsing)                 |
 | `/api/app-tokens`                                       | bearer                                 | shown once, hashed, expiry, 10 per user, revoke all, last use                                                   |
 | `/api/views`, `filters`, `categories`, `calendar-prefs` | bearer                                 | per-user scoping in every query, id grammar, body cap, unknown fields ignored, caps per user                    |
 | `/api/ical-subscriptions` and `[id]/data`               | bearer                                 | **also outbound (§5)**; the data endpoint's content type, `nosniff`, owner scoping                              |
@@ -88,7 +93,7 @@ limits, output encoding and headers, rate limits, logging.
 | `/caldav/**`, `/.well-known/caldav`                     | bearer or Basic with an app token      | header, method and path allow-lists; identity header; body limits; smuggling shapes; 401 and 429 behind a proxy |
 | `/auth/callback`, `/auth/signed-out`                    | none (browser side)                    | no token or code left in the URL or history; state and PKCE checked                                             |
 | Unknown `/api/**`                                       | none                                   | JSON 404/405, never the SPA shell                                                                               |
-| Phase 3: admin routes, sharing writer, group sync       | admin group, checked fresh per request | the controls of §7 exist first; audit log written                                                               |
+| Phase 3: admin routes, sharing writer, group file       | admin group, checked fresh per request | the controls of §7 exist first; audit log written                                                               |
 | Planned: public view (FR-26/27)                         | none by design                         | property allow-list, non-enumerable addresses, rate limit, short cache                                          |
 
 ## 5. Outbound connections
@@ -117,16 +122,18 @@ reason to audit again. For each connection answer, and record the answers:
 
 ### 5.1 From the server
 
-| Connection                                 | Destination chosen by                  | Data sent                                                         | Guards to audit                                                                                                                                                                      |
-| ------------------------------------------ | -------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Radicale (CalDAV gateway, `/caldav/**`)    | administrator (`NUXT_RADICALE_URL`)    | the user's CalDAV request, `X-Remote-User`                        | header allow-list, identity header set only by the gateway, `redirect: 'manual'`, Radicale unreachable from anywhere else                                                            |
-| Kanidm key set (`<issuer>/public_key.jwk`) | administrator (client allow-list)      | nothing                                                           | refresh after `keyMaxAgeSec`, backoff, timeout, a failed refresh keeps the cached keys                                                                                               |
-| Kanidm userinfo                            | administrator                          | the user's bearer token                                           | per-user cache and single flight, 3 s timeout, `redirect: 'error'`, fail closed for admin                                                                                            |
-| iCal subscriptions (`fetchIcal`)           | **the user**                           | a GET to the user's URL                                           | SSRF guard at socket connect, redirects re-checked, size and time caps, per-user concurrency, the host list. **An exfiltration channel whenever the host list is empty.**            |
-| External CalDAV proxy (FR-8)               | **the user**, fixed per stored account | the user's CalDAV request and, for a login, the opened credential | origin from the stored account only, sealed credential bound to user, account and origin, same-origin redirects only, read-only methods, header allow-lists both ways, the host list |
-| Container health check                     | image                                  | GET to `127.0.0.1`                                                | exercises the verifier path; no external destination                                                                                                                                 |
-| Phase 3: group sync                        | administrator                          | a read-only Kanidm token                                          | least privilege (LDAP bind preferred), atomic file write, token never logged                                                                                                         |
-| Phase 3: sharing writer                    | fixed internal address                 | `X-Remote-User` as the owner                                      | a separate internal client, reconcile-and-remove, closed permission table                                                                                                            |
+| Connection                              | Destination chosen by                  | Data sent                                                         | Guards to audit                                                                                                                                                                                                                                                  |
+| --------------------------------------- | -------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Radicale (CalDAV gateway, `/caldav/**`) | administrator (`NUXT_RADICALE_URL`)    | the user's CalDAV request, `X-Remote-User`                        | header allow-list, identity header set only by the gateway, `redirect: 'manual'`, Radicale unreachable from anywhere else                                                                                                                                        |
+| Discovery document and key set          | administrator (issuer setting)         | nothing                                                           | issuer equal to the setting, `jwks_uri` on the issuer's host (or `NUXT_OIDC_JWKS_HOSTS`), 64 KiB, 5 s, `redirect: 'error'`, refresh after `keyMaxAgeSec`, backoff, a failed refresh keeps the cached keys                                                        |
+| Userinfo                                | administrator (the discovery document) | the user's bearer token                                           | per-user cache and single flight, 3 s timeout, `redirect: 'error'`, https for an https issuer, fail closed for admin. Also called in the background for a CalDAV bearer request (§7.2): once per person per 5 minutes, 4 at a time, with that person's own token |
+| iCal subscriptions (`fetchIcal`)        | **the user**                           | a GET to the user's URL                                           | SSRF guard at socket connect, redirects re-checked, size and time caps, per-user concurrency, the host list. **An exfiltration channel whenever the host list is empty.**                                                                                        |
+| External CalDAV proxy (FR-8)            | **the user**, fixed per stored account | the user's CalDAV request and, for a login, the opened credential | origin from the stored account only, sealed credential bound to user, account and origin, same-origin redirects only, read-only methods, header allow-lists both ways, the host list                                                                             |
+| Container health check                  | image                                  | GET to `127.0.0.1`                                                | exercises the verifier path; no external destination                                                                                                                                                                                                             |
+| Phase 3: sharing writer                 | fixed internal address                 | `X-Remote-User` as the owner                                      | a separate internal client, reconcile-and-remove, closed permission table                                                                                                                                                                                        |
+
+The group sync's calls to Kanidm's API with a service token (a row here until 2026-11-05) are gone: the
+app holds no credential at the identity provider, and the group file is a local write.
 
 The server must make **no other** connection: no telemetry, update check, public icon or font
 service, or webhook. Verify by running the production image with all egress blocked except the
@@ -153,23 +160,32 @@ and updated, runtime image as a non-root user with no capabilities and a read-on
 
 Cite the file and the test that proves each.
 
-**Bearer tokens.** Algorithm pinned to ES256 before any key is used; `typ` is `at+jwt` (an ID
-token fails); `kid` required; the client is chosen from the unverified `iss`, then `iss`, `aud`,
-`exp`/`nbf` (60 s tolerance), `sub`, `client_id` and the whole-word scope `caldav` are verified;
-only EC P-256 public keys are imported; an unknown `kid` refetches at a bounded rate; a cold
-cache with the provider down gives `503`, not `401`; rotated-out keys disappear within
-`keyMaxAgeSec`. Probe: an ID token, `alg: none`, HS256 with the real signature, a swapped `sub` and an
-unknown `kid` all give `401`.
+**Bearer tokens.** Only asymmetric algorithms (`none` and `HS*` refused), and each key verifies only
+what its own type allows, so an RSA key never checks an `ES*` token; `kid` required; keys imported
+only as public signing keys of an accepted type and size (`docs/oidc-providers.md`); the allowed
+client is chosen from the unverified `iss`, which must equal an allowed issuer exactly, then the
+signature, `iss`, `exp`/`nbf` (60 s tolerance) and `sub` are verified; header `typ` absent, `at+jwt`
+or `jwt`, payload `typ` absent or `Bearer`, `token_use` absent or `access` (an ID token fails); the
+token names an allowed client in `client_id`, `azp`, `cid` or `appid`, or has an `aud` with the client
+id or an `NUXT_OIDC_AUDIENCE` value; the whole-word required scope (`caldav`) is in `scope` or `scp`;
+the discovery document's `issuer` equals the setting; an unknown `kid` refetches at a bounded rate;
+a cold cache with the provider down gives `503`, not `401`; rotated-out keys disappear within
+`keyMaxAgeSec`. Probe: an ID token, `alg: none`, HS256 signed with the public key, a swapped `sub`
+and an unknown `kid` all give `401`.
 
 **App tokens and Basic login.** `wcal_` plus 32 random bytes, only an HMAC stored, key rotation by
 key id, expiry one year, 10 per user, revocation immediate, secret shown once, lookup by token
-hash and user name. The throttle verifies first, counts failures only, groups IPv6 by /64, and
+hash and user name; a token is refused when its owner's last sign-in is older than the sign-in
+window (`NUXT_SIGNIN_WINDOW_DAYS`), and using the token does not renew the window (§7.2). The throttle verifies first, counts failures only, groups IPv6 by /64, and
 behaves behind a reverse proxy. `/api/**` accepts bearer only. The subject is validated before it
-becomes a path component or a header.
+becomes a path component or a header (`isValidSubject`), and the app's own principals
+(`_resources`, `_group-*`, the shared owners) are refused as a person.
 
 **Authorization.** Every query is scoped to the user and "not yours" equals "not found"; ids by
 grammar; unknown body fields (`isAdmin`, `ownerId`, `userId`, `__proto__`) ignored; per-user caps.
-Admin rights per request from fresh userinfo, failing closed. The CalDAV backend enforces access
+Admin rights per request from the provider, failing closed: fresh userinfo, or the verified token's
+own groups claim only where userinfo has no endpoint, answers `200` without the claim, or refuses the
+token from an endpoint on another origin than the issuer (§7.2). The CalDAV backend enforces access
 for every client. Phase 3: reconcile-and-remove, a closed permission table, `audit_log` for every
 admin and writer action.
 
@@ -250,7 +266,7 @@ Each must exist **before** the feature ships, with the tests listed.
 
 **Phase 3 prerequisites.** `requireAdmin` as the only admin check, failing closed; an
 `audit_log` table (`at`, `actor_sub`, `action`, `target`, `details` JSON, `request_id`) written by
-every admin mutation, the sharing writer and the group sync, never containing tokens; the gateway
+every admin mutation, the sharing writer and the groups import, never containing tokens; the gateway
 path pre-check below.
 
 _Status (2026-11-01):_ all of these are **built; unit and e2e tests pass**, and migrations 005, 006
@@ -272,12 +288,13 @@ and Radicale's CSV is a silent authorization error in either direction.
 
 - A **separate internal client**, on a path the gateway cannot reach; never expose `.sharing`
   through `/caldav/`.
-- Principals are **Kanidm `sub` UUIDs** (users) and group UUIDs or SPNs, validated against Kanidm
-  at write time and against `isValidSubject`; never a free-text name. _Built in the access
-  administration:_ a person must be a lower-case UUID that exists in `users.oidc_sub`, a group must
-  match the group-name check and exist in Kanidm (checked with the sync token for principals new to
-  the calendar; Kanidm down means `409` and nothing is stored); `public` and `admin` rules are
-  refused. A group removed between the check and the write is accepted (TOCTOU).
+- Principals are the identity provider's **`sub` ids** (users, any id `isValidSubject` accepts, case
+  kept) and **group short names**; never a free-text name. _Built in the access administration:_ a
+  person must pass `isValidSubject` and exist in `users.oidc_sub`, a group must match the group-name
+  check and exist in the `groups` table (any source; checked for principals new to the calendar, with
+  the message "is not a known group; an administrator can import it on the Groups page"); no lookup
+  at the provider is made, so none can be down; `public` and `admin` rules are refused. A group
+  removed between the check and the write is accepted (TOCTOU).
 - **Reconcile, do not patch:** desired shares from `calendar_acl`, Radicale's actual list, apply
   the diff, re-read, compare, alarm on any difference; on every ACL change and every 5 minutes. A
   share SQLite does not know is **removed** and the removal audited.
@@ -292,15 +309,17 @@ and Radicale's CSV is a silent authorization error in either direction.
 - **Second opinion for Radicale:** the gateway pre-checks from SQLite that the collection's owner
   is the caller or `calendar_acl` grants the caller something on that path (`403` otherwise), and a
   nightly job lists each home as each user and compares with `calendar_acl`. _Built:_
-  `precheck.ts` takes group membership from the htgroup file (a missing file grants nothing), names
+  `precheck.ts` reads group membership for a group rule from the htgroup file (a missing file grants
+  nothing); a rule of type `authenticated` and the free/busy availability share are granted to any
+  caller who got past authentication, without reading the file, names
   `shared-<calendarId>` in a member's home are what it looks up (so members cannot own a calendar
   with such a name), COPY/MOVE destinations are checked too; the job first runs 2 minutes after
   start. Audit actions (actor `system:sharing-writer`): `sharing.removed_unknown`,
   `sharing.replaced`, `sharing.mismatch`, `sharing.failing`, `sharing.recovered`,
   `sharing.audit_mismatch`. The reconcile also removes any `token` share. Residual: API shapes S5
   did not show are assumed (see `docs/design.md` §12); each owner costs one list request per run.
-- Tests: fixture ACLs → expected shares; an invented share is removed; a non-UUID `sub` is
-  refused; `/caldav/.sharing/**` stays `404`; end to end, bob gains `r` on alice's calendar and
+- Tests: fixture ACLs → expected shares; an invented share is removed; an invalid `sub` (`a/b`, a
+  space) is refused; `/caldav/.sharing/**` stays `404`; end to end, bob gains `r` on alice's calendar and
   `PUT` gets `403`, then deleting the row empties his listing within one reconcile.
   _Tests:_ `tests/server/sharing-reconcile.test.ts` (fixtures, invented share removed,
   replaced permission, deleted rule, unreachable, refused creates alarm once, invalid principal,
@@ -309,38 +328,137 @@ and Radicale's CSV is a silent authorization error in either direction.
   `tests/server/admin-access.test.ts`, `tests/validate-config.test.ts` (sharing settings). The
   end-to-end bob and alice case against a real Radicale is **not covered**.
 
-### 7.2 Group sync (Kanidm → `htgroup`)
+### 7.2 Groups from the sign-in claim, the sign-in window, and the group file
 
-The sync credential is the most powerful secret the app holds; staleness is an authorization
-error.
+Replaced on 2026-11-05: the pull-based sync with its Kanidm service account (`idm_group_admins`,
+`idm_people_pii_read`, a token to rotate) is gone. The app reads the groups claim of each person's own
+sign-in and writes Radicale's group file from its own database. It holds no credential at the identity
+provider. The price is a different trust: the app believes the provider's claim, and what it believes
+is as old as the person's last sign-in. Design §6 and §8 describe the mechanism; this section is what
+to check and what is accepted.
 
-- Least privilege first: the LDAP bind (read-only by construction) before the `idm_group_admins`
-  API token; if the token stays, document the residual risk in `kanidm-setup.md`, expire it within
-  90 days, write a rotation runbook, and audit-alarm any `401`/`403` from the sync.
-- Read only the groups `calendar_acl` references plus `calendar_admins` and `web_calendar_users`.
-- Atomic write: temp file in the same directory, `fsync`, `rename`; validate the content first;
-  keep `htgroup.prev`. Members are `sub` UUIDs.
-- An error leaves the file untouched and warns; escalate after repeated failures; never write an
-  empty file because Kanidm answered `null`.
-- The interval is a security setting: default 60 s, hard ceiling 300 s; a group change seen in
-  `/api/me` triggers a run.
-- _Built:_ the token is read-only and never logged (scrubbed from every message; 10 s timeout, 1
-  MiB cap, no redirects); groups are those named by `calendar_acl` and `resource_acl` plus the
-  two fixed ones; the interval is clamped to 1..300 and `validate-config.mjs` rejects a larger
-  value. Members are mapped from SPN to `sub` by reading each person's `uuid` from Kanidm on every
-  run (the account needs `idm_people_pii_read`); if nobody of the users group can be read, the run
-  fails (fail closed; the file stays as it was). **Stale-file risk:** while
-  runs fail, removed members keep access (removals are not applied) until the cause is fixed.
-  Alarms: `401`/`403` logs at error level each run and audits `group_sync.unauthorized` once per
-  streak; the fifth consecutive failure and every fifth after it log at error level and audit
-  `group_sync.failing`; `group_sync.recovered` follows; a changed file audits `group_sync.updated`
-  (names and count, no SPNs). After a good run the app tokens of everyone outside the users group
-  are deleted (`group_sync.tokens_revoked`; review 2026-11-01, finding 2). Actor `system:group-sync`. Not yet done: the token's 90-day rotation
-  runbook beyond `kanidm-setup.md`, and the LDAP bind.
-- Tests: fixture answers → exact file; an error or `null` leaves the file unchanged; the rename is
-  atomic; a removed member is gone after one run; the token never appears in logs. _Tests:_
-  `tests/server/group-sync-file.test.ts`, `-kanidm.test.ts`, `-service.test.ts` and
-  `tests/validate-config.test.ts`.
+**Where a claim may come from.**
+
+- The claim (`NUXT_OIDC_GROUPS_CLAIM`, default `groups`) is read from the userinfo answer for the
+  verified token's own `sub` (the endpoint is the one in the discovery document, https for an https
+  issuer, no redirects, 3 s, 64 KiB, `sub` must match), and only then from the **signature-verified
+  access token**, in three cases: the provider publishes no userinfo endpoint; userinfo answers `200`
+  without the claim; or the endpoint is on **another origin than the issuer** and refuses the token
+  with `401` or `403` (Entra's userinfo is Microsoft Graph). A `401` from the issuer's own origin never
+  falls back: a revoked Kanidm token still verifies locally and only userinfo notices. A network
+  error, a timeout, `5xx` or a bad body leaves the groups unknown: stored memberships stay and the
+  person is not an admin. A claim from the token is as old as the token (its lifetime).
+- Nothing else is a source: not the ID token, not a header, not a body field, not the person's
+  profile. `users.is_admin` is still only a note.
+
+**What a claim can do.**
+
+- **Candidates grant nothing.** Every group in a claim that is not on the ignore list
+  (`NUXT_OIDC_GROUPS_IGNORE`, default `idm_*,system_*,domain_*`) is remembered as a candidate (key,
+  safe name, last seen; removed after 90 days unseen unless imported). Members are stored only for a
+  group an **admin imported**. A group someone creates at the provider changes nothing here until an
+  admin picks it. The admin list does not offer a name on the ignore list, the admin group's name or
+  `web_calendar_users`.
+- **Names and sizes.** The claim is data from outside: entries over 255 characters are skipped, at
+  most 200 groups are kept, every name is cut to the group-file shape (letters, digits, `_`, `.`, `-`,
+  64 characters, starting with a letter or digit). The group file is rendered from validated names and
+  ids only and checked again before every write, so nothing from a claim reaches the file, a path or
+  an SQL statement unchecked (prepared statements, `CHECK`s in migration 009).
+- **Name clashes.** Two keys that give one safe name are both flagged `conflict` and neither can be
+  imported until the provider renames one. An app group wins a name: the import of a candidate whose
+  name is taken is refused (`409`), and a rename at the provider onto a taken or reserved name is
+  not applied (the group keeps its name, one warning).
+- **Membership is replaced.** At each import the person's membership of the imported groups is made
+  equal to the claim, including an empty list (no groups). An absent claim, an Entra overage (a
+  `_claim_names` pointer for more than 200 groups) and unknown groups touch nothing. The stored rows
+  of other people, of app groups and of the group of everyone are never changed by an import.
+- **Roles.** The admin check matches `NUXT_OIDC_ADMIN_GROUP` against the raw entry, the part before
+  `@`, a Keycloak path joined with dots, or the entry cleaned to the group-file shape (case counts,
+  no trimming). This is wider than equality: `calendar_admins@elsewhere`, `/calendar_admins` and
+  `calendar admins` all name the group `calendar_admins`. Whoever can create a group at the provider
+  whose name reduces to the admin group's name is an admin, so the operator must know who that is; on
+  Kanidm the SPN's domain is the instance's. The admin group is no group of the app: it is not in
+  `groups`, not in the file, and no rule can name it.
+
+**Staleness, accepted.**
+
+- Memberships change at the person's next sign-in or CalDAV bearer refresh (at most every five
+  minutes, 10 000 people tracked, 4 refreshes at once, in the background, never delaying or failing
+  the request; the person's token is used for that call only and never logged or stored; not in demo
+  mode). A person removed from a provider group keeps the membership until then. A calendar app
+  that signs in without the `groups` scope sends no claim, so nothing changes for it; a person who
+  uses only an app token (Thunderbird) is refreshed only when they sign in to the web app.
+- A person who left the provider keeps their rows (also in the group file) but cannot
+  authenticate: bearer tokens expire, app tokens stop at the window. Their stale membership grants
+  nothing because they cannot call.
+- The group file is a copy: authorization reads the database. A stale file gives Radicale stale
+  shares and the gateway pre-check stale group rules until the next write; it is written at start, 2
+  s after a change (a join or leave, an import, a stop, an app-group edit, a person new to the file),
+  and hourly, so people age out of the group of everyone.
+
+**The sign-in window** (`NUXT_SIGNIN_WINDOW_DAYS`, 1 to 365, default 30; an invalid value stops the
+server at start; it cannot be turned off) replaces the old "revoke the tokens of whoever left
+`web_calendar_users`" (finding 2 of the 2026-11-01 review).
+
+- `verifyAppToken` refuses a token whose owner's `last_seen_at` is null or older than now minus the
+  window (exactly at the edge still counts). The token is **refused, not deleted**: it works again
+  after the owner signs in.
+- `last_seen_at` is renewed by a bearer call to `/api/**` (the web app) and by a valid OIDC bearer
+  call to `/caldav/` (the sighting). It is **never** renewed by using an app token, so a token cannot
+  keep its owner active.
+- The window bounds app tokens and the group of everyone, **nothing else**: not imported or app
+  groups, not bearer access, which the provider ends. A leaver's app token therefore works for up to
+  the window after their last sign-in. With the sync it was cut within about a minute, without
+  `NUXT_GROUP_SYNC_TOKEN` never. No admin control revokes another person's tokens; only the owner's
+  "Revoke all" is shorter. An operator who wants it tighter lowers the window.
+
+**Name-keyed groups.** Where the claim has no id the key is the name, SPN or path: Keycloak (paths),
+Authentik, Authelia, Okta, Cognito, Auth0, Zitadel, and Kanidm with `groups_name` or `groups_spn`.
+A group renamed at the provider is a new candidate and the imported one loses its members as people
+sign in; a group deleted there and created again under the same name lands in the old app group and
+**inherits its calendars and rules**. Kanidm `groups` (UUID) and Entra (object id) key by id and
+are not exposed to this: a rename follows, with the rules that name the group. Who may create and
+rename groups at the provider is part of the trust, and the doc says so per provider
+(`docs/oidc-providers.md`).
+
+**Known limits:**
+
+- A person in more than 200 groups that are not ignored: the claim is cut at 200 (the parser's test
+  covers the cut), and a membership of an imported group beyond the cut is removed at the import as
+  if the person had left (read from `import.ts`; no test covers that effect). A bound, not a fix; such
+  a provider needs a smaller claim (a mapper filter, `NUXT_OIDC_GROUPS_IGNORE`).
+- An entry over 255 characters cannot be imported.
+- Entra: over 200 groups the claim is replaced by a pointer, so memberships stay as they were and the
+  person is not an admin through the token; candidates are GUIDs, so `NUXT_OIDC_ADMIN_GROUP` must be a
+  GUID there.
+
+**Audit.** `groups.import` (actor `system:group-import`; group names and counts of one person's
+change, never a member list), `group.oidc_imported` and `group.oidc_import_stopped` (admin), the
+existing `group.*` actions for app groups. A write of the group file is not audited (it follows the
+database); a failure to write is logged once per distinct message.
+
+**Group file.** Written from the database only, atomically (temp file, `fsync`, `rename`, the old file
+kept as `htgroup.prev`), validated first, and only when the content differs. A member that is not a
+valid user id is left out and counted in a warning, so one bad row cannot stop the whole file; an
+invalid group name fails the write and the old file stays. Retries back off from 5 s. The file holds
+every app and imported group with its stored members, and `web_calendar_users`: every person whose last
+sign-in is inside the window. Rules that name `web_calendar_users` resolve through the file; a rule
+of type `authenticated` and the free/busy availability share are granted by the gateway to any
+authenticated caller without reading the file, but Radicale shows the `:web_calendar_users` share
+only once the file lists the person (a new person: within the debounce).
+
+- Tests (file names; not run or re-read for this document): `tests/server/groups-claim.test.ts`,
+  `groups-import.test.ts`, `groups-source.test.ts`, `groups-sighting.test.ts`,
+  `groups-sighting-service.test.ts`, `groups-file-service.test.ts`, `groups-htgroup-file.test.ts`,
+  `groups-schema.test.ts`, `groups-routes.test.ts`, `auth-window.test.ts`, `app-tokens.test.ts`,
+  `sharing-gateway-precheck.test.ts`. According to the build notes, the window comparison, the touch gating and the
+  userinfo origin rule were broken once to see these tests fail; that is not part of the suite.
+- Proven live (2026-11-05, live suite 45 of 45): sign-in with the real Kanidm, a group of Kanidm
+  (`idp_team`) offered as a candidate, imported by an admin, its member in the group file and the
+  group gone from the file after Stop importing; the built-in `idm_*` groups, the admin group and the
+  group of everyone are not offered. Not proven: the import from a real Keycloak claim, a member of
+  an imported group reading a shared calendar on the real Radicale, and every provider except
+  Kanidm and Keycloak (from documentation).
 
 ### 7.3 Admin routes and shared views
 
@@ -477,9 +595,11 @@ access, keep the hash key apart, and test a restore that re-runs the sharing rec
 
 - Radicale as the only enforcement point is acceptable with the gateway pre-check and the nightly
   consistency audit.
-- `idm_group_admins` is not an acceptable final state; the LDAP read-only bind is the target.
-- Bearer revocation latency (up to 15 minutes) is acceptable because app tokens revoke at once and
-  admin actions re-check userinfo; consider a deny-list of `jti` when userinfo says `401` for a token
+- The app holds no credential at the identity provider (2026-11-05). The earlier stance, that
+  `idm_group_admins` was not acceptable and an LDAP read-only bind the target, no longer applies: the
+  group sync that needed either is gone. Groups are what the person's own sign-in says (§7.2).
+- Bearer revocation latency (up to 15 minutes) is acceptable because app tokens revoke at once (and
+  stop at the sign-in window) and admin actions re-check userinfo; consider a deny-list of `jti` when userinfo says `401` for a token
   that still verifies.
 - The gateway, the sharing writer and the public endpoint are the only components that set
   `X-Remote-User`; each is its own module with its own header allow-list and tests, and Radicale is
@@ -501,8 +621,14 @@ access, keep the hash key apart, and test a restore that re-runs the sharing rec
 - Cross-user access through every method: `PROPFIND`, `GET`, `PUT`, `DELETE`, `REPORT`,
   `PROPPATCH`, `MKCOL`/`MKCALENDAR`, and `MOVE`/`COPY` with a `Destination` in another home, also
   over Basic.
-- Admin flag is not authorization: a stale `is_admin`, an unreachable userinfo and a missing
-  `groups` claim all give `403`.
+- Admin flag is not authorization: a stale `is_admin`, an unreachable userinfo and a `groups` claim
+  missing from both userinfo and the verified token all give `403`.
+- Sign-in window: a token of an owner last seen after the cutoff is accepted, before it refused, the
+  edge pinned; using the token does not renew the window; a sign-in does. Run it against real SQLite
+  and break the comparison to see it fail.
+- Groups: a claim cannot join a group nobody imported; an absent claim changes no membership and an
+  empty one removes all; the group file equals the database, an invalid name or id never reaches it,
+  and a failed write leaves the old file.
 - Config fail-fast for every security variable; `allowPrivate` refused in production.
 - Logout calls the revocation endpoint; Back after sign-out does not land in a signed-in app.
 - DoS regression guards: well-formedness check on adversarial XML within a time budget, recurrence

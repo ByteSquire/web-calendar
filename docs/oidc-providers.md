@@ -4,6 +4,10 @@ The app takes its sign-in from an OpenID Connect provider. Two are **proven agai
 product**: Kanidm (the live browser suite, 40 tests) and Keycloak 26.8.1 (an integration test with real
 tokens, `tests/integration/keycloak.integration.test.ts`). Other providers are expected to work if they
 meet the requirements below, but nobody has run them; the notes on them are from their documentation.
+"Proven" covers the sign-in and token checks. Groups are proven on Kanidm only: the live browser suite
+signs in with the real Kanidm, an admin imports a real group (`idp_team`) and its member appears in
+the group file; Keycloak's claim is covered by the parser tests with a fixture shaped like it, and
+no groups import has been run against a live Keycloak.
 
 ## What the app needs from a provider
 
@@ -36,8 +40,10 @@ meet the requirements below, but nobody has run them; the notes on them are from
    them out where nothing else tells them apart.
 6. **A public client with the authorization code flow and PKCE** for the browser, with the app's
    origin as redirect URL. The browser asks for the scopes of `NUXT_OIDC_SCOPE`.
-7. **Groups in userinfo.** The admin check and the groups ask the provider's userinfo endpoint with the
-   caller's own token and read the `groups` claim (an array of strings).
+7. **Groups, for the admin check and for imported groups.** The provider sends the person's groups in a
+   claim, in the userinfo answer or in the access token. Signing in works without it, but nobody is an
+   admin and no group can be imported. How the app reads it, and what each provider sends, is under
+   [Groups](#groups).
 8. **A user id (`sub`) that is stable and safe as a Radicale user name:** printable ASCII without a
    space, 1 to 255 characters, none of `/ \ : ' " * ? ,`, at most one `@` and not at either end, not
    starting with `.`, not ending with `~`. Capitals are kept and tell users apart. The ids the app uses
@@ -47,6 +53,79 @@ meet the requirements below, but nobody has run them; the notes on them are from
 The settings are in the README (`NUXT_OIDC_*`). Several allowed clients (`NUXT_OIDC_ALLOWED_CLIENTS`)
 share the issuer, except with Kanidm, which has one issuer per client: when the issuer ends with the
 app's own client id, another client's issuer is that with the last segment replaced.
+
+## Groups
+
+The app has no account at the provider and polls nothing. It reads the groups claim of a person when
+they sign in, keeps the groups it sees as **candidates**, and an administrator picks which candidates
+to import on the Groups page. Design: [design.md](design.md) §6 and §8; trust and limits:
+[security-review.md](security-review.md) §7.2.
+
+**Where the claim comes from.** The claim is named by `NUXT_OIDC_GROUPS_CLAIM` (default `groups`) and
+looked up exactly as written, so `cognito:groups`, `https://example.com/groups` or
+`urn:zitadel:iam:org:project:roles` work. It is read from the **userinfo answer** for the caller's own
+token (the `userinfo_endpoint` of the discovery document), and from the **signature-verified access
+token** only where userinfo cannot give groups: the provider has no userinfo endpoint, userinfo answers
+200 without the claim, or its endpoint is on another origin than the issuer and refuses the token with
+401 or 403 (Entra's is Microsoft Graph). A 401 from the issuer's own origin never falls back (a revoked
+Kanidm token still verifies locally and only userinfo notices), and an error, a timeout or a 5xx
+leaves the groups unknown. The claim may be an array of strings, an object (its keys whose value is not
+`false`, `null`, `0` or empty are the groups, which is Zitadel's roles) or one string; an empty array
+means "no groups"; anything else counts as no claim, and a missing claim changes nothing.
+
+**When.** At each sign-in to the web app (`/api/me`), and in the background, at most every five minutes
+per person, when a calendar app calls `/caldav/` with an OIDC bearer token. The second needs that token
+to be able to fetch the groups: the calendar app's client has to be granted the groups scope (Kanidm) or
+the group mapper (Keycloak) or the equivalent. Without it the claim is absent and nothing changes, so
+that person's groups stay as their last web sign-in left them. A login with an app token never refreshes
+anything.
+
+**How an entry becomes a group.** A group has a _key_, which identifies it at the provider, and a _name_,
+which is what the app shows and what rules and Radicale use.
+
+| Entry in the claim                                                                              | Key       | Name                                                                                                      |
+| ----------------------------------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------- |
+| A UUID, with the entries after it up to the next UUID (Kanidm `groups`; Entra sends bare GUIDs) | the UUID  | the first of them without `@`, else the part before the `@` of the first, else the UUID (Entra: the GUID) |
+| Starts with `/` (Keycloak full path)                                                            | the path  | the segments joined by `.` (`/team/ops` is `team.ops`)                                                    |
+| Contains `@` (an SPN, Kanidm `groups_spn`)                                                      | the entry | the part before the `@`                                                                                   |
+| Anything else (Authentik, Authelia, Okta, Cognito, Auth0, Zitadel)                              | the entry | the entry                                                                                                 |
+
+A name is cleaned to what Radicale's group file takes: letters, digits, `_`, `.` and `-`, runs of other
+characters become one `_`, at most 64 characters, starting with a letter or digit. Two keys that give
+the same name are both marked **conflict**, and neither can be imported until one is renamed at the
+provider. Names on `NUXT_OIDC_GROUPS_IGNORE` (default `idm_*,system_*,domain_*`: Kanidm's built-in
+groups) are never candidates; the admin group's name and `web_calendar_users` are never offered.
+Limits: entries over 255 characters are skipped and only the first 200 groups of a claim are kept; a
+person in more groups than that loses their membership of imported groups past the cut. Entra's pointer
+for more than 200 groups is not an empty claim: the groups are then unknown and nothing changes.
+
+**What an import does.** A candidate appears on the Groups page (admins only) after one of its members
+has signed in. An admin imports it; the group starts with no members, and each person joins or leaves
+as they sign in, because their membership of imported groups is replaced with their current claim.
+Membership is as old as the person's last sign-in or refresh: a person removed at the provider keeps
+the group until then. Import and "Stop importing" are the only ways a provider group gets into the app.
+
+**Key stability.** Which providers identify a group by an id:
+
+| Provider                                           | Key                              | Rename at the provider                                               |
+| -------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------- |
+| Kanidm `groups`, Entra                             | UUID / object id                 | the imported group follows (with the rules that name it)             |
+| Keycloak                                           | the full path                    | a rename or a move is a **new group**; the old one loses its members |
+| Kanidm `groups_name` or `groups_spn`               | name / SPN                       | a new group                                                          |
+| Authentik, Authelia, Okta, Cognito, Auth0, Zitadel | the name (Zitadel: the role key) | a new group                                                          |
+
+With a name key, a group deleted at the provider and created again with the same name lands in the
+imported group of that name and **inherits its calendars and access rules**, with whoever the provider
+puts in it. So who may create and rename groups at the provider is part of what the app trusts. With
+Entra the shown name is the GUID, so the Groups page lists GUIDs.
+
+**The admin group.** `NUXT_OIDC_ADMIN_GROUP` (default `calendar_admins`) is compared with every entry of
+the claim, at each request, in three ways: the entry exactly as written; the part before the one `@` of an
+SPN; or a Keycloak path joined by dots. Case counts, and blanks and symbols count too: a group
+"calendar admins" is not `calendar_admins` (where people can name groups, a looser match would hand
+out admin). So `calendar_admins` matches Kanidm's `calendar_admins@idm.example.org` and a top-level
+Keycloak group (`/calendar_admins`); a group with blanks in its name is written as it is; with Entra
+it has to be the group's GUID.
 
 ## Kanidm
 
@@ -63,6 +142,13 @@ the test stack (`dev/spike-s1`):
 - The scope map has to grant the scopes in `NUXT_OIDC_SCOPE`: `openid profile email groups caldav`.
   A client set up for an older version with `groups_name` needs the scope map updated once, or
   `NUXT_OIDC_SCOPE` set to the old list.
+- Groups: the `groups` scope puts every group of the person into the userinfo answer and the ID token
+  as its UUID followed by its SPN (`team@idm.example.org`), never into the access token, so userinfo is
+  where the app reads them. The UUID is the key and the SPN's name part the name, so a rename at Kanidm
+  follows. `groups_name` sends names and `groups_spn` SPNs only, which key by name and by SPN (a rename
+  is a new group). Kanidm's own groups (`idm_*`, `system_*`, `domain_*`) are on the default ignore list.
+  The parser is tested with a real Kanidm claim, and the live suite imports a real group (see the
+  top of this page). What an admin does with the groups is in [kanidm-setup.md](kanidm-setup.md).
 
 ## Keycloak
 
@@ -80,12 +166,15 @@ Set up:
 2. A **public client** `web-calendar` with the standard flow and PKCE (`S256`), the app's origin as
    redirect URL and web origin. Leave direct access grants off in production.
 3. A client scope **`caldav`**, with "Include in token scope" on, as a default scope of the client.
-4. A client scope **`groups`** with a **Group Membership** mapper: token claim name `groups`, "Add to
-   userinfo" **on** (the admin check reads it there) and "Add to access token" on. The test sets the
-   switches explicitly; what a new mapper has by default was not checked. "Full group path" (on by
-   default) writes a group as `/team/ops`. The admin group is compared with the claim entry exactly,
-   so with the path on, set `NUXT_OIDC_ADMIN_GROUP=/calendar_admins`; with the path off, the plain
-   name (nested groups of the same name then cannot be told apart).
+4. A client scope **`groups`** with a **Group Membership** mapper: token claim name `groups` (a name
+   with a dot would nest, from Keycloak's source, not tried, so use a plain one), "Add to userinfo" **on** (the app reads the groups
+   there) and "Add to access token" on (the fallback). The test sets the switches explicitly; what a
+   new mapper has by default was not checked. "Full group path" (on by default) writes a group as
+   `/team/ops`: its key is the path and its name `team.ops`, so **a rename or a move is a new
+   group**. With the path off the key is the plain name and nested groups of the same name cannot be
+   told apart. A top-level admin group matches `NUXT_OIDC_ADMIN_GROUP=calendar_admins` and
+   `/calendar_admins` alike. A calendar app that signs in with its own client needs the same scope
+   (and the mapper) on that client, or its CalDAV calls do not refresh the groups.
 
 What the real tokens look like (and why the verifier is built as it is):
 
@@ -101,29 +190,105 @@ What the real tokens look like (and why the verifier is built as it is):
 - A token of another client in the realm (`azp` another id) is refused until that
   client is in `NUXT_OIDC_ALLOWED_CLIENTS`; then both work, with their own client ids and the same
   `sub`. A token of another realm has another issuer and is refused.
-- Userinfo (from the discovery document) returns `preferred_username` and `groups`.
+- Userinfo (from the discovery document) returns `preferred_username` and `groups` as paths. The
+  claim parser reads such paths in a test; the import was not run against a live Keycloak, and no
+  running app server talked to it.
 
 ## Other providers
 
-These follow from the providers' documentation and have not been run. The app also needs them to meet
-the requirements above; what usually has to be set:
+Everything in these sections is read from the providers' documentation (and, for Authentik, Authelia
+and Dex, their source) and **has not been run**. The claim parser is tested with
+fixtures shaped like their claims, and the token verifier with fixtures shaped like their tokens, but
+no real tokens of these products were checked. Each provider also has to meet the requirements above.
 
-- **Authentik:** access tokens are always JWTs, but only with a signing key on the provider (without
-  one they use the client secret, HS256), and no encryption key. The issuer ends with a slash.
-- **Authelia:** the client needs `access_token_signed_response_alg: RS256` for a JWT; scope comes
-  as an array in `scp`; groups reach a JWT access token only through a claims policy.
-- **Okta:** a custom authorization server (the org server's access tokens are opaque). The default
-  `sub` of its access token can differ from the userinfo `sub`: set it to the user id.
-- **Auth0:** a default audience on the tenant (without an API audience the access token is opaque),
-  the API identifier in `NUXT_OIDC_AUDIENCE`, and the groups as a namespaced claim added by an Action.
-- **Amazon Cognito:** `NUXT_OIDC_REQUIRED_SCOPE` is `<resource-server-id>/caldav`.
-- **Microsoft Entra ID:** tenant-specific issuer, access token version 2, the scope of your own API in
-  `NUXT_OIDC_SCOPE` (`api://<client-id>/caldav`, no `groups`). Userinfo does not take that token, so
-  groups and the admin check do not work there yet.
-- **Does not work:** Dex (its access token is an ID token and has no scope), providers whose access
-  tokens are opaque (Google, per its [token types page](https://docs.cloud.google.com/docs/authentication/token-types),
-  which gives no reason; GitHub; the Okta org server), and any that signs with a shared secret.
-  `NUXT_OIDC_JWKS_HOSTS=www.googleapis.com` lets the keys of Google be fetched but does not change
-  that: Google's access tokens cannot be verified here, and it has no custom scope for the required
-  `caldav`. Supporting Google would need token introspection (`oauth2.googleapis.com/tokeninfo`) and
-  a different scope rule, which are not built.
+### Authentik
+
+- Access tokens are always JWTs, but only with a **signing key** on the provider (RS256, or ES* /
+  EdDSA, with a `kid`); without one they use the client secret (HS256) and cannot be verified, and an
+  encryption key makes them unreadable. Header `typ` is `JWT`; `aud` and `azp` are the client id;
+  `scope` is a string.
+- The issuer is `https://<host>/application/o/<slug>/` **with a trailing slash**, which must be
+  `NUXT_OIDC_ISSUER` exactly.
+- `sub`: the default (a 64-character hash) is safe. The modes that use the user name, e-mail or UPN
+  are mutable and may start with `_` or `.`: a new person who gets a reused name would inherit the old
+  person's calendars, and an id starting with `.` is refused here. Keep the default.
+- Groups: `groups` is an array of names in userinfo (`profile` scope) and, with "Include claims in
+  id_token" (on by default), in the tokens. Names are the keys: a rename is a new group.
+
+### Authelia
+
+- Access tokens are opaque by default. A client with `access_token_signed_response_alg: RS256` gets a
+  JWT (`typ` `at+jwt`, with a `kid`). The client is in `client_id` only (no `azp`); `aud` holds only
+  the audiences granted and may be missing, which is fine because `client_id` binds the token; the
+  scope is an array in `scp`. `sub` is a UUIDv4. The issuer is the root URL, built from the host the
+  request used, without a slash.
+- Groups: `groups` is an array of names, in userinfo by default. A JWT access token carries it only
+  through a `claims_policies` entry that lists it for `access_token`. Name keys.
+
+### Zitadel
+
+- Access tokens are opaque by default; an application can be set to issue JWTs (RS256 by default;
+  RS384/512, ES* and Ed25519 exist). `azp` is the client; `aud` holds every client id of the project
+  and the project id. **Not confirmed:** whether a JWT access token carries `scope` or `scp`; without
+  one, the required scope fails and Zitadel cannot be used. `sub` is a numeric string. The shape of
+  the discovery document was not checked.
+- Groups: there is no `groups` claim. Roles are an object keyed by role name in
+  `urn:zitadel:iam:org:project:roles` (an opt-in), so set `NUXT_OIDC_GROUPS_CLAIM` to that; each role
+  key is a group, with the role key as its key and name.
+
+### Okta
+
+- A **custom authorization server** (API Access Management): JWT access tokens, RS256, a `kid`, the
+  client in `cid`, `scp` as an array, the server's audience in `aud` (`api://default`). The default
+  `sub` of its access token can differ from the userinfo `sub` (login-like against `00u...`), which
+  fails the identity check: set the claim to the user id (unverified). The org authorization server
+  gives opaque tokens and cannot be used.
+- Groups: add a `groups` claim to the access token yourself (names; up to 100 groups per token). Name
+  keys.
+
+### Auth0
+
+- A JWT access token needs an **API audience**; set a default audience on the tenant, and put the API
+  identifier in `NUXT_OIDC_AUDIENCE` (the token's `aud` is that, plus the `/userinfo` URL). Signing is
+  RS256 (an API set to HS256 cannot be used). `azp` or `client_id`, `scope` a string. The issuer is
+  `https://<tenant domain>/` **with a trailing slash**. `sub` looks like `auth0|123` and is accepted.
+- Groups: Auth0 has none built in. An Action adds a **namespaced** claim (`groups` itself is reserved),
+  for example `https://example.com/groups`, and `NUXT_OIDC_GROUPS_CLAIM` names it. Userinfo has it only
+  if it is in the ID token; put it in the access token too, so the fallback can use it. Name keys.
+
+### Amazon Cognito
+
+- JWT access tokens (RS256) with `client_id` and no `aud`, `token_use` `access`, scopes as a string.
+  A custom scope is `<resource-server-id>/<scope>`, so `NUXT_OIDC_REQUIRED_SCOPE` is
+  `<resource-server-id>/caldav`. The issuer is `https://cognito-idp.<region>.amazonaws.com/<pool-id>`;
+  the newer form of the issuer was not checked.
+- Groups: `cognito:groups`, an array of names in the access and ID token; set `NUXT_OIDC_GROUPS_CLAIM`
+  to it. Name keys.
+
+### Microsoft Entra ID
+
+- A tenant-specific issuer, `https://login.microsoftonline.com/<tenant id>/v2.0` (the access token
+  version must be 2 in the app manifest, or the issuer is `https://sts.windows.net/<tenant>/` and its
+  keys are on another host, which is refused). `/common/` does not work. The access token is a JWT
+  only for your **own API**: `NUXT_OIDC_SCOPE` holds the scope `api://<client-id>/caldav` instead of
+  `groups`. The token lists the short scope name in `scp`, a space-separated string, so the default
+  required scope `caldav` should fit (not run). `azp` is the client, `aud` the API's client id. `sub` is different for
+  each application (pairwise); the stable `oid` is not used.
+- Groups: Entra's userinfo is Microsoft Graph, which accepts only a Graph token and never returns
+  groups. The app therefore falls back to the **access token's** `groups` claim (the manifest's
+  `groupMembershipClaims`), as the userinfo refusal comes from another origin than the issuer. The
+  claim holds **GUIDs**, so the Groups page lists GUIDs and `NUXT_OIDC_ADMIN_GROUP` is the GUID of the
+  admin group. A person in more than 200 groups gets a pointer instead: their groups are unknown, so
+  nothing changes and they are not an admin. The claim is as fresh as the token (its lifetime), not as
+  a userinfo answer. The GUIDs are stable ids, so a rename follows.
+
+### Does not work
+
+- **Dex**: its access token has the shape of an ID token and carries no scope.
+- Providers whose access tokens are opaque: Google (per its
+  [token types page](https://docs.cloud.google.com/docs/authentication/token-types), which gives no
+  reason), GitHub, and the Okta org server. `NUXT_OIDC_JWKS_HOSTS=www.googleapis.com` lets the keys of
+  Google be fetched but does not change that: Google's access tokens cannot be verified here, and it
+  has no custom scope for the required `caldav`. Supporting Google would need token introspection
+  (`oauth2.googleapis.com/tokeninfo`) and a different scope rule, which are not built.
+- Any provider that signs with a shared secret or encrypts the access token.

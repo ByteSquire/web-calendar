@@ -153,10 +153,52 @@ describe('absent, empty and malformed', () => {
     expect(parsed.warnings.join('\n').length).toBeLessThan(400)
   })
 
-  it('does not take an entry after a lone uuid for a separate group', () => {
-    // [uuid, 'plain'] is one group: the uuid, named plain.
-    expect(pairs(['3315c15e-4ff7-459a-97de-d176279d4154', 'plain'])).toEqual([
-      ['3315c15e-4ff7-459a-97de-d176279d4154', 'plain'],
+  it('takes entries after an id as its names only in the shape of Kanidm: an SPN, then a short name', () => {
+    const id = '3315c15e-4ff7-459a-97de-d176279d4154'
+    const other = 'a12fec6b-b6d8-4973-8b6f-42dd669f9aca'
+    // id + SPN, id + SPN + short name, and the short name wins over the SPN's local part.
+    expect(pairs([id, 'ops@idm.example.org', other, 'x@idm.example.org', 'finance'])).toEqual([
+      [id, 'ops'],
+      [other, 'finance'],
+    ])
+  })
+
+  it('lets an id stand alone when no SPN follows, and reads what comes after it on its own', () => {
+    const id = '3315c15e-4ff7-459a-97de-d176279d4154'
+    // A plain-name provider with a group called like an id: nothing after it is swallowed.
+    expect(pairs(['plain1', id, 'finance', '/x/y', 'plain2'])).toEqual([
+      ['plain1', 'plain1'],
+      [id, id],
+      ['finance', 'finance'],
+      ['/x/y', 'x.y'],
+      ['plain2', 'plain2'],
+    ])
+    // The same for a lone id followed by a name.
+    expect(pairs([id, 'plain'])).toEqual([
+      [id, id],
+      ['plain', 'plain'],
+    ])
+  })
+
+  it('does not take a path, a second id or a malformed SPN for the names of an id', () => {
+    const id = '3315c15e-4ff7-459a-97de-d176279d4154'
+    const other = 'a12fec6b-b6d8-4973-8b6f-42dd669f9aca'
+    expect(pairs([id, '/team/ops'])).toEqual([
+      [id, id],
+      ['/team/ops', 'team.ops'],
+    ])
+    expect(pairs([id, other])).toEqual([
+      [id, id],
+      [other, other],
+    ])
+    for (const bad of ['@idm.example.org', 'ops@', 'a@b@c']) {
+      expect(pairs([id, bad]).map(([key]) => key)[0]).toBe(id)
+      expect(pairs([id, bad])[0]![1]).toBe(id)
+    }
+    // After an SPN a path or a second SPN is not a short name either.
+    expect(pairs([id, 'ops@idm.example.org', '/team/ops'])).toEqual([
+      [id, 'ops'],
+      ['/team/ops', 'team.ops'],
     ])
   })
 

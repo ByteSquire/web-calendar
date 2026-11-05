@@ -83,12 +83,13 @@ anything.
 **How an entry becomes a group.** A group has a _key_, which identifies it at the provider, and a _name_,
 which is what the app shows and what rules and Radicale use.
 
-| Entry in the claim                                                                              | Key       | Name                                                                                                      |
-| ----------------------------------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------- |
-| A UUID, with the entries after it up to the next UUID (Kanidm `groups`; Entra sends bare GUIDs) | the UUID  | the first of them without `@`, else the part before the `@` of the first, else the UUID (Entra: the GUID) |
-| Starts with `/` (Keycloak full path)                                                            | the path  | the segments joined by `.` (`/team/ops` is `team.ops`)                                                    |
-| Contains `@` (an SPN, Kanidm `groups_spn`)                                                      | the entry | the part before the `@`                                                                                   |
-| Anything else (Authentik, Authelia, Okta, Cognito, Auth0, Zitadel)                              | the entry | the entry                                                                                                 |
+| Entry in the claim                                                                            | Key       | Name                                                   |
+| --------------------------------------------------------------------------------------------- | --------- | ------------------------------------------------------ |
+| A UUID followed by an SPN (Kanidm `groups`), and a short name after that (with `groups_name`) | the UUID  | the short name, else the part of the SPN before `@`    |
+| A UUID with no SPN after it (Entra sends bare GUIDs; or a plain-name group called like an id) | the UUID  | the UUID itself; what follows is read on its own       |
+| Starts with `/` (Keycloak full path)                                                          | the path  | the segments joined by `.` (`/team/ops` is `team.ops`) |
+| Contains `@` (an SPN, Kanidm `groups_spn`)                                                    | the entry | the part before the `@`                                |
+| Anything else (Authentik, Authelia, Okta, Cognito, Auth0, Zitadel)                            | the entry | the entry                                              |
 
 A name is cleaned to what Radicale's group file takes: letters, digits, `_`, `.` and `-`, runs of other
 characters become one `_`, at most 64 characters, starting with a letter or digit. Two keys that give

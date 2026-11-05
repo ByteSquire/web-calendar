@@ -126,6 +126,17 @@ export function matchesAdminGroup(entries: readonly string[], adminGroup: string
   })
 }
 
+/** `name@domain`: one `@`, text on both sides, not a path. */
+function isSpn(entry: string): boolean {
+  const parts = entry.split('@')
+  return parts.length === 2 && parts[0] !== '' && parts[1] !== '' && !entry.startsWith('/')
+}
+
+/** A short group name after an SPN: no `@`, not a path, not an id. */
+function isShortName(entry: string): boolean {
+  return !entry.includes('@') && !entry.startsWith('/') && !UUID.test(entry)
+}
+
 /** One group as it is read, before names are made safe and the groups are limited. */
 interface Draft {
   key: string
@@ -139,9 +150,10 @@ interface Draft {
  * memberships alone. An empty array is a claim: the person is in no group.
  *
  * Per entry, in order:
- * 1. a UUID starts a group (its key); the entries after it, up to the next UUID, belong to it: its
- *    name is the first of them without `@`, else the part of the first one before `@`, else the UUID
- *    (Kanidm `[uuid, spn]` and `[uuid, spn, name]`, Entra `[guid]`);
+ * 1. a UUID is a group (its key). If an SPN follows it, the SPN belongs to it, and so does a short
+ *    name after the SPN; the name is the short name, else the part of the SPN before `@` (Kanidm
+ *    `[uuid, spn]` and `[uuid, spn, name]`). A UUID with no SPN after it stands alone and is its own
+ *    name (Entra `[guid]`, or a group of a plain-name provider called like an id);
  * 2. an entry starting with `/` is a path (Keycloak): the key is the path, the name its segments
  *    joined with `.`;
  * 3. an entry with `@` is an SPN: the key is the entry, the name the part before `@`;
@@ -156,19 +168,12 @@ export function parseGroupsClaim(value: unknown, options: ClaimOptions): ParsedC
   if (read.dropped > 0) warnings.push(`${read.dropped} entries of the groups claim are not text`)
 
   const drafts: Draft[] = []
-  // The UUID group the next entries belong to, until another UUID or a non-attachable entry.
-  let open: { draft: Draft; names: string[] } | undefined
-  const finishOpen = () => {
-    if (!open) return
-    const first = open.names[0]
-    const plain = open.names.find((entry) => !entry.includes('@'))
-    open.draft.nameFrom = plain ?? (first !== undefined ? first.split('@')[0]! : open.draft.key)
-    drafts.push(open.draft)
-    open = undefined
-  }
-
-  for (const entry of read.entries) {
-    if (entry === '' || entry.length > MAX_ENTRY_LENGTH) {
+  const entries = read.entries
+  const usable = (entry: string | undefined): entry is string =>
+    entry !== undefined && entry !== '' && entry.length <= MAX_ENTRY_LENGTH
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i]!
+    if (!usable(entry)) {
       warnings.push(
         entry === ''
           ? 'an empty entry of the groups claim was skipped'
@@ -177,10 +182,19 @@ export function parseGroupsClaim(value: unknown, options: ClaimOptions): ParsedC
       continue
     }
     if (UUID.test(entry)) {
-      finishOpen()
-      open = { draft: { key: entry, nameFrom: entry }, names: [] }
-    } else if (open) {
-      open.names.push(entry)
+      // Kanidm writes a group as its id and its SPN, with the short name after them when the scope
+      // for names is asked too. Only that shape makes the entries after an id its names; an id
+      // that is not followed by an SPN stands alone (Entra's object ids, or a group of a provider
+      // with plain names that happens to be called like an id).
+      const spn = entries[i + 1]
+      if (usable(spn) && isSpn(spn)) {
+        const alias = entries[i + 2]
+        const named = usable(alias) && isShortName(alias)
+        drafts.push({ key: entry, nameFrom: named ? alias : spn.split('@')[0]! })
+        i += named ? 2 : 1
+      } else {
+        drafts.push({ key: entry, nameFrom: entry })
+      }
     } else if (entry.startsWith('/')) {
       drafts.push({ key: entry, nameFrom: entry.split('/').filter(Boolean).join('.') })
     } else if (entry.includes('@')) {
@@ -189,7 +203,6 @@ export function parseGroupsClaim(value: unknown, options: ClaimOptions): ParsedC
       drafts.push({ key: entry, nameFrom: entry })
     }
   }
-  finishOpen()
 
   const groups: ClaimGroup[] = []
   const seen = new Set<string>()

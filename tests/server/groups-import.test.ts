@@ -75,11 +75,11 @@ describe('candidates', () => {
   it('flags both keys that share a name, and unflags them when the provider renames one', () => {
     const one = '3315c15e-4ff7-459a-97de-d176279d4154'
     const two = 'a12fec6b-b6d8-4973-8b6f-42dd669f9aca'
-    run(ALICE, claim(one, 'staff', two, 'Staff'))
+    run(ALICE, claim(one, 'staff@idm.example.org', two, 'Staff@idm.example.org'))
     const flags = () => candidates().map((c) => (c as { conflict: number }).conflict)
     expect(flags()).toEqual([1, 1])
     // The second group is renamed at the provider: no name is shared any more.
-    run(BOB, claim(two, 'staff2'))
+    run(BOB, claim(two, 'staff2@idm.example.org'))
     expect(candidates()).toEqual([
       { id: one, name: 'staff', conflict: 0 },
       { id: two, name: 'staff2', conflict: 0 },

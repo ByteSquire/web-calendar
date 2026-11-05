@@ -21,7 +21,7 @@ import {
 } from '../../db/groups'
 import { listCalendarAcl } from '../../db/calendar-acl'
 import type { CalendarRow, GroupRow } from '../../db/types'
-import { USERS_GROUP } from '../group-sync/config'
+import { USERS_GROUP } from './config'
 import { ApiError, conflict, toBadRequest, type FieldError } from '../api/errors'
 import type { CalendarAclInput } from '../../db/calendar-acl'
 import { MAX_GROUPS, type ShareInput } from './rules'
@@ -31,7 +31,7 @@ export function reservedGroupNames(adminGroup: string): string[] {
   return [adminGroup, USERS_GROUP]
 }
 
-/** A new app group: the name must be free of both sources and of the reserved names. */
+/** A new app group: the name must be free of every source and of the reserved names. */
 export function createCustomGroup(db: Database, name: string, adminGroup: string): GroupRow {
   const reserved = reservedGroupNames(adminGroup).map((item) => item.toLowerCase())
   if (reserved.includes(name.toLowerCase()) || groupNameTaken(db, name)) {
@@ -45,7 +45,8 @@ export function createCustomGroup(db: Database, name: string, adminGroup: string
 
 /**
  * Deletes an app group that owns no calendar, with the rules that name it (calendar and resource
- * rules; the sharing writer removes the shares). Kanidm groups are read-only here.
+ * rules; the sharing writer removes the shares). Imported groups and the group of everyone are
+ * not deleted here.
  */
 export function deleteCustomGroup(
   db: Database,
@@ -87,23 +88,32 @@ export function replaceMembers(
 }
 
 function refuseImported(group: GroupRow): void {
-  if (group.source !== 'app') {
-    throw new ApiError(403, 'A group from Kanidm is read-only here', { code: 'imported' })
+  if (group.source === 'oidc') {
+    throw new ApiError(403, 'A group from the identity provider is read-only here', {
+      code: 'imported',
+    })
+  }
+  if (group.source === 'everyone') {
+    throw new ApiError(403, 'The group of everyone who signed in cannot be changed', {
+      code: 'imported',
+    })
   }
 }
 
 /**
  * The one decision of the group routes that reads: a member of the group, or an admin (who may do
  * everything in every group). The member test is the database's; the admin test is asked only when
- * the caller is not a member. Returns false rather than throwing: the route answers 403.
+ * the caller is not a member. Returns false rather than throwing: the route answers 403. `since` is
+ * `signinCutoff(...)`: the group of everyone holds the people seen since then.
  */
 export async function mayActForGroup(
   db: Database,
   group: GroupRow,
   sub: string,
   isAdmin: () => Promise<boolean>,
+  since: string,
 ): Promise<boolean> {
-  if (isGroupMember(db, group.id, sub)) return true
+  if (isGroupMember(db, group.id, sub, since)) return true
   return isAdmin()
 }
 

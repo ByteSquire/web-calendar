@@ -36,7 +36,7 @@ beforeAll(async () => {
 /** A verifier whose resolver serves the keys per client (null: the provider is down). */
 function setup(
   serve: Record<string, () => TestKey[] | null> = { 'web-calendar': () => [key] },
-  extra: { clients?: (typeof CLIENT)[]; keyCooldownSec?: number } = {},
+  extra: { clients?: (typeof CLIENT)[]; keyCooldownSec?: number; groupsClaim?: string } = {},
 ) {
   const clock = { ms: NOW_MS }
   const resolver = vi.fn<KeyResolver>(async (client) => {
@@ -49,6 +49,7 @@ function setup(
     requiredScope: 'caldav',
     keyResolver: resolver,
     keyCooldownSec: extra.keyCooldownSec,
+    groupsClaim: extra.groupsClaim,
     now: () => clock.ms,
   })
   return { verifier, resolver, clock }
@@ -73,6 +74,55 @@ describe('createTokenVerifier: the good token', () => {
       clientId: 'web-calendar',
       scopes: ['caldav', 'email', 'groups', 'openid', 'profile'],
       exp: NOW + 900,
+      // Kanidm keeps the groups out of access tokens (they are in userinfo and the ID token).
+      groups: undefined,
+      groupsOverage: false,
+    })
+  })
+
+  describe('the groups claim of the token', () => {
+    const groupsOf = async (claims: Record<string, unknown>, groupsClaim?: string) => {
+      const { verifier } = setup(undefined, { groupsClaim })
+      const { groups, groupsOverage } = await verifier.verify(
+        await mintAccessToken(key, { claims }),
+      )
+      return { groups, groupsOverage }
+    }
+
+    it('reads the entries of the claim, signature checked with the rest of the token', async () => {
+      expect(await groupsOf({ groups: ['/team/ops', 'staff'] })).toEqual({
+        groups: ['/team/ops', 'staff'],
+        groupsOverage: false,
+      })
+    })
+
+    it('reads the claim that is configured, namespaced names included', async () => {
+      expect(
+        await groupsOf({ 'cognito:groups': ['admins'], groups: ['not-this'] }, 'cognito:groups'),
+      ).toMatchObject({ groups: ['admins'] })
+      expect(
+        await groupsOf({ 'https://example.org/groups': ['x'] }, 'https://example.org/groups'),
+      ).toMatchObject({ groups: ['x'] })
+    })
+
+    it('has no groups when the claim is missing or is not a list, text or object', async () => {
+      for (const claims of [{}, { groups: null }, { groups: 5 }, { groups: true }]) {
+        expect(await groupsOf(claims)).toEqual({ groups: undefined, groupsOverage: false })
+      }
+    })
+
+    it('takes only the claim of the token itself, not an inherited property', async () => {
+      expect(await groupsOf({}, 'constructor')).toMatchObject({ groups: undefined })
+      expect(await groupsOf({}, 'toString')).toMatchObject({ groups: undefined })
+    })
+
+    it("sees Entra's pointer instead of the claim as an overage, not as no groups", async () => {
+      expect(
+        await groupsOf({
+          _claim_names: { groups: 'src1' },
+          _claim_sources: { src1: { endpoint: 'https://graph.example/getMemberObjects' } },
+        }),
+      ).toEqual({ groups: undefined, groupsOverage: true })
     })
   })
 

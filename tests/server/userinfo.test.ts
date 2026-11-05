@@ -2,10 +2,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   fetchUserinfo,
-  isAdminByGroups,
   type UserinfoRequest,
   type UserinfoResult,
 } from '../../server/utils/api/userinfo'
+import { matchesAdminGroup } from '../../server/utils/groups/claim'
 
 const ISSUER = 'https://idm.example.org/oauth2/openid/web-calendar'
 const SUB = '189c6a24-f9cb-437b-8f58-b5cc8d7f909e'
@@ -93,15 +93,22 @@ describe('fetchUserinfo', () => {
     expect(result).toMatchObject({ ok: true, profile: { groups } })
   })
 
-  it('drops group entries that are not strings and treats a non-list as "no claim"', async () => {
+  it('drops group entries that are not strings and treats a number or boolean as "no claim"', async () => {
     const mixed = await run(async () => json({ ...ALICE, groups: ['a', 3, null, { x: 1 }, 'b'] }))
     expect(mixed).toMatchObject({ ok: true, profile: { groups: ['a', 'b'] } })
 
-    for (const groups of [undefined, null, 'calendar_admins', { 0: 'calendar_admins' }]) {
+    for (const groups of [undefined, null, 7, true]) {
       const result = await run(async () => json({ ...ALICE, groups }))
       expect(result).toMatchObject({ ok: true })
       expect((result as { profile: { groups?: string[] } }).profile.groups).toBeUndefined()
     }
+    // One text is one group; an object gives the names that stand for something (Zitadel roles).
+    expect(await run(async () => json({ ...ALICE, groups: 'staff' }))).toMatchObject({
+      profile: { groups: ['staff'] },
+    })
+    expect(
+      await run(async () => json({ ...ALICE, groups: { admin: { o: 'x' }, off: false } })),
+    ).toMatchObject({ profile: { groups: ['admin'] } })
   })
 
   it('leaves out profile fields that are missing, empty or not strings', async () => {
@@ -201,7 +208,7 @@ describe('fetchUserinfo', () => {
   })
 })
 
-describe('isAdminByGroups', () => {
+describe('the admin group against a groups claim (matchesAdminGroup)', () => {
   it.each([
     [['calendar_admins'], true],
     [['idm_all_persons', 'calendar_admins'], true],
@@ -220,29 +227,57 @@ describe('isAdminByGroups', () => {
     [[''], false],
     [[], false],
   ])('%j -> %s', (groups, expected) => {
-    expect(isAdminByGroups(groups, 'calendar_admins')).toBe(expected)
+    expect(matchesAdminGroup(groups, 'calendar_admins')).toBe(expected)
   })
 
   it('treats an empty admin group as "nobody is admin"', () => {
-    expect(isAdminByGroups(['', '@idm.example.org', 'calendar_admins'], '')).toBe(false)
+    expect(matchesAdminGroup(['', '@idm.example.org', 'calendar_admins'], '')).toBe(false)
   })
 
   it('follows the configured group name', () => {
-    expect(isAdminByGroups(['staff@idm.example.org'], 'staff')).toBe(true)
-    expect(isAdminByGroups(['calendar_admins'], 'staff')).toBe(false)
+    expect(matchesAdminGroup(['staff@idm.example.org'], 'staff')).toBe(true)
+    expect(matchesAdminGroup(['calendar_admins'], 'staff')).toBe(false)
   })
 
   it('compares a path or an id exactly, as Keycloak and Entra write them', () => {
     // Keycloak's "Full group path": the admin group is then configured as the path.
-    expect(isAdminByGroups(['/team/ops', '/calendar_admins'], '/calendar_admins')).toBe(true)
-    expect(isAdminByGroups(['/team/ops'], '/team/ops')).toBe(true)
+    expect(matchesAdminGroup(['/team/ops', '/calendar_admins'], '/calendar_admins')).toBe(true)
+    expect(matchesAdminGroup(['/team/ops'], '/team/ops')).toBe(true)
     // Not by its last segment, by a parent, or by a longer path.
-    expect(isAdminByGroups(['/team/ops'], 'ops')).toBe(false)
-    expect(isAdminByGroups(['/team/ops'], '/team')).toBe(false)
-    expect(isAdminByGroups(['/team/ops/extra'], '/team/ops')).toBe(false)
+    expect(matchesAdminGroup(['/team/ops'], 'ops')).toBe(false)
+    expect(matchesAdminGroup(['/team/ops'], '/team')).toBe(false)
+    expect(matchesAdminGroup(['/team/ops/extra'], '/team/ops')).toBe(false)
     // An Entra group is its object id.
     const id = '6f1c2b0e-4d51-4c7e-9a52-0b6f3c1d2e77'
-    expect(isAdminByGroups([id], id)).toBe(true)
-    expect(isAdminByGroups([id.toUpperCase()], id)).toBe(false)
+    expect(matchesAdminGroup([id], id)).toBe(true)
+    expect(matchesAdminGroup([id.toUpperCase()], id)).toBe(false)
+  })
+
+  it('takes an SPN, a path joined by dots and the exact name, and nothing that is merely alike', () => {
+    expect(matchesAdminGroup(['/team/ops'], 'team.ops')).toBe(true)
+    expect(matchesAdminGroup(['staff@idm.example.org'], 'staff')).toBe(true)
+    expect(matchesAdminGroup(['authentik Admins'], 'authentik Admins')).toBe(true)
+    // Cleaning a name for the group file is not a way to the admin group: only an administrator of
+    // the provider should be able to make somebody an admin here, not whoever can name a group.
+    expect(matchesAdminGroup(['authentik Admins'], 'authentik_Admins')).toBe(false)
+    for (const alike of [
+      'calendar admins',
+      'calendar+admins',
+      'calendar|admins',
+      'calendar/admins',
+      'calendar   admins',
+      'calendaréadmins',
+      ' calendar_admins',
+      'calendar_admins ',
+    ]) {
+      expect(matchesAdminGroup([alike], 'calendar_admins')).toBe(false)
+    }
+    // An SPN has one @ (a name with two is something else), and a longer name is another group.
+    expect(matchesAdminGroup(['calendar_admins@a@b'], 'calendar_admins')).toBe(false)
+    expect(matchesAdminGroup(['x'.repeat(70)], 'x'.repeat(64))).toBe(false)
+    // Cleaning does not trim, and a parent, a child or a neighbour is no match either.
+    expect(matchesAdminGroup(['/team'], 'team.ops')).toBe(false)
+    expect(matchesAdminGroup(['/team/ops/extra'], 'team.ops')).toBe(false)
+    expect(matchesAdminGroup(['team.ops.extra'], 'team.ops')).toBe(false)
   })
 })

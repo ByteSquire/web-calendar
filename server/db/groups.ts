@@ -1,5 +1,6 @@
 import type { Database } from 'better-sqlite3'
-import type { FileGroup, ImportedGroup } from '../utils/group-sync/types'
+import type { FileGroup } from '../utils/groups/htgroup'
+import { isValidSubject } from '../utils/auth/subject'
 import type { CalendarRow, GroupRow, GroupSource } from './types'
 
 // Rows of the `groups`, `group_members` and group-owned `calendars` tables (migration 009). The
@@ -28,23 +29,36 @@ export function findGroupByName(db: Database, name: string): GroupRow | undefine
   return db.prepare<[string], GroupRow>('SELECT * FROM groups WHERE name = ?').get(name)
 }
 
+/** The groups that count against the limit: the built-in group of everyone is not one of them. */
 export function countGroups(db: Database): number {
-  return db.prepare<[], { n: number }>('SELECT COUNT(*) AS n FROM groups').get()!.n
+  return db
+    .prepare<[], { n: number }>(`SELECT COUNT(*) AS n FROM groups WHERE source <> 'everyone'`)
+    .get()!.n
 }
 
-/** Every group, by name; `member` says whether `sub` is in it. */
-export function listGroupSummaries(db: Database, sub: string): GroupSummaryRow[] {
+/**
+ * Every group, by name; `member` says whether `sub` is in it. The group of everyone has no stored
+ * members: it counts, and holds `sub`, by `users.last_seen_at >= since` (see `signinCutoff`).
+ */
+export function listGroupSummaries(db: Database, sub: string, since: string): GroupSummaryRow[] {
   return db
     .prepare<
-      [string],
+      { sub: string; since: string },
       { id: number; name: string; source: GroupSource; memberCount: number; member: number }
     >(
       `SELECT g.id, g.name, g.source,
-         (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id) AS memberCount,
-         EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id AND m.sub = ?) AS member
+         CASE g.source
+           WHEN 'everyone' THEN (SELECT COUNT(*) FROM users u WHERE u.last_seen_at >= @since)
+           ELSE (SELECT COUNT(*) FROM group_members m WHERE m.group_id = g.id)
+         END AS memberCount,
+         CASE g.source
+           WHEN 'everyone' THEN EXISTS (
+             SELECT 1 FROM users u WHERE u.oidc_sub = @sub AND u.last_seen_at >= @since)
+           ELSE EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id AND m.sub = @sub)
+         END AS member
        FROM groups g ORDER BY g.name COLLATE NOCASE, g.id`,
     )
-    .all(sub)
+    .all({ sub, since })
     .map((row) => ({ ...row, member: row.member === 1 }))
 }
 
@@ -59,22 +73,32 @@ export function deleteGroupRow(db: Database, id: number): boolean {
   return db.prepare('DELETE FROM groups WHERE id = ?').run(id).changes > 0
 }
 
-export function isGroupMember(db: Database, groupId: number, sub: string): boolean {
+/**
+ * Whether `sub` is in the group. The group of everyone holds a person seen since `since`; every
+ * other group, a person in its stored members.
+ */
+export function isGroupMember(db: Database, groupId: number, sub: string, since: string): boolean {
   return (
     db
-      .prepare<[number, string], { one: number }>(
-        'SELECT 1 AS one FROM group_members WHERE group_id = ? AND sub = ?',
+      .prepare<{ id: number; sub: string; since: string }, { one: number }>(
+        `SELECT 1 AS one FROM groups g WHERE g.id = @id AND (
+           (g.source <> 'everyone' AND EXISTS (
+             SELECT 1 FROM group_members m WHERE m.group_id = g.id AND m.sub = @sub))
+           OR (g.source = 'everyone' AND EXISTS (
+             SELECT 1 FROM users u WHERE u.oidc_sub = @sub AND u.last_seen_at >= @since)))`,
       )
-      .get(groupId, sub) !== undefined
+      .get({ id: groupId, sub, since }) !== undefined
   )
 }
 
+/** The stored members of a group; none for the group of everyone (it is counted, never listed). */
 export function listGroupMembers(db: Database, groupId: number): GroupMemberView[] {
   return db
     .prepare<[number], GroupMemberView>(
       `SELECT m.sub AS sub, u.name AS name, u.username AS username
-       FROM group_members m LEFT JOIN users u ON u.oidc_sub = m.sub
-       WHERE m.group_id = ?
+       FROM group_members m JOIN groups g ON g.id = m.group_id
+       LEFT JOIN users u ON u.oidc_sub = m.sub
+       WHERE m.group_id = ? AND g.source <> 'everyone'
        ORDER BY COALESCE(NULLIF(u.name, ''), u.username, m.sub) COLLATE NOCASE, m.sub`,
     )
     .all(groupId)
@@ -111,65 +135,52 @@ export function replaceGroupMembers(
   return { added, removed }
 }
 
-/** The app's groups with their members, for the htgroup file: members are `sub` UUIDs. */
-export function listCustomGroupsForFile(db: Database): FileGroup[] {
+/**
+ * Every group of the group file with its members: the app's and the imported ones with their stored
+ * members, and the group of everyone with the people seen since `since`. A member that is not a
+ * valid user id (nothing writes one; this is the last guard before the file) is left out and
+ * counted, so one bad row cannot stop the whole file.
+ */
+export function listGroupsForFile(
+  db: Database,
+  since: string,
+): { groups: FileGroup[]; skipped: number } {
   const rows = db
-    .prepare<[], { name: string; sub: string | null }>(
-      `SELECT g.name AS name, m.sub AS sub FROM groups g
+    .prepare<[], { name: string; source: GroupSource; sub: string | null }>(
+      `SELECT g.name AS name, g.source AS source, m.sub AS sub FROM groups g
        LEFT JOIN group_members m ON m.group_id = g.id
-       WHERE g.source = 'app' ORDER BY g.name, m.sub`,
+       WHERE g.source <> 'everyone' ORDER BY g.name, m.sub`,
     )
     .all()
+  let skipped = 0
   const groups = new Map<string, string[]>()
   for (const row of rows) {
     const members = groups.get(row.name) ?? []
-    if (row.sub !== null) members.push(row.sub)
+    if (row.sub !== null) {
+      if (isValidSubject(row.sub)) members.push(row.sub)
+      else skipped += 1
+    }
     groups.set(row.name, members)
   }
-  return [...groups].map(([name, members]) => ({ name, members }))
-}
-
-/**
- * Stores what the sync read from Kanidm, in one transaction. A name that belongs to an app group
- * is skipped (the app's group wins). A Kanidm group that is no longer in `groups` loses its
- * members; its row goes too unless it owns a calendar (the rules naming it keep their text).
- */
-export function replaceImportedGroups(
-  db: Database,
-  imported: readonly ImportedGroup[],
-): { created: number; updated: number; cleared: number; removed: number } {
-  const names = new Set(imported.map((group) => group.name))
-  const counts = { created: 0, updated: 0, cleared: 0, removed: 0 }
-  db.transaction(() => {
-    const insert = db.prepare(
-      `INSERT INTO groups (name, source) VALUES (?, 'kanidm') ON CONFLICT (name) DO NOTHING`,
+  const everyone = db
+    .prepare<[], { name: string }>(`SELECT name FROM groups WHERE source = 'everyone'`)
+    .pluck()
+    .all() as unknown as string[]
+  const people = db
+    .prepare<[string], string>(
+      'SELECT oidc_sub FROM users WHERE last_seen_at >= ? ORDER BY oidc_sub',
     )
-    for (const group of imported) {
-      const inserted = insert.run(group.name).changes > 0
-      const row = findGroupByName(db, group.name)
-      // An app group with this name keeps its members; this run does not touch it.
-      if (!row || row.source !== 'kanidm') continue
-      if (inserted) counts.created += 1
-      else counts.updated += 1
-      if (!group.keepMembers) replaceGroupMembers(db, row.id, group.members)
+    .pluck()
+    .all(since)
+  for (const name of everyone) {
+    const members: string[] = []
+    for (const sub of people) {
+      if (isValidSubject(sub)) members.push(sub)
+      else skipped += 1
     }
-    const vanished = db
-      .prepare<[], GroupRow>(`SELECT * FROM groups WHERE source = 'kanidm' ORDER BY id`)
-      .all()
-      .filter((row) => !names.has(row.name))
-    for (const row of vanished) {
-      counts.cleared += 1
-      replaceGroupMembers(db, row.id, [])
-      const owns = db
-        .prepare<[number], { one: number }>('SELECT 1 AS one FROM calendars WHERE group_id = ?')
-        .get(row.id)
-      if (owns === undefined) {
-        db.prepare('DELETE FROM groups WHERE id = ?').run(row.id)
-        counts.removed += 1
-      }
-    }
-  })()
-  return counts
+    groups.set(name, members)
+  }
+  return { groups: [...groups].map(([name, members]) => ({ name, members })), skipped }
 }
 
 export function findGroupCalendar(

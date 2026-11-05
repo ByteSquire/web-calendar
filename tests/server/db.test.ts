@@ -78,6 +78,7 @@ describe('runMigrations', () => {
       'group_members',
       'groups',
       'ical_subscriptions',
+      'oidc_group_candidates',
       'resource_acl',
       'resources',
       'schema_migrations',

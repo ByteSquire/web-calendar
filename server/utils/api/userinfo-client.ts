@@ -16,6 +16,8 @@ export interface UserinfoLookup {
   accessToken: string | null
   /** When the token expires, in ms since the epoch: an answer is never kept longer than that. */
   tokenExpiresAtMs?: number | null
+  /** The claim the groups are in (`NUXT_OIDC_GROUPS_CLAIM`); `groups` when not given. */
+  groupsClaim?: string
 }
 
 export interface UserinfoClient {
@@ -30,6 +32,7 @@ export interface UserinfoClientOptions {
   fetch: typeof fetch
   /** The userinfo endpoint of an issuer, from its discovery document; null when it has none. */
   endpointOf: (issuer: string) => string | null
+
   /** Milliseconds, like `Date.now`. */
   now?: () => number
   ttlMs?: number
@@ -60,6 +63,15 @@ export function tokenExpiresAtMs(token: string | null): number | null {
   }
 }
 
+/** Whether `endpoint` is on another origin than `issuer` (Entra's userinfo is on Microsoft Graph). */
+function isOtherOrigin(endpoint: string, issuer: string): boolean {
+  try {
+    return new URL(endpoint).origin !== new URL(issuer).origin
+  } catch {
+    return false
+  }
+}
+
 export function createUserinfoClient(options: UserinfoClientOptions): UserinfoClient {
   const clock = options.now ?? Date.now
   const ttlMs = options.ttlMs ?? USERINFO_TTL_MS
@@ -69,10 +81,14 @@ export function createUserinfoClient(options: UserinfoClientOptions): UserinfoCl
   const entries = new Map<string, Entry>()
   const inFlight = new Map<string, Promise<UserinfoResult>>()
 
+  // The answer depends on the claim the groups are read from, so the claim is part of the key: a
+  // call for another claim never joins or reuses it.
+  const keyOf = (lookup: UserinfoLookup) => `${lookup.groupsClaim ?? 'groups'}\u0000${lookup.sub}`
+
   function remember(lookup: UserinfoLookup, result: UserinfoResult, now: number): void {
     const lifetime = result.ok ? ttlMs : failureTtlMs
     const expiresAt = Math.min(now + lifetime, lookup.tokenExpiresAtMs ?? Infinity)
-    entries.delete(lookup.sub)
+    entries.delete(keyOf(lookup))
     if (expiresAt <= now) return
     if (entries.size >= maxEntries) {
       for (const [sub, entry] of entries) {
@@ -80,7 +96,7 @@ export function createUserinfoClient(options: UserinfoClientOptions): UserinfoCl
       }
       while (entries.size >= maxEntries) entries.delete(entries.keys().next().value!)
     }
-    entries.set(lookup.sub, { result, storedAt: now, expiresAt })
+    entries.set(keyOf(lookup), { result, storedAt: now, expiresAt })
   }
 
   return {
@@ -93,15 +109,16 @@ export function createUserinfoClient(options: UserinfoClientOptions): UserinfoCl
           accessToken: lookup.accessToken,
           expectedSub: lookup.sub,
           fetch: options.fetch,
+          groupsClaim: lookup.groupsClaim,
         })
       }
 
       const now = clock()
-      const kept = entries.get(lookup.sub)
+      const kept = entries.get(keyOf(lookup))
       if (kept && kept.expiresAt > now && now - kept.storedAt < maxAgeMs) {
         return Promise.resolve(kept.result)
       }
-      const running = inFlight.get(lookup.sub)
+      const running = inFlight.get(keyOf(lookup))
       if (running) return running
 
       const call = fetchUserinfo({
@@ -110,13 +127,18 @@ export function createUserinfoClient(options: UserinfoClientOptions): UserinfoCl
         expectedSub: lookup.sub,
         fetch: options.fetch,
         timeoutMs: options.timeoutMs,
-      }).then((result) => {
+        groupsClaim: lookup.groupsClaim,
+      }).then((fetched) => {
+        const result: UserinfoResult =
+          !fetched.ok && fetched.reason === 'status' && isOtherOrigin(endpoint, lookup.issuer)
+            ? { ...fetched, otherOrigin: true }
+            : fetched
         remember(lookup, result, clock())
         return result
       })
-      inFlight.set(lookup.sub, call)
+      inFlight.set(keyOf(lookup), call)
       // fetchUserinfo never rejects, so this only runs after the answer is stored.
-      void call.finally(() => inFlight.delete(lookup.sub))
+      void call.finally(() => inFlight.delete(keyOf(lookup)))
       return call
     },
     clear() {

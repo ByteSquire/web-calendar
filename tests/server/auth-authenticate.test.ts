@@ -5,11 +5,20 @@ import { AuthError } from '../../server/utils/auth/errors'
 import { createBasicThrottle } from '../../server/utils/auth/throttle'
 
 const SUB = '189c6a24-f9cb-437b-8f58-b5cc8d7f909e'
+/** What a bearer identity carries when the token has no groups claim. */
+const NO_GROUPS = { entries: undefined, overage: false }
 
 function setup(overrides: Partial<AuthDeps> = {}) {
   const verify = vi.fn(async (token: string) => {
     if (token !== 'good.jwt.token') throw new AuthError('expired')
-    return { sub: SUB, clientId: 'web-calendar', scopes: ['caldav'], exp: 1 }
+    return {
+      sub: SUB,
+      clientId: 'web-calendar',
+      scopes: ['caldav'],
+      exp: 1,
+      groups: undefined,
+      groupsOverage: false,
+    }
   })
   const verifyAppToken = vi.fn((username: string, token: string) =>
     username === 'alice' && token === 'wcal_secret:with:colons' ? { sub: SUB } : null,
@@ -34,7 +43,16 @@ async function failure(promise: Promise<unknown>): Promise<AuthError> {
 /** A caller whose bearer token and app token both belong to `sub`. */
 function asSub(sub: string, overrides: Partial<AuthDeps> = {}) {
   return setup({
-    verifier: { verify: async () => ({ sub, clientId: 'c', scopes: [], exp: 1 }) },
+    verifier: {
+      verify: async () => ({
+        sub,
+        clientId: 'c',
+        scopes: [],
+        exp: 1,
+        groups: undefined,
+        groupsOverage: false,
+      }),
+    },
     verifyAppToken: () => ({ sub }),
     ...overrides,
   })
@@ -43,9 +61,36 @@ function asSub(sub: string, overrides: Partial<AuthDeps> = {}) {
 describe('authenticateRequest', () => {
   it('sends a bearer token to the verifier', async () => {
     const { call, verify, verifyAppToken } = setup()
-    await expect(call('Bearer good.jwt.token')).resolves.toEqual({ sub: SUB, via: 'bearer' })
+    await expect(call('Bearer good.jwt.token')).resolves.toEqual({
+      sub: SUB,
+      via: 'bearer',
+      tokenGroups: NO_GROUPS,
+    })
     expect(verify).toHaveBeenCalledWith('good.jwt.token')
     expect(verifyAppToken).not.toHaveBeenCalled()
+  })
+
+  it('carries the groups claim of the verified token on a bearer identity, and none on an app token', async () => {
+    const withGroups = asSub(SUB, {
+      verifier: {
+        verify: async () => ({
+          sub: SUB,
+          clientId: 'c',
+          scopes: [],
+          exp: 1,
+          groups: ['staff', '/team/ops'],
+          groupsOverage: false,
+        }),
+      },
+    })
+    await expect(withGroups.call('Bearer a.b.c')).resolves.toEqual({
+      sub: SUB,
+      via: 'bearer',
+      tokenGroups: { entries: ['staff', '/team/ops'], overage: false },
+    })
+    // An app token has no claims: its identity carries no groups.
+    const identity = await withGroups.call(basic('alice:x'))
+    expect(identity).toEqual({ sub: SUB, via: 'app-token' })
   })
 
   it('sends Basic credentials to the app token check, splitting at the first colon', async () => {
@@ -219,7 +264,11 @@ describe('authenticateRequest', () => {
     'x'.repeat(255),
   ])('takes the id the provider sends as it is, case and symbols kept (%j)', async (sub) => {
     const caller = asSub(sub)
-    await expect(caller.call('Bearer a.b.c')).resolves.toEqual({ sub, via: 'bearer' })
+    await expect(caller.call('Bearer a.b.c')).resolves.toEqual({
+      sub,
+      via: 'bearer',
+      tokenGroups: NO_GROUPS,
+    })
     await expect(caller.call(basic('alice:x'))).resolves.toEqual({ sub, via: 'app-token' })
   })
 
@@ -376,7 +425,11 @@ describe('authenticateRequest: throttle of failed Basic logins', () => {
   it('never touches bearer tokens, however the address is doing', async () => {
     const { call, sprayed, verify } = throttled()
     for (let i = 0; i < 50; i++) await failure(sprayed())
-    await expect(call('Bearer good.jwt.token')).resolves.toEqual({ sub: SUB, via: 'bearer' })
+    await expect(call('Bearer good.jwt.token')).resolves.toEqual({
+      sub: SUB,
+      via: 'bearer',
+      tokenGroups: NO_GROUPS,
+    })
     // A bad bearer token is a 401 like before, not a 429.
     expect((await failure(call('Bearer expired.jwt.token'))).status).toBe(401)
     expect(verify).toHaveBeenCalledTimes(2)

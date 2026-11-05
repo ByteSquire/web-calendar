@@ -2,6 +2,7 @@
 // which Kanidm puts in the userinfo response and not in the access token. The endpoint is the one
 // in the provider's discovery document. A pure function that takes `fetch`, so tests need no
 // network.
+import { claimEntries } from '../groups/claim'
 
 const DEFAULT_TIMEOUT_MS = 3000
 /** A userinfo answer is a few hundred bytes; anything bigger is not from an identity provider. */
@@ -13,9 +14,9 @@ export interface UserinfoProfile {
   name?: string
   email?: string
   /**
-   * The `groups` claim: short names (`calendar_admins`), SPNs (`calendar_admins@idm.example.org`)
-   * or UUIDs, depending on the scope. Undefined when the claim is missing, which is not the same
-   * as "member of no group": the token may simply not carry a groups scope.
+   * The entries of the groups claim (`NUXT_OIDC_GROUPS_CLAIM`): names, SPNs, ids or paths, whatever
+   * the provider writes. Undefined when the claim is missing, which is not the same as "member of
+   * no group": the token may simply not carry a groups scope.
    */
   groups?: string[]
 }
@@ -33,7 +34,18 @@ export type UserinfoFailure =
   | 'sub-mismatch'
 
 export type UserinfoResult =
-  { ok: true; profile: UserinfoProfile } | { ok: false; reason: UserinfoFailure; status?: number }
+  | { ok: true; profile: UserinfoProfile }
+  | {
+      ok: false
+      reason: UserinfoFailure
+      status?: number
+      /**
+       * Set by the userinfo client on a `status` failure when the endpoint is on another origin than
+       * the issuer (Entra: Microsoft Graph, which takes only a Graph token). Then a refusal of the
+       * caller's token says nothing about the token; see `chooseGroups`.
+       */
+      otherOrigin?: boolean
+    }
 
 export interface UserinfoRequest {
   /**
@@ -47,19 +59,12 @@ export interface UserinfoRequest {
   expectedSub: string
   fetch: typeof fetch
   timeoutMs?: number
+  /** The claim the groups are in (`NUXT_OIDC_GROUPS_CLAIM`); `groups` when not given. */
+  groupsClaim?: string
 }
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined
-}
-
-/**
- * True when one of the groups is the admin group, as a short name or as an SPN. A name that merely
- * starts with the admin group's name (`calendar_admins_old`) does not count.
- */
-export function isAdminByGroups(groups: readonly string[], adminGroup: string): boolean {
-  if (adminGroup === '') return false
-  return groups.some((group) => group === adminGroup || group.startsWith(`${adminGroup}@`))
 }
 
 /**
@@ -71,6 +76,7 @@ export async function fetchUserinfo(request: UserinfoRequest): Promise<UserinfoR
   if (!request.accessToken) return { ok: false, reason: 'no-token' }
 
   const url = request.endpoint
+  const groupsClaim = request.groupsClaim ?? 'groups'
   const controller = new AbortController()
   const timeoutMs = request.timeoutMs ?? DEFAULT_TIMEOUT_MS
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -126,9 +132,7 @@ export async function fetchUserinfo(request: UserinfoRequest): Promise<UserinfoR
         username: optionalString(claims.preferred_username),
         name: optionalString(claims.name),
         email: optionalString(claims.email),
-        groups: Array.isArray(claims.groups)
-          ? claims.groups.filter((group): group is string => typeof group === 'string')
-          : undefined,
+        groups: claimEntries(Object.hasOwn(claims, groupsClaim) ? claims[groupsClaim] : undefined),
       },
     }
   }

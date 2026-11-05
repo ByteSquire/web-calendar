@@ -42,6 +42,7 @@ function options(fetchImpl: FetchFn, overrides: Partial<ResolveMeOptions> = {}):
   return {
     db,
     adminGroup: 'calendar_admins',
+    groupsIgnore: [],
     userinfo: (sub, accessToken) => client.get({ issuer: ISSUER, sub, accessToken }),
     warn,
     ...overrides,
@@ -278,6 +279,155 @@ describe('resolveMe', () => {
     )
     expect(me).toMatchObject({ sub: BOB_SUB, name: null, isAdmin: false })
     expect(findUserBySub(db, ALICE_SUB)).toBeNull()
+  })
+})
+
+describe('resolveMe: the groups of the person', () => {
+  const importedGroup = (name: string, externalId = name): number =>
+    db
+      .prepare(`INSERT INTO groups (name, source, external_id) VALUES (?, 'oidc', ?) RETURNING id`)
+      .pluck()
+      .get(name, externalId) as number
+  const members = (id: number): string[] =>
+    db.prepare<[number], string>('SELECT sub FROM group_members WHERE group_id = ?').pluck().all(id)
+
+  it('puts the person into the imported groups of the userinfo claim, and tells who is interested', async () => {
+    const staff = importedGroup('staff')
+    const onGroupsImported = vi.fn()
+    const claims = { ...ALICE_CLAIMS, groups: ['staff', 'calendar_admins@idm.example.org'] }
+    const me = await resolveMe(
+      options(async () => userinfo(claims), { onGroupsImported }),
+      signedIn(ALICE_SUB),
+      ALICE_TOKEN,
+    )
+    expect(me.isAdmin).toBe(true)
+    expect(members(staff)).toEqual([ALICE_SUB])
+    expect(onGroupsImported).toHaveBeenCalledTimes(1)
+    expect(onGroupsImported).toHaveBeenCalledWith(
+      expect.objectContaining({ membershipsChanged: true, joined: 1 }),
+    )
+    // The admin group is a candidate like any other group of the claim.
+    expect(
+      db.prepare('SELECT external_id FROM oidc_group_candidates ORDER BY 1').pluck().all(),
+    ).toEqual(['calendar_admins@idm.example.org', 'staff'])
+  })
+
+  it('says nothing when nothing changed', async () => {
+    importedGroup('staff')
+    const onGroupsImported = vi.fn()
+    const claims = { ...ALICE_CLAIMS, groups: ['staff'] }
+    const again = () =>
+      resolveMe(
+        options(async () => userinfo(claims), { onGroupsImported }),
+        signedIn(ALICE_SUB),
+        ALICE_TOKEN,
+      )
+    await again()
+    await again()
+    expect(onGroupsImported).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves the stored groups alone when the claim is missing, and when userinfo fails', async () => {
+    const staff = importedGroup('staff')
+    await resolveMe(
+      options(async () => userinfo({ ...ALICE_CLAIMS, groups: ['staff'] })),
+      signedIn(ALICE_SUB),
+      ALICE_TOKEN,
+    )
+    await resolveMe(
+      options(async () => userinfo({ ...ALICE_CLAIMS, groups: undefined })),
+      signedIn(ALICE_SUB),
+      ALICE_TOKEN,
+    )
+    await resolveMe(
+      options(async () => userinfo({}, 500)),
+      signedIn(ALICE_SUB),
+      ALICE_TOKEN,
+    )
+    expect(members(staff)).toEqual([ALICE_SUB])
+    // An empty claim, however, is a claim: the person left the group.
+    await resolveMe(
+      options(async () => userinfo({ ...ALICE_CLAIMS, groups: [] })),
+      signedIn(ALICE_SUB),
+      ALICE_TOKEN,
+    )
+    expect(members(staff)).toEqual([])
+  })
+
+  it('answers even when the import fails, and logs it', async () => {
+    db.exec(
+      `CREATE TRIGGER no_candidates BEFORE INSERT ON oidc_group_candidates BEGIN SELECT RAISE(ABORT, 'broken'); END`,
+    )
+    const me = await resolveMe(
+      options(async () => userinfo({ ...ALICE_CLAIMS, groups: ['calendar_admins', 'x'] })),
+      signedIn(ALICE_SUB),
+      ALICE_TOKEN,
+    )
+    expect(me).toMatchObject({ name: 'Alice Example', isAdmin: true })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('the groups could not be stored'))
+  })
+
+  it('does not import the groups of the ignore list', async () => {
+    await resolveMe(
+      options(async () => userinfo({ ...ALICE_CLAIMS, groups: ['idm_admins', 'staff'] }), {
+        groupsIgnore: ['idm_*'],
+      }),
+      signedIn(ALICE_SUB),
+      ALICE_TOKEN,
+    )
+    expect(db.prepare('SELECT external_id FROM oidc_group_candidates').pluck().all()).toEqual([
+      'staff',
+    ])
+  })
+
+  describe('where userinfo cannot give groups', () => {
+    it('uses the verified token’s claim: no endpoint, and an endpoint of another origin that refuses', async () => {
+      const staff = importedGroup('staff')
+      const fromToken = { entries: ['staff', 'calendar_admins'], overage: false }
+      const noEndpoint = options(async () => userinfo({}), {
+        userinfo: async () => ({ ok: false, reason: 'no-endpoint' }),
+      })
+      const me = await resolveMe(noEndpoint, signedIn(ALICE_SUB), ALICE_TOKEN, fromToken)
+      expect(me.isAdmin).toBe(true)
+      expect(members(staff)).toEqual([ALICE_SUB])
+      expect(warn).not.toHaveBeenCalled()
+
+      await resolveMe(
+        options(async () => userinfo({}), {
+          userinfo: async () => ({ ok: false, reason: 'status', status: 401, otherOrigin: true }),
+        }),
+        signedIn(BOB_SUB),
+        BOB_TOKEN,
+        { entries: ['staff'], overage: false },
+      )
+      expect(members(staff)).toEqual([ALICE_SUB, BOB_SUB])
+    })
+
+    it('does not, when the issuer’s own userinfo refuses the token', async () => {
+      const staff = importedGroup('staff')
+      const me = await resolveMe(
+        options(async () => userinfo({}, 401)),
+        signedIn(ALICE_SUB),
+        ALICE_TOKEN,
+        { entries: ['staff', 'calendar_admins'], overage: false },
+      )
+      expect(me.isAdmin).toBe(false)
+      expect(members(staff)).toEqual([])
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('HTTP 401'))
+    })
+
+    it('does nothing with a token that says its groups were left out', async () => {
+      const staff = importedGroup('staff')
+      await resolveMe(
+        options(async () => userinfo({}), {
+          userinfo: async () => ({ ok: false, reason: 'no-endpoint' }),
+        }),
+        signedIn(ALICE_SUB),
+        ALICE_TOKEN,
+        { entries: ['staff'], overage: true },
+      )
+      expect(members(staff)).toEqual([])
+    })
   })
 })
 

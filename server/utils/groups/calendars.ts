@@ -14,7 +14,7 @@ import {
 import { addCalendarAcl } from '../../db/calendar-acl'
 import type { CalendarRow, GroupRow } from '../../db/types'
 import { applyRules } from '../access/service'
-import { USERS_GROUP } from '../group-sync/config'
+import { USERS_GROUP } from './config'
 import { conflict, notFound, toBadRequest, upstreamFailed } from '../api/errors'
 import { groupPrincipal } from '../sharing/names'
 import type { RadicaleClient } from '../sharing/radicale-client'
@@ -43,9 +43,9 @@ export async function createGroupCalendar(
   group: GroupRow,
   input: { name: string; color?: string },
 ): Promise<ReturnType<typeof calendarView>> {
-  // Everybody is a member of the users group (Kanidm imports it like any group), so every person
-  // could create and delete the calendars it owns. It stays a group to share WITH.
-  if (group.name === USERS_GROUP) {
+  // Everybody who signed in is in the group of everyone, so every person could create and delete
+  // the calendars it owns. It stays a group to share WITH.
+  if (group.source === 'everyone' || group.name === USERS_GROUP) {
     throw toBadRequest([
       {
         field: 'group',

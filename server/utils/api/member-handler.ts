@@ -34,7 +34,7 @@ export function defineMemberHandler<T>(
       user,
       identity,
       isAdmin: () => {
-        admin ??= decideAdminFor(event, identity.sub).then((decision) => decision.admin)
+        admin ??= decideAdminFor(event, identity).then((decision) => decision.admin)
         return admin
       },
       audit: (action, target, details) =>

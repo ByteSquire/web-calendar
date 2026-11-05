@@ -27,12 +27,8 @@ vi.mock('../../server/utils/api/config', () => ({
     tokenHashKey: 'test-hash-key',
     oidcIssuer: 'https://idm.test/oauth2/openid/web-calendar',
     adminGroup: 'calendar_admins',
+    signinWindowMs: 30 * 24 * 60 * 60 * 1000,
   }),
-}))
-
-// No Kanidm token: a group that is not in `groups` cannot be checked at all.
-vi.mock('../../server/utils/access/config', () => ({
-  accessConfig: () => ({ kanidm: null }),
 }))
 
 vi.mock('../../server/utils/api/admin-limit', () => ({
@@ -60,7 +56,9 @@ beforeEach(() => {
   router.add('/api/admin/access/calendars/:id', calendarsPut, 'put')
   handle = toWebHandler(createApp().use(router))
   db.prepare(`INSERT INTO groups (name, source) VALUES ('team_a', 'app')`).run()
-  db.prepare(`INSERT INTO groups (name, source) VALUES ('staff', 'kanidm')`).run()
+  db.prepare(
+    `INSERT INTO groups (name, source, external_id) VALUES ('staff', 'oidc', 'staff-id')`,
+  ).run()
 })
 
 afterEach(() => {

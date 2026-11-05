@@ -5,7 +5,7 @@ import { bearerToken } from '../api/me'
 import type { ApiUser } from '../api/handler'
 import { tokenExpiresAtMs } from '../api/userinfo-client'
 import { getUserinfoClient } from '../api/userinfo-service'
-import { isGroupName } from '../group-sync/format'
+import { isGroupName } from '../groups/htgroup'
 import type { Actor } from './service'
 
 /** `calendar_admins@idm.example.org` -> `calendar_admins`; names that are not group names drop out. */
@@ -29,6 +29,7 @@ export async function actorOf(event: H3Event, user: ApiUser): Promise<Actor> {
     sub: user.sub,
     accessToken,
     tokenExpiresAtMs: tokenExpiresAtMs(accessToken),
+    groupsClaim: apiConfig().groupsClaim,
   })
   const groups = result.ok ? shortGroupNames(result.profile.groups ?? []) : []
   return { id: user.id, sub: user.sub, groups }

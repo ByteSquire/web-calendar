@@ -5,6 +5,8 @@ import type { Database } from 'better-sqlite3'
 import { findGroupById } from '../../db/groups'
 import type { GroupRow } from '../../db/types'
 import type { MemberContext } from '../api/member-handler'
+import { apiConfig } from '../api/config'
+import { signinCutoff } from '../auth/window'
 import { forbidden, notFound } from '../api/errors'
 import type { CalendarContext } from './calendars'
 import { mayActForGroup } from './service'
@@ -18,7 +20,8 @@ export function loadGroup(db: Database, id: number): GroupRow {
 
 /** The member-or-admin decision of the group routes. Throws 403 when neither holds. */
 export async function requireMemberOrAdmin(ctx: MemberContext, group: GroupRow): Promise<void> {
-  if (!(await mayActForGroup(ctx.db, group, ctx.identity.sub, () => ctx.isAdmin()))) {
+  const since = signinCutoff(apiConfig().signinWindowMs, new Date())
+  if (!(await mayActForGroup(ctx.db, group, ctx.identity.sub, () => ctx.isAdmin(), since))) {
     throw forbidden()
   }
 }

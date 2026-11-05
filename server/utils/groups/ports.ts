@@ -1,10 +1,11 @@
 // What the group routes need from the running server: the Radicale client (group calendars live
 // there) and the two triggers that make the group file and the shares follow a change. Tests set
 // their own; the server builds the client from NUXT_RADICALE_URL on first use.
-import { requestGroupSyncRun } from '../group-sync/active'
+import { requestGroupFileWrite } from './file-trigger'
 import { createRadicaleClient, type RadicaleClient } from '../sharing/radicale-client'
 import { requestSharingReconcile } from '../sharing'
 import { ApiError } from '../api/errors'
+import type { ImportOutcome } from './import'
 
 export interface GroupsPorts {
   radicale(): RadicaleClient
@@ -34,8 +35,15 @@ export function getGroupsPorts(): GroupsPorts {
         })
       }
     },
-    onGroupsChanged: () => requestGroupSyncRun(),
+    onGroupsChanged: () => requestGroupFileWrite(),
     onSharesChanged: () => requestSharingReconcile(),
   }
   return defaults
+}
+
+/** After groups were imported at a sign-in: the group file follows a change; shares follow a rename. */
+export function afterGroupImport(outcome: ImportOutcome): void {
+  const ports = getGroupsPorts()
+  if (outcome.membershipsChanged || outcome.renamed > 0) ports.onGroupsChanged()
+  if (outcome.renamed > 0) ports.onSharesChanged()
 }

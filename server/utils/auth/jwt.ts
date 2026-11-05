@@ -7,6 +7,7 @@ import {
   type CryptoKey,
   type JWK,
 } from 'jose'
+import { claimEntries, claimIsOverage } from '../groups/claim'
 import { AuthError } from './errors'
 import type { AllowedClient } from './clients'
 import { createDiscoveryStore, type DiscoveryStore } from './discovery'
@@ -18,6 +19,13 @@ export interface VerifiedToken {
   scopes: string[]
   /** Expiry, seconds since the epoch. */
   exp: number
+  /**
+   * The entries of the groups claim of this token (signature checked), or undefined when it has
+   * none. Kanidm keeps its groups out of access tokens; Entra, Keycloak and others put them in.
+   */
+  groups: string[] | undefined
+  /** The token says its groups were left out because there are too many (Entra). */
+  groupsOverage: boolean
 }
 
 /** Returns the signing keys of an issuer (the JWKS `keys` array). `client` is one the issuer serves. */
@@ -28,6 +36,8 @@ export interface TokenVerifierOptions {
   clients: readonly AllowedClient[]
   /** Scope every token must carry. */
   requiredScope: string
+  /** The claim the groups are read from (`NUXT_OIDC_GROUPS_CLAIM`); `groups` when not given. */
+  groupsClaim?: string
   /**
    * Further `aud` values that make a token ours, for providers whose access tokens are issued for
    * an API identifier and not for the client (Auth0, Entra). A token that names none of these and
@@ -274,6 +284,7 @@ export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifie
   if (!requiredScope) throw new TypeError('requiredScope must not be empty')
   if (clients.length === 0) throw new TypeError('at least one allowed client is required')
   const audiences = new Set(options.audiences ?? [])
+  const groupsClaim = options.groupsClaim ?? 'groups'
   const toleranceSec = options.toleranceSec ?? 60
   const cooldownMs = (options.keyCooldownSec ?? 30) * 1000
   // After a failed fetch the provider may be back within seconds, so try again sooner.
@@ -451,7 +462,16 @@ export function createTokenVerifier(options: TokenVerifierOptions): TokenVerifie
       const scopes = readScopes(payload)
       if (!scopes?.includes(requiredScope)) throw new AuthError('missing-scope')
 
-      return { sub: payload.sub, clientId: client.clientId, scopes, exp: payload.exp as number }
+      return {
+        sub: payload.sub,
+        clientId: client.clientId,
+        scopes,
+        exp: payload.exp as number,
+        groups: claimEntries(
+          Object.hasOwn(payload, groupsClaim) ? payload[groupsClaim] : undefined,
+        ),
+        groupsOverage: claimIsOverage(payload, groupsClaim),
+      }
     },
   }
 }

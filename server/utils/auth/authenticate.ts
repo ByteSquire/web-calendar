@@ -40,6 +40,11 @@ export interface AuthDeps {
 export interface Identity {
   sub: string
   via: 'bearer' | 'app-token'
+  /**
+   * The groups claim of the verified access token (bearer only): the entries, undefined when the
+   * token has none. Used when userinfo cannot give groups (see `chooseGroups`).
+   */
+  tokenGroups?: { entries: string[] | undefined; overage: boolean }
 }
 
 function fail(
@@ -101,7 +106,11 @@ export async function authenticateRequest(headers: Headers, deps: AuthDeps): Pro
       if (!isUserSubject(verified.sub, deps.sharedOwners)) {
         throw fail(deps, 'invalid-sub', { invalidToken: true })
       }
-      return { sub: verified.sub, via: 'bearer' }
+      return {
+        sub: verified.sub,
+        via: 'bearer',
+        tokenGroups: { entries: verified.groups, overage: verified.groupsOverage },
+      }
     }
     case 'basic': {
       if (!deps.verifyAppToken) throw fail(deps, 'unsupported-scheme')

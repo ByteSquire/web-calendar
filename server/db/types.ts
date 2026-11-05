@@ -54,13 +54,27 @@ export interface CalendarRow extends Timestamps {
   group_id: number | null
 }
 
-export type GroupSource = 'app' | 'kanidm'
+/** `app`: made in the app; `oidc`: imported from the identity provider; `everyone`: built in. */
+export type GroupSource = 'app' | 'oidc' | 'everyone'
 
 export interface GroupRow extends Timestamps {
   id: number
   /** The htgroup name and the principal of calendar_acl rules. */
   name: string
   source: GroupSource
+  /** The provider's key of an imported group (its id, else its name); null for the others. */
+  external_id: string | null
+}
+
+/** A group the provider's claim has shown (migration 009): an admin may import it. */
+export interface OidcGroupCandidateRow {
+  external_id: string
+  /** The group-file safe name the group would get. */
+  name: string
+  /** 1 when another key of the claim has the same safe name. */
+  conflict: 0 | 1
+  first_seen_at: string
+  last_seen_at: string
 }
 
 export interface GroupMemberRow {

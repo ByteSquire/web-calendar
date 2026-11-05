@@ -43,6 +43,16 @@ export default defineNuxtConfig({
        */
       adminGroup: 'calendar_admins',
       /**
+       * Name of the claim that lists the person's groups (NUXT_OIDC_GROUPS_CLAIM), in userinfo and in
+       * the access token. Looked up as written, so `cognito:groups` or a URL works.
+       */
+      groupsClaim: 'groups',
+      /**
+       * Groups that are never offered for import, comma-separated names or `prefix*`
+       * (NUXT_OIDC_GROUPS_IGNORE). The default hides Kanidm's built-in groups.
+       */
+      groupsIgnore: 'idm_*,system_*,domain_*',
+      /**
        * Seconds the cached signing keys are used before they are fetched again in the background
        * (NUXT_OIDC_KEY_MAX_AGE_SEC). A key the provider removed stops being trusted then.
        */
@@ -53,6 +63,13 @@ export default defineNuxtConfig({
      * previews and the browser tests of the layout. The API still requires a token.
      */
     demo: false,
+    /**
+     * Days a person counts as active after their last sign-in (NUXT_SIGNIN_WINDOW_DAYS, 1 to 365).
+     * It bounds the app tokens (a token stops working when its owner has not signed in to the web
+     * app within it) and the group of everyone (`web_calendar_users`). Imported and app groups are
+     * not bounded by it.
+     */
+    signinWindowDays: '30',
     /** Key for hashing app tokens (HMAC-SHA256); key version 1. */
     tokenHashKey: '',
     /**
@@ -66,17 +83,11 @@ export default defineNuxtConfig({
       /** Internal URL of the CalDAV store; nothing else may reach it. */
       url: 'http://radicale:5232',
     },
-    groupSync: {
-      /** Read-only Kanidm API token of the group-sync service account. */
-      token: '',
-      /** Seconds between runs (NUXT_GROUP_SYNC_INTERVAL_SEC); at most 300, larger values are clamped. */
-      intervalSec: '60',
-      /**
-       * Radicale's group file (NUXT_GROUP_SYNC_FILE). Empty means /groups/htgroup in production and
-       * .data/htgroup in development.
-       */
-      file: '',
-    },
+    /**
+     * Radicale's group file (NUXT_GROUPS_FILE), which the app writes from its database. Empty means
+     * /groups/htgroup in production and .data/htgroup in development.
+     */
+    groupsFile: '',
     sharing: {
       /** Seconds between sharing reconciles (NUXT_SHARING_RECONCILE_INTERVAL_SEC); at most 900. */
       reconcileIntervalSec: '300',

@@ -5,7 +5,8 @@ import { authenticateCalDav } from '../auth/nitro'
 import { emitChallengeLines } from './challenges'
 import { parseCorsOrigins } from './cors'
 import { getDb } from '../db'
-import { groupFilePath } from '../group-sync/config'
+import { noteBearerSighting } from '../groups/sighting-service'
+import { groupFilePath } from '../groups/config'
 import { createFileMembership } from '../sharing/membership'
 import { createPathPrecheck, type PathPrecheck } from '../sharing/precheck'
 import { createGateway, type GatewayRequest } from './gateway'
@@ -19,7 +20,7 @@ let warnedSharedAddress = false
 
 function getGateway() {
   if (!gateway) {
-    const { gateway: config, radicale, groupSync, demo } = useRuntimeConfig()
+    const { gateway: config, radicale, groupsFile, demo } = useRuntimeConfig()
     const { origins, invalid } = parseCorsOrigins(config.corsOrigins)
     if (invalid.length > 0) {
       console.warn(`[gateway] ignoring invalid CORS origins: ${invalid.join(', ')}`)
@@ -39,7 +40,7 @@ function getGateway() {
     // Env overrides are parsed like `icalProxy.allowPrivate`: only the text "true" turns it on.
     trustForwardedFor = String(config.trustForwardedFor) === 'true'
     const precheckMembership = createFileMembership(
-      groupFilePath(groupSync.file, process.env.NODE_ENV),
+      groupFilePath(groupsFile, process.env.NODE_ENV),
       (message) => console.warn(`[gateway] ${message}`),
     )
     gateway = createGateway({
@@ -47,7 +48,12 @@ function getGateway() {
       corsOrigins: origins,
       maxBodyBytes,
       maxConcurrentPerUser,
-      authenticate: authenticateCalDav,
+      authenticate: async (headers, context) => {
+        const identity = await authenticateCalDav(headers, context)
+        // Demo mode has no database. The sighting runs in the background and cannot fail the request.
+        if (String(demo) !== 'true') noteBearerSighting(identity, headers)
+        return identity
+      },
       // Group membership comes from the file Radicale reads, so both agree. Demo mode has no
       // database (and no Radicale behind the gateway).
       precheck:

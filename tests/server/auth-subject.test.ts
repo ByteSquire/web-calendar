@@ -100,7 +100,8 @@ describe('the app’s own principals', () => {
   // A new underscore name in the server code fails here until it is reserved or listed as not one.
   it('is complete: the server code names no other underscore principal', () => {
     const known = new Set(['_resources', '_group-'])
-    const notPrincipals = new Set(['_attributes']) // an XML parser option
+    // An XML parser option, and the claim in which Entra points at groups it left out of a token.
+    const notPrincipals = new Set(['_attributes', '_claim_names'])
     const root = fileURLToPath(new URL('../../server', import.meta.url))
     const found = new Set<string>()
     const walk = (dir: string): void => {

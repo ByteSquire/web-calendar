@@ -22,7 +22,7 @@ interface TestConfig {
   outbound: { allowedHosts: string; allowAnyHost: string }
   external: { sealKey: string }
   gateway: Record<string, unknown>
-  groupSync: { file: string }
+  groupsFile: string
   sharing: { sharedOwners: string }
 }
 
@@ -54,7 +54,7 @@ function goodConfig(): TestConfig {
       maxConcurrentPerUser: '8',
       trustForwardedFor: 'false',
     },
-    groupSync: { file: '' },
+    groupsFile: '',
     sharing: { sharedOwners: '' },
   }
 }

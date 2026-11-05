@@ -3,7 +3,7 @@
 // checked here (400); limits that depend on what is stored (groups, calendars per group) are 409 in
 // the service.
 import { isValidSubject } from '../auth/subject'
-import { isGroupName } from '../group-sync/format'
+import { isGroupName } from './htgroup'
 import {
   FieldErrors,
   finish,
@@ -60,6 +60,20 @@ export function parseGroupCreate(body: unknown): Parsed<{ name: string }> {
     )
   }
   return finish(errors, () => ({ name: name! }))
+}
+
+/** `{ externalId }`: which candidate of the identity provider to import, as the list gave it. */
+export function parseOidcImport(body: unknown): Parsed<{ externalId: string }> {
+  const errors = new FieldErrors()
+  const object = readObject(body, errors)
+  // The key is the provider's, matched as sent: not trimmed, not case-folded.
+  const raw = object.externalId
+  if (typeof raw !== 'string') {
+    if (errors.ok) errors.add('externalId', raw === undefined ? 'is required' : 'must be a string')
+  } else if (raw.length < 1 || raw.length > 255) {
+    errors.add('externalId', 'must be 1 to 255 characters')
+  }
+  return finish(errors, () => ({ externalId: raw as string }))
 }
 
 /** `{ members }`: the complete list of `sub` ids as given (case matters), unique, at most MAX_MEMBERS. */

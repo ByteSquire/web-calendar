@@ -225,6 +225,68 @@ describe('createUserinfoClient', () => {
     expect(client.size()).toBe(0)
   })
 
+  describe('a refusal from an endpoint on another origin (Entra: Microsoft Graph)', () => {
+    const GRAPH = 'https://graph.example.net/oidc/userinfo'
+    const other = (): UserinfoClient => {
+      fetchCalls = vi.fn<FetchFn>((url, init) => respond(url, init))
+      return createUserinfoClient({
+        fetch: fetchCalls as typeof fetch,
+        endpointOf: (issuer) => (issuer === ISSUER ? GRAPH : null),
+        now: () => now,
+        timeoutMs: 100,
+      })
+    }
+
+    it('is marked, also when it comes from the memory', async () => {
+      respond = async () => new Response('no', { status: 401 })
+      const client = other()
+      const expected = { ok: false, reason: 'status', status: 401, otherOrigin: true }
+      expect(await client.get(lookup('alice'))).toEqual(expected)
+      expect(await client.get(lookup('alice'))).toEqual(expected)
+      expect(fetchCalls).toHaveBeenCalledTimes(1)
+    })
+
+    it('is not marked when the endpoint is on the issuer’s origin, or the failure is another one', async () => {
+      respond = async () => new Response('no', { status: 401 })
+      expect(await setup().get(lookup('alice'))).toEqual({
+        ok: false,
+        reason: 'status',
+        status: 401,
+      })
+      respond = async () => new Response('down', { status: 503 })
+      // The mark says where a status came from; it does not decide what to do with it.
+      expect(await other().get(lookup('bob'))).toMatchObject({ status: 503, otherOrigin: true })
+    })
+
+    it('keeps the answers for two claims of one person apart, kept or in flight', async () => {
+      respond = async (_url, init) =>
+        claims(subOf(init), { groups: ['from-groups'], roles: ['from-roles'] })
+      const client = setup()
+      const [plain, roles] = await Promise.all([
+        client.get({ ...lookup('alice') }),
+        client.get({ ...lookup('alice'), groupsClaim: 'roles' }),
+      ])
+      expect(plain).toMatchObject({ profile: { groups: ['from-groups'] } })
+      expect(roles).toMatchObject({ profile: { groups: ['from-roles'] } })
+      expect(fetchCalls).toHaveBeenCalledTimes(2)
+      // Kept answers too: each claim gets its own.
+      expect(await client.get({ ...lookup('alice'), groupsClaim: 'roles' })).toMatchObject({
+        profile: { groups: ['from-roles'] },
+      })
+      expect(fetchCalls).toHaveBeenCalledTimes(2)
+    })
+
+    it('reads the groups from the claim that is configured', async () => {
+      respond = async (_url, init) =>
+        claims(subOf(init), { 'cognito:groups': ['a'], groups: ['b'] })
+      const client = setup()
+      expect(await client.get({ ...lookup('alice'), groupsClaim: 'cognito:groups' })).toMatchObject(
+        { ok: true, profile: { groups: ['a'] } },
+      )
+      expect(await client.get({ ...lookup('bob') })).toMatchObject({ profile: { groups: ['b'] } })
+    })
+  })
+
   describe('memory bound', () => {
     it('keeps at most maxEntries answers and drops the oldest first', async () => {
       const client = setup({ maxEntries: 3 })

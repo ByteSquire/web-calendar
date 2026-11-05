@@ -9,6 +9,7 @@ import { createJwksFetcher, createTokenVerifier, type TokenVerifier } from './jw
 import { parseSharedOwners } from '../sharing/config'
 import { createBasicThrottle, describeBlock, type BasicThrottle } from './throttle'
 import { describeTokenKeyring, parseTokenKeyring } from './token-keys'
+import { signinWindowMs } from './window'
 
 // Nitro glue: reads the runtime config and wires the database. The logic is in the plain modules.
 
@@ -45,6 +46,7 @@ function getVerifier(): TokenVerifier {
     verifier = createTokenVerifier({
       clients: buildAllowedClients(oidc),
       requiredScope: oidc.requiredScope,
+      groupsClaim: String(oidc.groupsClaim || 'groups'),
       audiences: splitList(oidc.audience),
       // The discovery documents are kept in the store of the process; userinfo reads them there.
       keyResolver: createJwksFetcher({
@@ -92,7 +94,8 @@ export function authenticateCalDav(
   const keyring = getTokenKeyring()
   return authenticateRequest(headers, {
     verifier: getVerifier(),
-    verifyAppToken: (username, token) => verifyAppToken(getDb(), keyring, username, token),
+    verifyAppToken: (username, token) =>
+      verifyAppToken(getDb(), keyring, username, token, signinWindowMs()),
     basicThrottle: getBasicThrottle(),
     clientAddress: context.clientAddress,
     sharedOwners: getSharedOwners(),

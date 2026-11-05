@@ -4,6 +4,7 @@ import type { User } from '../db/types'
 import type { Identity } from './auth/authenticate'
 import { requireUser } from './auth/nitro'
 import { getDb } from './db'
+import { noteActiveUser } from './groups/file-trigger'
 
 /**
  * The caller of an `/api/**` request as an app user: the bearer token is checked (`requireUser`),
@@ -13,5 +14,6 @@ import { getDb } from './db'
 export async function requireAppUser(event: H3Event): Promise<{ identity: Identity; user: User }> {
   const identity = await requireUser(event)
   const user = upsertUser(getDb(), { sub: identity.sub })
+  noteActiveUser(identity.sub)
   return { identity, user }
 }

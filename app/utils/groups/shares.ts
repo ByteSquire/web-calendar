@@ -2,6 +2,7 @@
 // write rule makes the calendar a group calendar), so it is shown but never sent or removed. The
 // rest is the complete list the PUT takes: a person or a group, read or write.
 import { t } from '~/utils/i18n'
+import { principalLabel } from '~/utils/principal-label'
 import {
   permissionLabel,
   type CalendarShare,
@@ -55,6 +56,9 @@ export function withoutShare(
 export function shareSummary(shares: readonly CalendarShare[], groupName: string): string {
   const extra = shares.filter((share) => !isOwnerShare(share, groupName))
   if (extra.length === 0) return t('Not shared with anybody else.')
-  const names = extra.map((share) => `${share.label}: ${permissionLabel(share.permission)}`)
+  const names = extra.map(
+    (share) =>
+      `${principalLabel(share.principalType, share.label)}: ${permissionLabel(share.permission)}`,
+  )
   return t('Shared with {names}.', { names: names.join(', ') })
 }

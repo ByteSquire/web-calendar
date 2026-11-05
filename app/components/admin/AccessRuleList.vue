@@ -16,7 +16,9 @@
     >
       <UIcon :name="iconFor(rule.principalType)" class="size-5 shrink-0" aria-hidden="true" />
       <div class="min-w-0 flex-1 basis-48">
-        <p class="font-medium wrap-anywhere">{{ rule.label }}</p>
+        <p class="font-medium wrap-anywhere">
+          {{ principalLabel(rule.principalType, rule.label) }}
+        </p>
         <p class="text-sm text-toned">
           {{ principalKind(rule.principalType) }} · {{ levelLabel(rule.permission) }}
         </p>
@@ -33,7 +35,12 @@
         "
       />
       <UButton
-        :aria-label="t('Remove {who} from {name}', { who: rule.label, name: calendarName })"
+        :aria-label="
+          t('Remove {who} from {name}', {
+            who: principalLabel(rule.principalType, rule.label),
+            name: calendarName,
+          })
+        "
         icon="i-lucide-trash-2"
         :label="t('Remove')"
         color="neutral"
@@ -49,6 +56,7 @@
 </template>
 
 <script setup lang="ts">
+import { principalLabel } from '~/utils/principal-label'
 import { t } from '~/utils/i18n'
 import {
   levelLabel,

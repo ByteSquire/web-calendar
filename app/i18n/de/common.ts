@@ -10,6 +10,9 @@ export const common: Readonly<Record<string, string>> = {
   Rename: 'Umbenennen',
   Duplicate: 'Duplizieren',
   'Back to calendar': 'Zurück zum Kalender',
+  // Who a rule or a share is for, when the server names no person (app/utils/principal-label.ts)
+  Public: 'Öffentlich',
+  'Unknown person': 'Unbekannte Person',
   Language: 'Sprache',
   'Browser language ({language})': 'Browsersprache ({language})',
   'The language of the app on this device. By default it follows your browser.':

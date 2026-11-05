@@ -97,6 +97,7 @@
 </template>
 
 <script setup lang="ts">
+import { principalLabel } from '~/utils/principal-label'
 import { useAdminAccess, useAdminFlag } from '~/composables/useAdminAccess'
 import type { AccessRule, AccessRuleInput } from '~/utils/admin/access'
 import {
@@ -164,7 +165,7 @@ function labelOf(rule: AccessRuleInput): string {
   if (rule.principalType === 'authenticated') return t('Everyone signed in')
   if (rule.principalType === 'group') return t('Group {name}', { name: rule.principal ?? '' })
   const known = current.value?.rules.find((item) => item.principal === rule.principal)
-  return known?.label ?? t('This person')
+  return known ? principalLabel(known.principalType, known.label) : t('This person')
 }
 
 async function change(rules: AccessRuleInput[], done: string): Promise<boolean> {
@@ -194,7 +195,7 @@ function remove(rule: AccessRule) {
   if (!calendar) return
   void change(
     withoutRule(calendar.rules, rule.id),
-    t('{label} no longer has access.', { label: rule.label }),
+    t('{label} no longer has access.', { label: principalLabel(rule.principalType, rule.label) }),
   )
 }
 </script>

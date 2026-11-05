@@ -46,13 +46,19 @@
                 aria-hidden="true"
               />
               <div class="min-w-0 flex-1 basis-40">
-                <p class="font-medium wrap-anywhere">{{ share.label }}</p>
+                <p class="font-medium wrap-anywhere">
+                  {{ principalLabel(share.principalType, share.label) }}
+                </p>
                 <p class="text-sm text-toned">
                   {{ principalKind(share.principalType) }} · {{ permissionLabel(share.permission) }}
                 </p>
               </div>
               <UButton
-                :aria-label="t('Stop sharing with {name}', { name: share.label })"
+                :aria-label="
+                  t('Stop sharing with {name}', {
+                    name: principalLabel(share.principalType, share.label),
+                  })
+                "
                 icon="i-lucide-x"
                 :label="t('Remove')"
                 color="neutral"
@@ -153,6 +159,7 @@
 </template>
 
 <script setup lang="ts">
+import { principalLabel } from '~/utils/principal-label'
 import { principalKind, userLabel } from '~/utils/admin/access'
 import { t, tv } from '~/utils/i18n'
 import {

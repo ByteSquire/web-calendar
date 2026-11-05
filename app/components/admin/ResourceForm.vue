@@ -7,11 +7,11 @@
   <form
     class="flex flex-col gap-4"
     novalidate
-    aria-labelledby="resource-form-heading"
+    :aria-labelledby="headingId"
     :aria-busy="busy"
     @submit.prevent="submit"
   >
-    <h2 id="resource-form-heading" class="text-lg font-semibold">{{ heading }}</h2>
+    <h2 :id="headingId" class="text-lg font-semibold">{{ heading }}</h2>
 
     <UFormField :label="t('Name')" :error="problem ?? errors.name" required>
       <UInput v-model="draft.name" autocomplete="off" class="w-full max-w-md" />
@@ -75,6 +75,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ cancel: [] }>()
 
+// Two of these forms can be on the page at once (the dialog and the one that adds).
+const headingId = useId()
 const typeItems = computed(() =>
   RESOURCE_TYPES.map((type) => ({ value: type.value, label: tv(type.label) })),
 )

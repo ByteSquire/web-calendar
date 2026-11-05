@@ -112,8 +112,10 @@ const button = (name: RegExp) =>
   [...document.querySelectorAll<HTMLButtonElement>('button')].find((item) =>
     name.test(item.getAttribute('aria-label') ?? item.textContent ?? ''),
   )
+// The dialog of a resource, when open: its fields are the ones meant, not those of the form below.
+const dialogEl = () => document.querySelector('[role="dialog"]')
 function field(label: string): HTMLInputElement | HTMLTextAreaElement {
-  const found = [...document.querySelectorAll('label')].find((item) =>
+  const found = [...(dialogEl() ?? document).querySelectorAll('label')].find((item) =>
     text(item)?.startsWith(label),
   )
   return document.getElementById(found?.getAttribute('for') ?? '') as HTMLInputElement
@@ -125,7 +127,7 @@ function fill(label: string, value: string) {
 }
 const sent = (method: string) => calls.filter((call) => call.method === method)
 const formButton = (name: RegExp, heading: string) =>
-  [...document.querySelectorAll('form')]
+  [...(dialogEl() ?? document).querySelectorAll('form')]
     .find((form) => text(form.querySelector('h2')) === heading)
     ?.querySelectorAll('button')
     .values()
@@ -248,7 +250,11 @@ describe('as an admin', () => {
       body: { name: 'Large room', type: 'room', location: 'Floor 2', capacity: null },
     })
     await vi.waitFor(() => expect(rows()[0]).toContain('Large room'))
-    expect(document.querySelector('#resource-form-heading')?.textContent).toBe('Add resource')
+    // As the dialog of an event does, it closes when the change is saved.
+    await vi.waitFor(() => expect(dialogEl()).toBeNull())
+    expect([...document.querySelectorAll('form h2')].map((heading) => text(heading))).toEqual([
+      'Add resource',
+    ])
   })
 
   it('deactivates a resource and reactivates another', async () => {
@@ -265,6 +271,83 @@ describe('as an admin', () => {
       body: { active: true },
     })
     await vi.waitFor(() => expect(rows()[1]).not.toContain('Inactive'))
+  })
+})
+
+describe('the dialog of a resource', () => {
+  const tabs = () => [...document.querySelectorAll<HTMLElement>('[role="tab"]')]
+  const tab = (name: string) => tabs().find((item) => text(item) === name)!
+  // A tab is chosen by the mouse button going down (or by the keyboard), not by `click`.
+  const choose = (name: string) =>
+    tab(name).dispatchEvent(
+      new MouseEvent('mousedown', { button: 0, bubbles: true, cancelable: true }),
+    )
+  const selected = () => tabs().find((item) => item.getAttribute('aria-selected') === 'true')
+  const aclCalls = () => calls.filter((call) => call.path.endsWith('/acl'))
+
+  it('opens on the resource with "Edit", and on its access with "Access": the same dialog', async () => {
+    await mountPage()
+    await loaded()
+    button(/^Edit Board room$/)!.click()
+    await vi.waitFor(() => expect(dialogEl()).not.toBeNull())
+    expect(text(dialogEl()!.querySelector('h2'))).toContain('Board room')
+    expect(text(selected())).toBe('Resource')
+    expect(field('Name').value).toBe('Board room')
+    // Nothing about access was asked for a resource that is only edited.
+    expect(aclCalls()).toEqual([])
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+
+    button(/^Close$/)!.click()
+    await vi.waitFor(() => expect(dialogEl()).toBeNull())
+    button(/^Access for Board room$/)!.click()
+    await vi.waitFor(() => expect(dialogEl()).not.toBeNull())
+    expect(text(selected())).toBe('Access')
+    expect(text(dialogEl()!.querySelector('h2'))).toContain('Board room')
+    await vi.waitFor(() => expect(ruleRows()).toHaveLength(2))
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+  })
+
+  it('switches between the resource and its access without closing, and keeps what was typed', async () => {
+    await mountPage()
+    await loaded()
+    button(/^Edit Board room$/)!.click()
+    await vi.waitFor(() => expect(dialogEl()).not.toBeNull())
+    fill('Name', 'Large room')
+    choose('Access')
+    await vi.waitFor(() => expect(ruleRows()).toHaveLength(2))
+    expect(text(selected())).toBe('Access')
+    choose('Resource')
+    await vi.waitFor(() => expect(text(selected())).toBe('Resource'))
+    expect(field('Name').value).toBe('Large room')
+    // Back on the access tab the rules are not asked for again.
+    choose('Access')
+    await vi.waitFor(() => expect(text(selected())).toBe('Access'))
+    expect(aclCalls()).toHaveLength(1)
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+  })
+
+  it('shows the tabs as tabs with a selected one, reachable by keyboard', async () => {
+    await mountPage()
+    await loaded()
+    button(/^Edit Board room$/)!.click()
+    await vi.waitFor(() => expect(dialogEl()).not.toBeNull())
+    expect(document.querySelector('[role="tablist"]')).not.toBeNull()
+    expect(tabs().map((item) => text(item))).toEqual(['Resource', 'Access'])
+    expect(selected()).toBeDefined()
+    expect(document.querySelectorAll('[role="tabpanel"]').length).toBeGreaterThan(0)
+  })
+
+  it('closes with Close and starts clean for the next resource', async () => {
+    await mountPage()
+    await loaded()
+    button(/^Access for Board room$/)!.click()
+    await vi.waitFor(() => expect(ruleRows()).toHaveLength(2))
+    button(/^Close$/)!.click()
+    await vi.waitFor(() => expect(dialogEl()).toBeNull())
+    button(/^Edit Old van$/)!.click()
+    await vi.waitFor(() => expect(dialogEl()).not.toBeNull())
+    expect(field('Name').value).toBe('Old van')
+    expect(ruleRows()).toEqual([])
   })
 })
 

@@ -72,7 +72,7 @@
               color="neutral"
               variant="outline"
               :disabled="saving"
-              @click="startEdit(resource)"
+              @click="openDialog(resource, 'details')"
             />
             <UButton
               :aria-label="t('Access for {name}', { name: resource.name })"
@@ -81,7 +81,7 @@
               color="neutral"
               variant="outline"
               :disabled="saving"
-              @click="selectRules(resource)"
+              @click="openDialog(resource, 'access')"
             />
             <UButton
               :aria-label="
@@ -100,58 +100,86 @@
         </li>
       </ul>
 
-      <section
-        v-if="editing"
-        ref="editSection"
-        tabindex="-1"
-        class="flex flex-col gap-3 outline-none"
+      <!-- One dialog for a resource and for who may use it, as for an event: the tabs switch. -->
+      <UModal
+        :open="dialog !== null"
+        :title="dialog?.name ?? ''"
+        :description="t('Change the resource, or choose who may use it.')"
+        :ui="{ content: 'sm:max-w-2xl' }"
+        @update:open="(open) => (open ? undefined : closeDialog())"
       >
-        <AdminResourceForm
-          :key="editing.id"
-          :initial="draftOf(editing)"
-          :errors="fieldErrors"
-          :busy="saving"
-          cancellable
-          :save="saveEdit"
-          @cancel="editing = null"
-        />
-      </section>
-
-      <section
-        v-if="ruleTarget"
-        ref="rulesSection"
-        tabindex="-1"
-        aria-labelledby="resource-rules-heading"
-        class="flex flex-col gap-3 outline-none"
-      >
-        <h2 id="resource-rules-heading" class="text-lg font-semibold">
-          {{ t('Who may use {name}', { name: ruleTarget.name }) }}
-        </h2>
-        <SettingsErrorAlert v-if="rulesError" :message="rulesError" />
-        <AdminResourceRuleList
-          v-if="rules !== null"
-          :rules="ruleRows"
-          :resource-name="ruleTarget.name"
-          :busy="saving"
-          @remove="removeRule"
-        />
-        <p v-if="rules !== null && !hasManager" data-resource-no-manager class="text-sm text-toned">
-          {{
-            t(
-              'Nobody can manage {name} yet, so nobody can accept booking requests. Administrators are not managers by default.',
-              { name: ruleTarget.name },
-            )
-          }}
-        </p>
-        <AdminAccessAddForm
-          v-if="rules !== null"
-          :users="users"
-          :busy="saving"
-          :levels="RESOURCE_RIGHTS"
-          default-level="book"
-          :save="addRule"
-        />
-      </section>
+        <template #body>
+          <div v-if="dialog" class="flex flex-col gap-4">
+            <SettingsErrorAlert v-if="problem" :message="problem" />
+            <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
+            <UTabs
+              v-model="tab"
+              :items="tabItems"
+              :unmount-on-hide="false"
+              :ui="{ trigger: 'min-h-11 data-[state=inactive]:text-toned' }"
+              class="w-full"
+            >
+              <template #details>
+                <AdminResourceForm
+                  :key="dialog.id"
+                  :initial="draftOf(dialog)"
+                  :errors="fieldErrors"
+                  :busy="saving"
+                  cancellable
+                  :save="saveEdit"
+                  @cancel="closeDialog"
+                />
+              </template>
+              <template #access>
+                <section aria-labelledby="resource-rules-heading" class="flex flex-col gap-3">
+                  <h3 id="resource-rules-heading" class="text-lg font-semibold">
+                    {{ t('Who may use {name}', { name: dialog.name }) }}
+                  </h3>
+                  <SettingsErrorAlert v-if="rulesError" :message="rulesError" />
+                  <AdminResourceRuleList
+                    v-if="rules !== null"
+                    :rules="ruleRows"
+                    :resource-name="dialog.name"
+                    :busy="saving"
+                    @remove="removeRule"
+                  />
+                  <p
+                    v-if="rules !== null && !hasManager"
+                    data-resource-no-manager
+                    class="text-sm text-toned"
+                  >
+                    {{
+                      t(
+                        'Nobody can manage {name} yet, so nobody can accept booking requests. Administrators are not managers by default.',
+                        { name: dialog.name },
+                      )
+                    }}
+                  </p>
+                  <AdminAccessAddForm
+                    v-if="rules !== null"
+                    :users="users"
+                    :busy="saving"
+                    :levels="RESOURCE_RIGHTS"
+                    default-level="book"
+                    :save="addRule"
+                  />
+                </section>
+              </template>
+            </UTabs>
+          </div>
+        </template>
+        <template #footer>
+          <div class="flex w-full justify-end">
+            <UButton
+              :label="t('Close')"
+              color="neutral"
+              variant="outline"
+              :disabled="saving"
+              @click="closeDialog"
+            />
+          </div>
+        </template>
+      </UModal>
 
       <AdminResourceForm v-if="loaded" :errors="createErrors" :busy="saving" :save="create" />
     </template>
@@ -197,12 +225,17 @@ const problem = ref<string | null>(null)
 const notice = ref('')
 const fieldErrors = ref<Record<string, string>>({})
 const createErrors = ref<Record<string, string>>({})
-const editing = ref<AdminResource | null>(null)
-const ruleTarget = ref<AdminResource | null>(null)
+// The resource that is open in the dialog, and which of its two tabs is shown.
+const dialog = ref<AdminResource | null>(null)
+const tab = ref<'details' | 'access'>('details')
+const tabItems = computed(() => [
+  { label: t('Resource'), value: 'details', slot: 'details' },
+  { label: t('Access'), value: 'access', slot: 'access' },
+])
+// The rules of the resource that is open; null until they are loaded.
 const rules = ref<ResourceRule[] | null>(null)
+const rulesFor = ref<number | null>(null)
 const rulesError = ref<string | null>(null)
-const editSection = ref<HTMLElement | null>(null)
-const rulesSection = ref<HTMLElement | null>(null)
 
 const ruleRows = computed(() => (rules.value ?? []).map((rule) => ({ rule, label: labelOf(rule) })))
 const hasManager = computed(() => rules.value?.some((rule) => rule.right === 'manage') === true)
@@ -272,7 +305,7 @@ async function run(
 
 function replaceResource(saved: AdminResource) {
   resources.value = resources.value.map((item) => (item.id === saved.id ? saved : item))
-  if (ruleTarget.value?.id === saved.id) ruleTarget.value = saved
+  if (dialog.value?.id === saved.id) dialog.value = saved
 }
 
 async function create(body: Body): Promise<boolean> {
@@ -288,7 +321,7 @@ async function create(body: Body): Promise<boolean> {
 }
 
 async function saveEdit(body: Body): Promise<boolean> {
-  const target = editing.value
+  const target = dialog.value
   if (!target) return false
   const result = await run(async () => {
     const saved = await api<AdminResource>(`/api/admin/resources/${target.id}`, {
@@ -299,7 +332,8 @@ async function saveEdit(body: Body): Promise<boolean> {
     return t('{name} was saved.', { name: saved.name })
   })
   fieldErrors.value = result.fields
-  if (result.ok) editing.value = null
+  // As the dialog of an event does, it closes when the change is saved.
+  if (result.ok) closeDialog()
   return result.ok
 }
 
@@ -318,34 +352,48 @@ async function setActive(resource: AdminResource, active: boolean) {
   })
 }
 
-async function startEdit(resource: AdminResource) {
+function openDialog(resource: AdminResource, which: 'details' | 'access') {
   fieldErrors.value = {}
   problem.value = null
-  editing.value = resource
-  await nextTick()
-  editSection.value?.focus()
+  notice.value = ''
+  rules.value = null
+  rulesFor.value = null
+  rulesError.value = null
+  dialog.value = resource
+  tab.value = which
 }
 
-async function selectRules(resource: AdminResource) {
-  problem.value = null
-  notice.value = ''
-  ruleTarget.value = resource
+function closeDialog() {
+  // Not while a change is on its way: its answer belongs to this dialog.
+  if (saving.value) return
+  dialog.value = null
+  rules.value = null
+  rulesFor.value = null
+}
+
+/** The rules are loaded when the access tab is shown first, not for a resource that is only edited. */
+watch([() => dialog.value?.id, tab], ([id, which]) => {
+  if (id !== undefined && which === 'access' && rulesFor.value !== id) void loadRules(id)
+})
+
+async function loadRules(id: number) {
+  rulesFor.value = id
   rules.value = null
   rulesError.value = null
-  await nextTick()
-  rulesSection.value?.focus()
   try {
-    const answer = await api<{ rules: ResourceRule[] }>(`/api/admin/resources/${resource.id}/acl`)
-    if (ruleTarget.value?.id === resource.id) rules.value = answer.rules
+    const answer = await api<{ rules: ResourceRule[] }>(`/api/admin/resources/${id}/acl`)
+    if (dialog.value?.id === id) rules.value = answer.rules
   } catch (cause) {
-    if (ruleTarget.value?.id === resource.id) {
+    if (dialog.value?.id === id) {
       rulesError.value = describeError(cause, N_('load the rules'))
+      // Shown again next time the tab is chosen.
+      rulesFor.value = null
     }
   }
 }
 
 async function saveRules(next: ResourceRule[], done: string): Promise<boolean> {
-  const target = ruleTarget.value
+  const target = dialog.value
   if (!target) return false
   const result = await run(async () => {
     const saved = await api<{ rules: ResourceRule[] }>(`/api/admin/resources/${target.id}/acl`, {

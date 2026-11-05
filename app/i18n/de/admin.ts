@@ -93,6 +93,8 @@ export const admin: Readonly<Record<string, string>> = {
   Deactivate: 'Deaktivieren',
   Reactivate: 'Reaktivieren',
   'Who may use {name}': 'Wer {name} nutzen darf',
+  'Change the resource, or choose who may use it.':
+    'Ändere die Ressource oder lege fest, wer sie nutzen darf.',
   'Nobody can manage {name} yet, so nobody can accept booking requests. Administrators are not managers by default.':
     'Noch kann niemand {name} verwalten, also kann niemand Buchungsanfragen annehmen. Administratoren sind standardmäßig keine Verwalter.',
   '{count} place | {count} places': '{count} Platz | {count} Plätze',

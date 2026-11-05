@@ -410,7 +410,10 @@ status, blocked, mine`, and an event without a calendar counts as blocked. `GET
   access"): lists active and inactive resources; adds, edits (name, type, location, capacity,
   description), deactivates and reactivates them (`PUT` with `active: true`; there is no separate
   route); and shows and changes the rules of one resource (a person, a group or everyone signed in
-  with can see / can book / can manage), reusing the add form of the access page. It warns when no
+  with can see / can book / can manage), reusing the add form of the access page. "Edit" and
+  "Access" of a resource open one pop-up, as editing an event does, with two tabs, Resource and
+  Access, to switch between them without closing it; a saved edit closes it, rule changes keep it
+  open, and what was typed on one tab stays while the other is shown. It warns when no
   rule has `manage`, because administrators are not managers by default and nobody could accept a
   request. After each change the calendar data is reloaded. A page was needed because resources
   could only be created through the API; it is one menu item, with no new control elsewhere.

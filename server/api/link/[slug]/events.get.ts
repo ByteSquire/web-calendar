@@ -6,10 +6,11 @@ import { definePublicLinkHandler, tooMany } from '../../../utils/links/public-ha
 import { parseRange, readCalendarLink } from '../../../utils/links/service'
 
 /** The header that carries the session of the page (never a cookie, never the address). */
-export const SESSION_HEADER = 'x-calendar-link-session'
+const SESSION_HEADER = 'x-calendar-link-session'
 
-// The events of a calendar link in `from`..`to` (ISO date-times, at most 400 days), read as the
-// person who made the link and cut down to what a link shows (server/utils/links/sanitize.ts).
+// What a calendar link shows in `from`..`to` (ISO date-times, at most 400 days), read as the link's
+// principal (its maker, or the calendar's owner for a link of the access page): at "Can view"
+// Radicale's objects unchanged, at "Busy times only" its VFREEBUSY alone.
 export default definePublicLinkHandler(async (event) => {
   const wait = getLinkLimits().readsPerAddress.take(linkClientKey(event))
   if (wait !== null) tooMany(event, wait)

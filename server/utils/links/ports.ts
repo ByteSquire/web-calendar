@@ -1,5 +1,5 @@
-// The process-wide parts of the calendar links: the reader (Radicale as the maker) and the limits of
-// the public routes. Tests set their own reader.
+// The process-wide parts of the calendar links: the reader (Radicale as the link's principal) and
+// the limits of the public routes. Tests mock `getLinkReader` and reset the limits.
 import type { H3Event } from 'h3'
 import { getRequestIP } from 'h3'
 import { createAdminLimiter, type AdminLimiter } from '../api/admin-limit'
@@ -17,10 +17,6 @@ export function getLinkReader(): LinkReader {
     maxResponseBytes: LINK_MAX_RESPONSE_BYTES,
   })
   return reader
-}
-
-export function setLinkReader(next: LinkReader | undefined): void {
-  reader = next
 }
 
 /**

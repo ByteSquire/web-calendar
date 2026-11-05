@@ -10,6 +10,7 @@ import {
   fieldProblems,
   parseApiError,
 } from '../app/utils/settings/api-errors'
+import { describeLinkCreateError } from '../app/utils/settings/links'
 
 /** What `$fetch` throws for an error response of the API: the h3 body is `data`. */
 function fetchError(statusCode: number, body: Record<string, unknown> = {}) {
@@ -245,6 +246,36 @@ describe('describeSubscriptionSaveError', () => {
     ).toEqual({ byField: {}, alert: 'Could not add the subscription: body must be a JSON object.' })
     expect(describeSubscriptionSaveError(fetchError(404), 'save the subscription').alert).toMatch(
       /^Could not save the subscription\. It no longer exists/,
+    )
+  })
+})
+
+describe('describeLinkCreateError', () => {
+  it('words each refusal the server names by a code, never with its English sentence', () => {
+    const conflict = (code: string) =>
+      describeLinkCreateError(fetchError(409, { message: 'English text', data: { code } })).alert
+    expect(conflict('limit_reached')).toBe('You can have at most 50 calendar links.')
+    expect(conflict('calendar_limit_reached')).toBe('A calendar can have at most 50 links.')
+    expect(conflict('no_collection')).toBe('The calendar server no longer has this calendar.')
+    expect(conflict('busy')).toBe('The server is busy. Try again in a moment.')
+    expect(conflict('something_else')).toBe('The link was not created.')
+  })
+
+  it('puts the level refusal of a busy-times-only calendar under the level, in words', () => {
+    const failure = describeLinkCreateError(
+      fetchError(400, {
+        data: {
+          fields: [
+            {
+              field: 'level',
+              message: 'is more than you can see of this calendar; you see its busy times only',
+            },
+          ],
+        },
+      }),
+    )
+    expect(failure.byField.level).toBe(
+      'You see this calendar as busy times only, so a link to it can show busy times only.',
     )
   })
 })

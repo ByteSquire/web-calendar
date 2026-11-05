@@ -160,8 +160,8 @@ export const shell: Readonly<Record<string, string>> = {
     'Gib das Passwort ein, das du bekommen hast, um diesen Kalender zu sehen.',
   'Open calendar': 'Kalender öffnen',
   'The password is not right.': 'Das Passwort stimmt nicht.',
-  'This link does not exist, was withdrawn or does not work at the moment.':
-    'Diesen Link gibt es nicht, er wurde zurückgezogen oder funktioniert gerade nicht.',
+  'This link does not exist, was removed or does not work at the moment.':
+    'Diesen Link gibt es nicht, er wurde entfernt oder funktioniert gerade nicht.',
   'Enter the password again.': 'Gib das Passwort noch einmal ein.',
   'Too many tries. Wait a minute and try again.':
     'Zu viele Versuche. Warte eine Minute und versuche es dann noch einmal.',

@@ -95,14 +95,16 @@ export function describeEventWhenInWords(
 
 /**
  * Accessible name of a calendar entry: title, date and time, calendar, and the status when it is
- * not the usual one. Blocked events give the time only.
+ * not the usual one. Blocked events give the time only, unless `nameBlocked`: the busy times of a
+ * calendar the viewer has in the sidebar ("Busy times only"), whose name is no secret.
  */
 export function eventAssistiveLabel(
   event: Pick<CalendarEvent, 'title' | 'start' | 'end' | 'allDay' | 'status' | 'isBlocked'>,
   calendarName: string | undefined,
+  options: { nameBlocked?: boolean } = {},
 ): string {
   const parts = [event.isBlocked ? tv(BUSY_TITLE) : event.title, describeEventWhenInWords(event)]
-  if (!event.isBlocked) {
+  if (!event.isBlocked || options.nameBlocked) {
     if (calendarName) parts.push(t('Calendar {name}', { name: calendarName }))
     if (event.status !== 'confirmed') parts.push(tv(STATUS_LABELS[event.status]).toLowerCase())
   }
@@ -129,7 +131,7 @@ export interface EventDetails {
   orgWhen: EventWhen | null
   status: EventStatus
   statusLabel: string
-  /** Null for blocked events and unknown calendars. */
+  /** Null for unknown calendars and blocked events, except the busy times of a calendar. */
   calendar: { name: string; color: string } | null
   location: string | null
   resource: { name: string; type: ResourceType; location: string | null } | null
@@ -163,11 +165,14 @@ export function buildEventDetails(
     statusLabel: tv(STATUS_LABELS[event.status]),
   }
   if (event.isBlocked) {
+    // The busy times of a calendar the viewer has ("Busy times only") may name it; a resource's
+    // blocked time never names the calendar that booked it.
+    const own = lookups.calendarById.get(event.calendarId)
     return {
       ...base,
       title: tv(BUSY_TITLE),
       blocked: true,
-      calendar: null,
+      calendar: own?.freeBusyOnly ? { name: own.name, color: own.color } : null,
       location: null,
       resource: null,
       bookedBy: null,

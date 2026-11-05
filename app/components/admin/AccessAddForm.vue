@@ -47,7 +47,11 @@
         :search-input="SEARCH_GROUPS"
         :placeholder="t('Choose a group')"
         class="w-full max-w-md"
-        :ui="{ base: 'min-h-11', item: 'min-h-11 items-center' }"
+        :ui="{
+          base: 'min-h-11',
+          item: 'min-h-11 items-center',
+          placeholder: 'truncate text-toned',
+        }"
       >
         <template #empty>{{ t('No group matches.') }}</template>
       </USelectMenu>

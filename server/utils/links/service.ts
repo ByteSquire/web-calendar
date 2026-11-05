@@ -38,7 +38,6 @@ const MAX_HREF_LENGTH = 600
 /** The longest span one read may ask for: a year view with the days around it. */
 export const MAX_RANGE_DAYS = 400
 const DAY_MS = 24 * 60 * 60 * 1000
-export const LINK_LEVELS: readonly LinkLevel[] = ['free_busy', 'read']
 
 export interface LinkInput {
   label?: string
@@ -227,17 +226,29 @@ export async function createCalendarLink(
       'is more than you can see of this calendar; you see its busy times only',
     )
   }
+  // A calendar of the access page has at most so many links, whoever made them.
+  const calendarId = calendarIdOfPath(ctx.db, path)
+  if (calendarId !== null) checkCalendarLimit(ctx.db, calendarId)
   return insertLink(
     ctx,
     {
       path,
-      calendarId: calendarIdOfPath(ctx.db, path),
+      calendarId,
       readsAs: 'maker',
       name: probe.name,
       color: probe.color,
     },
     input,
   )
+}
+
+function checkCalendarLimit(db: Database, calendarId: number): void {
+  if (countCalendarLinksOfCalendar(db, calendarId) >= MAX_LINKS_PER_CALENDAR) {
+    throw conflict(
+      'calendar_limit_reached',
+      `A calendar has at most ${MAX_LINKS_PER_CALENDAR} links`,
+    )
+  }
 }
 
 /**
@@ -250,9 +261,7 @@ export async function createAdminCalendarLink(
   calendar: Pick<CalendarRow, 'id' | 'name' | 'color' | 'collection_path'>,
   input: LinkInput,
 ): Promise<{ link: CalendarLinkWithMaker; slug: string }> {
-  if (countCalendarLinksOfCalendar(ctx.db, calendar.id) >= MAX_LINKS_PER_CALENDAR) {
-    throw conflict('limit_reached', `A calendar has at most ${MAX_LINKS_PER_CALENDAR} links`)
-  }
+  checkCalendarLimit(ctx.db, calendar.id)
   const path = calendar.collection_path
   if ((await checkLevel(ctx, ownerOfPath(path), path, input.level)) === 'denied') {
     throw new ApiError(409, 'The calendar server does not have this calendar any more', {
@@ -295,7 +304,7 @@ export function linkPassword(keyring: TokenHashKeys, link: CalendarLinkWithMaker
 /** What a visitor is told: the link does not exist, was removed or does not work at the moment. */
 export class LinkUnavailableError extends Error {
   constructor() {
-    super('This link does not exist, was withdrawn or does not work at the moment')
+    super('This link does not exist, was removed or does not work at the moment')
     this.name = 'LinkUnavailableError'
   }
 }
@@ -429,12 +438,12 @@ export async function readCalendarLink(
         range.start,
         range.end,
       )
-      if (busy.kind === 'error') throw new ApiError(502, UPSTREAM)
+      if (busy.kind === 'error') throw upstreamFailed(UPSTREAM)
       if (busy.kind !== 'ok') throw new LinkUnavailableError()
       return { level: 'free_busy', freeBusy: busy.text }
     }
     const read = await ctx.reader.read(principal, link.collection_path, range.start, range.end)
-    if (read.kind === 'error') throw new ApiError(502, UPSTREAM)
+    if (read.kind === 'error') throw upstreamFailed(UPSTREAM)
     // The principal cannot read the calendar any more (the share ended, the calendar is gone).
     if (read.kind !== 'ok') throw new LinkUnavailableError()
     return { level: 'read', objects: read.objects }

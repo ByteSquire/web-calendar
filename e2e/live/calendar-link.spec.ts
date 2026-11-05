@@ -136,7 +136,7 @@ async function openVisitor(browser: Browser): Promise<void> {
   visitor.on('pageerror', (error) => visitorProblems.push(`pageerror: ${error.message}`))
   visitor.on('console', (message) => {
     if (message.type() !== 'error') return
-    // The wrong password and the withdrawn link answer 401 and 404 on purpose.
+    // The wrong password and the removed link answer 401 and 404 on purpose.
     if (
       /Failed to load resource: the server responded with a status of (401|404)/.test(
         message.text(),
@@ -318,7 +318,7 @@ test('when alice removes the link the visitor loses it at once', async () => {
   // the next read of the open page fails, and the page says why
   await visitor.reload()
   await expect(
-    visitor.getByText('This link does not exist, was withdrawn or does not work at the moment.'),
+    visitor.getByText('This link does not exist, was removed or does not work at the moment.'),
   ).toBeVisible()
   await expect(visitor.locator('[data-calendar-main]')).toHaveCount(0)
 })
@@ -424,7 +424,7 @@ test.describe('a link to a calendar shared with its maker', () => {
     const links = alice.getByRole('list', { name: 'Links' })
     // the link alice made in Settings, read as her
     await expect(links.getByRole('listitem')).toHaveCount(1)
-    await expect(links).toContainText('made by')
+    await expect(links).toContainText('created by')
     await expect(links).toContainText('in Settings')
 
     await alice.getByRole('button', { name: 'Create link' }).click()

@@ -62,7 +62,7 @@ export interface GroupDetail {
   calendars: GroupCalendar[]
 }
 
-/** The same shape the server accepts for a group name: 1..64 characters, see isGroupName. */
+/** The same shape the server accepts for a group name: 1..64 characters (server/utils/groups). */
 const GROUP_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/
 const CALENDAR_NAME_MAX = 100
 const COLOR = /^#[0-9a-f]{6}$/i

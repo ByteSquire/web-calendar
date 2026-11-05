@@ -98,8 +98,3 @@ export function verifyPassword(password: string, stored: string): Promise<boolea
     return timingSafeEqual(actual, expected)
   })
 }
-
-/** For tests: how many checks are running. */
-export function runningChecks(): number {
-  return running
-}

@@ -2,7 +2,7 @@
 // reports problems per calendar (NFR-4: one calendar failing never takes the others down).
 import type { CalendarEvent } from '../../../shared/types/calendar'
 import type { DavObject } from '../caldav/types'
-import { freeBusyEvents } from '../ical/free-busy'
+import { readFreeBusyEvents } from '../ical/free-busy'
 import { readCalendarObject } from '../ical/read'
 import type { ReadIssue, ReadOptions } from '../ical/read-types'
 import { isExternalRef } from './calendars'
@@ -100,12 +100,12 @@ export function readCalendarEvents(
 
   if (outcome.kind === 'free-busy') {
     // The query was padded by a day at each end, like the others; only what overlaps is kept.
-    const events = freeBusyEvents(outcome.text, {
+    const { events, skipped } = readFreeBusyEvents(outcome.text, {
       calendarId,
       displayTimeZone: context.displayTimeZone,
       range: context.range,
     })
-    return { ...base, events }
+    return { ...base, events, skipped }
   }
 
   const common = {

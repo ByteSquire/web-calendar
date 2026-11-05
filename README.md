@@ -135,12 +135,13 @@ and client renders match.
   sheet; mock data in demo mode), the browser login (Kanidm, PKCE), live calendars from Radicale
   with recurrence and time zones (organization zone, the browser's, or a per-user setting),
   creating, editing and deleting events, a settings page (app tokens, password-protected
-  read-only calendar links, preferences, iCal subscriptions, `.ics` file import, external CalDAV
+  read-only calendar links at "Busy times only" or "Can view", preferences, iCal subscriptions, `.ics` file import, external CalDAV
   accounts), the token verifier and CalDAV
   gateway (`/caldav/`), and the security headers. Phase 3 is built; its unit and e2e tests pass, its migrations ran on a copy of the dev database,
   and the built app ran against the test stack's Kanidm and Radicale (the live e2e, and a booking
   and reconcile drive; not yet run: production, or a database with data): the audit log, access
-  administration (`/admin/access`, menu entry "Calendar access", admins only), shared views managed
+  administration (`/admin/access`, menu entry "Calendar access", admins only, with the calendar
+  links of each calendar), calendars shared as "Busy times only" shown as busy blocks, shared views managed
   by admins from the sidebar, the sharing writer, groups imported from the sign-in claim and the
   group file the app writes, groups with their own calendars (`/groups`, menu entry "Groups") and resources
   (bookings and availability blocks, availability reads, the booking form, the page

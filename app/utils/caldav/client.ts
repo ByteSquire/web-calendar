@@ -443,7 +443,8 @@ export function createCalDavClient(options: CalDavClientOptions): CalDavClient {
     for (const response of fetched) {
       if (!readable(response)) continue
       const data = textOf(prop(response.props, 'calendarData'), { trim: false })
-      // An object whose data the server will not give (free/busy-only access) is left out.
+      // An object whose data the server will not give is left out (a calendar the viewer sees as
+      // busy times only is read with `fetchFreeBusy` instead).
       if (data) objects.push(toObject(response, data))
     }
     return objects

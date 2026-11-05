@@ -435,7 +435,7 @@ export const settings: Readonly<Record<string, string>> = {
 
   // Calendar links
   'Give people without an account a view of one of your calendars, behind a password. A link shows what a share at its access level shows: the busy times only, or all events with their details.':
-    'Gib Menschen ohne Konto Einblick in einen deiner Kalender, geschützt durch ein Passwort. Ein Link zeigt, was eine Freigabe mit seiner Zugriffsstufe zeigt: nur die Belegt-Zeiten oder alle Termine mit ihren Details.',
+    'Gib Menschen ohne Konto Einblick in einen deiner Kalender, geschützt durch ein Passwort. Ein Link zeigt dasselbe wie eine Freigabe mit der gleichen Zugriffsstufe: nur die belegten Zeiten oder alle Termine mit ihren Details.',
   'It shows no more than you can see, and stops working when you lose access to the calendar or do not sign in to this app for {days}.':
     'Er zeigt nie mehr, als du sehen kannst, und funktioniert nicht mehr, wenn du den Zugriff auf den Kalender verlierst oder dich {days} lang nicht in dieser App anmeldest.',
   'Create link': 'Link erstellen',
@@ -454,10 +454,10 @@ export const settings: Readonly<Record<string, string>> = {
   'Remove link': 'Link entfernen',
   'load the links': 'Das Laden der Links',
   'There are no links to {name} yet.': 'Es gibt noch keine Links zu {name}.',
-  'made by {name} in Settings': 'erstellt von {name} in den Einstellungen',
-  'made by {name}': 'erstellt von {name}',
-  'Link “{label}” created. Send the address and the password, ideally on different ways.':
-    'Link „{label}“ erstellt. Schicke Adresse und Passwort, am besten auf verschiedenen Wegen.',
+  'created by {name} in Settings': 'erstellt von {name} in den Einstellungen',
+  'created by {name}': 'erstellt von {name}',
+  'Link “{label}” created. Send the address and the password, ideally by different routes.':
+    'Link „{label}“ erstellt. Schicke Adresse und Passwort am besten auf getrennten Wegen.',
   'This link no longer exists.': 'Diesen Link gibt es nicht mehr.',
   'Could not copy automatically. The password is selected: press Ctrl+C to copy it.':
     'Automatisches Kopieren ging nicht. Das Passwort ist markiert: Drücke Strg+C, um es zu kopieren.',
@@ -466,7 +466,7 @@ export const settings: Readonly<Record<string, string>> = {
   'The access level': 'Die Zugriffsstufe',
   'show the password': 'Das Anzeigen des Passworts',
   'You see this calendar as busy times only, so a link to it can show busy times only.':
-    'Du siehst von diesem Kalender nur die Belegt-Zeiten, also kann ein Link dazu auch nur die Belegt-Zeiten zeigen.',
+    'Du siehst von diesem Kalender nur die belegten Zeiten, also kann auch ein Link dazu nur diese zeigen.',
   'Calendar links': 'Kalenderlinks',
   Address: 'Adresse',
   'Who is the link for? Optional; the calendar name if empty.':
@@ -485,7 +485,13 @@ export const settings: Readonly<Record<string, string>> = {
     'Automatisches Kopieren ging nicht. Die Adresse ist markiert: Drücke Strg+C, um sie zu kopieren.',
   'Choose a password of at least {min} characters.':
     'Wähle ein Passwort mit mindestens {min} Zeichen.',
-  'The link was not made: {problems}.': 'Der Link wurde nicht erstellt: {problems}.',
-  'The link was not made.': 'Der Link wurde nicht erstellt.',
-  'make the link': 'Das Erstellen des Links',
+  'The link was not created: {problems}.': 'Der Link wurde nicht erstellt: {problems}.',
+  'The link was not created.': 'Der Link wurde nicht erstellt.',
+  'You can have at most {max} calendar links.': 'Du kannst höchstens {max} Kalenderlinks haben.',
+  'A calendar can have at most {max} links.': 'Ein Kalender kann höchstens {max} Links haben.',
+  'The calendar server no longer has this calendar.':
+    'Der Kalenderserver hat diesen Kalender nicht mehr.',
+  'The server is busy. Try again in a moment.':
+    'Der Server ist gerade ausgelastet. Versuche es gleich noch einmal.',
+  'create the link': 'Das Erstellen des Links',
 }

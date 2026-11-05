@@ -406,8 +406,8 @@ function summaryOf(link: CalendarLinkItem): string {
   if (forCalendar) {
     parts.push(
       link.readsAs === 'maker'
-        ? t('made by {name} in Settings', { name: principalLabel('user', link.maker) })
-        : t('made by {name}', { name: principalLabel('user', link.maker) }),
+        ? t('created by {name} in Settings', { name: principalLabel('user', link.maker) })
+        : t('created by {name}', { name: principalLabel('user', link.maker) }),
     )
   } else {
     parts.unshift(link.calendarName)
@@ -517,7 +517,7 @@ async function create() {
     formOpen.value = false
     resetForm()
     notice.value = t(
-      'Link “{label}” created. Send the address and the password, ideally on different ways.',
+      'Link “{label}” created. Send the address and the password, ideally by different routes.',
       { label: link.label },
     )
     await nextTick()

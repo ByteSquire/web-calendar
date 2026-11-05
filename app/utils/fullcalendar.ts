@@ -282,7 +282,9 @@ export function toFullCalendarEvent(
     eventId: event.id,
     calendarId: event.calendarId,
     kind,
-    label: eventAssistiveLabel(event, calendar?.name),
+    label: eventAssistiveLabel(event, calendar?.name, {
+      nameBlocked: calendar?.freeBusyOnly === true,
+    }),
   }
   return {
     id: event.id,
@@ -291,7 +293,11 @@ export function toFullCalendarEvent(
     ...(end > start ? { end } : {}),
     allDay: event.allDay,
     ...eventColors(calendar?.color, kind, context.scheme),
-    className: `app-evt app-evt-${kind}`,
+    // A tentative busy time (FBTYPE=BUSY-TENTATIVE) keeps its dashed edge, as in the split view.
+    className:
+      kind === 'blocked' && event.status === 'tentative'
+        ? 'app-evt app-evt-blocked app-evt-tentative'
+        : `app-evt app-evt-${kind}`,
     extendedProps,
   }
 }

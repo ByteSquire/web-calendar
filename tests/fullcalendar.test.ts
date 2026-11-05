@@ -336,6 +336,21 @@ describe('event mapping', () => {
     expect(extendedProps(input).kind).toBe('blocked')
   })
 
+  it('names the calendar of busy times the viewer sees as "Busy times only", and keeps tentative ones dashed', () => {
+    const busyOnly = calendar({ id: 'cal-b', name: 'Bob', freeBusyOnly: true, readOnly: true })
+    const input = toFullCalendarEvent(
+      makeEvent({ calendarId: 'cal-b', title: '', isBlocked: true, status: 'tentative' }),
+      context('light', [calendar(), busyOnly]),
+    )
+    expect(input.className).toBe('app-evt app-evt-blocked app-evt-tentative')
+    expect(extendedProps(input).label).toBe(
+      'Busy, Wed, 28 Oct 2026, 09:00 to 10:00, Calendar Bob, tentative',
+    )
+    // a blocked entry of another calendar still names nothing
+    const other = toFullCalendarEvent(makeEvent({ isBlocked: true }), context())
+    expect(extendedProps(other).label).toBe('Busy, Wed, 28 Oct 2026, 09:00 to 10:00')
+  })
+
   it('marks tentative and cancelled events', () => {
     const tentative = toFullCalendarEvent(makeEvent({ status: 'tentative' }), context())
     const cancelled = toFullCalendarEvent(makeEvent({ status: 'cancelled' }), context())
@@ -527,6 +542,31 @@ describe('buildEventDetails', () => {
       when: { time: 'All day' },
     })
     expect(JSON.stringify(details)).not.toMatch(/Real|Van|Sales/)
+  })
+
+  it('names the calendar of busy times the viewer sees as "Busy times only"', () => {
+    const { lookups: maps } = lookups()
+    const bob: Calendar = {
+      id: 'dav:/caldav/u/shared-7/',
+      name: 'Bob',
+      type: 'caldav',
+      color: '#16a34a',
+      defaultVisible: true,
+      readOnly: true,
+      freeBusyOnly: true,
+    }
+    maps.calendarById.set(bob.id, bob)
+    const details = buildEventDetails(
+      makeEvent({ calendarId: bob.id, title: '', isBlocked: true }),
+      maps,
+    )
+    expect(details).toMatchObject({
+      title: 'Busy',
+      blocked: true,
+      calendar: { name: 'Bob', color: '#16a34a' },
+      location: null,
+      description: null,
+    })
   })
 })
 

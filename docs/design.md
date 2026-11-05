@@ -282,7 +282,7 @@ Compared with v1.1, `sessions` is gone (no server-side tokens) and `calendars`,
 mock data still follow the v1.0 model (local ids, `etag`, `isBlocked`) and are
 adapted in Phase 2.
 
-**Built** (`server/db`, migrations `001_init.sql` to `006_access_and_resources.sql`, then `008_booking_sync.sql`, `009_groups.sql`, `010_sidebar_order.sql` and `011_calendar_links.sql`; there is no 007): every table above except `published_calendars`. Migration 009 was edited in place on 2026-11-05 (sources, `external_id`, the candidates table, the everyone row), because the groups feature had not been released; a development database that ran the earlier 009 has to be deleted (the runner applies a migration by name and does not notice a change). Beyond
+**Built** (`server/db`, migrations `001_init.sql` to `006_access_and_resources.sql`, then `008_booking_sync.sql`, `009_groups.sql`, `010_sidebar_order.sql`, `011_calendar_links.sql` and `012_calendar_link_levels.sql`; there is no 007): every table above except `published_calendars`. Migration 009 was edited in place on 2026-11-05 (sources, `external_id`, the candidates table, the everyone row), because the groups feature had not been released; a development database that ran the earlier 009 has to be deleted (the runner applies a migration by name and does not notice a change). Beyond
 the list: ids are `AUTOINCREMENT` (views refer to calendar ids in JSON, so ids are never reused);
 `users.username` is unique case-insensitively; `updated_at` is kept by triggers; `calendar_acl` has CHECKs
 tying `principal` to `principal_type`; a personal calendar needs an owner; deleting a user cascades to
@@ -716,8 +716,11 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
   against Radicale 3.9 on the test stack). Such a calendar is `freeBusyOnly` (and read-only): its
   read is a `free-busy-query` `REPORT` instead of a `calendar-query` (which Radicale refuses with
   403 there), cached like the others, and its periods become "Busy" blocks without titles in the
-  viewer's zone (`app/utils/ical/free-busy.ts`, also used by calendar links). A calendar link to
-  it offers "Busy times only" alone (§8).
+  viewer's zone (`app/utils/ical/free-busy.ts`, also used by calendar links); a tentative busy time
+  keeps the dashed edge. Unlike a resource's blocked time, such a block names its calendar (in its
+  accessible name and in the event sheet), which the viewer has in the sidebar anyway. A text filter
+  never matches a blocked entry: it has no text of its own. A calendar link to it offers "Busy
+  times only" alone (§8).
 - **Recurrence (FR-28)** — prefer Radicale's server-side `expand` if it works
   (untested, S4); otherwise expand `RRULE`, `EXDATE` and `RECURRENCE-ID` overrides
   with `ical.js`.
@@ -1175,7 +1178,8 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
     principal that owns the collection** (`owner`, the first segment of its path, like the owner of
     an access rule), so it does not depend on the admin who made it; it ends when it is removed or
     the calendar goes (`calendar_id` cascades).
-  - _Making one_ (audited as `calendar_link.created`, at most 50 links a person and 50 a calendar,
+  - _Making one_ (audited as `calendar_link.created`, at most 50 links a person and 50 a calendar
+    of the access page whoever made them, 409 `limit_reached` and `calendar_limit_reached`,
     a label of up to 100 characters, default the calendar's name, a password of 8 to 200
     characters): `POST /api/calendar-links` (`defineMemberHandler`) takes `calendarHref`, the app's
     address of the calendar (`/caldav/<sub>/…/`), which must be one calendar in the caller's **own**

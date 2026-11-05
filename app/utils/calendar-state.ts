@@ -227,7 +227,10 @@ export function filterCalendarEvents(
       return false
     }
     if (textFilters.length > 0) {
-      const text = `${event.title} ${event.location ?? ''} ${event.description ?? ''}`.toLowerCase()
+      // A blocked entry has no text of its own ("Busy" is only how it is drawn): no text matches.
+      const text = event.isBlocked
+        ? ''
+        : `${event.title} ${event.location ?? ''} ${event.description ?? ''}`.toLowerCase()
       if (!textFilters.some((needle) => text.includes(needle))) return false
     }
     return !hiddenStatuses.includes(event.status)

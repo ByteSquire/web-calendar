@@ -3,7 +3,7 @@
   calendar, read-only. No sidebar, no adding or editing; the top bar keeps the date navigation and
   the view types, and its menu only the look of the page (dark mode, language, full screen). The
   session lasts 8 hours and is kept for this tab only (sessionStorage); after that, or when the link
-  was withdrawn, the page says so. The calendar view, the top bar and the event sheet are the app's
+  was removed, the page says so. The calendar view, the top bar and the event sheet are the app's
   own, made read-only by `useCalendarLinkView()`.
 -->
 <template>
@@ -115,7 +115,7 @@ const passwordInput = useTemplateRef<{ inputRef: HTMLInputElement | null }>('pas
 
 const FAILURES: Record<LinkFailure, () => string> = {
   wrong_password: () => t('The password is not right.'),
-  unavailable: () => t('This link does not exist, was withdrawn or does not work at the moment.'),
+  unavailable: () => t('This link does not exist, was removed or does not work at the moment.'),
   session: () => t('Enter the password again.'),
   too_many: () => t('Too many tries. Wait a minute and try again.'),
   other: () => t('The calendar could not be opened. Try again.'),

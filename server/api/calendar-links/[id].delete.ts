@@ -15,6 +15,8 @@ export default defineMemberHandler((event, { db, user, audit, atomic }) => {
     audit('calendar_link.deleted', `calendar_link:${id}`, {
       linkId: id,
       calendar: link.collection_path,
+      calendarId: link.calendar_id,
+      level: link.level,
       label: link.label,
     })
   })

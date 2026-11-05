@@ -278,7 +278,7 @@ test.describe('calendar access', () => {
   }) => {
     const { api } = await openPage(page)
     const row = link(page, 'Front desk')
-    await expect(row).toContainText('Busy times only · made by Bob Builder in Settings')
+    await expect(row).toContainText('Busy times only · created by Bob Builder in Settings')
     // the links come before the people and groups
     const order = await page.evaluate(() => {
       const links = document.querySelector('[data-calendar-link]')!
@@ -334,7 +334,7 @@ test.describe('calendar access', () => {
     await press(form.getByRole('button', { name: 'Create link' }))
     await expect(form).toHaveCount(0)
     const row = link(page, 'For the parents')
-    await expect(row).toContainText('Busy times only · made by Alice Example')
+    await expect(row).toContainText('Busy times only · created by Alice Example')
     await expect(row.getByText('For the parents', { exact: true })).toBeFocused()
     await expect(page.getByRole('textbox', { name: 'Address of For the parents' })).toHaveValue(
       /\/link\/N{43}$/,

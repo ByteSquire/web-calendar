@@ -172,6 +172,7 @@ describe('readCalendarEvents: busy times only', () => {
       'BEGIN:VFREEBUSY',
       'FREEBUSY:20261105T090000Z/20261105T100000Z',
       'FREEBUSY:20200101T090000Z/20200101T100000Z',
+      'FREEBUSY:not-a-period',
       'END:VFREEBUSY',
       'END:VCALENDAR',
     ].join('\r\n')
@@ -182,7 +183,8 @@ describe('readCalendarEvents: busy times only', () => {
         range: { start: new Date('2026-11-01T00:00:00Z'), end: new Date('2026-12-01T00:00:00Z') },
       },
     )
-    expect(result).toMatchObject({ error: null, skipped: 0, aborted: false })
+    // the unreadable period is counted, like an unreadable entry
+    expect(result).toMatchObject({ error: null, skipped: 1, aborted: false })
     expect(result.events).toEqual([
       expect.objectContaining({
         calendarId: CAL,

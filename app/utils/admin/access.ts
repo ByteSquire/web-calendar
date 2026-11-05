@@ -88,13 +88,6 @@ export function principalKind(type: AccessPrincipalType): string {
   return type === 'user' ? t('Person') : type === 'group' ? t('Group') : t('Everyone')
 }
 
-const GROUP_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/
-
-/** The same shape the server accepts; the server still decides. */
-export function isGroupName(text: string): boolean {
-  return GROUP_NAME.test(text)
-}
-
 export function userLabel(user: AccessUser): string {
   const name = user.name?.trim()
   if (name && user.username) return `${name} (${user.username})`

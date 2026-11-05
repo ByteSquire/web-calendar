@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   calendarLabel,
   describeSaveProblem,
-  isGroupName,
   levelLabel,
   matchUsers,
   userLabel,
@@ -76,18 +75,6 @@ describe('people and groups', () => {
     expect(matchUsers(users, 'bo').map((u) => u.sub)).toEqual(['b'])
     expect(matchUsers(users, '  ').map((u) => u.sub)).toEqual(['a', 'b', 'c'])
     expect(matchUsers(users, '', 2)).toHaveLength(2)
-  })
-
-  it.each([
-    ['staff', true],
-    ['team.a-b_c', true],
-    ['', false],
-    ['-staff', false],
-    ['a/b', false],
-    ['staff@idm.example.org', false],
-    ['x'.repeat(65), false],
-  ])('checks the group name %j', (name, ok) => {
-    expect(isGroupName(name)).toBe(ok)
   })
 
   it('has plain words for the levels', () => {

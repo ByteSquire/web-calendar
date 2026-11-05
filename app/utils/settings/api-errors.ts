@@ -17,7 +17,7 @@ export interface ApiErrorInfo {
   message: string | null
   /** Rejected inputs of a 400, as the server reported them. */
   fields: { field: string; message: string }[]
-  /** `duplicate` or `limit_reached` of a 409. */
+  /** The `code` of a 409, such as `duplicate`, `limit_reached` or `not_available`. */
   code: string | null
   /** Why the iCal proxy failed (502 of `/data`). */
   reason: string | null

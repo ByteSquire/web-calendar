@@ -408,7 +408,7 @@ describe('showing the password of a link', () => {
   })
 })
 
-describe('withdrawing a link', () => {
+describe('removing a link', () => {
   it('works for its maker and stops the link at once, open pages too', async () => {
     const { slug, link } = await makeLink()
     const opened = (await (await openLink(slug)).json()) as { token: string }
@@ -731,6 +731,19 @@ describe('the links of a calendar on the access page', () => {
     expect(JSON.parse(row.details)).toMatchObject({ linkId: link.id, byAdmin: true })
   })
 
+  it('removed in Settings, are audited with their calendar of the access page and level', async () => {
+    const { link } = await makeLink({
+      calendarHref: `/caldav/${SUBS.alice}/shared-${calendarId}/`,
+      level: 'free_busy',
+    })
+    expect((await call('DELETE', `/api/calendar-links/${link.id}`, 'alice')).status).toBe(200)
+    const details = db
+      .prepare("SELECT details FROM audit_log WHERE action = 'calendar_link.deleted'")
+      .pluck()
+      .get() as string
+    expect(JSON.parse(details)).toMatchObject({ linkId: link.id, calendarId, level: 'free_busy' })
+  })
+
   it('are removed by an admin, and the address stops at once; links to no calendar here are not theirs', async () => {
     const link = await adminLink()
     const other = await makeLink()
@@ -748,6 +761,36 @@ describe('the links of a calendar on the access page', () => {
       .pluck()
       .get() as string
     expect(JSON.parse(audit)).toMatchObject({ linkId: link.id, calendarId, byAdmin: true })
+  })
+
+  it('are at most 50 to a calendar, whoever made them, on both routes', async () => {
+    // made by the admin, so no one person's own limit is in the way
+    const makerId = db.prepare('SELECT id FROM users WHERE oidc_sub = ?').pluck().get(SUBS.admin)
+    const insert = db.prepare(
+      `INSERT INTO calendar_links (user_id, collection_path, calendar_name, label, slug_hash,
+         password_hash, calendar_id) VALUES (?, ?, 'Bob', ?, ?, 'scrypt$x', ?)`,
+    )
+    for (let n = 0; n < 50; n += 1) {
+      insert.run(
+        makerId,
+        `/${SUBS.admin}/shared-${calendarId}/`,
+        `L${n}`,
+        n.toString(16).padStart(64, '0'),
+        calendarId,
+      )
+    }
+    const admin = await adminCreate({ level: 'read', password: PASSWORD })
+    expect(admin.status).toBe(409)
+    expect(JSON.stringify(await admin.json())).toContain('calendar_limit_reached')
+    const settings = await call('POST', '/api/calendar-links', 'bob', {
+      calendarHref: `/caldav/${SUBS.bob}/shared-${calendarId}/`,
+      level: 'read',
+      password: PASSWORD,
+    })
+    expect(settings.status).toBe(409)
+    expect(JSON.stringify(await settings.json())).toContain('calendar_limit_reached')
+    // a calendar of nobody's access page is not counted
+    expect((await makeLink()).link.calendarId).toBeNull()
   })
 
   it('go when the calendar goes', async () => {

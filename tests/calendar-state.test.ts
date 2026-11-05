@@ -244,6 +244,18 @@ describe('event filtering', () => {
     )
   })
 
+  it('never matches a text filter with a blocked entry, whatever it is drawn as', () => {
+    const filter = (value: string) => [{ id: 'f', name: value, kind: 'text' as const, value }]
+    const busy = { ...events[0]!, id: 'busy', title: 'Busy', isBlocked: true }
+    const blank = { ...events[0]!, id: 'blank', title: '', isBlocked: true }
+    const shown = filterCalendarEvents([busy, blank, ...events], {
+      ...criteria,
+      filters: filter('busy'),
+    })
+    expect(ids(shown)).not.toContain('busy')
+    expect(ids(shown)).not.toContain('blank')
+  })
+
   it('combines filters of one kind with OR and different kinds with AND', () => {
     const filters = [
       { id: 'a', name: 'Focus', kind: 'category' as const, value: 'cat-focus' },

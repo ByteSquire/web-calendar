@@ -8,6 +8,9 @@ import { describeError, fieldProblems, parseApiError } from '~/utils/settings/ap
 export const MIN_LINK_PASSWORD_LENGTH = 8
 export const MAX_LINK_PASSWORD_LENGTH = 200
 export const MAX_LINK_LABEL_LENGTH = 100
+/** As the server (server/utils/links/service.ts): links a person can have, and a calendar. */
+export const MAX_LINKS_PER_PERSON = 50
+export const MAX_LINKS_PER_CALENDAR = 50
 
 /** A link shows what a share at the same level shows; links cannot write. */
 export type LinkLevel = Exclude<AccessPermission, 'write'>
@@ -93,6 +96,10 @@ export interface LinkFailure {
   alert?: string
 }
 
+/**
+ * Why a link was not created. The server's own sentences are English, so each refusal it names by
+ * a code is worded here.
+ */
 export function describeLinkCreateError(error: unknown): LinkFailure {
   const info = parseApiError(error)
   if (info.kind === 'validation') {
@@ -100,14 +107,28 @@ export function describeLinkCreateError(error: unknown): LinkFailure {
     return {
       byField,
       ...(other.length > 0
-        ? { alert: t('The link was not made: {problems}.', { problems: other.join('; ') }) }
+        ? { alert: t('The link was not created: {problems}.', { problems: other.join('; ') }) }
         : {}),
     }
   }
   if (info.kind === 'conflict') {
-    return { byField: {}, alert: info.message ?? t('The link was not made.') }
+    if (info.code === 'limit_reached') {
+      const max = MAX_LINKS_PER_PERSON
+      return { byField: {}, alert: t('You can have at most {max} calendar links.', { max }) }
+    }
+    if (info.code === 'calendar_limit_reached') {
+      const max = MAX_LINKS_PER_CALENDAR
+      return { byField: {}, alert: t('A calendar can have at most {max} links.', { max }) }
+    }
+    if (info.code === 'no_collection') {
+      return { byField: {}, alert: t('The calendar server no longer has this calendar.') }
+    }
+    if (info.code === 'busy') {
+      return { byField: {}, alert: t('The server is busy. Try again in a moment.') }
+    }
+    return { byField: {}, alert: t('The link was not created.') }
   }
-  return { byField: {}, alert: describeError(error, N_('make the link')) }
+  return { byField: {}, alert: describeError(error, N_('create the link')) }
 }
 
 /** Why a password was not shown: the server cannot show it, the link is gone, or another problem. */

@@ -46,6 +46,12 @@ export interface BusyPeriod {
 
 /** The busy periods of a VFREEBUSY text, in order; unreadable periods are left out. */
 export function busyPeriods(text: string): BusyPeriod[] {
+  return readBusyPeriods(text).periods
+}
+
+/** The busy periods, and how many could not be read (counted like unreadable entries). */
+export function readBusyPeriods(text: string): { periods: BusyPeriod[]; skipped: number } {
+  let skipped = 0
   const periods: BusyPeriod[] = []
   for (const line of unfold(text)) {
     const colon = line.indexOf(':')
@@ -62,11 +68,14 @@ export function busyPeriods(text: string): BusyPeriod[] {
       const [from, to] = period.split('/')
       const start = from ? utcInstant(from) : null
       const end = start && to ? periodEnd(start, to) : null
-      if (!start || !end || Temporal.Instant.compare(end, start) <= 0) continue
+      if (!start || !end || Temporal.Instant.compare(end, start) <= 0) {
+        skipped++
+        continue
+      }
       periods.push({ start, end, tentative: fbtype === 'BUSY-TENTATIVE' })
     }
   }
-  return periods.sort((a, b) => Temporal.Instant.compare(a.start, b.start))
+  return { periods: periods.sort((a, b) => Temporal.Instant.compare(a.start, b.start)), skipped }
 }
 
 /**
@@ -77,8 +86,17 @@ export function freeBusyEvents(
   text: string,
   context: { calendarId: string; displayTimeZone: string; range?: { start: Date; end: Date } },
 ): CalendarEvent[] {
+  return readFreeBusyEvents(text, context).events
+}
+
+/** `freeBusyEvents`, with the number of periods that could not be read. */
+export function readFreeBusyEvents(
+  text: string,
+  context: { calendarId: string; displayTimeZone: string; range?: { start: Date; end: Date } },
+): { events: CalendarEvent[]; skipped: number } {
   const { range } = context
-  const periods = busyPeriods(text).filter(
+  const read = readBusyPeriods(text)
+  const periods = read.periods.filter(
     (period) =>
       !range ||
       (period.end.epochMilliseconds > range.start.getTime() &&
@@ -87,7 +105,7 @@ export function freeBusyEvents(
   // An id of its own times, so a block keeps it whatever else the range holds; the same period
   // twice is one block.
   const seen = new Set<string>()
-  return periods.flatMap((period): CalendarEvent[] => {
+  const events = periods.flatMap((period): CalendarEvent[] => {
     const key = `${period.start.epochMilliseconds}-${period.end.epochMilliseconds}`
     if (seen.has(key)) return []
     seen.add(key)
@@ -106,4 +124,5 @@ export function freeBusyEvents(
     }
     return [event]
   })
+  return { events, skipped: read.skipped }
 }

@@ -95,8 +95,12 @@ characters become one `_`, at most 64 characters, starting with a letter or digi
 the same name are both marked **conflict**, and neither can be imported until one is renamed at the
 provider. Names on `NUXT_OIDC_GROUPS_IGNORE` (default `idm_*,system_*,domain_*`: Kanidm's built-in
 groups) are never candidates; the admin group's name and `web_calendar_users` are never offered.
+**Adding an entry that matches a group imported already stops its import:** its members are taken out
+at their next sign-in, so nobody reaches its calendars through it (the group, its calendars and rules
+stay until an admin stops importing it; the people stay registered and keep their other groups).
 Limits: entries over 255 characters are skipped and only the first 200 groups of a claim are kept; a
-person in more groups than that loses their membership of imported groups past the cut. Entra's pointer
+claim cut at 200 adds a person to groups but takes them out of none, so a person in more groups than
+that is never removed from an imported group. Entra's pointer
 for more than 200 groups is not an empty claim: the groups are then unknown and nothing changes.
 
 **What an import does.** A candidate appears on the Groups page (admins only) after one of its members

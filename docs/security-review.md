@@ -424,9 +424,10 @@ rename groups at the provider is part of the trust, and the doc says so per prov
 **Known limits:**
 
 - A person in more than 200 groups that are not ignored: the claim is cut at 200 (the parser's test
-  covers the cut), and a membership of an imported group beyond the cut is removed at the import as
-  if the person had left (read from `import.ts`; no test covers that effect). A bound, not a fix; such
-  a provider needs a smaller claim (a mapper filter, `NUXT_OIDC_GROUPS_IGNORE`).
+  covers the cut). The import then only adds: it takes the person out of no group, because the
+  groups past the cut are unknown (`truncated`; tested in `groups-import.test.ts`). The price is that
+  such a person is never removed from an imported group; that provider needs a smaller claim (a
+  mapper filter, `NUXT_OIDC_GROUPS_IGNORE`).
 - An entry over 255 characters cannot be imported.
 - Entra: over 200 groups the claim is replaced by a pointer, so memberships stay as they were and the
   person is not an admin through the token; candidates are GUIDs, so `NUXT_OIDC_ADMIN_GROUP` must be a

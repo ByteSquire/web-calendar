@@ -50,6 +50,11 @@ export default defineNuxtConfig({
       /**
        * Groups that are never offered for import, comma-separated names or `prefix*`
        * (NUXT_OIDC_GROUPS_IGNORE). The default hides Kanidm's built-in groups.
+       *
+       * WARNING: a group that is imported already and matches a new entry here is no longer
+       * imported. Its members are taken out of it at their next sign-in, so nobody reaches its
+       * calendars through it any more (the group, its calendars and rules stay until an admin
+       * stops importing it). The people themselves stay registered and keep their other groups.
        */
       groupsIgnore: 'idm_*,system_*,domain_*',
       /**

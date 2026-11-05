@@ -48,6 +48,8 @@ services:
       # Group whose members are admins (name, SPN, id or path as the provider writes it); not empty.
       NUXT_OIDC_ADMIN_GROUP: '${NUXT_OIDC_ADMIN_GROUP:-calendar_admins}'
       # The claim that lists a person's groups, and the groups that are never offered for import.
+      # WARNING: adding an entry that matches a group imported already takes its members out of it at
+      # their next sign-in (see .env.example); the people stay registered and keep other groups.
       NUXT_OIDC_GROUPS_CLAIM: '${NUXT_OIDC_GROUPS_CLAIM:-groups}'
       NUXT_OIDC_GROUPS_IGNORE: '${NUXT_OIDC_GROUPS_IGNORE:-idm_*,system_*,domain_*}'
       # Scopes the browser asks for, and the scope every access token must carry (also what keeps

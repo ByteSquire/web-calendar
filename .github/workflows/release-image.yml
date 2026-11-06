@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag to build and publish again, for example v0.3.2
+        description: Existing version tag to build and publish again, for example v0.3.3
         type: string
         required: true
 

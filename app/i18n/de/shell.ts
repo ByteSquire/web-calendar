@@ -202,4 +202,32 @@ export const shell: Readonly<Record<string, string>> = {
   'delete the calendar': 'den Kalender löschen',
   'delete the category': 'die Kategorie löschen',
   'delete the filter': 'den Filter löschen',
+
+  // Resources and categories that events carry, in the sidebar; category colours on events
+  'Actions for resource {name}': 'Aktionen für Ressource {name}',
+  '{name} is saved as one of your categories, with this colour.':
+    '{name} wird als eine deiner Kategorien gespeichert, mit dieser Farbe.',
+  'Category colours on events': 'Kategoriefarben an Terminen',
+  'category {names} | categories {names}': 'Kategorie {names} | Kategorien {names}',
+
+  // Turning a category into a status
+  'Turn into a status…': 'In einen Status umwandeln…',
+  'Turn {name} into a status': '{name} in einen Status umwandeln',
+  'Every event in your calendars that has this category gets the status you choose. Other calendar apps show a status, unlike a category.':
+    'Jeder Termin in deinen Kalendern mit dieser Kategorie bekommt den Status, den du wählst. Andere Kalender-Apps zeigen einen Status an, anders als eine Kategorie.',
+  'Looking for the events…': 'Die Termine werden gesucht…',
+  'No event in a calendar you can change has this category.':
+    'Kein Termin in einem Kalender, den du ändern kannst, hat diese Kategorie.',
+  '{count} event has this category. | {count} events have this category.':
+    '{count} Termin hat diese Kategorie. | {count} Termine haben diese Kategorie.',
+  'In: {calendars}.': 'In: {calendars}.',
+  'Remove {name} from these events': '{name} von diesen Terminen entfernen',
+  'Changing the events: {done} of {total}': 'Die Termine werden geändert: {done} von {total}',
+  '{count} event was changed. | {count} events were changed.':
+    '{count} Termin wurde geändert. | {count} Termine wurden geändert.',
+  'Change {count} event | Change {count} events': '{count} Termin ändern | {count} Termine ändern',
+  '{calendar} could not be searched: {problem}':
+    '{calendar} konnte nicht durchsucht werden: {problem}',
+  '{count} event could not be changed: {reason} | {count} events could not be changed. The first: {reason}':
+    '{count} Termin konnte nicht geändert werden: {reason} | {count} Termine konnten nicht geändert werden. Der erste: {reason}',
 }

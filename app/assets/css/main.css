@@ -269,6 +269,19 @@
   );
 }
 
+/* "Category colours on events" (the ⋮ menu): a dot per category before an entry's title, ringed in
+ * the entry's text colour so it stands out on any fill (WCAG 1.4.11); the names are in the entry's
+ * label and its sheet, so the colour is never the only way to tell. */
+.app-evt-tag {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  margin-inline-end: 0.25rem;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 1px currentColor;
+  vertical-align: -0.0625rem;
+}
+
 /* No motion inside the calendar for people who ask for less. The split view is not inside
    .calendar-main: its period buttons need the same rule (e2e/reduced-motion.spec.ts). */
 @media (prefers-reduced-motion: reduce) {

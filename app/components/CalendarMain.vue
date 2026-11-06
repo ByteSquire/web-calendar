@@ -4,6 +4,7 @@
   only writes back where it navigates by itself (a click on a day number). Editing is off in
   Phase 1; events open the sheet (`selectEvent`), date cells open quick-add.
   Mapping and options live in utils/fullcalendar.ts; the colours of the theme in assets/css/main.css.
+  With "Category colours on events" an entry shows a dot per category before its title.
 -->
 <template>
   <div
@@ -25,7 +26,12 @@
             {{ arg.timeText }}
           </div>
           <div :class="[arg.titleClass, titleStyle(arg)]" aria-hidden="true">
-            {{ arg.event.title }}
+            <span
+              v-for="(color, index) in arg.event.extendedProps.categoryColors"
+              :key="index"
+              class="app-evt-tag"
+              :style="{ backgroundColor: color }"
+            />{{ arg.event.title }}
           </div>
         </template>
         <span class="sr-only">{{ entryLabel(arg) }}</span>
@@ -55,6 +61,7 @@ import { locale, t } from '~/utils/i18n'
 import {
   BASE_CALENDAR_OPTIONS,
   calendarLayoutOptions,
+  eventDisplayFor,
   fullCalendarViewName,
   isCompactWidth,
   plainDateInCalendarZone,
@@ -82,6 +89,7 @@ const {
   rangeLabel,
   visibleEvents,
   calendarById,
+  categoryById,
   selectEvent,
   openQuickAdd,
 } = useCalendarState()
@@ -116,10 +124,14 @@ useKeyboardScrollers(rootElement)
 // The year overview is too dense for text: entries show as dots and bars.
 const dotsOnly = computed(() => viewType.value === 'year')
 
+// "Category colours on events" (the ⋮ menu): a dot per category before the title, not in the year
+// view, where an entry is a dot already.
+const { shown: categoryColorsShown } = useCategoryColorsOnEvents()
 const events = computed(() =>
   toFullCalendarEvents(visibleEvents.value, {
     calendarById: calendarById.value,
     scheme: scheme.value,
+    ...(categoryColorsShown.value && !dotsOnly.value ? { categoryById: categoryById.value } : {}),
   }),
 )
 
@@ -141,6 +153,7 @@ const options = computed<CalendarOptions>(() => ({
   initialView,
   initialDate,
   colorScheme: scheme.value,
+  eventDisplay: eventDisplayFor(viewType.value),
   events: events.value,
   eventClick: onEventClick,
   dateClick: onDateClick,

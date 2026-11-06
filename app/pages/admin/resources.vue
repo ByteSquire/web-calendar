@@ -6,7 +6,7 @@
   themselves. Administrators are not managers by default, so the rules of a new resource must name
   somebody with "Can manage" or nobody can accept a request. Every rule change sends the complete
   rule list. After each change the calendar data is reloaded so the sidebar and the booking form
-  show it.
+  show it. `?open=<id>` (from "Edit resource" in the sidebar) opens that resource's dialog.
 -->
 <template>
   <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 sm:p-6">
@@ -237,6 +237,7 @@ useHead({ title: () => t('Resources') })
 type Body = NonNullable<ReturnType<typeof toBody>>
 
 const router = useRouter()
+const route = useRoute()
 const { admin, ensure } = useAdminFlag()
 const api = useAuthFetch()
 const status = useLiveStatus()
@@ -308,6 +309,9 @@ async function start() {
     groups.value = known.groups
     loadError.value = null
     loaded.value = true
+    // "Edit resource" in the sidebar's menu of a resource opens it here.
+    const wanted = resources.value.find((item) => String(item.id) === route.query.open)
+    if (wanted && dialog.value === null) openDialog(wanted, 'details')
   } catch (cause) {
     loadError.value = describeError(cause, N_('load the resources'))
   }

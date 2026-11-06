@@ -342,3 +342,35 @@ describe('savingIds', () => {
     expect(store.savingIds.value).toEqual([])
   })
 })
+
+describe('colorCategory', () => {
+  it('saves a name that only events carry as a category of that colour, and the selection follows', async () => {
+    const persistCategory = vi.fn(async (category: Category) => ({ ...category, id: '9' }))
+    const store = setup({ persistCategory })
+    store.setCategorySelected('auto:travel', true)
+    await store.colorCategory('auto:travel', '#b91c1c')
+    expect(persistCategory).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Travel', color: '#b91c1c' }),
+    )
+    expect(byId(store.categories.value, 'auto:travel')).toBeUndefined()
+    expect(byId(store.categories.value, '9')).toMatchObject({ name: 'Travel', color: '#b91c1c' })
+    expect(store.selectedCategoryIds.value).toEqual(['9'])
+  })
+
+  it('keeps the name as it was when the save fails', async () => {
+    const store = setup({ persistCategory: vi.fn().mockRejectedValue(new Error('down')) })
+    await expect(store.colorCategory('auto:sport', '#b91c1c')).rejects.toThrow('down')
+    expect(byId(store.categories.value, 'auto:sport')).toMatchObject({ name: 'Sport' })
+  })
+
+  it('recolours a saved category, and works without a backend', async () => {
+    const store = setup()
+    await store.colorCategory('1', '#047857')
+    expect(byId(store.categories.value, '1')!.color).toBe('#047857')
+    await store.colorCategory('auto:sport', '#047857')
+    expect(store.categories.value.find((c) => c.name === 'Sport')).toMatchObject({
+      color: '#047857',
+    })
+    expect(byId(store.categories.value, 'auto:sport')).toBeUndefined()
+  })
+})

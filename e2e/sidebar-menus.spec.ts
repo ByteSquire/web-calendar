@@ -122,3 +122,27 @@ test('a filter is edited and deleted from its menu', async ({ page }) => {
   await expect(sidebar(page).getByText('Work things', { exact: true })).toHaveCount(0)
   expect(errors).toEqual([])
 })
+
+test('a resource gets a colour of the person’s own from its menu', async ({ page }) => {
+  const { errors } = await openApp(page)
+  await showSidebar(page)
+  await press(
+    sidebar(page).getByRole('button', { name: 'Actions for resource Room A', exact: true }),
+  )
+  // in demo mode nobody is an admin of the server, so "Edit resource" is not offered
+  await expect(page.getByRole('menuitem')).toHaveText(['Colour'])
+  await press(page.getByRole('menuitem', { name: 'Colour' }))
+  const dialog = page.getByRole('dialog', { name: 'Colour of Room A' })
+  await expect(dialog.getByRole('radio', { name: 'Default' })).toBeChecked()
+  await press(dialog.getByText('Red', { exact: true }))
+  await press(dialog.getByRole('button', { name: 'Save' }))
+  await expect(dialog).toBeHidden()
+  const swatch = await sidebar(page)
+    .locator('li')
+    .filter({ hasText: 'Room A' })
+    .locator('[style*="color"]')
+    .first()
+    .evaluate((element) => getComputedStyle(element).color)
+  expect(swatch).toBe('rgb(185, 28, 28)')
+  expect(errors).toEqual([])
+})

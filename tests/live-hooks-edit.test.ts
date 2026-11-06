@@ -145,3 +145,20 @@ describe('calendars', () => {
     expect(api).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('the colour of a resource', () => {
+  it("is saved for the viewer like a calendar's", async () => {
+    const { api, hooks } = setup({ '/api/calendar-prefs': { ref: 'res:5', color: '#b91c1c' } })
+    await hooks.persistCalendarColor!('res:5', '#b91c1c')
+    expect(api).toHaveBeenCalledWith('/api/calendar-prefs', {
+      method: 'PUT',
+      body: { ref: 'res:5', color: '#b91c1c' },
+    })
+  })
+
+  it('stays in the page for a calendar that is no source of the server', async () => {
+    const { api, hooks } = setup()
+    await hooks.persistCalendarColor!('cal-room-a', '#b91c1c')
+    expect(api).not.toHaveBeenCalled()
+  })
+})

@@ -26,6 +26,16 @@ const room: ApiResource = {
 }
 
 describe('resources as sidebar entries', () => {
+  it("takes the viewer's colour of a resource, and keeps the palette's as its own", () => {
+    const [plain] = toResourceCalendars([room])
+    const [chosen] = toResourceCalendars([room], [{ ref: 'res:5', color: '#B91C1C' }])
+    expect(chosen!.color).toBe('#b91c1c')
+    expect(chosen!.ownColor).toBe(plain!.color)
+    expect(toResourceCalendars([room], [{ ref: 'res:6', color: '#b91c1c' }])[0]!.color).toBe(
+      plain!.color,
+    )
+  })
+
   it('builds a read-only resource calendar that starts hidden, and the resource that points at it', () => {
     const [calendar] = toResourceCalendars([room])
     expect(calendar).toMatchObject({

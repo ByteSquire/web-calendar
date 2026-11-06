@@ -2,7 +2,9 @@
   Overflow (⋮) menu (FR-25). Nuxt UI closes it on Escape and on a click outside, moves focus into
   the menu and returns it to the trigger. On the page of a calendar link (a visitor, no account):
   only Dark mode, the language and Full screen. Signed in (live mode): the user, the time zone the times
-  are shown in, Refresh (FR-10), Settings, Groups, Calendar access (admins only), Full screen, Dark mode, Help and Sign out. The demo mode
+  are shown in, Refresh (FR-10), Settings, Groups, Calendars, People and Resources (admins only), Full
+  screen, Dark mode, Category colours on events (a dot per category on every entry, kept in this
+  browser), Help and Sign out. Each item runs once per click or tap (utils/menu-select.ts). The demo mode
   keeps the placeholder items of the mock-up. "Full screen" is only offered where the browser has
   one for pages (not on iPhone Safari): on a phone it hides the address bar. "Dark mode" is a
   switch: it shows the scheme in use, which is the system's until it is flipped, and from then on
@@ -13,7 +15,7 @@
   as narrow as its other rows allow until a scheme has been chosen, and then widens to fit it.
 -->
 <template>
-  <UDropdownMenu :items="items" :content="{ align: 'end' }">
+  <UDropdownMenu :items="settledMenuItems(items)" :content="{ align: 'end' }">
     <UButton
       :icon="loading ? 'i-lucide-loader-circle' : 'i-lucide-ellipsis-vertical'"
       :ui="{ leadingIcon: loading ? 'motion-safe:animate-spin' : '' }"
@@ -54,6 +56,7 @@
 
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
+import { settledMenuItems } from '~/utils/menu-select'
 import { useAdminFlag } from '~/composables/useAdminAccess'
 import { useAuth } from '~/composables/useAuth'
 import { useLiveStatus } from '~/composables/useLiveCalendar'
@@ -118,6 +121,7 @@ const followSystemLabel = computed(() => t('Follow system'))
 
 // The scheme in use (the system's, or the one the switch chose), not the stored preference.
 const dark = computed(() => colorMode.value === 'dark')
+const { shown: categoryColorsShown, set: setCategoryColors } = useCategoryColorsOnEvents()
 
 function mockAction(action: string) {
   toast.add({
@@ -170,6 +174,14 @@ const items = computed<DropdownMenuItem[][]>(() => {
         },
       ]
     : []
+  // A dot per category on every entry, so categories read as coloured tags (kept in this browser).
+  const categoryColors: DropdownMenuItem = {
+    label: t('Category colours on events'),
+    icon: 'i-lucide-tags',
+    type: 'checkbox',
+    checked: categoryColorsShown.value,
+    onSelect: () => setCategoryColors(!categoryColorsShown.value),
+  }
   const fullScreenItems: DropdownMenuItem[] = fullscreen.supported.value
     ? [
         {
@@ -203,6 +215,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
         ...fullScreenItems,
         darkMode,
         ...followSystem,
+        categoryColors,
         help,
       ],
     ]
@@ -249,6 +262,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
       ...fullScreenItems,
       darkMode,
       ...followSystem,
+      categoryColors,
       help,
     ],
     [{ label: t('Sign out'), icon: 'i-lucide-log-out', onSelect: signOut }],

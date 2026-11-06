@@ -159,7 +159,15 @@ describe('overflow menu', () => {
   it('shows the user, the zone, Refresh, Settings, Help and Sign out when signed in', async () => {
     useState('cal-user').value = { id: '7', name: 'Alice', email: 'alice@example.org' }
     await open()
-    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Groups', 'Dark mode', 'Help', 'Sign out'])
+    expect(menuItems()).toEqual([
+      'Refresh',
+      'Settings',
+      'Groups',
+      'Dark mode',
+      'Category colours on events',
+      'Help',
+      'Sign out',
+    ])
     const menu = text(document.querySelector('[role="menu"]'))!
     expect(menu).toContain('Alice')
     expect(menu).toContain('alice@example.org')
@@ -176,7 +184,15 @@ describe('overflow menu', () => {
       { id: 'res-1', name: 'Room A', type: 'room', calendarId: 'cal-1' },
     ] as typeof resources.value
     await open()
-    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Groups', 'Dark mode', 'Help', 'Sign out'])
+    expect(menuItems()).toEqual([
+      'Refresh',
+      'Settings',
+      'Groups',
+      'Dark mode',
+      'Category colours on events',
+      'Help',
+      'Sign out',
+    ])
     expect(document.querySelector('[href="/resources/requests"]')).toBeNull()
   })
 
@@ -191,7 +207,13 @@ describe('overflow menu', () => {
   it('keeps the placeholder items of the mock-up in demo mode', async () => {
     useConfig({ demo: true, issuer: '' })
     await open()
-    expect(menuItems()).toEqual(['Refresh', 'Settings', 'Dark mode', 'Help'])
+    expect(menuItems()).toEqual([
+      'Refresh',
+      'Settings',
+      'Dark mode',
+      'Category colours on events',
+      'Help',
+    ])
     expect(text(document.querySelector('[role="menu"]'))).not.toContain('Times in')
   })
 
@@ -222,6 +244,7 @@ describe('overflow menu', () => {
         'Groups',
         'Full screen',
         'Dark mode',
+        'Category colours on events',
         'Help',
         'Sign out',
       ])
@@ -261,12 +284,16 @@ describe('overflow menu', () => {
       useColorMode().preference = 'system'
     })
 
-    const entry = () => document.querySelector<HTMLElement>('[role="menuitemcheckbox"]')!
+    const entry = () =>
+      [...document.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]')].find((item) =>
+        item.textContent?.includes('Dark mode'),
+      )!
 
     it('is a single menu item that shows the scheme in use', async () => {
       useColorMode().preference = 'light'
       await open()
-      expect(document.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(1)
+      // the other check item is "Category colours on events"
+      expect(document.querySelectorAll('[role="menuitemcheckbox"]')).toHaveLength(2)
       expect(text(entry())).toBe('Dark mode')
       expect(entry().getAttribute('aria-checked')).toBe('false')
       // The switch is a picture of the state; the item itself is the control.

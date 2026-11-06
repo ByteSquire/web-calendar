@@ -70,6 +70,16 @@ export interface CalDavClient {
   ): Promise<string>
   getObject(objectUrl: string, signal?: AbortSignal): Promise<DavObject>
   /**
+   * The objects of one calendar with an event whose CATEGORIES has `name` in it, at any time: a
+   * `calendar-query` with a text match, which the server compares without regard to case and as a
+   * part of the text, so the caller checks the exact name.
+   */
+  findObjectsWithCategory(
+    calendarUrl: string,
+    name: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<DavObject[]>
+  /**
    * Writes an object. `etag` becomes `If-Match` (a `conflict` error if it changed meanwhile);
    * `create` becomes `If-None-Match: *` (an `exists` error if something is there). Without either
    * the write is unconditional. Returns the new ETag.
@@ -400,17 +410,48 @@ export function createCalDavClient(options: CalDavClientOptions): CalDavClient {
     range: DavRange,
     opts: { expand?: boolean; signal?: AbortSignal } = {},
   ): Promise<DavObject[]> {
-    const url = requestUrl(calendarUrl)
     const start = icalUtc(range.start, 'floor')
     const end = icalUtc(range.end, 'ceil')
     if (start >= end) throw new RangeError('the time range is empty')
     const expand = opts.expand ? { start, end } : null
-    const { signal } = opts
+    return queryObjects(
+      calendarUrl,
+      `<c:time-range start="${start}" end="${end}"/>`,
+      expand,
+      opts.signal,
+    )
+  }
 
+  async function findObjectsWithCategory(
+    calendarUrl: string,
+    name: string,
+    opts: { signal?: AbortSignal } = {},
+  ): Promise<DavObject[]> {
+    const text = name.trim()
+    if (text === '' || text.length > 200) {
+      throw new TypeError('findObjectsWithCategory: the name must have 1 to 200 characters')
+    }
+    return queryObjects(
+      calendarUrl,
+      `<c:prop-filter name="CATEGORIES"><c:text-match collation="i;ascii-casemap">` +
+        `${xmlEscape(text)}</c:text-match></c:prop-filter>`,
+      null,
+      opts.signal,
+    )
+  }
+
+  /** A `calendar-query` for the events that pass `eventFilter` (the inside of the VEVENT filter). */
+  async function queryObjects(
+    calendarUrl: string,
+    eventFilter: string,
+    expand: { start: string; end: string } | null,
+    signal: AbortSignal | undefined,
+  ): Promise<DavObject[]> {
+    const url = requestUrl(calendarUrl)
     const query =
       `${XML_HEAD}<c:calendar-query ${NAMESPACES}>${dataProps(expand)}` +
       `<c:filter><c:comp-filter name="VCALENDAR"><c:comp-filter name="VEVENT">` +
-      `<c:time-range start="${start}" end="${end}"/></c:comp-filter></c:comp-filter></c:filter>` +
+      `${eventFilter}</c:comp-filter></c:comp-filter></c:filter>` +
       `</c:calendar-query>`
     const answer = multistatus(await xml('REPORT', url, query, '1', signal), 'REPORT')
 
@@ -630,6 +671,7 @@ export function createCalDavClient(options: CalDavClientOptions): CalDavClient {
     clearDiscovery,
     listCalendars,
     fetchObjects,
+    findObjectsWithCategory,
     fetchFreeBusy,
     getObject,
     putObject,

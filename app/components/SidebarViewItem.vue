@@ -33,8 +33,8 @@ import type { CalendarView } from '../../shared/types/calendar'
 // actions (Rename, Update from selection, Unshare, Delete) need `canManage`: the viewer is an
 // administrator (a convenience; the server enforces). A user's own view offers Rename, Duplicate
 // and Delete, and an administrator may also share it with everybody; Unshare takes it back. An item
-// chosen by touch runs after the tap is over (utils/menu-select.ts): the dialogs of Rename and Delete
-// would otherwise take the tap's click.
+// runs once per click or tap, and the rest of the tap is swallowed (utils/menu-select.ts): the
+// dialogs of Rename and Delete would otherwise take the tap's click.
 const props = defineProps<{ view: CalendarView; selected: boolean; canManage?: boolean }>()
 const emit = defineEmits<{
   select: []

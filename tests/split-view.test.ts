@@ -202,7 +202,13 @@ describe('timeline resources and events', () => {
       color: '#1d4ed8',
       contrastColor: '#ffffff',
       class: 'split-event',
-      extendedProps: { status: 'confirmed', blocked: false, calendarName: 'Team A' },
+      extendedProps: {
+        status: 'confirmed',
+        blocked: false,
+        calendarName: 'Team A',
+        categoryColors: [],
+        categoryNames: [],
+      },
     })
   })
 

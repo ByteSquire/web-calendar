@@ -378,6 +378,29 @@ const queryAnswer = (items: string) => ms(`<multistatus ${DAV_NS}>${items}</mult
 const item = (name: string, etag: string, data?: string) =>
   `<response><href>${CAL}${name}</href><propstat><prop><getetag>${etag}</getetag>${data === undefined ? '' : `<C:calendar-data>${data}</C:calendar-data>`}</prop><status>HTTP/1.1 200 OK</status></propstat></response>`
 
+describe('findObjectsWithCategory', () => {
+  it('asks for the VEVENTs whose CATEGORIES has the name, at any time, without case', async () => {
+    const { client, calls } = clientFor(() => queryAnswer(item('a.ics', '"e1"', ICS('a'))))
+    const objects = await client.findObjectsWithCategory(CAL, ' Tentative & <co> ')
+    expect(calls).toHaveLength(1)
+    const body = calls[0]!.body
+    expect(calls[0]!.method).toBe('REPORT')
+    expect(body).toContain('<c:comp-filter name="VEVENT"><c:prop-filter name="CATEGORIES">')
+    expect(body).toContain(
+      '<c:text-match collation="i;ascii-casemap">Tentative &amp; &lt;co&gt;</c:text-match>',
+    )
+    expect(body).not.toContain('time-range')
+    expect(objects).toEqual([{ url: `${CAL}a.ics`, etag: '"e1"', data: ICS('a') }])
+  })
+
+  it('refuses an empty or overlong name before asking', async () => {
+    const { client, calls } = clientFor(() => queryAnswer(''))
+    await expect(client.findObjectsWithCategory(CAL, '  ')).rejects.toThrow(TypeError)
+    await expect(client.findObjectsWithCategory(CAL, 'x'.repeat(201))).rejects.toThrow(TypeError)
+    expect(calls).toHaveLength(0)
+  })
+})
+
 describe('fetchObjects', () => {
   it('asks for etag and data of the VEVENTs in the range in one request', async () => {
     const { client, calls } = clientFor(() =>

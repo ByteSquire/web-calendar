@@ -77,13 +77,19 @@
           :title="SECTION_TITLES.resources"
         >
           <ul>
-            <li v-for="resource in resources" :key="resource.id">
+            <li v-for="resource in resources" :key="resource.id" class="flex items-center gap-1">
               <SidebarToggleRow
+                class="min-w-0 flex-1"
                 :label="resource.name"
                 :icon="resourceIconName(resource.type)"
                 :color="calendarById.get(resource.calendarId)?.color"
                 :model-value="visibleResourceIds.includes(resource.id)"
                 @update:model-value="setResourceVisible(resource.id, $event)"
+              />
+              <SidebarRowMenu
+                v-if="calendarById.has(resource.calendarId)"
+                :label="t('Actions for resource {name}', { name: resource.name })"
+                :items="resourceItems(resource)"
               />
             </li>
           </ul>
@@ -179,6 +185,7 @@
       @confirm="confirmDelete"
     />
     <CalendarColorDialog :calendar="colorTarget" @close="colorTarget = null" />
+    <CategoryStatusDialog :category="statusTarget" @close="statusTarget = null" />
     <RenameDialog
       :open="itemRename !== null"
       :title="renameTitle"
@@ -195,7 +202,7 @@
     <ColorDialog
       :open="categoryColor !== null"
       :title="t('Colour of {name}', { name: categoryColor?.name ?? '' })"
-      :description="categoryColor?.shared ? t('Everybody sees this colour.') : undefined"
+      :description="categoryColorDescription"
       :choices="[...COLOR_PALETTE]"
       :value="categoryColor?.color.toLowerCase() ?? ''"
       :pending="itemPending"
@@ -252,6 +259,7 @@ import { COLOR_PALETTE } from '~/utils/settings/palette'
 import type {
   Calendar,
   CalendarFilter,
+  CalendarResource,
   CalendarView,
   Category,
   ViewIcon,
@@ -275,6 +283,7 @@ const {
   setCategorySelected,
   addCategory,
   updateCategory,
+  colorCategory,
   deleteCategory,
   filters,
   activeFilterIds,
@@ -613,9 +622,13 @@ function submitFilter(text: string) {
 // colour for the viewer; a calendar of their own, or of a group they manage, Rename and Delete too
 // (their default calendar Rename only: it is kept, so there is always one to write to)
 // (an admin changes everybody's on Admin › Calendars, not here); a category of their own, or a
-// shared one for an admin, Rename, Colour and Delete; every filter (filters are always one's own)
-// Edit and Delete. A category that only events carry is a name, not a row, and has no menu. A new
-// category or filter can be changed once the server has saved it.
+// shared one for an admin, Rename, Colour and Delete; every resource its colour for the viewer and,
+// for an admin, "Edit resource"; every filter (filters are always one's own)
+// Edit and Delete. A category that only events carry is a name, not a row: it offers Colour, which
+// saves it as a category of that colour (it has no row to rename or delete; renaming it would mean
+// changing the events). Where there is a calendar service, every category also offers "Turn into a
+// status…": its events get a status instead (CategoryStatusDialog). A new category or filter can be
+// changed once the server has saved it.
 
 type Item =
   | { kind: 'calendar'; item: Calendar }
@@ -623,13 +636,27 @@ type Item =
   | { kind: 'filter'; item: CalendarFilter }
 
 const itemRename = ref<Item | null>(null)
+/** The category whose "Turn into a status" dialog is open. */
+const statusTarget = ref<Category | null>(null)
 const itemDelete = ref<Item | null>(null)
 const categoryColor = ref<Category | null>(null)
 const itemPending = ref(false)
 const itemError = ref('')
 
+/** What the colour dialog of a category says: who sees it, or that a name is saved. */
+const categoryColorDescription = computed(() => {
+  const category = categoryColor.value
+  if (!category) return undefined
+  if (isAutoCategory(category)) {
+    return t('{name} is saved as one of your categories, with this colour.', {
+      name: category.name,
+    })
+  }
+  return category.shared ? t('Everybody sees this colour.') : undefined
+})
+
 const mayChangeCategory = (category: Category) =>
-  !isAutoCategory(category) && (!category.shared || isAdmin.value)
+  isAutoCategory(category) || !category.shared || isAdmin.value
 
 function startItemRename(item: Item) {
   itemError.value = ''
@@ -692,7 +719,46 @@ function categoryItems(category: Category): DropdownMenuItem[][] {
       categoryColor.value = category
     },
   }
-  return [[rename, colour], [remove]]
+  // Turning it into a status rewrites events in CalDAV, so only where there is a calendar service.
+  const toStatus: DropdownMenuItem[] = canCreateCalendars
+    ? [
+        {
+          label: t('Turn into a status…'),
+          icon: 'i-lucide-circle-check',
+          disabled,
+          onSelect: () => {
+            statusTarget.value = category
+          },
+        },
+      ]
+    : []
+  if (isAutoCategory(category)) return [[colour, ...toStatus]]
+  return [[rename, colour, ...toStatus], [remove]]
+}
+
+/**
+ * A resource: its colour for the viewer, and for an admin "Edit resource", which opens it on Admin ›
+ * Resources (the menu that is there already holds the admin's way in, design §9).
+ */
+function resourceItems(resource: CalendarResource): DropdownMenuItem[][] {
+  const calendar = calendarById.value.get(resource.calendarId)
+  const items: DropdownMenuItem[] = [
+    {
+      label: t('Colour'),
+      icon: 'i-lucide-palette',
+      onSelect: () => {
+        if (calendar) colorTarget.value = calendar
+      },
+    },
+  ]
+  if (live && isAdmin.value) {
+    items.push({
+      label: t('Edit resource'),
+      icon: 'i-lucide-pencil',
+      to: { path: '/admin/resources', query: { open: resource.id } },
+    })
+  }
+  return [items]
 }
 
 function filterItems(filter: CalendarFilter): DropdownMenuItem[][] {
@@ -815,7 +881,7 @@ async function saveCategoryColor(color: string) {
   const category = categoryColor.value
   if (!category || itemPending.value) return
   await runItemChange(async () => {
-    await updateCategory(category.id, { color })
+    await colorCategory(category.id, color)
     return null
   }, N_('save the colour'))
 }

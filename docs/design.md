@@ -1336,14 +1336,44 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     is still reached from the existing app menu, not from a new button. A third: "Make manager" on
     the row of a group member (admins only), because a member's role has no menu, and the row is
     where the member already is.
-  - Every row of the sidebar's calendars, categories and filters ends in a `⋯` menu (at least
-    44 px, named after the item: "Actions for calendar Team") with what the viewer may do there:
-    every calendar its colour for the viewer; a calendar of their own, or of a group they manage,
-    Rename and Delete too (their default calendar Rename only, it is kept); a category of their own (a shared one for an admin) Rename, Colour and
-    Delete; a filter Edit and Delete. Admins change other people's calendars on Admin › Calendars,
-    not in the sidebar, where a slip would delete a colleague's calendar. A category that only
-    events carry is a name, not a row, and has no menu. Deleting asks first and names what goes:
-    a calendar's events, its shares and its links.
+  - Every row of the sidebar's calendars, resources, categories and filters ends in a `⋯` menu (at
+    least 44 px, named after the item: "Actions for calendar Team") with what the viewer may do
+    there: every calendar its colour for the viewer; a calendar of their own, or of a group they
+    manage, Rename and Delete too (their default calendar Rename only, it is kept); a resource its
+    colour for the viewer (`calendar_prefs` takes `res:<id>` for it, and only there: a view still
+    names no resource) and, for an admin, "Edit resource", which opens it on Admin › Resources; a
+    category of their own (a shared one for an admin) Rename, Colour and Delete; a filter Edit and
+    Delete. Admins change other people's calendars on Admin › Calendars, not in the sidebar, where
+    a slip would delete a colleague's calendar. A category that only events carry (a name in their
+    CATEGORIES, with no saved row: in live use most are) offers Colour, which saves it as one of
+    the person's categories with that colour; it has no row to rename or delete, and renaming it
+    would mean changing the events. Deleting asks first and names what goes: a calendar's events,
+    its shares and its links.
+  - Every item of a dropdown menu runs once per click or tap (`app/utils/menu-select.ts`). Reka UI
+    takes an item when the button or the finger lifts and clicks it itself, and the browser then
+    sends the rest of the gesture: the click chose the item a second time (an on/off item went on
+    and straight off again), and on a touch screen the rest landed on the dialog the item had just
+    opened (it chose a colour there; a Delete under the finger would have been pressed). The rest
+    of that gesture is swallowed, until its click, a new pointerdown or half a second.
+  - **Turn into a status…**, in the menu of every category where there is a calendar service: every
+    event in the calendars the person can change that has the category gets a STATUS (Confirmed,
+    Tentative or Cancelled), which every calendar app shows, and by default loses the category; for
+    people whose old system kept "Tentative" or "Confirmed" as a category. It searches first (a
+    `calendar-query` with a text match on CATEGORIES, which Radicale answers without regard to case;
+    the exact name is checked in the browser), says how many events it found and changes nothing
+    until asked. Then each resource is rewritten by the lossless writer: every event of it with the
+    category (a series and its changed occurrences) gets the status, SEQUENCE goes up, everything
+    else stays. A resource changed meanwhile is read again and tried once more. Calendars the person
+    can only read are not searched. The status is guessed from the name (English or German).
+  - In the **month**, timed entries are filled strips in their calendar's colour, like all-day ones
+    and the cards of the week, not FullCalendar's default dot and plain text there
+    (`eventDisplayFor`; the year view keeps its dots).
+  - **Category colours on events**, a check item of the `⋮` menu beside Dark mode and kept in the
+    browser like it (off until chosen): every entry shows a dot in the colour of each of its
+    categories before its title, in the calendar and the split view, not in the year view (its
+    entries are dots already) and never on a busy time. A dot is ringed in the entry's text colour,
+    so it stands out on any fill, and the entry's label names its categories ("categories Work,
+    Travel"), so the colour is not the only way to tell.
 - **Calendar links** (§8) — the page of a link has no sidebar, no Quick add or Add, no adding by a
   click on a date and no Edit or Delete in the event sheet; the top bar names the calendar (from
   1024 px) and keeps the date navigation and the view types. Its `⋮` menu holds only the look:

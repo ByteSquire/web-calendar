@@ -440,7 +440,10 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
     }
     const list = result.value.resources
     const previous = store.calendars.value
-    const next = [...previous.filter((c) => c.type !== 'resource'), ...toResourceCalendars(list)]
+    const next = [
+      ...previous.filter((c) => c.type !== 'resource'),
+      ...toResourceCalendars(list, preferences),
+    ]
     store.visibleCalendarIds.value = reconcileVisibleCalendars({
       visibleIds: store.visibleCalendarIds.value,
       previous,

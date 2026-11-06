@@ -11,13 +11,13 @@ import {
 } from './validation'
 
 /**
- * `{ ref, color?, visible? }`. A field left out stays as stored, `color: null` clears the override.
+ * `{ ref, color?, visible? }`; `ref` may also be a resource's calendar (`res:<id>`), for its colour. A field left out stays as stored, `color: null` clears the override.
  * The result only has the keys the client sent.
  */
 export function parseCalendarPrefInput(body: unknown): Parsed<CalendarPrefInput> {
   const errors = new FieldErrors()
   const source = readObject(body, errors)
-  const ref = readCalendarRef(source.ref, 'ref', errors)
+  const ref = readCalendarRef(source.ref, 'ref', errors, { resources: true })
   const color = readOptionalColor(source.color, 'color', errors)
   const visible = readOptionalBoolean(source.visible, 'visible', errors)
   return finish(errors, () => ({ ref: ref!, color, visible }))
@@ -27,6 +27,6 @@ export function parseCalendarPrefInput(body: unknown): Parsed<CalendarPrefInput>
 export function parseCalendarPrefRef(query: unknown): Parsed<string> {
   const errors = new FieldErrors()
   const source = readObject(query, errors)
-  const ref = readCalendarRef(source.ref, 'ref', errors)
+  const ref = readCalendarRef(source.ref, 'ref', errors, { resources: true })
   return finish(errors, () => ref!)
 }

@@ -10,7 +10,8 @@ import {
 } from '../../../shared/types/resources-api'
 import { BUSY_TITLE } from '../event-display'
 import { N_, t, tv } from '../i18n'
-import { paletteColor } from '../live/palette'
+import type { ApiCalendarPref } from '../live/api-types'
+import { normalizeHexColor, paletteColor } from '../live/palette'
 import { wallClockOf } from './slot'
 import type { ApiResource } from './types'
 
@@ -30,16 +31,29 @@ export function apiIdOfResourceCalendar(id: string): number | null {
   return match ? Number(match[1]) : null
 }
 
-export function toResourceCalendars(list: readonly ApiResource[]): Calendar[] {
-  return list.map((resource, index) => ({
-    id: resourceCalendarId(resource.id),
-    name: resource.name,
-    type: 'resource',
-    color: paletteColor(index),
-    defaultVisible: false,
-    resourceType: resource.type,
-    readOnly: true,
-  }))
+/**
+ * The resources as calendars of the sidebar. The colour is the viewer's (`/api/calendar-prefs`,
+ * `res:<id>`) when they chose one, else the palette's by position, which is the resource's own.
+ */
+export function toResourceCalendars(
+  list: readonly ApiResource[],
+  prefs: readonly Pick<ApiCalendarPref, 'ref' | 'color'>[] = [],
+): Calendar[] {
+  const colors = new Map(prefs.map((pref) => [pref.ref, pref.color]))
+  return list.map((resource, index) => {
+    const id = resourceCalendarId(resource.id)
+    const ownColor = paletteColor(index)
+    return {
+      id,
+      name: resource.name,
+      type: 'resource',
+      color: normalizeHexColor(colors.get(id)) ?? ownColor,
+      ownColor,
+      defaultVisible: false,
+      resourceType: resource.type,
+      readOnly: true,
+    }
+  })
 }
 
 export function toCalendarResources(list: readonly ApiResource[]): CalendarResource[] {

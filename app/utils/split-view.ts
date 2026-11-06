@@ -1,11 +1,11 @@
 // Pure helpers for the split view (FR-6): one FullCalendar Premium resource timeline with a row
 // per calendar (spike S2). The components only wire these results into FullCalendar.
 import { Temporal } from 'temporal-polyfill'
-import type { Calendar, CalendarEvent, EventStatus } from '../../shared/types/calendar'
+import type { Calendar, CalendarEvent, Category, EventStatus } from '../../shared/types/calendar'
 import { SPLIT_SPANS, type SplitBand, type SplitSpan } from './calendar-state'
 import { STATUS_LABELS } from './event-display'
-import { BASE_CALENDAR_OPTIONS } from './fullcalendar'
-import { t, tv } from './i18n'
+import { BASE_CALENDAR_OPTIONS, shownCategories } from './fullcalendar'
+import { t, tc, tv } from './i18n'
 
 // ---- Colour ----
 
@@ -117,7 +117,14 @@ export interface TimelineEvent {
   contrastColor: string
   /** Style hooks, see the `<style>` of SplitTimeline.vue. */
   class: string
-  extendedProps: { status: EventStatus; blocked: boolean; calendarName: string }
+  extendedProps: {
+    status: EventStatus
+    blocked: boolean
+    calendarName: string
+    /** The colours and names of the categories it shows ("Category colours on events"). */
+    categoryColors?: string[]
+    categoryNames?: string[]
+  }
 }
 
 export function toTimelineResource(calendar: Calendar, index: number): TimelineResource {
@@ -133,8 +140,10 @@ export function toTimelineEvent(
   event: CalendarEvent,
   calendar: Calendar,
   scheme: SplitColorScheme,
+  categoryById?: ReadonlyMap<string, Category>,
 ): TimelineEvent {
   const blocked = event.isBlocked === true
+  const categories = shownCategories(event, categoryById)
   return {
     id: event.id,
     resourceId: calendar.id,
@@ -150,16 +159,29 @@ export function toTimelineEvent(
     ]
       .filter(Boolean)
       .join(' '),
-    extendedProps: { status: event.status, blocked, calendarName: calendar.name },
+    extendedProps: {
+      status: event.status,
+      blocked,
+      calendarName: calendar.name,
+      categoryColors: categories.map((category) => category.color),
+      categoryNames: categories.map((category) => category.name),
+    },
   }
 }
 
-/** Resources (rows) and events for a list of split bands, in band order. */
-export function toTimelineData(bands: readonly SplitBand[], scheme: SplitColorScheme) {
+/**
+ * Resources (rows) and events for a list of split bands, in band order. `categoryById` is given when
+ * the entries show their categories' colours.
+ */
+export function toTimelineData(
+  bands: readonly SplitBand[],
+  scheme: SplitColorScheme,
+  categoryById?: ReadonlyMap<string, Category>,
+) {
   return {
     resources: bands.map((band, index) => toTimelineResource(band.calendar, index)),
     events: bands.flatMap((band) =>
-      band.events.map((event) => toTimelineEvent(event, band.calendar, scheme)),
+      band.events.map((event) => toTimelineEvent(event, band.calendar, scheme, categoryById)),
     ),
   }
 }
@@ -169,6 +191,10 @@ export function timelineEventSrText(props: TimelineEvent['extendedProps']): stri
   return [
     props.calendarName,
     props.status !== 'confirmed' && tv(STATUS_LABELS[props.status]).toLowerCase(),
+    (props.categoryNames?.length ?? 0) > 0 &&
+      tc('category {names} | categories {names}', props.categoryNames!.length, {
+        names: props.categoryNames!.join(', '),
+      }),
     props.blocked && t('details hidden'),
   ]
     .filter(Boolean)

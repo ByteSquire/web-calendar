@@ -88,9 +88,10 @@ test.describe('dark mode switch', () => {
     expect(arrow.x).toBeGreaterThanOrEqual(knob.x + knob.width)
     expect(arrow.width).toBeGreaterThanOrEqual(44)
     expect(arrow.height).toBeGreaterThanOrEqual(44)
-    // The menu widened to fit the arrow, towards the left: it keeps its right edge, and the
-    // arrow is inside it and on the screen.
-    expect(wide.width).toBeGreaterThan(narrow.width + 20)
+    // The menu widened to fit the arrow if the row needed it (a longer item may make it wide
+    // enough already), towards the left: it keeps its right edge, and the arrow is inside it and on
+    // the screen.
+    expect(wide.width).toBeGreaterThanOrEqual(narrow.width)
     expect(Math.abs(wide.x + wide.width - (narrow.x + narrow.width))).toBeLessThan(1.5)
     expect(arrow.x + arrow.width).toBeLessThanOrEqual(wide.x + wide.width + 0.5)
     expect(wide.x).toBeGreaterThanOrEqual(0)

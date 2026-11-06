@@ -689,6 +689,33 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     return true
   }
 
+  /**
+   * Gives a category a colour. A name that only events carry (an auto category, no saved row)
+   * becomes a saved category of that name and colour, so it keeps the colour and can be used as a
+   * tag; the events link up with it by name. A saved one is recoloured (`updateCategory`). With a
+   * backend the server goes first; rejects, changing nothing, when it did not save.
+   */
+  async function colorCategory(id: string, color: string): Promise<void> {
+    const current = categories.value.find((item) => item.id === id)
+    if (!current) return
+    if (!isAutoCategory(current)) {
+      await updateCategory(id, { color })
+      return
+    }
+    const made = createCategory(current.name, categories.value)
+    if (!made) return
+    const category: Category = { ...made, color }
+    const stored = options.hooks?.persistCategory
+      ? await options.hooks.persistCategory(category)
+      : category
+    // The saved one takes the place of the name; a selection of it follows (reconcileSelection).
+    categories.value = [
+      ...categories.value.filter((item) => item.id !== id && item.id !== stored.id),
+      stored,
+    ]
+    swapId(selectedCategoryIds, id, stored.id)
+  }
+
   /** Deletes a category (no event changes); with a backend the server goes first. */
   async function deleteCategory(id: string): Promise<void> {
     const current = categories.value.find((item) => item.id === id)
@@ -802,6 +829,7 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     setCategorySelected,
     addCategory,
     updateCategory,
+    colorCategory,
     deleteCategory,
     savingIds,
     visibleEvents,

@@ -775,6 +775,26 @@ describe('calendar preferences', () => {
     )
   })
 
+  it("keeps a colour of a resource's calendar, which a view cannot name", async () => {
+    const saved = await call('alice', 'PUT', '/api/calendar-prefs', {
+      ref: 'res:5',
+      color: '#b91c1c',
+    })
+    expect(saved).toMatchObject({ status: 200, body: { ref: 'res:5', color: '#b91c1c' } })
+    expect((await call('alice', 'DELETE', '/api/calendar-prefs?ref=res:5')).status).toBe(204)
+    for (const ref of ['res:', 'res:0', 'res:x', 'res:5/']) {
+      expect(
+        (await call('alice', 'PUT', '/api/calendar-prefs', { ref, color: '#b91c1c' })).status,
+      ).toBe(400)
+    }
+    const view = await call('alice', 'POST', '/api/views', {
+      name: 'Rooms',
+      icon: 'calendar',
+      calendars: [{ ref: 'res:5' }],
+    })
+    expect(view.status).toBe(400)
+  })
+
   it('keeps users apart', async () => {
     await call('alice', 'PUT', '/api/calendar-prefs', { ref: REF, color: '#112233' })
     await call('bob', 'PUT', '/api/calendar-prefs', { ref: REF, visible: false })

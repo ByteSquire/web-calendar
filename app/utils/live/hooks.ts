@@ -19,9 +19,14 @@ const browserTimers: Timers = {
   clear: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
 }
 
-/** `dav:`, `ics:` or `ext:` refs, the only ones `/api/calendar-prefs` accepts. */
+/** `dav:`, `ics:` or `ext:` refs, the calendars whose preferences `/api/calendar-prefs` keeps. */
 export function isPersistableRef(ref: string): boolean {
   return /^(?:dav|ics|ext):.+/s.test(ref) && ref.length <= 500
+}
+
+/** A calendar whose colour is kept: one of `isPersistableRef`, or a resource's (`res:<id>`). */
+export function isColorRef(ref: string): boolean {
+  return isPersistableRef(ref) || /^res:[1-9][0-9]{0,14}$/.test(ref)
 }
 
 export interface KeyedDebouncer<V> {
@@ -132,7 +137,7 @@ export function createLiveHooks(deps: LiveHooksDeps): LiveHooks {
     },
     async persistCalendarColor(calendarId, color) {
       // Calendars that are not sources of the server (the mock data) keep the colour locally.
-      if (!isPersistableRef(calendarId)) return
+      if (!isColorRef(calendarId)) return
       const saved = await deps.api<ApiCalendarPref>('/api/calendar-prefs', {
         method: 'PUT',
         body: { ref: calendarId, color },

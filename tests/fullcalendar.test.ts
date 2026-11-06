@@ -20,6 +20,7 @@ import {
   COMPACT_MAX_WIDTH,
   FULLCALENDAR_VIEW_NAMES,
   calendarLayoutOptions,
+  eventDisplayFor,
   contrastRatio,
   eventColors,
   eventKind,
@@ -139,6 +140,10 @@ describe('view mapping', () => {
     expect(wide.multiMonthYear?.multiMonthMaxColumns).toBe(3)
     expect(narrow.dayGridMonth?.displayEventTime).toBe(false)
     expect(wide.dayGridMonth?.displayEventTime).toBe(true)
+    // timed entries of the month are filled strips, like all-day ones; the year keeps its dots
+    expect(eventDisplayFor('month')).toBe('block')
+    expect(eventDisplayFor('year')).toBe('auto')
+    expect(eventDisplayFor('week')).toBe('auto')
     expect(narrow.timeGrid?.eventMaxStack).toBeLessThan(wide.timeGrid!.eventMaxStack!)
   })
 })

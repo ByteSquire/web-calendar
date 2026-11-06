@@ -129,14 +129,20 @@ export function readOptionalBoolean(
   return undefined
 }
 
+/** The calendar of a resource as the browser names it, `res:<id>`. */
+const RESOURCE_REF = /^res:[1-9][0-9]{0,14}$/
+
 /**
  * A calendar ref: `dav:`, `ics:` or `ext:` and something after it. Only the shape is checked; the
  * calendar may not exist (a view can outlive a calendar, and the server does not know external ones).
+ * `resources` also takes `res:<id>`, the calendar of a resource: a person's colour of a resource is a
+ * preference, but a resource is no calendar of a view.
  */
 export function readCalendarRef(
   value: unknown,
   field: string,
   errors: FieldErrors,
+  options: { resources?: boolean } = {},
 ): string | undefined {
   if (value === undefined || value === null) {
     errors.add(field, 'is required')
@@ -150,6 +156,7 @@ export function readCalendarRef(
     errors.add(field, `must have at most ${MAX_REF_LENGTH} characters`)
     return undefined
   }
+  if (options.resources && RESOURCE_REF.test(value)) return value
   const match = REF_PATTERN.exec(value)
   // Control characters have no place in a path or URL and would only confuse logs and headers.
   if (!match || /\p{Cc}/u.test(match[1]!)) {

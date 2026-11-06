@@ -33,7 +33,15 @@
       </template>
       <template #eventContent="{ event, timeText, timeClass, titleClass }">
         <div v-if="timeText" :class="timeClass">{{ timeText }}</div>
-        <div :class="[titleClass, 'split-event__title']">{{ event.title }}</div>
+        <div :class="[titleClass, 'split-event__title']">
+          <span
+            v-for="(color, index) in event.extendedProps.categoryColors"
+            :key="index"
+            class="app-evt-tag"
+            :style="{ backgroundColor: color }"
+            aria-hidden="true"
+          />{{ event.title }}
+        </div>
         <span class="sr-only">, {{ timelineEventSrText(event.extendedProps) }}</span>
       </template>
     </FullCalendar>
@@ -50,6 +58,7 @@ import classicTheme from '@fullcalendar/vue3/themes/classic'
 import resourceTimeline from '@fullcalendar/vue3-scheduler/resource-timeline'
 import { locale, t } from '~/utils/i18n'
 import type { NewEventInput, SplitBand, SplitSpan } from '~/utils/calendar-state'
+import type { Category } from '../../shared/types/calendar'
 import {
   BASE_CALENDAR_OPTIONS,
   SCHEDULER_LICENSE_KEY,
@@ -74,6 +83,8 @@ const props = defineProps<{
   scheme: SplitColorScheme
   /** The zone the events are in and the timeline shows (FR-29), an IANA name. */
   timeZone: string
+  /** Given when the entries show a dot per category ("Category colours on events"). */
+  categoryById?: ReadonlyMap<string, Category>
 }>()
 
 const emit = defineEmits<{
@@ -109,7 +120,7 @@ const layout = computed(() => splitLayoutFor(width.value, props.span))
 // The label has to fit the column minus the margins of its cell.
 const labelWidth = computed(() => layout.value.resourceColumnsWidth - 20)
 
-const data = computed(() => toTimelineData(props.bands, props.scheme))
+const data = computed(() => toTimelineData(props.bands, props.scheme, props.categoryById))
 const dayWindow = computed(() =>
   splitDayWindow(
     props.bands.flatMap((band) => band.events),

@@ -29,6 +29,7 @@
       :span="splitSpan"
       :scheme="scheme"
       :time-zone="timeZone"
+      :category-by-id="categoryColorsShown ? categoryById : undefined"
       @select="selectEvent"
       @create="openQuickAdd"
     />
@@ -53,8 +54,10 @@ import { SPLIT_SPANS, VIEW_TYPE_LABELS } from '~/utils/calendar-state'
 import { t, tv } from '~/utils/i18n'
 import { splitColorScheme } from '~/utils/split-view'
 
-const { anchorDate, openQuickAdd, rangeLabel, selectEvent, splitBands, splitSpan } =
+const { anchorDate, categoryById, openQuickAdd, rangeLabel, selectEvent, splitBands, splitSpan } =
   useCalendarState()
+// "Category colours on events" (the ⋮ menu): the timeline draws a dot per category, as CalendarMain.
+const { shown: categoryColorsShown } = useCategoryColorsOnEvents()
 const timeZone = useDisplayTimeZone()
 const colorMode = useColorMode()
 const scheme = computed(() => splitColorScheme(colorMode.value))

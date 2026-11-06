@@ -4,10 +4,10 @@
 // the reactive state. Tests: tests/fullcalendar.test.ts.
 import { Temporal } from 'temporal-polyfill'
 import type { CalendarOptions, EventInput } from '@fullcalendar/vue3'
-import type { Calendar, CalendarEvent } from '../../shared/types/calendar'
+import type { Calendar, CalendarEvent, Category } from '../../shared/types/calendar'
 import type { NewEventInput, SplitSpan, ViewType } from './calendar-state'
 import { BUSY_TITLE, eventAssistiveLabel } from './event-display'
-import { intlLocale, t, tv } from './i18n'
+import { intlLocale, t, tc, tv } from './i18n'
 
 // ---- Views ----
 
@@ -153,6 +153,16 @@ export function calendarLayoutOptions(compact: boolean): CalendarOptions {
   }
 }
 
+/**
+ * How entries are drawn. In the month, timed ones are filled strips in their calendar's colour, like
+ * all-day ones and like the cards of the week, instead of FullCalendar's default there of a dot and
+ * plain text. FullCalendar reads this option for the whole calendar, not per view, so it follows the
+ * view type; the year keeps its dots.
+ */
+export function eventDisplayFor(viewType: ViewType): 'block' | 'auto' {
+  return viewType === 'month' ? 'block' : 'auto'
+}
+
 // ---- Colours ----
 
 export type ColorScheme = 'light' | 'dark'
@@ -248,6 +258,8 @@ export function eventKind(event: Pick<CalendarEvent, 'status' | 'isBlocked'>): E
 export interface EventMappingContext {
   calendarById: ReadonlyMap<string, Calendar>
   scheme: ColorScheme
+  /** Given when the entries show their categories' colours ("Category colours on events"). */
+  categoryById?: ReadonlyMap<string, Category>
 }
 
 /** What the calendar keeps with each entry: the id for clicks and the assistive label. */
@@ -256,6 +268,23 @@ export interface EventExtendedProps {
   calendarId: string
   kind: EventKind
   label: string
+  /** The colours of the entry's categories, in their order; empty unless they are shown. */
+  categoryColors: string[]
+}
+
+/**
+ * The categories an entry shows as coloured dots: its own (a saved category or a name it carries),
+ * in their order. A busy time shows none: it must not tell what the event is about.
+ */
+export function shownCategories(
+  event: Pick<CalendarEvent, 'categoryIds' | 'isBlocked'>,
+  categoryById: ReadonlyMap<string, Category> | undefined,
+): Category[] {
+  if (!categoryById || event.isBlocked) return []
+  return event.categoryIds.flatMap((id) => {
+    const category = categoryById.get(id)
+    return category ? [category] : []
+  })
 }
 
 /** `YYYY-MM-DD` for all-day events, `YYYY-MM-DDTHH:mm:ss` otherwise, so strings compare in order. */
@@ -278,13 +307,21 @@ export function toFullCalendarEvent(
   const calendar = context.calendarById.get(event.calendarId)
   const start = normalizeBoundary(event.start, event.allDay)
   const end = normalizeBoundary(event.end, event.allDay)
+  const categories = shownCategories(event, context.categoryById)
+  const label = eventAssistiveLabel(event, calendar?.name, {
+    nameBlocked: calendar?.freeBusyOnly === true,
+  })
   const extendedProps: EventExtendedProps = {
     eventId: event.id,
     calendarId: event.calendarId,
     kind,
-    label: eventAssistiveLabel(event, calendar?.name, {
-      nameBlocked: calendar?.freeBusyOnly === true,
-    }),
+    label:
+      categories.length > 0
+        ? `${label}, ${tc('category {names} | categories {names}', categories.length, {
+            names: categories.map((category) => category.name).join(', '),
+          })}`
+        : label,
+    categoryColors: categories.map((category) => category.color),
   }
   return {
     id: event.id,

@@ -1339,9 +1339,13 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   - Every row of the sidebar's calendars, resources, categories and filters ends in a `⋯` menu (at
     least 44 px, named after the item: "Actions for calendar Team") with what the viewer may do
     there: every calendar its colour for the viewer; a calendar of their own, or of a group they
-    manage, Rename and Delete too (their default calendar Rename only, it is kept); a resource its
+    manage, Rename and Delete too (their default calendar Rename only, it is kept), and "Edit calendar" where
+    they may manage it: an admin gets the dialog of Admin › Calendars over the calendar (found by
+    its id, or for one's own by its path in Radicale), so they never leave it; a manager of its
+    group the dialog of a group calendar (name, colour, sharing through the share dialog of the
+    Groups page, Delete), also over the calendar; a resource its
     colour for the viewer (`calendar_prefs` takes `res:<id>` for it, and only there: a view still
-    names no resource) and, for an admin, "Edit resource", which opens it on Admin › Resources; a
+    names no resource) and, for an admin, "Edit resource", which opens the dialog of Admin › Resources over the calendar; a
     category of their own (a shared one for an admin) Rename, Colour and Delete; a filter Edit and
     Delete. Admins change other people's calendars on Admin › Calendars, not in the sidebar, where
     a slip would delete a colleague's calendar. A category that only events carry (a name in their

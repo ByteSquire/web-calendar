@@ -249,6 +249,7 @@ describe('POST /api/admin/access/calendars', () => {
       owner: null,
       group: null,
       isDefault: false,
+      collectionPath: row.collection_path,
       rules: [],
     })
     expect(radicale.makeCalendar).toHaveBeenCalledExactlyOnceWith(

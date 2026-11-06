@@ -185,6 +185,29 @@
       @confirm="confirmDelete"
     />
     <CalendarColorDialog :calendar="colorTarget" @close="colorTarget = null" />
+    <template v-if="live">
+      <AdminCalendarDialog
+        v-model:tab="editCalendarTab"
+        v-model:notice="editCalendarNotice"
+        :access="adminAccess"
+        :calendar-id="editCalendarId"
+        @close="editCalendarId = null"
+        @deleted="(message: string) => toast.add({ title: message, icon: 'i-lucide-check' })"
+      />
+      <GroupsCalendarDialog
+        :target="editGroupCalendar"
+        @close="editGroupCalendar = null"
+        @deleted="(message: string) => toast.add({ title: message, icon: 'i-lucide-check' })"
+      />
+      <AdminResourceDialog
+        v-model:tab="editResourceTab"
+        :resource="editResource"
+        :users="resourceUsers"
+        :groups="resourceGroups"
+        @close="editResource = null"
+        @saved="(_saved, message: string) => toast.add({ title: message, icon: 'i-lucide-check' })"
+      />
+    </template>
     <CategoryEventsDialog
       :category="statusTarget ?? deleteTarget"
       :mode="deleteTarget ? 'delete' : 'status'"
@@ -257,6 +280,10 @@ import {
   type UnsharedView,
 } from '~/utils/live/user-views'
 import type { DropdownMenuItem } from '@nuxt/ui'
+import { useAdminAccess } from '~/composables/useAdminAccess'
+import { linkedCalendar, type AccessUser } from '~/utils/admin/access'
+import type { AdminResource } from '~/utils/admin/resources'
+import { serverCalendarOf } from '~/utils/live/calendars'
 import { isAutoCategory } from '~/utils/live/categories'
 import { describeError } from '~/utils/settings/api-errors'
 import { COLOR_PALETTE } from '~/utils/settings/palette'
@@ -623,11 +650,12 @@ function submitFilter(text: string) {
 
 // ---- The menus of calendars, categories and filters --------------------------------------------
 // Each row offers what the viewer may do with it (the server checks again): every calendar its
-// colour for the viewer; a calendar of their own, or of a group they manage, Rename and Delete too
+// colour for the viewer, and "Edit calendar" where they may manage it, in a dialog right here (for
+// an admin the one of Admin › Calendars, for a manager of its group the one of a group calendar); a calendar of their own, or of a group they manage, Rename and Delete too
 // (their default calendar Rename only: it is kept, so there is always one to write to)
 // (an admin changes everybody's on Admin › Calendars, not here); a category of their own, or a
 // shared one for an admin, Rename, Colour and Delete; every resource its colour for the viewer and,
-// for an admin, "Edit resource"; every filter (filters are always one's own)
+// for an admin, "Edit resource" (the dialog of Admin › Resources, right here); every filter (filters are always one's own)
 // Edit and Delete. A category that only events carry is a name, not a row: it offers Colour, which
 // saves it as a category of that colour (it has no row to rename or delete; renaming it would mean
 // changing the events). Where there is a calendar service, every category also offers "Turn into a
@@ -712,10 +740,113 @@ function calendarItems(calendar: Calendar): DropdownMenuItem[][] {
       colorTarget.value = calendar
     },
   }
-  if (!calendar.manage) return [[colour]]
+  const edit = editCalendarItem(calendar)
+  if (!calendar.manage) return [[colour, ...edit]]
   const { rename, remove } = renameAndDelete({ kind: 'calendar', item: calendar })
-  if (calendar.manage.kind === 'own' && calendar.manage.default) return [[rename, colour]]
-  return [[rename, colour], [remove]]
+  if (calendar.manage.kind === 'own' && calendar.manage.default) {
+    return [[rename, colour, ...edit]]
+  }
+  return [[rename, colour, ...edit], [remove]]
+}
+
+/**
+ * "Edit calendar", for those who may manage the calendar (the routes check again), in a dialog
+ * right here, so nobody leaves the calendar: an admin gets the one of Admin › Calendars, for any
+ * calendar of the server; a manager of a group the one of a group calendar (name, colour,
+ * sharing, delete). Anybody else has none: the owner of a calendar renames and recolours it in
+ * this menu.
+ */
+function editCalendarItem(calendar: Calendar): DropdownMenuItem[] {
+  if (!live || !calendar.id.startsWith('dav:') || !calendar.href) return []
+  const item = { label: t('Edit calendar'), icon: 'i-lucide-settings-2' }
+  const server = isAdmin.value ? serverCalendarOf(calendar.href) : null
+  if (server) return [{ ...item, onSelect: () => void openCalendarEditor(server) }]
+  const manage = calendar.manage
+  if (manage?.kind === 'group') {
+    return [
+      {
+        ...item,
+        onSelect: () => {
+          editGroupCalendar.value = {
+            groupId: manage.groupId,
+            calendarId: manage.calendarId,
+            name: calendar.name,
+          }
+        },
+      },
+    ]
+  }
+  return []
+}
+
+// ---- The admin dialogs, opened in place --------------------------------------------------------
+// "Edit calendar" and "Edit resource" open the dialogs of Admin › Calendars and Admin › Resources
+// over the calendar, so an admin does not leave it. What they show is loaded when one is opened.
+
+const adminAccess = useAdminAccess()
+/** The group calendar whose dialog is open, for a manager of its group. */
+const editGroupCalendar = ref<{ groupId: number; calendarId: number; name: string } | null>(null)
+const fetchApi = useAuthFetch()
+const editCalendarId = ref<number | null>(null)
+const editCalendarTab = ref<'details' | 'access'>('details')
+const editCalendarNotice = ref('')
+const editResource = ref<AdminResource | null>(null)
+const editResourceTab = ref<'details' | 'access'>('details')
+const resourceUsers = ref<AccessUser[]>([])
+const resourceGroups = ref<{ name: string }[]>([])
+
+function notFoundYet(what: string) {
+  toast.add({ title: what, color: 'warning', icon: 'i-lucide-triangle-alert' })
+}
+
+async function openCalendarEditor(server: { id: number } | { path: string }) {
+  await Promise.all([
+    adminAccess.calendars.reload(),
+    adminAccess.users.reload(),
+    adminAccess.groups.reload(),
+  ])
+  const failure = adminAccess.calendars.error.value
+  if (failure) {
+    toast.add({ title: failure, color: 'error', icon: 'i-lucide-x' })
+    return
+  }
+  const found = linkedCalendar(
+    adminAccess.calendars.data.value?.calendars ?? [],
+    'id' in server ? { open: String(server.id) } : { path: server.path },
+  )
+  // A calendar made minutes ago is known to the server after its next look at the homes.
+  if (!found) {
+    notFoundYet(t('This calendar is not known to the server yet. Try again in a few minutes.'))
+    return
+  }
+  editCalendarNotice.value = ''
+  editCalendarTab.value = 'details'
+  editCalendarId.value = found.id
+}
+
+async function openResourceEditor(id: string) {
+  try {
+    const [list, people, known] = await Promise.all([
+      fetchApi<{ resources: AdminResource[] }>('/api/admin/resources'),
+      fetchApi<{ users: AccessUser[] }>('/api/admin/access/users').catch(() => ({ users: [] })),
+      fetchApi<{ groups: { name: string }[] }>('/api/groups').catch(() => ({ groups: [] })),
+    ])
+    resourceUsers.value = people.users
+    resourceGroups.value = known.groups
+    const found = list.resources.find((resource) => String(resource.id) === id)
+    if (!found) {
+      notFoundYet(t('This resource no longer exists. Reload the page.'))
+      return
+    }
+    editResourceTab.value = 'details'
+    editResource.value = found
+  } catch (cause) {
+    toast.add({
+      title: describeError(cause, N_('load the resources')),
+      color: 'error',
+      icon: 'i-lucide-x',
+    })
+  }
 }
 
 function categoryItems(category: Category): DropdownMenuItem[][] {
@@ -776,7 +907,7 @@ function resourceItems(resource: CalendarResource): DropdownMenuItem[][] {
     items.push({
       label: t('Edit resource'),
       icon: 'i-lucide-pencil',
-      to: { path: '/admin/resources', query: { open: resource.id } },
+      onSelect: () => void openResourceEditor(resource.id),
     })
   }
   return [items]

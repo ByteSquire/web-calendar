@@ -238,4 +238,8 @@ export const shell: Readonly<Record<string, string>> = {
   'The category was deleted.': 'Die Kategorie wurde gelöscht.',
   'Delete from {count} event | Delete from {count} events':
     'Von {count} Termin löschen | Von {count} Terminen löschen',
+
+  // The admin dialogs opened from the sidebar
+  'This calendar is not known to the server yet. Try again in a few minutes.':
+    'Dieser Kalender ist dem Server noch nicht bekannt. Versuche es in ein paar Minuten erneut.',
 }

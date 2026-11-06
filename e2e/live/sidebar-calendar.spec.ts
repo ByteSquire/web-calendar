@@ -192,8 +192,19 @@ test('her default calendar is renamed but not deleted, and the server refuses it
   await calendarsSection()
     .getByRole('button', { name: `Actions for calendar ${name}`, exact: true })
     .click()
-  await expect(page.getByRole('menuitem')).toHaveText(['Rename', 'Colour'])
-  await page.keyboard.press('Escape')
+  // alice is an admin: "Edit calendar" opens it on Admin › Calendars
+  await expect(page.getByRole('menuitem')).toHaveText(['Rename', 'Colour', 'Edit calendar'])
+  await page.getByRole('menuitem', { name: 'Edit calendar' }).click()
+  // the dialog of Admin › Calendars opens over the calendar, which stays where it is
+  const editor = page.getByRole('dialog', { name })
+  await expect(editor).toBeVisible()
+  await expect(editor.locator('[data-default-calendar]')).toBeVisible()
+  await expect(page).toHaveURL(/\/$/)
+  await editor.getByRole('tab', { name: 'Who has access' }).click()
+  await expect(editor.getByRole('heading', { name: 'People and groups' })).toBeVisible()
+  await editor.getByRole('button', { name: 'Close', exact: true }).last().click()
+  await expect(editor).toBeHidden()
+  await expect(page.locator('[data-calendar-main]')).toBeVisible()
 
   // The route refuses it as well, with the app's own token.
   const request = page.waitForRequest(

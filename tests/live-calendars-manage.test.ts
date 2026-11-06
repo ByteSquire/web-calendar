@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DavCalendar } from '../app/utils/caldav/types'
 import type { ApiSharedCalendar } from '../app/utils/live/api-types'
-import { buildCalendars } from '../app/utils/live/calendars'
+import { buildCalendars, serverCalendarOf } from '../app/utils/live/calendars'
 
 function collection(path: string, displayName: string): DavCalendar {
   return {
@@ -81,5 +81,19 @@ describe('manage', () => {
       prefs: [],
     })
     expect(calendar!.manage).toBeUndefined()
+  })
+})
+
+describe('the calendar of the server a collection is', () => {
+  it('is the id a share names, and the decoded path of one of the own', () => {
+    expect(serverCalendarOf('/caldav/u/shared-7/')).toEqual({ id: 7 })
+    expect(serverCalendarOf('/caldav/u/shared-7-staff/')).toEqual({ id: 7 })
+    expect(serverCalendarOf('/caldav/u/Team%20plan/')).toEqual({ path: '/u/Team plan/' })
+    expect(serverCalendarOf('/caldav/u/def-calendar/')).toEqual({ path: '/u/def-calendar/' })
+  })
+
+  it('is nothing for an address that is no calendar of a home', () => {
+    expect(serverCalendarOf('/caldav/u/')).toBeNull()
+    expect(serverCalendarOf('/caldav/u/c/event.ics')).toBeNull()
   })
 })

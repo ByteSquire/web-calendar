@@ -111,86 +111,14 @@
       </ul>
 
       <!-- One dialog for a resource and for who may use it, as for an event: the tabs switch. -->
-      <UModal
-        :open="dialog !== null"
-        :title="dialog?.name ?? ''"
-        :description="t('Change the resource, or choose who may use it.')"
-        :ui="{ content: 'sm:max-w-2xl' }"
-        @update:open="(open) => (open ? undefined : closeDialog())"
-      >
-        <template #body>
-          <div v-if="dialog" class="flex flex-col gap-4">
-            <SettingsErrorAlert v-if="problem" :message="problem" />
-            <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
-            <UTabs
-              v-model="tab"
-              :items="tabItems"
-              :unmount-on-hide="false"
-              :ui="{ trigger: 'min-h-11 data-[state=inactive]:text-toned' }"
-              class="w-full"
-            >
-              <template #details>
-                <AdminResourceForm
-                  :key="dialog.id"
-                  :initial="draftOf(dialog)"
-                  :errors="fieldErrors"
-                  :busy="saving"
-                  cancellable
-                  :save="saveEdit"
-                  @cancel="closeDialog"
-                />
-              </template>
-              <template #access>
-                <section aria-labelledby="resource-rules-heading" class="flex flex-col gap-3">
-                  <h3 id="resource-rules-heading" class="text-lg font-semibold">
-                    {{ t('Who may use {name}', { name: dialog.name }) }}
-                  </h3>
-                  <SettingsErrorAlert v-if="rulesError" :message="rulesError" />
-                  <AdminResourceRuleList
-                    v-if="rules !== null"
-                    :rules="ruleRows"
-                    :resource-name="dialog.name"
-                    :busy="saving"
-                    @remove="removeRule"
-                  />
-                  <p
-                    v-if="rules !== null && !hasManager"
-                    data-resource-no-manager
-                    class="text-sm text-toned"
-                  >
-                    {{
-                      t(
-                        'Nobody can manage {name} yet, so nobody can accept booking requests. Administrators are not managers by default.',
-                        { name: dialog.name },
-                      )
-                    }}
-                  </p>
-                  <AdminAccessAddForm
-                    v-if="rules !== null"
-                    :users="users"
-                    :groups="groups"
-                    :busy="saving"
-                    :levels="RESOURCE_RIGHTS"
-                    default-level="book"
-                    :save="addRule"
-                  />
-                </section>
-              </template>
-            </UTabs>
-          </div>
-        </template>
-        <template #footer>
-          <div class="flex w-full justify-end">
-            <UButton
-              :label="t('Close')"
-              color="neutral"
-              variant="outline"
-              :disabled="saving"
-              @click="closeDialog"
-            />
-          </div>
-        </template>
-      </UModal>
+      <AdminResourceDialog
+        v-model:tab="tab"
+        :resource="dialog"
+        :users="users"
+        :groups="groups"
+        @close="dialog = null"
+        @saved="onSaved"
+      />
 
       <ConfirmDeleteDialog
         :open="deleting !== null"
@@ -216,20 +144,14 @@
 import { useAdminFlag } from '~/composables/useAdminAccess'
 import { useAuthFetch } from '~/composables/useAuthFetch'
 import { useLiveStatus } from '~/composables/useLiveCalendar'
-import { userLabel, type AccessUser } from '~/utils/admin/access'
+import type { AccessUser } from '~/utils/admin/access'
 import {
-  RESOURCE_RIGHTS,
   describeResourceProblem,
-  draftOf,
   typeLabel,
-  withRule,
-  withoutRule,
   type AdminResource,
-  type ResourceRight,
-  type ResourceRule,
   type toBody,
 } from '~/utils/admin/resources'
-import { N_, t, tc, tv } from '~/utils/i18n'
+import { N_, t, tc } from '~/utils/i18n'
 import { describeError } from '~/utils/settings/api-errors'
 
 useHead({ title: () => t('Resources') })
@@ -252,33 +174,13 @@ const groups = ref<{ name: string }[]>([])
 const saving = ref(false)
 const problem = ref<string | null>(null)
 const notice = ref('')
-const fieldErrors = ref<Record<string, string>>({})
 const createErrors = ref<Record<string, string>>({})
 // The resource that is open in the dialog, and which of its two tabs is shown.
 const dialog = ref<AdminResource | null>(null)
 const tab = ref<'details' | 'access'>('details')
-const tabItems = computed(() => [
-  { label: t('Resource'), value: 'details', slot: 'details' },
-  { label: t('Access'), value: 'access', slot: 'access' },
-])
 // The resource whose delete is being confirmed, and why the last try failed.
 const deleting = ref<AdminResource | null>(null)
 const deleteError = ref('')
-// The rules of the resource that is open; null until they are loaded.
-const rules = ref<ResourceRule[] | null>(null)
-const rulesFor = ref<number | null>(null)
-const rulesError = ref<string | null>(null)
-
-const ruleRows = computed(() => (rules.value ?? []).map((rule) => ({ rule, label: labelOf(rule) })))
-const hasManager = computed(() => rules.value?.some((rule) => rule.right === 'manage') === true)
-
-function labelOf(rule: ResourceRule): string {
-  if (rule.principalType === 'authenticated') return t('Everyone signed in')
-  if (rule.principalType === 'group') return t('Group {name}', { name: rule.principal ?? '' })
-  const known = users.value.find((user) => user.sub === rule.principal)
-  return known ? userLabel(known) : t('This person')
-}
-
 function summary(resource: AdminResource): string {
   return [
     typeLabel(resource.type),
@@ -357,23 +259,6 @@ async function create(body: Body): Promise<boolean> {
   return result.ok
 }
 
-async function saveEdit(body: Body): Promise<boolean> {
-  const target = dialog.value
-  if (!target) return false
-  const result = await run(async () => {
-    const saved = await api<AdminResource>(`/api/admin/resources/${target.id}`, {
-      method: 'PUT',
-      body,
-    })
-    replaceResource(saved)
-    return t('{name} was saved.', { name: saved.name })
-  })
-  fieldErrors.value = result.fields
-  // As the dialog of an event does, it closes when the change is saved.
-  if (result.ok) closeDialog()
-  return result.ok
-}
-
 async function setActive(resource: AdminResource, active: boolean) {
   await run(async () => {
     const saved = await api<AdminResource>(
@@ -412,87 +297,15 @@ async function confirmDelete() {
 }
 
 function openDialog(resource: AdminResource, which: 'details' | 'access') {
-  fieldErrors.value = {}
   problem.value = null
   notice.value = ''
-  rules.value = null
-  rulesFor.value = null
-  rulesError.value = null
   dialog.value = resource
   tab.value = which
 }
 
-function closeDialog() {
-  // Not while a change is on its way: its answer belongs to this dialog.
-  if (saving.value) return
-  dialog.value = null
-  rules.value = null
-  rulesFor.value = null
-}
-
-/** The rules are loaded when the access tab is shown first, not for a resource that is only edited. */
-watch([() => dialog.value?.id, tab], ([id, which]) => {
-  if (id !== undefined && which === 'access' && rulesFor.value !== id) void loadRules(id)
-})
-
-async function loadRules(id: number) {
-  rulesFor.value = id
-  rules.value = null
-  rulesError.value = null
-  try {
-    const answer = await api<{ rules: ResourceRule[] }>(`/api/admin/resources/${id}/acl`)
-    if (dialog.value?.id === id) rules.value = answer.rules
-  } catch (cause) {
-    if (dialog.value?.id === id) {
-      rulesError.value = describeError(cause, N_('load the rules'))
-      // Shown again next time the tab is chosen.
-      rulesFor.value = null
-    }
-  }
-}
-
-async function saveRules(next: ResourceRule[], done: string): Promise<boolean> {
-  const target = dialog.value
-  if (!target) return false
-  const result = await run(async () => {
-    const saved = await api<{ rules: ResourceRule[] }>(`/api/admin/resources/${target.id}/acl`, {
-      method: 'PUT',
-      body: { rules: next },
-    })
-    rules.value = saved.rules
-    return done
-  })
-  return result.ok
-}
-
-function addRule(
-  rule: {
-    principalType: ResourceRule['principalType']
-    principal: string | null
-    permission: ResourceRight
-  },
-  label: string,
-): Promise<boolean> {
-  const next: ResourceRule = {
-    principalType: rule.principalType,
-    principal: rule.principal,
-    right: rule.permission,
-  }
-  return saveRules(
-    withRule(rules.value ?? [], next),
-    t('{label} can now: {right}.', {
-      label,
-      right: tv(
-        RESOURCE_RIGHTS.find((item) => item.value === next.right)?.label ?? '',
-      ).toLowerCase(),
-    }),
-  )
-}
-
-function removeRule(rule: ResourceRule) {
-  void saveRules(
-    withoutRule(rules.value ?? [], rule),
-    t('{label} no longer has access.', { label: labelOf(rule) }),
-  )
+function onSaved(saved: AdminResource, message: string) {
+  replaceResource(saved)
+  notice.value = message
+  void status.refresh({ external: false })
 }
 </script>

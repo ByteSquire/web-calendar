@@ -38,6 +38,21 @@ function decodeSegment(segment: string): string {
   }
 }
 
+/**
+ * Which calendar of the server a collection in the viewer's home is: a share names its id
+ * (`shared-<id>[-group]`), one's own calendar is found by its path in Radicale (`/<sub>/<name>/`,
+ * decoded, as `calendars.collection_path`). Null for anything else.
+ */
+export function serverCalendarOf(href: string): { id: number } | { path: string } | null {
+  const segments = (toDavPath(href.trim()).split(/[?#]/, 1)[0] ?? '').split('/').filter(Boolean)
+  // `/caldav/<home>/<collection>/`: the gateway prefix, the home, the collection.
+  if (segments.length !== 3) return null
+  const home = decodeSegment(segments[1]!)
+  const name = decodeSegment(segments[2]!)
+  const id = sharedCalendarId(name)
+  return id !== null ? { id } : { path: `/${home}/${name}/` }
+}
+
 /** The calendar ref (`Calendar.id`, `calendar_prefs.calendar_ref`) of a CalDAV collection. */
 export function davRef(collectionUrl: string): string {
   return `dav:${ensureTrailingSlash(toDavPath(collectionUrl.trim()))}`

@@ -27,6 +27,11 @@ export interface AccessCalendarView {
   group: { id: number; name: string } | null
   /** A person's default calendar: it cannot be deleted (shared/utils/default-calendar.ts). */
   isDefault: boolean
+  /**
+   * Where it is in Radicale (`/<owner>/<name>/`, decoded), so "Edit calendar" in the sidebar of
+   * its owner can name it here; admins only see this view.
+   */
+  collectionPath: string
   rules: AccessRuleView[]
 }
 
@@ -94,6 +99,7 @@ function toCalendarView(db: Database, row: CalendarRow): AccessCalendarView {
         ? { id: row.group_id, name: row.group_name }
         : null,
     isDefault: row.kind === 'personal' && isDefaultCalendarPath(row.collection_path),
+    collectionPath: row.collection_path,
     rules: viewRules(db, row.id),
   }
 }

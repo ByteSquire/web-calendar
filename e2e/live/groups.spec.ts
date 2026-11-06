@@ -228,6 +228,36 @@ test('both members see the calendar in their sidebar', async () => {
   }
 })
 
+test('bob, its manager, edits it from "Edit calendar" in his sidebar, staying in the calendar', async () => {
+  await bob
+    .locator('#app-sidebar')
+    .getByRole('button', { name: new RegExp(`^Actions for calendar ${CALENDAR}`) })
+    .first()
+    .click()
+  await bob.getByRole('menuitem', { name: 'Edit calendar' }).click()
+  const editor = bob.getByRole('dialog', { name: CALENDAR })
+  await expect(editor).toContainText(`A calendar of the group ${GROUP}.`)
+  await expect(bob).toHaveURL(/\/$/)
+  // its sharing, as the Groups page words it, and the share dialog over this one
+  await expect(editor).toContainText('Can view')
+  await editor.getByRole('button', { name: 'Change sharing' }).click()
+  const share = bob.getByRole('dialog', { name: `Share ${CALENDAR}` })
+  await expect(share).toBeVisible()
+  await share.getByRole('button', { name: 'Cancel' }).click()
+  await expect(share).toBeHidden()
+  // a new colour, saved in Radicale and shown in the sidebar
+  await editor.getByText('Red', { exact: true }).click()
+  const saved = bob.waitForResponse(
+    (response) => response.url().includes('/calendars/') && response.request().method() === 'PATCH',
+  )
+  await editor.getByRole('button', { name: 'Save changes' }).click()
+  expect((await saved).status()).toBe(200)
+  await expect(editor).toContainText(`${CALENDAR} was saved.`)
+  await editor.getByRole('button', { name: 'Close', exact: true }).last().click()
+  await expect(editor).toBeHidden()
+  await expect(bob.locator('[data-calendar-main]')).toBeVisible()
+})
+
 test('bob changes the share of alice to "Can edit" and alice can write', async () => {
   await openGroupsPage(bob)
   await openGroup(bob)

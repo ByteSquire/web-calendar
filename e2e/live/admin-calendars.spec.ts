@@ -14,6 +14,9 @@ const RENAMED = `E2E organization renamed ${STAMP}`
 const RADICALE = 'http://radicale:5232'
 const DB_PATH = '/tmp/e2e-live.db'
 const ORG = '_organization'
+const ROOM = `E2E room ${STAMP}`
+let resourceId = 0
+let bearer = ''
 
 let alice: Page
 let bob: Page
@@ -66,6 +69,12 @@ test.beforeAll(async ({ browser }) => {
 })
 
 test.afterAll(async () => {
+  // the resource of this run goes the way an admin deletes one
+  if (resourceId) {
+    await alice.request.delete(`${APP_ORIGIN}/api/admin/resources/${resourceId}`, {
+      headers: { authorization: bearer },
+    })
+  }
   // What a failed run left behind.
   for (const name of [NAME, RENAMED]) {
     const path = await pathInHome(ORG, name)
@@ -128,6 +137,34 @@ test('deleted after asking, it is gone from Radicale and from bob', async () => 
   await expect(alice.locator('[data-admin-calendar]').filter({ hasText: RENAMED })).toHaveCount(0)
   expect(await pathInHome(ORG, RENAMED)).toBeNull()
   await expect.poll(() => pathInHome(subOf('bob'), RENAMED), { timeout: 30_000 }).toBeNull()
+})
+
+test('"Edit resource" in the sidebar opens its dialog over the calendar', async () => {
+  // a resource of this run, made by alice (an admin) with her own token
+  const request = alice.waitForRequest(
+    (candidate) => candidate.url().includes('/api/') && !!candidate.headers()['authorization'],
+  )
+  await alice.goto('/')
+  bearer = (await request).headers()['authorization']!
+  const made = await alice.request.post(`${APP_ORIGIN}/api/admin/resources`, {
+    headers: { authorization: bearer },
+    data: { name: ROOM, type: 'room' },
+  })
+  expect(made.status()).toBe(201)
+  resourceId = ((await made.json()) as { id: number }).id
+  await alice.reload()
+
+  const sidebar = alice.locator('#app-sidebar')
+  await sidebar.getByRole('button', { name: `Actions for resource ${ROOM}`, exact: true }).click()
+  await alice.getByRole('menuitem', { name: 'Edit resource' }).click()
+  const editor = alice.getByRole('dialog', { name: ROOM })
+  await expect(editor).toBeVisible()
+  await expect(alice).toHaveURL(/\/$/)
+  await editor.getByRole('textbox', { name: 'Name' }).fill(`${ROOM} B`)
+  await editor.getByRole('button', { name: 'Save changes' }).click()
+  await expect(editor).toBeHidden()
+  await expect(sidebar.getByText(`${ROOM} B`, { exact: true })).toBeVisible()
+  await expect(alice.locator('[data-calendar-main]')).toBeVisible()
 })
 
 test('no script or console errors came up', () => {

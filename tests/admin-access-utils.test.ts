@@ -3,6 +3,7 @@ import {
   calendarLabel,
   describeSaveProblem,
   levelLabel,
+  linkedCalendar,
   matchUsers,
   userLabel,
   withRule,
@@ -141,5 +142,40 @@ describe('calendarLabel', () => {
     expect(calendarLabel({ name: 'Personal Calendar', kind: 'personal', owner: null })).toBe(
       'Personal Calendar',
     )
+  })
+})
+
+describe('the calendar a link names', () => {
+  const calendars = [
+    {
+      id: 6,
+      name: 'Mine',
+      kind: 'personal' as const,
+      color: null,
+      owner: 'Bob',
+      collectionPath: '/u-bob/Mine/',
+      rules: [],
+    },
+    {
+      id: 7,
+      name: 'Rota',
+      kind: 'shared' as const,
+      color: null,
+      owner: null,
+      collectionPath: '/_group-3/r/',
+      rules: [],
+    },
+  ]
+
+  it('is found by its id or by its path in Radicale', () => {
+    expect(linkedCalendar(calendars, { open: '7' })?.name).toBe('Rota')
+    expect(linkedCalendar(calendars, { path: '/u-bob/Mine/' })?.name).toBe('Mine')
+  })
+
+  it('is none for an unknown id or path, or a query that is no text', () => {
+    expect(linkedCalendar(calendars, { open: '9' })).toBeUndefined()
+    expect(linkedCalendar(calendars, { path: '/u-bob/Other/' })).toBeUndefined()
+    expect(linkedCalendar(calendars, { open: ['7'] })).toBeUndefined()
+    expect(linkedCalendar(calendars, {})).toBeUndefined()
   })
 })

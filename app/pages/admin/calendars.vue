@@ -7,7 +7,8 @@
   removes them (every change sends the complete rule list). "New calendar" makes a calendar of the
   organization, which belongs to nobody, so nobody sees it until a rule shares it: the dialog then
   opens on "Who has access". A resource's calendar is deleted with its resource, on Admin ›
-  Resources, and a person's default calendar is not deleted at all (they always keep one). The page checks `/api/me` and sends everybody else back to the calendar; that is only
+  Resources, and a person's default calendar is not deleted at all (they always keep one).
+  `?open=<id>` or `?path=<collection path>` (from "Edit calendar" in the sidebar) opens a calendar. The page checks `/api/me` and sends everybody else back to the calendar; that is only
   tidiness, the admin routes refuse non-admins themselves. The old address /admin/access opens it.
 -->
 <template>
@@ -49,7 +50,9 @@
       />
       <SettingsErrorAlert v-if="access.users.error.value" :message="access.users.error.value" />
       <SettingsErrorAlert v-if="access.groups.error.value" :message="access.groups.error.value" />
-      <p v-if="!dialog" role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
+      <p v-if="openId === null" role="status" aria-live="polite" class="min-h-5 text-sm">
+        {{ notice }}
+      </p>
 
       <div class="flex flex-wrap items-end gap-3">
         <UFormField :label="t('Search calendars')" class="min-w-0 flex-1 basis-56">
@@ -117,148 +120,13 @@
       </ul>
 
       <!-- One dialog for a calendar and for who may use it, as for a resource: the tabs switch. -->
-      <UModal
-        :open="dialog !== null"
-        :title="dialog ? calendarLabel(dialog) : ''"
-        :description="t('Change the calendar, or choose who may see or change it.')"
-        :ui="{ content: 'sm:max-w-2xl', title: 'wrap-anywhere' }"
-        @update:open="(open) => (open ? undefined : closeDialog())"
-      >
-        <template #body>
-          <div v-if="dialog" class="flex flex-col gap-4">
-            <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
-            <UTabs
-              v-model="tab"
-              :items="tabItems"
-              :unmount-on-hide="false"
-              :ui="{ trigger: 'min-h-11 data-[state=inactive]:text-toned' }"
-              class="w-full"
-            >
-              <template #details>
-                <div class="flex flex-col gap-6">
-                  <p class="text-sm text-toned">
-                    {{
-                      t(
-                        'The name and colour are the calendar’s own: everybody who has the calendar sees them, unless they picked a colour of their own.',
-                      )
-                    }}
-                  </p>
-                  <GroupsCalendarForm
-                    :key="`details-${dialog.id}`"
-                    :initial="dialog"
-                    :busy="saving"
-                    cancellable
-                    :save="saveDetails"
-                    @cancel="closeDialog"
-                  />
-                  <section
-                    aria-labelledby="calendar-delete-heading"
-                    class="flex flex-col gap-2 border-t border-default pt-4"
-                  >
-                    <h3 id="calendar-delete-heading" class="font-semibold">
-                      {{ t('Delete calendar') }}
-                    </h3>
-                    <p v-if="dialog.isDefault" class="text-sm text-toned" data-default-calendar>
-                      {{
-                        t(
-                          'This is the default calendar of {name}. It is kept, so they always have a calendar to write to: it can be renamed, not deleted.',
-                          { name: dialog.owner ?? t('a person') },
-                        )
-                      }}
-                    </p>
-                    <p v-else-if="dialog.kind === 'resource'" class="text-sm text-toned">
-                      {{
-                        t(
-                          'A resource calendar is deleted with its resource, on the Resources page.',
-                        )
-                      }}
-                    </p>
-                    <template v-else>
-                      <p class="text-sm text-toned">{{ deleteDetail(dialog) }}</p>
-                      <UButton
-                        :label="t('Delete calendar')"
-                        icon="i-lucide-trash-2"
-                        color="error"
-                        variant="outline"
-                        class="self-start"
-                        :disabled="saving"
-                        @click="askDelete"
-                      />
-                    </template>
-                  </section>
-                </div>
-              </template>
-              <template #access>
-                <section
-                  :aria-label="t('Who has access to {name}', { name: dialog.name })"
-                  class="flex flex-col gap-3"
-                >
-                  <LinksCalendarLinks
-                    :key="dialog.id"
-                    :title="t('Links')"
-                    :calendar-id="dialog.id"
-                    :calendar-name="dialog.name"
-                  >
-                    <p class="text-sm text-toned">
-                      {{
-                        t(
-                          'A link gives people without an account a view of this calendar, behind a password, at the access level you choose.',
-                        )
-                      }}
-                    </p>
-                  </LinksCalendarLinks>
-                  <h3 class="font-semibold">{{ t('People and groups') }}</h3>
-                  <p v-if="dialog.owner" class="text-toned">
-                    {{ t('Owner: {name} (always has full access).', { name: dialog.owner }) }}
-                  </p>
-                  <p v-else-if="ownerKindOf(dialog) === 'organization'" class="text-toned">
-                    {{
-                      t(
-                        'This calendar belongs to the organization: only the people and groups below see it.',
-                      )
-                    }}
-                  </p>
-                  <SettingsErrorAlert v-if="problem" :message="problem" />
-                  <AdminAccessRuleList
-                    :rules="dialog.rules"
-                    :calendar-name="dialog.name"
-                    :busy="saving"
-                    @remove="remove"
-                  />
-                  <p v-if="pendingCount > 0" class="text-sm text-toned">
-                    {{
-                      tc(
-                        '{count} rule is pending. They are sent to the calendar server shortly; reload to see when they are applied. | {count} rules are pending. They are sent to the calendar server shortly; reload to see when they are applied.',
-                        pendingCount,
-                      )
-                    }}
-                  </p>
-                </section>
-                <AdminAccessAddForm
-                  class="mt-4"
-                  :users="access.users.data.value ?? []"
-                  :groups="access.groups.data.value ?? []"
-                  :busy="saving"
-                  :levels="ACCESS_LEVELS"
-                  default-level="read"
-                  :save="add"
-                />
-              </template>
-            </UTabs>
-          </div>
-        </template>
-        <template #footer>
-          <div class="flex w-full justify-end">
-            <UButton
-              :label="t('Close')"
-              color="neutral"
-              variant="outline"
-              :disabled="saving"
-              @click="closeDialog"
-            />
-          </div>
-        </template>
-      </UModal>
+      <AdminCalendarDialog
+        v-model:tab="tab"
+        v-model:notice="notice"
+        :access="access"
+        :calendar-id="openId"
+        @close="openId = null"
+      />
 
       <UModal
         :open="createOpen"
@@ -279,40 +147,16 @@
           />
         </template>
       </UModal>
-
-      <ConfirmDeleteDialog
-        :open="deleting !== null"
-        :event-title="deleting ? calendarLabel(deleting) : ''"
-        :detail="deleting ? deleteDetail(deleting) : ''"
-        :pending="saving"
-        :error="deleteError"
-        :return-focus-to="false"
-        @update:open="(open) => (open ? undefined : closeDelete())"
-        @confirm="confirmDelete"
-      />
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { principalLabel } from '~/utils/principal-label'
 import { useAdminAccess, useAdminFlag } from '~/composables/useAdminAccess'
 import { useLiveStatus } from '~/composables/useLiveCalendar'
 import type { CalendarFormBody } from '~/components/groups/CalendarForm.vue'
-import type {
-  AccessCalendar,
-  AccessRule,
-  AccessRuleInput,
-  CalendarOwnerKind,
-} from '~/utils/admin/access'
-import {
-  ACCESS_LEVELS,
-  calendarLabel,
-  levelLabel,
-  ownerKindOf,
-  withRule,
-  withoutRule,
-} from '~/utils/admin/access'
+import type { AccessCalendar, CalendarOwnerKind } from '~/utils/admin/access'
+import { calendarLabel, linkedCalendar, ownerKindOf } from '~/utils/admin/access'
 import { N_, t, tc } from '~/utils/i18n'
 import { describeError } from '~/utils/settings/api-errors'
 
@@ -327,14 +171,11 @@ const status = useLiveStatus()
 const checking = ref(true)
 const loaded = ref(false)
 const saving = ref(false)
-const problem = ref<string | null>(null)
 const notice = ref('')
 // Admin › People links here with the name of a calendar to look for.
 const query = ref(typeof route.query.q === 'string' ? route.query.q : '')
 const kind = ref<'all' | CalendarOwnerKind>('all')
 const createOpen = ref(false)
-const deleting = ref<AccessCalendar | null>(null)
-const deleteError = ref('')
 // The calendar that is open in the dialog (by id, so it follows the list), and its tab.
 const openId = ref<number | null>(null)
 const tab = ref<'details' | 'access'>('details')
@@ -346,11 +187,6 @@ const kindItems = computed(() => [
   { label: t('Groups'), value: 'groups' },
   { label: t('Resources'), value: 'resources' },
 ])
-const tabItems = computed(() => [
-  { label: t('Details'), value: 'details', slot: 'details' },
-  { label: t('Who has access'), value: 'access', slot: 'access' },
-])
-
 const calendars = computed(() => access.calendars.data.value?.calendars ?? [])
 const shown = computed(() => {
   const needle = query.value.trim().toLowerCase()
@@ -363,9 +199,6 @@ const shown = computed(() => {
         )),
   )
 })
-const dialog = computed(() => calendars.value.find((item) => item.id === openId.value) ?? null)
-const pendingCount = computed(() => dialog.value?.rules.filter((rule) => !rule.applied).length ?? 0)
-
 /** Whom the calendar belongs to, and how many rules share it. */
 function summary(calendar: AccessCalendar): string {
   const owner = {
@@ -379,18 +212,6 @@ function summary(calendar: AccessCalendar): string {
   return `${owner} · ${tc('{count} access rule | {count} access rules', calendar.rules.length)}`
 }
 
-function deleteDetail(calendar: AccessCalendar): string {
-  if (ownerKindOf(calendar) === 'people') {
-    return t(
-      'The calendar of {name} and all its events are deleted, the people it is shared with lose it, and its links stop working.',
-      { name: calendar.owner ?? t('a person') },
-    )
-  }
-  return t(
-    'The calendar and all its events are deleted for everybody who has it, and its links stop working.',
-  )
-}
-
 async function start() {
   checking.value = true
   const isAdmin = await ensure()
@@ -402,28 +223,24 @@ async function start() {
   if (isAdmin !== true) return
   await Promise.all([access.calendars.reload(), access.users.reload(), access.groups.reload()])
   loaded.value = access.calendars.data.value !== null
+  // "Edit calendar" in the sidebar's menu of a calendar opens it here: by its id (a share names
+  // it), or by its path in Radicale (one's own calendar).
+  const wanted = linkedCalendar(calendars.value, route.query)
+  if (wanted && openId.value === null) openDialog(wanted, 'details')
 }
 
 onMounted(start)
 
 function openDialog(calendar: AccessCalendar, which: 'details' | 'access') {
-  problem.value = null
   notice.value = ''
   openId.value = calendar.id
   tab.value = which
-}
-
-function closeDialog() {
-  // Not while a change is on its way: its answer belongs to this dialog.
-  if (saving.value) return
-  openId.value = null
 }
 
 /** Runs one change of the calendar; the calendar view is reloaded when it worked. */
 async function run(job: () => Promise<string>, action: string): Promise<true | string> {
   if (saving.value) return t('Another change is still being saved. Try again in a moment.')
   saving.value = true
-  problem.value = null
   notice.value = ''
   try {
     notice.value = await job()
@@ -450,76 +267,5 @@ function create(body: CalendarFormBody): Promise<true | string> {
       name: saved.name,
     })
   }, N_('add the calendar'))
-}
-
-function saveDetails(body: CalendarFormBody): Promise<true | string> {
-  const target = dialog.value
-  if (!target) return Promise.resolve(t('This calendar no longer exists. Reload the page.'))
-  return run(async () => {
-    const saved = await access.changeCalendar(target.id, body)
-    return t('{name} was saved.', { name: saved.name })
-  }, N_('save the calendar'))
-}
-
-function askDelete() {
-  deleteError.value = ''
-  deleting.value = dialog.value
-}
-
-function closeDelete() {
-  if (!saving.value) deleting.value = null
-}
-
-async function confirmDelete() {
-  const target = deleting.value
-  if (!target) return
-  const answer = await run(async () => {
-    await access.deleteCalendar(target.id)
-    return t('{name} was deleted.', { name: calendarLabel(target) })
-  }, N_('delete the calendar'))
-  if (answer === true) {
-    deleting.value = null
-    openId.value = null
-  } else {
-    deleteError.value = answer
-  }
-}
-
-function labelOf(rule: AccessRuleInput): string {
-  if (rule.principalType === 'authenticated') return t('Everyone signed in')
-  if (rule.principalType === 'group') return t('Group {name}', { name: rule.principal ?? '' })
-  const known = dialog.value?.rules.find((item) => item.principal === rule.principal)
-  return known ? principalLabel(known.principalType, known.label) : t('This person')
-}
-
-async function change(rules: AccessRuleInput[], done: string): Promise<boolean> {
-  const calendar = dialog.value
-  if (!calendar || saving.value) return false
-  saving.value = true
-  problem.value = null
-  notice.value = ''
-  const result = await access.saveRules(calendar.id, rules, labelOf)
-  saving.value = false
-  if (result.ok) notice.value = done
-  else problem.value = result.message
-  return result.ok
-}
-
-function add(rule: AccessRuleInput, label: string): Promise<boolean> {
-  const calendar = dialog.value
-  if (!calendar) return Promise.resolve(false)
-  return change(
-    withRule(calendar.rules, rule),
-    t('Access for {label} is now: {level}.', { label, level: levelLabel(rule.permission) }),
-  )
-}
-
-function remove(rule: AccessRule) {
-  const calendar = dialog.value
-  if (!calendar) return
-  void change(
-    withoutRule(calendar.rules, rule.id),
-    t('{label} no longer has access.', { label: principalLabel(rule.principalType, rule.label) }),
-  )
 }
 </script>

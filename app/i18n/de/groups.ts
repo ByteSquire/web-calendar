@@ -122,4 +122,11 @@ export const groups: Readonly<Record<string, string>> = {
   'Make manager': 'Zur Verwaltung machen',
   'You manage this group': 'Du verwaltest diese Gruppe',
   'Managers of {name} were saved.': 'Die Verwaltung von {name} wurde gespeichert.',
+
+  // The dialog of a group calendar, from the sidebar
+  'A calendar of the group {group}.': 'Ein Kalender der Gruppe {group}.',
+  'Only the managers of the group and administrators change this calendar.':
+    'Nur die Verwaltung der Gruppe und Administratoren ändern diesen Kalender.',
+  Sharing: 'Freigabe',
+  'Change sharing': 'Freigabe ändern',
 }

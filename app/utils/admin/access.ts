@@ -28,7 +28,25 @@ export interface AccessCalendar {
   group?: { id: number; name: string } | null
   /** A person's default calendar: it cannot be deleted. */
   isDefault?: boolean
+  /** Where it is in Radicale, `/<owner>/<name>/`. */
+  collectionPath?: string
   rules: AccessRule[]
+}
+
+/**
+ * The calendar a link to Admin › Calendars names ("Edit calendar" in the sidebar): `open` is its id
+ * (from a share), `path` its path in Radicale (one's own calendar). Undefined when it names none.
+ */
+export function linkedCalendar(
+  calendars: readonly AccessCalendar[],
+  query: { open?: unknown; path?: unknown },
+): AccessCalendar | undefined {
+  const { open, path } = query
+  return calendars.find(
+    (item) =>
+      (typeof open === 'string' && String(item.id) === open) ||
+      (typeof path === 'string' && item.collectionPath === path),
+  )
 }
 
 /** Who a calendar belongs to, as the filter of Admin › Calendars sorts them. */

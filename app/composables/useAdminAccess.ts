@@ -33,6 +33,9 @@ export function useAdminFlag() {
 
 export type SaveResult = { ok: true } | { ok: false; message: string }
 
+/** The calendars, people and groups of the access administration, and the changes to them. */
+export type AdminAccess = ReturnType<typeof useAdminAccess>
+
 export function useAdminAccess() {
   const api = useAuthFetch()
   const calendars = createResource(

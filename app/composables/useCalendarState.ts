@@ -101,6 +101,7 @@
  */
 import { Temporal } from 'temporal-polyfill'
 import { useAuthFetch } from '~/composables/useAuthFetch'
+import { useCalDav } from '~/composables/useCalDav'
 import { useServerConfigState } from '~/composables/useServerConfigState'
 import { createCalendarState, type CalendarState } from '~/utils/calendar-state'
 import type { ApiRequest } from '~/utils/live/api-types'
@@ -120,8 +121,16 @@ export function useLiveHooks(): LiveHooks {
     const toast = useToast()
     const api: ApiRequest = <T>(path: string, options?: object) =>
       fetchApi(path, options) as Promise<T>
+    const caldav = useCalDav()
     hooks = createLiveHooks({
       api,
+      ...(caldav
+        ? {
+            renameOwnCalendar: async (href: string, name: string) => {
+              await caldav.client.renameCalendar(href, name)
+            },
+          }
+        : {}),
       notify: (message) =>
         toast.add({ title: message, icon: 'i-lucide-triangle-alert', color: 'warning' }),
     })

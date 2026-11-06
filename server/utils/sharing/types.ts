@@ -38,6 +38,11 @@ export interface SharingLogger {
 export const SHARING_ACTOR = 'system:sharing-writer'
 /** The principal that owns the resource availability blocks; it is not a Kanidm user. */
 export const RESOURCES_PRINCIPAL = '_resources'
+/**
+ * The principal that owns the calendars of the organization (made by admins on Admin › Calendars):
+ * they belong to no person and no group, and reach people through their access rules only.
+ */
+export const ORGANIZATION_PRINCIPAL = '_organization'
 /** The collection of resource blocks, shared with `f` to everyone. */
 export const AVAILABILITY_PATH = '/_resources/availability/'
 /** The name under which a member sees the availability collection in their home. */

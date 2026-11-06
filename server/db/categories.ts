@@ -96,3 +96,31 @@ export function deleteCategory(db: Database, userId: number, id: number): boolea
     db.prepare('DELETE FROM categories WHERE id = ? AND owner_id = ?').run(id, userId).changes > 0
   )
 }
+
+/** Replaces name and colour of a category shared with everybody (admins). Null when there is none. */
+export function updateSharedCategory(
+  db: Database,
+  id: number,
+  input: CategoryInput,
+): CategoryEntry | null {
+  try {
+    const row = db
+      .prepare<[string, string | null, number], CategoryRow>(
+        'UPDATE categories SET name = ?, color = ? WHERE id = ? AND owner_id IS NULL RETURNING *',
+      )
+      .get(input.name, input.color, id)
+    return row ? toCategory(row) : null
+  } catch (error) {
+    throw duplicate(error) ? duplicateError() : error
+  }
+}
+
+/** Deletes a category shared with everybody (admins); events keep the name as plain text. */
+export function deleteSharedCategory(db: Database, id: number): CategoryEntry | null {
+  const row = db
+    .prepare<[number], CategoryRow>(
+      'DELETE FROM categories WHERE id = ? AND owner_id IS NULL RETURNING *',
+    )
+    .get(id)
+  return row ? toCategory(row) : null
+}

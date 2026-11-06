@@ -21,7 +21,6 @@ export const common: Readonly<Record<string, string>> = {
   // Used in more than one area.
   'Quick add': 'Schnell hinzufügen',
   Settings: 'Einstellungen',
-  'Calendar access': 'Kalenderzugriff',
   'Resource bookings': 'Ressourcenbuchungen',
   Shared: 'Geteilt',
   'Try again': 'Erneut versuchen',

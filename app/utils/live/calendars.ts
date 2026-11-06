@@ -1,7 +1,7 @@
 // The sidebar's calendars from what the sources report: the CalDAV collections of the built-in
 // service (FR-8) and the iCal subscriptions (FR-7), with the viewer's preferences applied (FR-4,
 // FR-5). Pure, so it runs in plain Vitest.
-import type { Calendar } from '../../../shared/types/calendar'
+import type { Calendar, CalendarManage } from '../../../shared/types/calendar'
 import type { ExternalAccount } from '../../../shared/types/external'
 import type { DavCalendar } from '../caldav/types'
 import { ensureTrailingSlash, toDavPath } from '../caldav/urls'
@@ -93,8 +93,15 @@ export interface BuildCalendarsInput {
   shared?: readonly ApiSharedCalendar[]
 }
 
-/** The name of a collection in the viewer's home, with the owner when it is someone's calendar. */
-function collectionName(collection: DavCalendar, shared: ReadonlyMap<number, ApiSharedCalendar>) {
+/**
+ * The name of a collection in the viewer's home, with the owner when it is someone's calendar, and
+ * whether the viewer may rename and delete it: their own (no share name), or a share of a calendar
+ * of a group they manage.
+ */
+function describeCollection(
+  collection: DavCalendar,
+  shared: ReadonlyMap<number, ApiSharedCalendar>,
+): { name: string; manage?: CalendarManage } {
   const segment = toDavPath(collection.url).split('/').filter(Boolean).pop() ?? ''
   let decoded = segment
   try {
@@ -103,10 +110,17 @@ function collectionName(collection: DavCalendar, shared: ReadonlyMap<number, Api
     // keep the encoded segment; it is then no share name
   }
   const id = sharedCalendarId(decoded)
-  const calendar = id === null ? undefined : shared.get(id)
-  return calendar
-    ? calendarLabel({ name: collection.displayName, kind: calendar.kind, owner: calendar.owner })
-    : collection.displayName
+  if (id === null) return { name: collection.displayName, manage: { kind: 'own' } }
+  const calendar = shared.get(id)
+  if (!calendar) return { name: collection.displayName }
+  const name = calendarLabel({
+    name: collection.displayName,
+    kind: calendar.kind,
+    owner: calendar.owner,
+  })
+  return calendar.canManage && typeof calendar.groupId === 'number'
+    ? { name, manage: { kind: 'group', groupId: calendar.groupId, calendarId: id } }
+    : { name }
 }
 
 /**
@@ -142,10 +156,12 @@ export function buildCalendars(input: BuildCalendarsInput): Calendar[] {
   }
 
   for (const collection of input.collections) {
+    const { name, manage } = describeCollection(collection, shared)
     add(
       {
         id: davRef(collection.url),
-        name: collectionName(collection, shared),
+        name,
+        ...(manage ? { manage } : {}),
         type: 'caldav',
         href: toDavPath(collection.url),
         readOnly: collection.readOnly,

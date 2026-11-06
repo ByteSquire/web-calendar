@@ -45,6 +45,7 @@ const calendars: Calendar[] = [
     color: '#1d4ed8',
     defaultVisible: true,
     ownerId: currentUser.id,
+    manage: { kind: 'own' },
   },
   {
     id: 'cal-team',
@@ -53,6 +54,7 @@ const calendars: Calendar[] = [
     color: '#047857',
     defaultVisible: true,
     ownerId: currentUser.id,
+    manage: { kind: 'own' },
   },
   {
     id: 'cal-engineering',

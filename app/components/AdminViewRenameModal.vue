@@ -3,43 +3,22 @@
   new name; the caller saves it and closes the dialog, or sets `error` to keep it open.
 -->
 <template>
-  <UModal
+  <RenameDialog
     :open="open"
     :title="shared ? t('Rename shared view') : t('Rename view')"
     :description="shared ? t('Everybody sees the new name.') : t('Only you see this view.')"
+    :value="viewName"
+    :pending="pending"
+    :error="error"
     @update:open="emit('update:open', $event)"
-  >
-    <template #body>
-      <form id="admin-view-rename-form" @submit.prevent="onSubmit">
-        <UFormField :label="t('Name')" :error="error">
-          <UInput v-model="name" autocomplete="off" class="w-full" />
-        </UFormField>
-      </form>
-    </template>
-    <template #footer>
-      <div class="flex w-full justify-end gap-2">
-        <UButton
-          :label="t('Cancel')"
-          color="neutral"
-          variant="outline"
-          @click="emit('update:open', false)"
-        />
-        <UButton
-          type="submit"
-          form="admin-view-rename-form"
-          :label="t('Save')"
-          :loading="pending"
-          :disabled="name.trim() === ''"
-        />
-      </div>
-    </template>
-  </UModal>
+    @save="emit('save', $event)"
+  />
 </template>
 
 <script setup lang="ts">
 import { t } from '~/utils/i18n'
 
-const props = withDefaults(
+withDefaults(
   defineProps<{
     open: boolean
     viewName: string
@@ -50,17 +29,4 @@ const props = withDefaults(
   { shared: true, pending: false, error: undefined },
 )
 const emit = defineEmits<{ 'update:open': [open: boolean]; save: [name: string] }>()
-
-const name = ref(props.viewName)
-watch(
-  () => props.open,
-  (open) => {
-    if (open) name.value = props.viewName
-  },
-)
-
-function onSubmit() {
-  const text = name.value.trim()
-  if (text) emit('save', text)
-}
 </script>

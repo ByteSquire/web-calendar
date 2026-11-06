@@ -29,6 +29,8 @@ export interface GroupSummary {
   memberCount: number
   /** True when the signed-in person is a member. */
   member: boolean
+  /** True when the signed-in person manages the group. */
+  manager: boolean
 }
 
 /** A person as `/api/people` and the member lists name them. */
@@ -36,6 +38,11 @@ export interface GroupPerson {
   sub: string
   name: string | null
   username: string | null
+}
+
+/** A stored member of a group, and whether they manage it. */
+export interface GroupMember extends GroupPerson {
+  manager: boolean
 }
 
 export interface CalendarShare {
@@ -57,8 +64,13 @@ export interface GroupDetail {
   id: number
   name: string
   source: GroupSource
+  /** Add and remove members: managers and admins, in an app group (the server checks). */
   canManageMembers: boolean
-  members: GroupPerson[]
+  /** Create, rename, share and delete the group's calendars: managers and admins. */
+  canManageCalendars: boolean
+  /** Name and remove managers: admins. */
+  canNameManagers: boolean
+  members: GroupMember[]
   calendars: GroupCalendar[]
 }
 

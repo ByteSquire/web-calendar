@@ -13,12 +13,19 @@ export interface GroupMemberView {
   username: string | null
 }
 
+/** A stored member with their role: a manager changes the group's members and calendars. */
+export interface GroupMemberRow extends GroupMemberView {
+  manager: boolean
+}
+
 export interface GroupSummaryRow {
   id: number
   name: string
   source: GroupSource
   memberCount: number
   member: boolean
+  /** Whether `sub` is one of the group's managers (migration 013). */
+  manager: boolean
 }
 
 export function findGroupById(db: Database, id: number): GroupRow | undefined {
@@ -44,7 +51,14 @@ export function listGroupSummaries(db: Database, sub: string, since: string): Gr
   return db
     .prepare<
       { sub: string; since: string },
-      { id: number; name: string; source: GroupSource; memberCount: number; member: number }
+      {
+        id: number
+        name: string
+        source: GroupSource
+        memberCount: number
+        member: number
+        manager: number
+      }
     >(
       `SELECT g.id, g.name, g.source,
          CASE g.source
@@ -55,11 +69,14 @@ export function listGroupSummaries(db: Database, sub: string, since: string): Gr
            WHEN 'everyone' THEN EXISTS (
              SELECT 1 FROM users u WHERE u.oidc_sub = @sub AND u.last_seen_at >= @since)
            ELSE EXISTS (SELECT 1 FROM group_members m WHERE m.group_id = g.id AND m.sub = @sub)
-         END AS member
+         END AS member,
+         EXISTS (
+           SELECT 1 FROM group_members m WHERE m.group_id = g.id AND m.sub = @sub AND m.manager = 1
+         ) AS manager
        FROM groups g ORDER BY g.name COLLATE NOCASE, g.id`,
     )
     .all({ sub, since })
-    .map((row) => ({ ...row, member: row.member === 1 }))
+    .map((row) => ({ ...row, member: row.member === 1, manager: row.manager === 1 }))
 }
 
 export function insertCustomGroup(db: Database, name: string): GroupRow {
@@ -92,16 +109,74 @@ export function isGroupMember(db: Database, groupId: number, sub: string, since:
 }
 
 /** The stored members of a group; none for the group of everyone (it is counted, never listed). */
-export function listGroupMembers(db: Database, groupId: number): GroupMemberView[] {
+export function listGroupMembers(db: Database, groupId: number): GroupMemberRow[] {
   return db
-    .prepare<[number], GroupMemberView>(
-      `SELECT m.sub AS sub, u.name AS name, u.username AS username
+    .prepare<[number], GroupMemberView & { manager: number }>(
+      `SELECT m.sub AS sub, u.name AS name, u.username AS username, m.manager AS manager
        FROM group_members m JOIN groups g ON g.id = m.group_id
        LEFT JOIN users u ON u.oidc_sub = m.sub
        WHERE m.group_id = ? AND g.source <> 'everyone'
        ORDER BY COALESCE(NULLIF(u.name, ''), u.username, m.sub) COLLATE NOCASE, m.sub`,
     )
     .all(groupId)
+    .map((row) => ({ ...row, manager: row.manager === 1 }))
+}
+
+/** Whether `sub` is a manager of the group (a stored member with the flag). */
+export function isGroupManager(db: Database, groupId: number, sub: string): boolean {
+  return (
+    db
+      .prepare<[number, string], { one: number }>(
+        'SELECT 1 AS one FROM group_members WHERE group_id = ? AND sub = ? AND manager = 1',
+      )
+      .get(groupId, sub) !== undefined
+  )
+}
+
+/** The `sub` of each manager of the group. */
+export function listGroupManagerSubs(db: Database, groupId: number): string[] {
+  return db
+    .prepare<[number], string>(
+      'SELECT sub FROM group_members WHERE group_id = ? AND manager = 1 ORDER BY sub',
+    )
+    .pluck()
+    .all(groupId)
+}
+
+/**
+ * Makes exactly `subs` (stored members, checked by the caller) the managers of the group. Returns how
+ * many became managers and how many stopped being one; the caller audits inside its transaction.
+ */
+export function replaceGroupManagers(
+  db: Database,
+  groupId: number,
+  subs: readonly string[],
+): { added: number; removed: number } {
+  const wanted = new Set(subs)
+  const current = new Set(listGroupManagerSubs(db, groupId))
+  const set = db.prepare('UPDATE group_members SET manager = ? WHERE group_id = ? AND sub = ?')
+  let added = 0
+  let removed = 0
+  db.transaction(() => {
+    for (const sub of current) if (!wanted.has(sub)) removed += set.run(0, groupId, sub).changes
+    for (const sub of wanted) if (!current.has(sub)) added += set.run(1, groupId, sub).changes
+  })()
+  return { added, removed }
+}
+
+/** The groups `sub` is a stored member of, by name, with whether they manage each. */
+export function listGroupsOfPerson(
+  db: Database,
+  sub: string,
+): { id: number; name: string; source: GroupSource; manager: boolean }[] {
+  return db
+    .prepare<[string], { id: number; name: string; source: GroupSource; manager: number }>(
+      `SELECT g.id, g.name, g.source, m.manager FROM group_members m
+       JOIN groups g ON g.id = m.group_id
+       WHERE m.sub = ? ORDER BY g.name COLLATE NOCASE, g.id`,
+    )
+    .all(sub)
+    .map((row) => ({ ...row, manager: row.manager === 1 }))
 }
 
 /**

@@ -1042,30 +1042,39 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
     share still maps (`409`, found by the live test); if Radicale is down, the app stops with
     `502 upstream_unavailable`, leaves the rows and asks the sharing writer to put back the shares
     it had taken away.
-  - _Who may do what._ Any **member** of a group, and any **admin**, creates, renames, recolours
-    (a colour can be cleared with `null`), deletes and shares that group's calendars; nobody else
-    does (`403`). Only **admins** create and delete app groups, change their members, and import or stop importing
-    groups of the provider. The
-    decision is made on the server for every request; the page only hides controls. Every change
-    is audited in the same transaction (`group.created`, `group.deleted`, `group.members_replaced`, `group.oidc_imported`,
-    `group.oidc_import_stopped`, `group_calendar.created`, `.renamed`, `.deleted`, `.shares_replaced`).
+  - _Who may do what._ Every **member** uses the group's calendars (they are mapped into their home
+    with the owning group's `write` rule). A group's **managers** (migration 013: the column
+    `group_members.manager`, so a person who leaves the group stops managing it) and any **admin**
+    create, rename, recolour (a colour can be cleared with `null`), delete and share the group's
+    calendars, and change the members of an app group; nobody else does (`403`). Only an admin
+    removes a manager (`403 manager` for a manager who tries, themselves included) and names the
+    managers (`PUT /api/groups/:id/managers`, the complete list, each a stored member; a group of the
+    provider may have managers too, its members still follow the provider, and the group of
+    everyone has none). Only **admins** create and delete app groups and import or stop importing
+    groups of the provider. After the upgrade to 013 no group has managers, so until an admin names
+    them only admins change group calendars. The decision is made on the server for every request;
+    the page only hides controls (`GET /api/groups/:id` says `canManageMembers`,
+    `canManageCalendars` and `canNameManagers`). Every change is audited in the same transaction
+    (`group.created`, `group.deleted`, `group.members_replaced`, `group.managers_replaced`,
+    `group.oidc_imported`, `group.oidc_import_stopped`, `group_calendar.created`, `.renamed`,
+    `.deleted`, `.shares_replaced`).
   - _API._ `GET /api/groups` (every group, for any signed-in person, for the share picker: name,
-    source, member count and whether the caller is a member), `GET /api/groups/:id` (members, calendars with shares; members and admins only),
+    source, member count and whether the caller is a member and a manager), `GET /api/groups/:id` (members, calendars with shares; members and admins only),
     `POST /api/groups`, `DELETE /api/groups/:id` (app groups only), `PUT /api/groups/:id/members` (the
-    complete list), the admin routes under `/api/groups/oidc` above, `POST /api/groups/:id/calendars`, `PATCH` and `DELETE
+    complete list), `PUT /api/groups/:id/managers` (admins), the admin routes under `/api/groups/oidc` above, `POST /api/groups/:id/calendars`, `PATCH` and `DELETE
 /api/groups/:id/calendars/:calendarId`, `PUT .../shares` (the complete list), and `GET
 /api/people` for the pickers. Errors: `400` with the fields, `401`, `403`, `404`, `409`
     (`duplicate`, `limit_reached`, `has_calendars`), `429`, `502`. Limits: 200 groups, 500
     members per app group, 50 calendars per group, 100 shares per calendar, calendar names of 1 to
     100 characters, colours as `#rrggbb`.
-  - _Security notes._ Members may share their group's calendars with **anybody**, including
-    people outside the group; that was chosen on purpose (members manage their calendars fully)
+  - _Security notes._ Managers may share their group's calendars with **anybody**, including
+    people outside the group; that was chosen on purpose (managers manage the calendars fully)
     and every share is audited. `GET /api/people` gives every signed-in person the **names and user
     names** of everybody who has signed in once (no e-mail address), and `GET /api/groups` the names
     and member counts of all groups, for the pickers; only members and admins see a group's members. A change
     reaches Radicale after the next sharing run (requested at once, debounced 2 s): the live test
-    saw 3 to 6 seconds. Admins can still edit any calendar's rules on `/admin/access`, which also
-    lists group calendars. Membership of an imported group is the provider's word as of the
+    saw 3 to 6 seconds. Admins can still edit any calendar on Admin › Calendars (`/admin/calendars`),
+    which also lists group calendars. Membership of an imported group is the provider's word as of the
     person's last sign-in or refresh: the app trusts the provider's claim and whoever can create or
     rename groups there, and a group no admin imported has no members here
     (`docs/security-review.md` §7.2).
@@ -1117,12 +1126,39 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   create admin views, manage calendars and access rules, and edit resource
   metadata. Users own their personal views, filters, categories, subscriptions and
   app tokens.
-- **Access administration (FR-14/15)** — the page `/admin/access` (menu entry "Calendar access" in
-  live mode, admins only; the browser flag from `/api/me` only hides, the server decides).
+- **Access administration (FR-14/15)** — Admin › Calendars, the page `/admin/calendars` (the old
+  address `/admin/access` opens it; menu entry "Calendars" in live mode, admins only; the browser
+  flag from `/api/me` only hides, the server decides). It lists every calendar with whom it belongs
+  to (a person, the organization, a group, a resource), a filter by that and a search; a calendar
+  opens in one dialog with the tabs "Details" (its own name and colour, written to Radicale as the
+  principal that owns it and to its row, and Delete) and "Who has access" (its links and rules).
   Routes, all `defineAdminHandler`: `GET /api/admin/access/calendars` (calendars with rules,
-  `applied` taken from `applied_at`), `PUT
+  `applied` taken from `applied_at`, and the owning `group`), `PUT
 /api/admin/access/calendars/:id` (the whole rule list, one `replaceCalendarAcl` transaction),
-  `GET /api/admin/access/users` (`sub`, name, username). Offered: principal types person, group,
+  `POST /api/admin/access/calendars` (a calendar of the organization), `PATCH
+/api/admin/access/calendars/:id` (name and colour), `DELETE /api/admin/access/calendars/:id`
+  (not a resource's: `409 resource`), `GET /api/admin/access/users` (`sub`, name, username).
+  - _Calendars of the organization_ belong to no person and no group. They live in the home of the
+    app's own principal **`_organization`** (`/_organization/<uuid>/`, reserved like `_resources`
+    and `_group-`, so no person can have that id), kind `shared` with no owner and no group;
+    discovery lists that home (skipping Radicale's default calendar, as in a group's) and the
+    sharing writer shares them like any calendar. Nobody sees one until a rule shares it, so the
+    dialog opens on "Who has access" after making one. At most 200.
+  - _Deleting a calendar_ (an admin's, a manager's of a group calendar, or a person's own from the
+    sidebar, `DELETE /api/me/calendars?href=`): Radicale's shares of the collection go first, then
+    the collection, then the row with its rules and links (and the links made in Settings to its
+    path, which may have no row yet: a calendar made minutes ago is not discovered yet, so the own
+    route goes by the path, which must be in the caller's home and not a share there). Radicale
+    down: `502 upstream_unavailable`, nothing deleted, the shares come back with the next run.
+    Audited as `calendar.deleted` (`group_calendar.deleted` for a group's).
+- **Admin › People** (`/admin/people`, menu entry "People", admins only, read only): everybody who
+  signed in once, with a search, and for one person their groups (and which they manage), own
+  calendars, the calendars shared with them and the links they made. `GET /api/admin/people` and
+  `GET /api/admin/people/:id`; no e-mail address, no link secret. The admin badge is `users.is_admin`
+  as of the last sign-in, labelled so, and decides nothing. Access is changed on the other pages.
+- **Admin › Resources** also deletes a resource (`DELETE /api/admin/resources/:id`) with its rules;
+  one with bookings of any state is refused (`409 has_bookings`), deactivating is the way then. A
+  resource has nothing of its own in Radicale. Offered: principal types person, group,
   everyone signed in; permissions `free_busy`, `read`, `write`. `admin` and `public` are refused
   (public visibility is the public view, FR-27; `admin` never reaches Radicale). A person must
   be a valid user id (§6) that exists in `users.oidc_sub`; the owner gets no rule; a group must be a
@@ -1290,8 +1326,18 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     or an existing element was not enough. Example of the rule applied: there is no "Add shared
     view" input; an administrator adds a view like anyone else and chooses "Share with everybody"
     in its `⋯` menu (§8, Shared views and Own views). Example of an element that is justified:
-    the "Calendar access" page (`/admin/access`), because a rule editor does not fit in a menu
-    item; it is still reached from the existing app menu, not from a new button.
+    Admin › Calendars (`/admin/calendars`), because a rule editor does not fit in a menu item; it
+    is still reached from the existing app menu, not from a new button. A third: "Make manager" on
+    the row of a group member (admins only), because a member's role has no menu, and the row is
+    where the member already is.
+  - Every row of the sidebar's calendars, categories and filters ends in a `⋯` menu (at least
+    44 px, named after the item: "Actions for calendar Team") with what the viewer may do there:
+    every calendar its colour for the viewer; a calendar of their own, or of a group they manage,
+    Rename and Delete too; a category of their own (a shared one for an admin) Rename, Colour and
+    Delete; a filter Edit and Delete. Admins change other people's calendars on Admin › Calendars,
+    not in the sidebar, where a slip would delete a colleague's calendar. A category that only
+    events carry is a name, not a row, and has no menu. Deleting asks first and names what goes:
+    a calendar's events, its shares and its links.
 - **Calendar links** (§8) — the page of a link has no sidebar, no Quick add or Add, no adding by a
   click on a date and no Edit or Delete in the event sheet; the top bar names the calendar (from
   1024 px) and keeps the date navigation and the view types. Its `⋮` menu holds only the look:
@@ -1712,20 +1758,20 @@ Kanidm and Radicale, or a database that holds data. Details are in §5 (schema, 
 (audit log, sharing, groups, access administration, shared views). The per-task working notes were
 removed before the merge; they are in git history (`git show 352d101:docs/phase3-notes/README.md`).
 
-| Task                                                            | State                                                                                             |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Audit log and admin guard                                       | built (migration 005, `defineAdminHandler`, rate limit)                                           |
-| Schema rework (access rules, resources, bookings)               | built (migration 006, DB modules)                                                                 |
-| S5 follow-ups (`f` on map shares, many shares)                  | done by measurement against Radicale 3.9.0                                                        |
-| Group sync                                                      | built, then replaced on 2026-11-05 by import at sign-in and the group file writer (§8)            |
-| Sharing writer, gateway pre-check, nightly audit job            | built; plugin `server/plugins/sharing.ts`                                                         |
-| Admin views (FR-2)                                              | built (routes and sidebar controls)                                                               |
-| Access administration (FR-14/15)                                | built (API and `/admin/access`), wired to the sharing writer by `server/plugins/access-wiring.ts` |
-| Resources part 1 (entities, bookings, availability blocks)      | built; blocks written through the sharing writer's store by `server/plugins/resources.ts`         |
-| Resources part 2, server (availability, manager queue, updates) | built; routes `GET /api/resources/availability`, `requests`, `updates`                            |
-| Resources part 2, client (booking form, requests page, toast)   | built; page `/resources/requests`                                                                 |
-| Resources part 3 (reconcile of moved or deleted events)         | built (migration 008, `booking_sync`); loop in `server/plugins/resources.ts`                      |
-| Sharing writer: Radicale assumptions                            | checked against Radicale 3.9.0 (`dev/spike-s1/tools/verify_sharing_shapes.py`); one bug fixed     |
+| Task                                                            | State                                                                                                |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Audit log and admin guard                                       | built (migration 005, `defineAdminHandler`, rate limit)                                              |
+| Schema rework (access rules, resources, bookings)               | built (migration 006, DB modules)                                                                    |
+| S5 follow-ups (`f` on map shares, many shares)                  | done by measurement against Radicale 3.9.0                                                           |
+| Group sync                                                      | built, then replaced on 2026-11-05 by import at sign-in and the group file writer (§8)               |
+| Sharing writer, gateway pre-check, nightly audit job            | built; plugin `server/plugins/sharing.ts`                                                            |
+| Admin views (FR-2)                                              | built (routes and sidebar controls)                                                                  |
+| Access administration (FR-14/15)                                | built (API and `/admin/calendars`), wired to the sharing writer by `server/plugins/access-wiring.ts` |
+| Resources part 1 (entities, bookings, availability blocks)      | built; blocks written through the sharing writer's store by `server/plugins/resources.ts`            |
+| Resources part 2, server (availability, manager queue, updates) | built; routes `GET /api/resources/availability`, `requests`, `updates`                               |
+| Resources part 2, client (booking form, requests page, toast)   | built; page `/resources/requests`                                                                    |
+| Resources part 3 (reconcile of moved or deleted events)         | built (migration 008, `booking_sync`); loop in `server/plugins/resources.ts`                         |
+| Sharing writer: Radicale assumptions                            | checked against Radicale 3.9.0 (`dev/spike-s1/tools/verify_sharing_shapes.py`); one bug fixed        |
 
 **Open for Phase 3** (found at integration):
 

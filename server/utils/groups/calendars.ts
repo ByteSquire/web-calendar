@@ -1,36 +1,26 @@
 // The calendars a group owns: create, rename or recolour, delete, and the shares of each. The
 // calendar lives in Radicale under the group's principal (`/_group-<id>/<uuid>/`), so each step
 // first asks Radicale and only then writes the rows; a Radicale failure leaves nothing changed, and
-// a failure of the rows after a created collection removes the collection again.
+// a failure of the rows after a created collection removes the collection again. Renaming and
+// deleting are the ones of every calendar (server/utils/calendars/manage.ts).
 import { randomUUID } from 'node:crypto'
 import type { Database } from 'better-sqlite3'
-import {
-  deleteCalendarRow,
-  countGroupCalendars,
-  findGroupCalendar,
-  updateCalendarNameColor,
-  upsertGroupCalendar,
-} from '../../db/groups'
+import { countGroupCalendars, findGroupCalendar, upsertGroupCalendar } from '../../db/groups'
 import { addCalendarAcl } from '../../db/calendar-acl'
 import type { CalendarRow, GroupRow } from '../../db/types'
 import { applyRules } from '../access/service'
 import { USERS_GROUP } from './config'
 import { conflict, notFound, toBadRequest, upstreamFailed } from '../api/errors'
 import { groupPrincipal } from '../sharing/names'
-import type { RadicaleClient } from '../sharing/radicale-client'
 import { groupCalendarRules, shareFieldErrors, calendarView } from './service'
 import { MAX_CALENDARS_PER_GROUP, type ShareInput } from './rules'
 import { getGroupsPorts } from './ports'
-
-export interface CalendarContext {
-  db: Database
-  /** Read when a Radicale call is about to be made, after the access check. */
-  readonly radicale: RadicaleClient
-  audit(action: string, target?: string, details?: Record<string, unknown>): void
-  atomic<T>(work: () => T): T
-}
-
-const RADICALE_DOWN = 'The calendar server did not do it; nothing was changed. Try again.'
+import {
+  changeCalendar,
+  deleteCalendar,
+  RADICALE_DOWN,
+  type CalendarContext,
+} from '../calendars/manage'
 
 function requireCalendar(db: Database, group: GroupRow, calendarId: number): CalendarRow {
   const row = findGroupCalendar(db, group.id, calendarId)
@@ -101,48 +91,14 @@ export async function updateGroupCalendar(
   input: { name?: string; color?: string | null },
 ): Promise<ReturnType<typeof calendarView>> {
   const current = requireCalendar(ctx.db, group, calendarId)
-  const principal = groupPrincipal(group.id)
-  const name = input.name ?? current.name
-  // Undefined keeps the colour, null clears it, a string sets it.
-  const color = input.color === undefined ? current.color : input.color
-  if (name === current.name && color === current.color) return calendarView(ctx.db, group, current)
-  // Radicale is asked only for what changes (a rename of an uncoloured calendar leaves its colour
-  // alone), in one PROPPATCH: it takes both or neither, so the rows never disagree with it.
-  const changed = await ctx.radicale.updateCalendar(principal, current.collection_path, {
-    ...(name !== current.name ? { displayName: name } : {}),
-    ...(color !== current.color ? { color } : {}),
-  })
-  if (!changed.ok) throw upstreamFailed(RADICALE_DOWN)
-  const updated = ctx.atomic(() => {
-    const row = updateCalendarNameColor(ctx.db, calendarId, name, color)
+  const row = await changeCalendar(ctx, current, input, (updated, colorCleared) =>
     ctx.audit('group_calendar.renamed', `calendar:${calendarId}`, {
       groupId: group.id,
-      name,
-      colorCleared: color === null && current.color !== null,
-    })
-    return row
-  })
-  return calendarView(ctx.db, group, updated)
-}
-
-/**
- * Radicale refuses to delete a collection that a share still maps (409, found by the live proof),
- * so the shares of the collection go first. If the collection is then not deleted, the rows still
- * hold the rules and the next reconcile puts the shares back: nothing is lost.
- */
-export async function removeMappedShares(
-  radicale: RadicaleClient,
-  principal: string,
-  collectionPath: string,
-): Promise<boolean> {
-  const listed = await radicale.listShares(principal, 'map')
-  if (!listed.ok) return false
-  for (const share of listed.value) {
-    if (share.pathMapped !== collectionPath) continue
-    const removed = await radicale.deleteShare(principal, 'map', share.pathOrToken)
-    if (!removed.ok) return false
-  }
-  return true
+      name: updated.name,
+      colorCleared,
+    }),
+  )
+  return calendarView(ctx.db, group, row)
 }
 
 export async function deleteGroupCalendar(
@@ -151,25 +107,13 @@ export async function deleteGroupCalendar(
   calendarId: number,
 ): Promise<void> {
   const current = requireCalendar(ctx.db, group, calendarId)
-  const principal = groupPrincipal(group.id)
-  if (!(await removeMappedShares(ctx.radicale, principal, current.collection_path))) {
-    throw upstreamFailed(RADICALE_DOWN)
-  }
-  const gone = await ctx.radicale.deleteCollection(principal, current.collection_path)
-  if (!gone.ok) {
-    // The shares are gone and the rows are still there: have the writer put them back.
-    getGroupsPorts().onSharesChanged()
-    throw upstreamFailed(RADICALE_DOWN)
-  }
-  ctx.atomic(() => {
-    deleteCalendarRow(ctx.db, calendarId)
+  await deleteCalendar(ctx, current.collection_path, current, (links) =>
     ctx.audit('group_calendar.deleted', `calendar:${calendarId}`, {
       groupId: group.id,
       name: current.name,
-    })
-  })
-  // The shares of the calendar are removed by the next reconcile (its rows are gone).
-  getGroupsPorts().onSharesChanged()
+      links,
+    }),
+  )
 }
 
 export function replaceGroupCalendarShares(

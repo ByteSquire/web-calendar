@@ -2,8 +2,8 @@ import { expect, test, type Page } from '@playwright/test'
 import { scan } from './axe-scan'
 import { openApp, press, switchView } from './helpers'
 
-// FR-4: each calendar's colour is the viewer's choice. The colour button of a calendar's row opens a
-// dialog with the named colours, "Custom" for any colour (the browser's picker and a colour code)
+// FR-4: each calendar's colour is the viewer's choice. "Colour" in the menu of a calendar's row opens
+// a dialog with the named colours, "Custom" for any colour (the browser's picker and a colour code)
 // and "Default", the calendar's own. In demo mode the choice is kept in the page only; the live
 // spec covers the saved preference.
 
@@ -26,6 +26,12 @@ async function fillsOf(page: Page, calendar: string): Promise<string[]> {
   return [...new Set(fills)]
 }
 
+/** "Colour" in the menu of the Team calendar's row. */
+async function openColour(page: Page): Promise<void> {
+  await press(page.getByRole('button', { name: 'Actions for calendar Team', exact: true }))
+  await press(page.getByRole('menuitem', { name: 'Colour' }))
+}
+
 const closeSidebarIfDrawer = async (page: Page) => {
   const close = page.getByRole('button', { name: 'Close sidebar' })
   if ((await page.getByRole('button', { name: 'Open sidebar' }).count()) === 0) return
@@ -39,11 +45,11 @@ test('a calendar gets a named colour, any colour, and its own back', async ({ pa
   expect(await fillsOf(page, 'Team')).toEqual(['rgb(4, 120, 87)'])
 
   await showSidebar(page)
-  const button = page.getByRole('button', { name: 'Colour of Team', exact: true })
+  const button = page.getByRole('button', { name: 'Actions for calendar Team', exact: true })
   const box = await button.boundingBox()
   expect(box!.height).toBeGreaterThanOrEqual(44)
   expect(box!.width).toBeGreaterThanOrEqual(44)
-  await press(button)
+  await openColour(page)
   const dialog = page.getByRole('dialog', { name: 'Colour of Team' })
   await expect(dialog).toBeVisible()
   // the calendar shows its own colour: "Default" is chosen
@@ -58,7 +64,7 @@ test('a calendar gets a named colour, any colour, and its own back', async ({ pa
 
   // any colour, by its code; a light one gets dark text
   await showSidebar(page)
-  await press(button)
+  await openColour(page)
   await expect(dialog.getByRole('radio', { name: 'Red' })).toBeChecked()
   await press(dialog.getByText('Custom', { exact: true }))
   await expect(dialog.getByLabel('Custom colour')).toBeVisible()
@@ -89,7 +95,7 @@ test('a calendar gets a named colour, any colour, and its own back', async ({ pa
 
   // back to its own
   await showSidebar(page)
-  await press(button)
+  await openColour(page)
   await expect(dialog.getByRole('radio', { name: 'Custom' })).toBeChecked()
   await press(dialog.getByText('Default', { exact: true }))
   await press(dialog.getByRole('button', { name: 'Save' }))

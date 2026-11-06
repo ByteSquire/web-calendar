@@ -24,6 +24,7 @@ export function toCategories(categories: readonly ApiCategory[]): Category[] {
     id: String(category.id),
     name: category.name,
     color: normalizeHexColor(category.color) ?? colorForName(category.name),
+    ...(category.shared ? { shared: true } : {}),
   }))
 }
 

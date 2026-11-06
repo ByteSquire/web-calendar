@@ -1,9 +1,14 @@
 <!--
-  The members of a group. Groups from the identity provider and groups the person may not change
-  are a plain list with a marker that says where they are managed; the built-in group of everyone
-  who signed in recently has no list, only the note. Admins on a custom group get a list
-  they edit and save as one complete list (PUT members); removing a person is a button that names
-  them, and adding picks from the people who signed in once.
+  The members of a group, each with a "Manager" badge when they manage it. Groups from the identity
+  provider and groups the person may not change are a plain list with a marker that says where they
+  are managed; the built-in group of everyone who signed in recently has no list, only the note.
+  Managers and admins on a custom group get a list they edit and save as one complete list (PUT
+  members); removing a person is a button that names them, and adding picks from the people who
+  signed in once. Only an admin removes a manager, so a manager sees no Remove on one.
+
+  Admins name the managers: "Make manager" and "Remove as manager" on a saved member's row, saved at
+  once (PUT managers). It is an admin-only control, but no existing menu or place holds a role of a
+  member; the member's own row is the place it belongs to, so nothing new is added to the page.
 -->
 <template>
   <section aria-labelledby="group-members-heading" class="flex flex-col gap-3">
@@ -34,6 +39,9 @@
       }}
     </p>
 
+    <p v-if="group.canNameManagers && changed" class="text-sm text-toned">
+      {{ t('Save or undo the changes to the members before you change the managers.') }}
+    </p>
     <SettingsErrorAlert v-if="alert" :message="alert" />
 
     <p
@@ -56,8 +64,29 @@
       >
         <UIcon name="i-lucide-user" class="size-5 shrink-0" aria-hidden="true" />
         <p class="min-w-0 flex-1 basis-48 font-medium wrap-anywhere">{{ labelOf(sub) }}</p>
+        <UBadge
+          v-if="managers.includes(sub)"
+          :label="t('Manager')"
+          icon="i-lucide-user-cog"
+          color="neutral"
+          variant="subtle"
+        />
         <UButton
-          v-if="editable"
+          v-if="group.canNameManagers && saved.includes(sub)"
+          :aria-label="
+            managers.includes(sub)
+              ? t('Remove as manager of {group}: {name}', { name: labelOf(sub), group: group.name })
+              : t('Make manager of {group}: {name}', { name: labelOf(sub), group: group.name })
+          "
+          :icon="managers.includes(sub) ? 'i-lucide-user-x' : 'i-lucide-user-cog'"
+          :label="managers.includes(sub) ? t('Remove as manager') : t('Make manager')"
+          color="neutral"
+          variant="outline"
+          :disabled="busy || changed"
+          @click="toggleManager(sub)"
+        />
+        <UButton
+          v-if="editable && (group.canNameManagers || !managers.includes(sub))"
           :aria-label="t('Remove {name} from {group}', { name: labelOf(sub), group: group.name })"
           icon="i-lucide-user-minus"
           :label="t('Remove')"
@@ -139,6 +168,8 @@ const props = defineProps<{
   busy: boolean
   /** Saves the complete member list; true when it worked, else the words for the failure. */
   saveMembers: (members: string[]) => Promise<true | string>
+  /** Saves the complete list of managers (admins); true when it worked, else the failure. */
+  saveManagers: (managers: string[]) => Promise<true | string>
 }>()
 
 // How long a sign-in keeps a person in the group of everyone (NUXT_SIGNIN_WINDOW_DAYS).
@@ -154,6 +185,9 @@ const SEARCH_PEOPLE = computed(() => ({
 }))
 
 const saved = computed(() => props.group.members.map((member) => member.sub))
+const managers = computed(() =>
+  props.group.members.filter((member) => member.manager).map((member) => member.sub),
+)
 const draft = ref<string[]>([...saved.value])
 const picked = ref<string | undefined>(undefined)
 const alert = ref<string | undefined>(undefined)
@@ -199,6 +233,15 @@ function reset() {
 async function save() {
   alert.value = undefined
   const answer = await props.saveMembers([...draft.value])
+  if (answer !== true) alert.value = answer
+}
+
+async function toggleManager(sub: string) {
+  alert.value = undefined
+  const next = managers.value.includes(sub)
+    ? managers.value.filter((manager) => manager !== sub)
+    : [...managers.value, sub]
+  const answer = await props.saveManagers(next)
   if (answer !== true) alert.value = answer
 }
 </script>

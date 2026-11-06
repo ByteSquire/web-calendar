@@ -4,8 +4,6 @@ export const groups: Readonly<Record<string, string>> = {
   Groups: 'Gruppen',
   'Not everybody is offered when you add members or share: the list shows the first {count} people, sorted by name.':
     'Beim Hinzufügen von Mitgliedern und beim Teilen wird nicht jede Person angeboten: Die Liste zeigt die ersten {count} Personen, nach Namen sortiert.',
-  'Groups share calendars. Open a group to see its members and calendars, create calendars and share them with people or other groups.':
-    'Gruppen teilen Kalender. Öffne eine Gruppe, um ihre Mitglieder und Kalender zu sehen, Kalender anzulegen und mit Personen oder anderen Gruppen zu teilen.',
   'Loading groups': 'Gruppen werden geladen',
   'There are no groups yet. Create the first one below.':
     'Es gibt noch keine Gruppen. Lege unten die erste an.',
@@ -79,8 +77,6 @@ export const groups: Readonly<Record<string, string>> = {
   'Undo changes': 'Änderungen verwerfen',
 
   // Calendars of a group
-  'Calendars of this group. Everybody in the group can create and share them; the people and groups you share with can view or edit their events.':
-    'Kalender dieser Gruppe. Alle in der Gruppe können sie anlegen und teilen; die Personen und Gruppen, mit denen geteilt wird, können deren Termine ansehen oder bearbeiten.',
   'This group has no calendars yet.': 'Diese Gruppe hat noch keine Kalender.',
   Share: 'Teilen',
   'The calendar, its events and its sharing are deleted. This cannot be undone.':
@@ -111,4 +107,19 @@ export const groups: Readonly<Record<string, string>> = {
   'No group matches.': 'Keine Gruppe passt.',
   'Search groups': 'Gruppen suchen',
   'Save sharing': 'Freigabe speichern',
+
+  // Managers of a group
+  'Calendars of this group. Everybody in the group can use them; its managers create and share them, and the people and groups they share with can view or edit their events.':
+    'Kalender dieser Gruppe. Alle in der Gruppe können sie nutzen; ihre Verwaltenden erstellen und teilen sie, und die Personen und Gruppen, mit denen sie geteilt werden, können ihre Termine sehen oder ändern.',
+  'Groups share calendars. Open a group to see its members and calendars. Its managers create calendars and share them with people or other groups.':
+    'Gruppen teilen Kalender. Öffne eine Gruppe, um ihre Mitglieder und Kalender zu sehen. Ihre Verwaltenden erstellen Kalender und teilen sie mit Personen oder anderen Gruppen.',
+  'Save or undo the changes to the members before you change the managers.':
+    'Speichere die Änderungen an den Mitgliedern oder mache sie rückgängig, bevor du die Verwaltenden änderst.',
+  Manager: 'Verwaltung',
+  'Remove as manager of {group}: {name}': 'Als Verwaltung entfernen ({group}): {name}',
+  'Make manager of {group}: {name}': 'Zur Verwaltung machen ({group}): {name}',
+  'Remove as manager': 'Als Verwaltung entfernen',
+  'Make manager': 'Zur Verwaltung machen',
+  'You manage this group': 'Du verwaltest diese Gruppe',
+  'Managers of {name} were saved.': 'Die Verwaltung von {name} wurde gespeichert.',
 }

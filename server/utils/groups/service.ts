@@ -11,11 +11,15 @@ import {
   findGroupByName,
   groupNameTaken,
   insertCustomGroup,
+  isGroupManager,
   isGroupMember,
   listGroupCalendars,
+  listGroupManagerSubs,
   listGroupMembers,
   personExists,
+  replaceGroupManagers,
   replaceGroupMembers,
+  type GroupMemberRow,
   type GroupMemberView,
   type GroupSummaryRow,
 } from '../../db/groups'
@@ -59,12 +63,14 @@ export function deleteCustomGroup(
 /**
  * Makes the members of an app group exactly `subs` (validated to UUIDs by the route). Each must be
  * a person who has signed in once: a member is referred to by `sub`, and the app knows nothing else
- * about a person who has never signed in.
+ * about a person who has never signed in. Only an admin names managers, so only an admin may remove
+ * one (`byAdmin`); a manager who removed another would take their role away.
  */
 export function replaceMembers(
   db: Database,
   group: GroupRow,
   subs: readonly string[],
+  byAdmin: boolean,
 ): { added: number; removed: number; total: number } {
   refuseImported(group)
   const fields: FieldError[] = []
@@ -77,7 +83,40 @@ export function replaceMembers(
     }
   })
   if (fields.length > 0) throw toBadRequest(fields)
+  if (!byAdmin) {
+    const kept = new Set(subs)
+    if (listGroupManagerSubs(db, group.id).some((sub) => !kept.has(sub))) {
+      throw new ApiError(403, 'Only an administrator can remove a manager of the group', {
+        code: 'manager',
+      })
+    }
+  }
   const counts = replaceGroupMembers(db, group.id, subs)
+  return { ...counts, total: subs.length }
+}
+
+/**
+ * Makes exactly `subs` the managers of a group (admins only, checked by the route). Each must be a
+ * stored member; the group of everyone has none, so it has no managers. A group from the identity
+ * provider may have managers: its members follow the provider, the role is the app's.
+ */
+export function replaceManagers(
+  db: Database,
+  group: GroupRow,
+  subs: readonly string[],
+): { added: number; removed: number; total: number } {
+  if (group.source === 'everyone') {
+    throw new ApiError(403, 'The group of everyone who signed in has no managers', {
+      code: 'imported',
+    })
+  }
+  const members = new Set(listGroupMembers(db, group.id).map((member) => member.sub))
+  const fields: FieldError[] = []
+  subs.forEach((sub, index) => {
+    if (!members.has(sub)) fields.push({ field: `managers[${index}]`, message: 'is not a member' })
+  })
+  if (fields.length > 0) throw toBadRequest(fields)
+  const counts = replaceGroupManagers(db, group.id, subs)
   return { ...counts, total: subs.length }
 }
 
@@ -111,13 +150,28 @@ export async function mayActForGroup(
   return isAdmin()
 }
 
-/** The group as a list row. `member` is about the caller; `sub` is theirs. */
+/**
+ * The decision of the routes that change a group's members or calendars: a manager of the group,
+ * or an admin. Like `mayActForGroup`, the admin test is asked only when the database says no.
+ */
+export async function mayManageGroup(
+  db: Database,
+  group: GroupRow,
+  sub: string,
+  isAdmin: () => Promise<boolean>,
+): Promise<boolean> {
+  if (isGroupManager(db, group.id, sub)) return true
+  return isAdmin()
+}
+
+/** The group as a list row. `member` and `manager` are about the caller; `sub` is theirs. */
 export function groupSummary(row: GroupSummaryRow): {
   id: number
   name: string
   source: GroupSummaryRow['source']
   memberCount: number
   member: boolean
+  manager: boolean
 } {
   return {
     id: row.id,
@@ -125,11 +179,17 @@ export function groupSummary(row: GroupSummaryRow): {
     source: row.source,
     memberCount: row.memberCount,
     member: row.member,
+    manager: row.manager,
   }
 }
 
 export function personView(member: GroupMemberView) {
   return { sub: member.sub, name: member.name, username: member.username }
+}
+
+/** A member as the group page shows them: the person and whether they manage the group. */
+export function memberView(member: GroupMemberRow) {
+  return { ...personView(member), manager: member.manager }
 }
 
 /** A share as the API shows it: the extra user and group rules, read or write. */
@@ -190,14 +250,34 @@ function personLabels(db: Database, subs: readonly string[]): Map<string, string
   return new Map(rows.map((row) => [row.sub, row.name || row.username || UNKNOWN_PERSON]))
 }
 
-/** The full group for a member or an admin: members, calendars and whether the caller may change the members. */
-export function groupDetail(db: Database, group: GroupRow, canManageMembers: boolean) {
+/** What the caller may do in a group (the routes check again): see `groupRights`. */
+export interface GroupRights {
+  /** Add and remove members: managers and admins, in an app group. */
+  canManageMembers: boolean
+  /** Create, rename, share and delete the group's calendars: managers and admins. */
+  canManageCalendars: boolean
+  /** Name and remove managers: admins, in any group with stored members. */
+  canNameManagers: boolean
+}
+
+/** The rights of a caller who is a manager of the group, an admin, both or neither. */
+export function groupRights(group: GroupRow, manager: boolean, admin: boolean): GroupRights {
+  const manages = manager || admin
+  return {
+    canManageMembers: group.source === 'app' && manages,
+    canManageCalendars: group.source !== 'everyone' && manages,
+    canNameManagers: group.source !== 'everyone' && admin,
+  }
+}
+
+/** The full group for a member or an admin: members with their role, calendars, and the caller's rights. */
+export function groupDetail(db: Database, group: GroupRow, rights: GroupRights) {
   return {
     id: group.id,
     name: group.name,
     source: group.source,
-    canManageMembers,
-    members: listGroupMembers(db, group.id).map(personView),
+    ...rights,
+    members: listGroupMembers(db, group.id).map(memberView),
     calendars: listGroupCalendars(db, group.id).map((row) => calendarView(db, group, row)),
   }
 }

@@ -1,6 +1,7 @@
 import type { Database } from 'better-sqlite3'
 import { isUserSubject } from '../auth/subject'
 import { groupPrincipal, isShareName } from './names'
+import { ORGANIZATION_PRINCIPAL } from './types'
 import type { RadicaleClient } from './radicale-client'
 import { sharingFail, type SharingResult } from './types'
 
@@ -10,9 +11,9 @@ import { sharingFail, type SharingResult } from './types'
 
 /**
  * The calendar Radicale creates in every new home (`predefined_collections` of deploy/radicale/config).
- * A user keeps it as their personal calendar. A group's home is made by the app's first request as
- * the group principal, so the same default would appear there as a calendar nobody asked for, and
- * the group could not be deleted until someone removed it.
+ * A user keeps it as their personal calendar. A group's home (and the organization's) is made by the
+ * app's first request as its principal, so the same default would appear there as a calendar nobody
+ * asked for, and the group could not be deleted until someone removed it.
  */
 const PREDEFINED_CALENDAR = 'def-calendar'
 
@@ -81,8 +82,9 @@ interface GroupIdRow {
 }
 
 /**
- * Lists each known user's home (as that user), each group's home (as the group principal) and each
- * configured service principal's. A calendar found in a group's home belongs to that group.
+ * Lists each known user's home (as that user), each group's home (as the group principal), the
+ * organization's and each configured service principal's. A calendar found in a group's home belongs
+ * to that group; one in the organization's or a service principal's home is shared, of nobody.
  */
 export async function discoverCalendars(
   db: Database,
@@ -97,18 +99,27 @@ export async function discoverCalendars(
   const groups = db
     .prepare<[], GroupIdRow>(`SELECT id FROM groups WHERE source <> 'everyone' ORDER BY id`)
     .all()
-  const targets: { owner: string; userId: number | null; groupId: number | null }[] = [
+  const targets: {
+    owner: string
+    userId: number | null
+    groupId: number | null
+    /** The home was made by the app, so Radicale's default calendar in it is nobody's. */
+    madeByApp: boolean
+  }[] = [
     ...users.map((user) => ({
       owner: user.oidc_sub,
       userId: user.id as number | null,
       groupId: null,
+      madeByApp: false,
     })),
     ...groups.map((group) => ({
       owner: groupPrincipal(group.id),
       userId: null,
-      groupId: group.id,
+      groupId: group.id as number | null,
+      madeByApp: true,
     })),
-    ...sharedOwners.map((owner) => ({ owner, userId: null, groupId: null })),
+    { owner: ORGANIZATION_PRINCIPAL, userId: null, groupId: null, madeByApp: true },
+    ...sharedOwners.map((owner) => ({ owner, userId: null, groupId: null, madeByApp: false })),
   ]
   const found: { remote: RemoteCalendar; userId: number | null; groupId: number | null }[] = []
   const listedOwners: string[] = []
@@ -126,7 +137,7 @@ export async function discoverCalendars(
     listedOwners.push(target.owner)
     for (const remote of parseHomeListing(listing.value, target.owner)) {
       if (isShareName(remote.name)) continue
-      if (target.groupId !== null && remote.name === PREDEFINED_CALENDAR) continue
+      if (target.madeByApp && remote.name === PREDEFINED_CALENDAR) continue
       found.push({ remote, userId: target.userId, groupId: target.groupId })
     }
   }

@@ -46,10 +46,10 @@ export function notFound(): ApiError {
 
 /**
  * 409: a limit is reached (`limit_reached`; `calendar_limit_reached` for the links of one calendar),
- * the name is taken (`duplicate`) or the state forbids it.
+ * the name is taken (`duplicate`) or the state forbids it (`has_calendars`, `has_bookings`).
  */
 export function conflict(
-  code: 'limit_reached' | 'calendar_limit_reached' | 'duplicate' | 'has_calendars',
+  code: 'limit_reached' | 'calendar_limit_reached' | 'duplicate' | 'has_calendars' | 'has_bookings',
   message: string,
 ): ApiError {
   return new ApiError(409, message, { code })

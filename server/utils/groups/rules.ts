@@ -78,28 +78,38 @@ export function parseOidcImport(body: unknown): Parsed<{ externalId: string }> {
 
 /** `{ members }`: the complete list of `sub` ids as given (case matters), unique, at most MAX_MEMBERS. */
 export function parseMembersBody(body: unknown): Parsed<string[]> {
+  return parsePeopleList(body, 'members')
+}
+
+/** `{ managers }`: the members who manage the group, the same shape as `{ members }`. */
+export function parseManagersBody(body: unknown): Parsed<string[]> {
+  return parsePeopleList(body, 'managers')
+}
+
+function parsePeopleList(body: unknown, key: 'members' | 'managers'): Parsed<string[]> {
   const errors = new FieldErrors()
   const object = readObject(body, errors)
-  const members: string[] = []
-  if (!Array.isArray(object.members)) {
-    if (errors.ok) errors.add('members', 'must be a list')
-  } else if (object.members.length > MAX_MEMBERS) {
-    errors.add('members', `must have at most ${MAX_MEMBERS} people`)
+  const people: string[] = []
+  const list: unknown = object[key]
+  if (!Array.isArray(list)) {
+    if (errors.ok) errors.add(key, 'must be a list')
+  } else if (list.length > MAX_MEMBERS) {
+    errors.add(key, `must have at most ${MAX_MEMBERS} people`)
   } else {
     const seen = new Set<string>()
-    object.members.forEach((raw: unknown, index) => {
+    list.forEach((raw: unknown, index) => {
       const sub = typeof raw === 'string' ? raw : ''
       if (!isValidSubject(sub)) {
-        errors.add(`members[${index}]`, 'must be the id of a person')
+        errors.add(`${key}[${index}]`, 'must be the id of a person')
       } else if (seen.has(sub)) {
-        errors.add(`members[${index}]`, 'is listed twice')
+        errors.add(`${key}[${index}]`, 'is listed twice')
       } else {
         seen.add(sub)
-        members.push(sub)
+        people.push(sub)
       }
     })
   }
-  return finish(errors, () => members)
+  return finish(errors, () => people)
 }
 
 /** `{ name, color? }` for a new calendar; an omitted or `null` colour means none. */

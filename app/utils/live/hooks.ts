@@ -7,6 +7,7 @@ import { toCategories } from './categories'
 import { locale, t } from '../i18n'
 import { describeLoadError } from './errors'
 import { toFilters } from './views'
+import type { Category } from '../../../shared/types/calendar'
 
 export interface Timers {
   set: (callback: () => void, ms: number) => unknown
@@ -84,6 +85,8 @@ export function describeSaveError(error: unknown): string {
 
 export interface LiveHooksDeps {
   api: ApiRequest
+  /** Renames a collection of the viewer's own home in CalDAV (its displayname). */
+  renameOwnCalendar?: (href: string, name: string) => Promise<void>
   /** Shows a message to the viewer (a toast). */
   notify: (message: string) => void
   timers?: Timers
@@ -94,6 +97,16 @@ export interface LiveHooksDeps {
 /** The hooks, and who hears of a saved preference (the loader keeps its copy current). */
 export type LiveHooks = CalendarStateHooks & {
   onPreferenceSaved: (listener: (pref: ApiCalendarPref) => void) => () => void
+}
+
+/** A category of the viewer's own goes to /api/categories; a shared one to the admin route. */
+function categoryPath(category: Category): string {
+  const id = encodeURIComponent(category.id)
+  return category.shared ? `/api/admin/categories/${id}` : `/api/categories/${id}`
+}
+
+function groupCalendarPath(manage: { groupId: number; calendarId: number }): string {
+  return `/api/groups/${manage.groupId}/calendars/${manage.calendarId}`
 }
 
 export function createLiveHooks(deps: LiveHooksDeps): LiveHooks {
@@ -143,6 +156,48 @@ export function createLiveHooks(deps: LiveHooksDeps): LiveHooks {
         body: { name: filter.name, kind: filter.kind, value: filter.value },
       })
       return toFilters([saved])[0]!
+    },
+    async saveCategory(category) {
+      const saved = await deps.api<ApiCategory>(categoryPath(category), {
+        method: 'PUT',
+        body: { name: category.name, color: category.color },
+      })
+      return toCategories([saved])[0]!
+    },
+    async removeCategory(category) {
+      await deps.api(categoryPath(category), { method: 'DELETE' })
+    },
+    async saveFilter(filter) {
+      const saved = await deps.api<ApiFilter>(`/api/filters/${encodeURIComponent(filter.id)}`, {
+        method: 'PUT',
+        body: { name: filter.name, kind: filter.kind, value: filter.value },
+      })
+      return toFilters([saved])[0]!
+    },
+    async removeFilter(filter) {
+      await deps.api(`/api/filters/${encodeURIComponent(filter.id)}`, { method: 'DELETE' })
+    },
+    async renameCalendar(calendar, name) {
+      const manage = calendar.manage
+      if (manage?.kind === 'group') {
+        await deps.api(groupCalendarPath(manage), { method: 'PATCH', body: { name } })
+      } else if (manage?.kind === 'own' && calendar.href && deps.renameOwnCalendar) {
+        await deps.renameOwnCalendar(calendar.href, name)
+      }
+    },
+    async removeCalendar(calendar) {
+      const manage = calendar.manage
+      if (manage?.kind === 'group') {
+        await deps.api(groupCalendarPath(manage), { method: 'DELETE' })
+      } else if (manage?.kind === 'own' && calendar.href) {
+        await deps.api('/api/me/calendars', { method: 'DELETE', query: { href: calendar.href } })
+        // The viewer's colour and visibility of a calendar that is gone; it is no loss if this fails.
+        if (isPersistableRef(calendar.id)) {
+          await deps
+            .api('/api/calendar-prefs', { method: 'DELETE', query: { ref: calendar.id } })
+            .catch(() => undefined)
+        }
+      }
     },
     onPersistError(what, name, error) {
       const reason = describeSaveError(error)

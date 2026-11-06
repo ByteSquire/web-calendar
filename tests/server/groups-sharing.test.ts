@@ -163,24 +163,31 @@ describe('discovery in a group home', () => {
     try {
       db.prepare('DELETE FROM calendars').run()
       radicale.calendars.set('_group-2', new Set(['def-calendar', 'kitchen']))
+      // The organization's home is made by the app as well: its default calendar is nobody's.
+      radicale.calendars.set('_organization', new Set(['def-calendar', 'board']))
       const client = createRadicaleClient({ baseUrl: radicale.url })
       const result = await discoverCalendars(db, client, [])
       expect(result.ok).toBe(true)
       const rows = db
-        .prepare('SELECT collection_path AS path, group_id AS groupId FROM calendars')
+        .prepare(
+          'SELECT collection_path AS path, kind, group_id AS groupId FROM calendars ORDER BY id',
+        )
         .all()
-      expect(rows).toEqual([{ path: '/_group-2/kitchen/', groupId: 2 }])
+      expect(rows).toEqual([
+        { path: '/_group-2/kitchen/', kind: 'shared', groupId: 2 },
+        { path: '/_organization/board/', kind: 'shared', groupId: null },
+      ])
     } finally {
       await radicale.close()
     }
   })
 
-  it('lists the home of a group that can own calendars, and not the one of everyone', async () => {
+  it('lists the homes of a group that can own calendars and of the organization, not of everyone', async () => {
     const { discoverCalendars } = await import('../../server/utils/sharing/calendars')
     // No home exists yet (404): the run goes on, and the calls say whose homes it asked for.
     const propfind = vi.fn(async () => sharingFail('rejected', 'not found', 404))
     const result = await discoverCalendars(db, { propfind } as unknown as RadicaleClient, [])
     expect(result.ok).toBe(true)
-    expect(propfind.mock.calls.map((call) => call[0])).toEqual(['_group-2'])
+    expect(propfind.mock.calls.map((call) => call[0])).toEqual(['_group-2', '_organization'])
   })
 })

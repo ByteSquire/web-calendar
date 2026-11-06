@@ -75,14 +75,15 @@ describe('migration 009 (groups)', () => {
       'first_seen_at',
       'last_seen_at',
     ])
-    expect(tableColumns(db, 'group_members')).toEqual(['group_id', 'sub', 'created_at'])
+    // `manager` is migration 013's.
+    expect(tableColumns(db, 'group_members')).toEqual(['group_id', 'sub', 'created_at', 'manager'])
     expect(tableColumns(db, 'calendars')).toContain('group_id')
   })
 
   it('keeps existing calendars and their rules when it runs on a database with rows', () => {
     db = openDatabase(':memory:')
     const migrations = loadMigrationsFromDir(migrationsDir)
-    const before = migrations.filter((migration) => !migration.name.startsWith('009_'))
+    const before = migrations.filter((migration) => migration.name < '009_')
     runMigrations(db, before)
     upsertUser(db, { sub: ALICE, username: 'alice' })
     const owner = db.prepare<[], { id: number }>('SELECT id FROM users').get()!.id
@@ -125,6 +126,22 @@ describe('migration 009 (groups)', () => {
     ).toThrow(/CHECK/)
     expect(() =>
       db.prepare(`INSERT INTO groups (name, source) VALUES ('-x', 'app')`).run(),
+    ).toThrow(/CHECK/)
+  })
+
+  it('migration 013 makes every member a plain member, and takes 0 or 1 only', () => {
+    db = openDatabase(':memory:')
+    const migrations = loadMigrationsFromDir(migrationsDir)
+    runMigrations(
+      db,
+      migrations.filter((migration) => migration.name < '013_'),
+    )
+    const group = createCustomGroup(db, 'team_a', ADMIN_GROUP)
+    replaceGroupMembers(db, group.id, [ALICE, BOB])
+    runMigrations(db, migrations)
+    expect(listGroupMembers(db, group.id).map((member) => member.manager)).toEqual([false, false])
+    expect(() =>
+      db.prepare('UPDATE group_members SET manager = 2 WHERE sub = ?').run(ALICE),
     ).toThrow(/CHECK/)
   })
 
@@ -250,11 +267,11 @@ describe('group rules', () => {
     const group = createCustomGroup(db, 'Team', ADMIN_GROUP)
     upsertUser(db, { sub: ALICE, username: 'alice' })
     upsertUser(db, { sub: BOB, username: 'bob' })
-    const first = replaceMembers(db, group, [ALICE, BOB])
+    const first = replaceMembers(db, group, [ALICE, BOB], true)
     expect(first).toEqual({ added: 2, removed: 0, total: 2 })
-    expect(replaceMembers(db, group, [BOB])).toEqual({ added: 0, removed: 1, total: 1 })
+    expect(replaceMembers(db, group, [BOB], true)).toEqual({ added: 0, removed: 1, total: 1 })
     expect(listGroupMembers(db, group.id).map((m) => m.sub)).toEqual([BOB])
-    expect(() => replaceMembers(db, group, ['9f9f9f9f-9999-4999-8999-999999999999'])).toThrow(
+    expect(() => replaceMembers(db, group, ['9f9f9f9f-9999-4999-8999-999999999999'], true)).toThrow(
       apiError(400),
     )
   })
@@ -434,7 +451,7 @@ describe('the members of the group of everyone', () => {
   it('refuses to change or delete it, as for an imported group', () => {
     const group = findGroupByName(db, 'web_calendar_users')!
     upsertUser(db, { sub: ALICE, username: 'alice' })
-    expect(() => replaceMembers(db, group, [ALICE])).toThrow(/cannot be changed/)
+    expect(() => replaceMembers(db, group, [ALICE], true)).toThrow(/cannot be changed/)
     expect(() => deleteCustomGroup(db, group)).toThrow(/cannot be changed/)
     expect(findGroupByName(db, 'web_calendar_users')).toBeDefined()
   })

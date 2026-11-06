@@ -332,7 +332,7 @@ test('the visitor’s page asked only the app, nothing else', () => {
 
 // A link made in Settings shows what its maker can see, read as the maker: it ends when the maker's
 // access ends. bob makes a calendar for a group and shares it with alice to read; alice links it in
-// Settings, and publishes it on the access page at "Busy times only" too; bob takes the share back,
+// Settings, and publishes it on Admin › Calendars at "Busy times only" too; bob takes the share back,
 // and her Settings link stops as soon as the sharing writer has removed the share in Radicale, while
 // the one of the access page (read as the calendar's owner) works on. Given "Busy times only" by an
 // access rule, the calendar shows busy blocks in alice's own view and her link form offers no more.
@@ -373,6 +373,11 @@ test.describe('a link to a calendar shared with its maker', () => {
       members: [subOf('bob')],
     })
     expect(members.status).toBe(200)
+    // bob manages the group's calendars: only an administrator names a manager
+    const managers = await api(alice, aliceBearer, 'PUT', `/api/groups/${groupId}/managers`, {
+      managers: [subOf('bob')],
+    })
+    expect(managers.status).toBe(200)
     const made = await api(bob, bobBearer, 'POST', `/api/groups/${groupId}/calendars`, {
       name: SHARED,
     })
@@ -416,11 +421,13 @@ test.describe('a link to a calendar shared with its maker', () => {
   })
 
   test('on the access page alice sees that link, and publishes the calendar at "Busy times only"', async () => {
-    await alice.goto('/admin/access')
-    await alice.getByRole('button', { name: 'Calendar', exact: true }).click()
+    await alice.goto('/admin/calendars')
     await alice.getByLabel('Search calendars').fill(SHARED)
-    await alice.getByRole('option', { name: SHARED }).click()
-    await expect(alice.getByRole('heading', { name: `Who has access to ${SHARED}` })).toBeVisible()
+    await alice
+      .getByRole('button', { name: new RegExp(`^Access for ${SHARED}`) })
+      .first()
+      .click()
+    await expect(alice.getByRole('tab', { name: 'Who has access', selected: true })).toBeVisible()
     const links = alice.getByRole('list', { name: 'Links' })
     // the link alice made in Settings, read as her
     await expect(links.getByRole('listitem')).toHaveCount(1)
@@ -447,7 +454,7 @@ test.describe('a link to a calendar shared with its maker', () => {
       ADMIN_PASSWORD,
     )
     const { violations } = await new AxeBuilder({ page: alice })
-      .include('section:has(#access-rules-heading)')
+      .include('[role="dialog"]')
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze()
     expect(violations.map((violation) => violation.id)).toEqual([])

@@ -49,7 +49,17 @@ export interface Calendar {
    * "Busy" blocks without titles, and a calendar link to it can show no more. Always read-only.
    */
   freeBusyOnly?: boolean
+  /** The viewer may rename and delete the calendar from the sidebar (the server checks again). */
+  manage?: CalendarManage
 }
+
+/**
+ * Why the viewer may rename and delete a calendar: it is in their own home, or a group they manage
+ * owns it (`calendarId` is its id on the server). Absent for everything else, which offers only the
+ * viewer's own colour.
+ */
+export type CalendarManage =
+  { kind: 'own' } | { kind: 'group'; groupId: number; calendarId: number }
 
 export interface CalendarResource {
   id: string
@@ -65,6 +75,8 @@ export interface Category {
   id: string
   name: string
   color: string
+  /** Shared with everybody: only admins change it (the server checks). */
+  shared?: boolean
 }
 
 export type FilterKind = 'text' | 'category' | 'status'

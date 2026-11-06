@@ -1,10 +1,6 @@
 // German texts of the area "admin" (docs/i18n.md). One entry per English text: 'English': 'Deutsch'.
 export const admin: Readonly<Record<string, string>> = {
   'Checking your permissions': 'Deine Berechtigungen werden geprüft',
-  'Could not check whether you may manage access. Try again.':
-    'Es konnte nicht geprüft werden, ob du den Zugriff verwalten darfst. Versuche es erneut.',
-  'Choose who may see or change each calendar. The calendar server enforces these rules for every app, not only this one.':
-    'Lege fest, wer welchen Kalender sehen oder ändern darf. Der Kalenderserver setzt diese Regeln für jede App durch, nicht nur für diese.',
   'There are no calendars to manage yet.': 'Es gibt noch keine Kalender zu verwalten.',
   'Search calendars': 'Kalender suchen',
   'Who has access to {name}': 'Wer Zugriff auf {name} hat',
@@ -180,4 +176,71 @@ export const admin: Readonly<Record<string, string>> = {
     'Der erste Kalender konnte nicht erstellt werden: {problem}',
   'No calendars found at this address': 'Unter dieser Adresse wurden keine Kalender gefunden',
   'Request cancelled': 'Anfrage abgebrochen',
+
+  // Admin › Calendars
+  'Could not check whether you may manage calendars. Try again.':
+    'Es konnte nicht geprüft werden, ob du Kalender verwalten darfst. Versuche es erneut.',
+  'Every calendar of the app. Rename it, change its colour or delete it, and choose who may see or change it. The calendar server enforces these rules for every app, not only this one.':
+    'Alle Kalender der App. Benenne sie um, ändere ihre Farbe oder lösche sie, und lege fest, wer sie sehen oder ändern darf. Der Kalenderserver setzt diese Regeln für jede App durch, nicht nur für diese.',
+  'No calendar matches.': 'Kein Kalender passt.',
+  'Change the calendar, or choose who may see or change it.':
+    'Ändere den Kalender, oder lege fest, wer ihn sehen oder ändern darf.',
+  'The name and colour are the calendar’s own: everybody who has the calendar sees them, unless they picked a colour of their own.':
+    'Name und Farbe gehören zum Kalender: Alle, die den Kalender haben, sehen sie, außer sie haben eine eigene Farbe gewählt.',
+  'Delete calendar': 'Kalender löschen',
+  'A resource calendar is deleted with its resource, on the Resources page.':
+    'Ein Ressourcenkalender wird mit seiner Ressource gelöscht, auf der Seite Ressourcen.',
+  'This calendar belongs to the organization: only the people and groups below see it.':
+    'Dieser Kalender gehört der Organisation: Nur die Personen und Gruppen unten sehen ihn.',
+  'A calendar of the organization: it belongs to nobody, and nobody sees it until you give people or groups access.':
+    'Ein Kalender der Organisation: Er gehört niemandem, und niemand sieht ihn, bis du Personen oder Gruppen Zugriff gibst.',
+  All: 'Alle',
+  Organization: 'Organisation',
+  'Calendar of {name}': 'Kalender von {name}',
+  'Calendar of a person': 'Kalender einer Person',
+  'Calendar of the organization': 'Kalender der Organisation',
+  'Calendar of the group {name}': 'Kalender der Gruppe {name}',
+  'Calendar of a resource': 'Kalender einer Ressource',
+  '{count} access rule | {count} access rules': '{count} Zugriffsregel | {count} Zugriffsregeln',
+  'The calendar of {name} and all its events are deleted, the people it is shared with lose it, and its links stop working.':
+    'Der Kalender von {name} und alle seine Termine werden gelöscht, die Personen, mit denen er geteilt ist, verlieren ihn, und seine Links funktionieren nicht mehr.',
+  'a person': 'einer Person',
+  'The calendar and all its events are deleted for everybody who has it, and its links stop working.':
+    'Der Kalender und alle seine Termine werden für alle gelöscht, die ihn haben, und seine Links funktionieren nicht mehr.',
+  'Another change is still being saved. Try again in a moment.':
+    'Eine andere Änderung wird noch gespeichert. Versuche es gleich noch einmal.',
+  '{name} was added. Nobody sees it until you give people or groups access.':
+    '{name} wurde hinzugefügt. Niemand sieht ihn, bis du Personen oder Gruppen Zugriff gibst.',
+  'add the calendar': 'den Kalender hinzufügen',
+  'save the calendar': 'den Kalender speichern',
+
+  // Admin › People
+  People: 'Personen',
+  'Could not check whether you may see the people. Try again.':
+    'Es konnte nicht geprüft werden, ob du die Personen sehen darfst. Versuche es erneut.',
+  'Everybody who has signed in once: their groups, their calendars, the calendars shared with them and the links they made. Change access on the Calendars and Groups pages.':
+    'Alle, die sich einmal angemeldet haben: ihre Gruppen, ihre Kalender, die mit ihnen geteilten Kalender und die Links, die sie erstellt haben. Den Zugriff änderst du auf den Seiten Kalender und Gruppen.',
+  'Only the first {count} people are listed, sorted by name.':
+    'Nur die ersten {count} Personen werden aufgeführt, nach Namen sortiert.',
+  'Nobody has signed in yet.': 'Noch hat sich niemand angemeldet.',
+  'Nobody matches.': 'Niemand passt.',
+  Loading: 'Wird geladen',
+  Admin: 'Admin',
+  'An administrator at their last sign-in. Whether they still are is asked of the identity provider each time.':
+    'Bei der letzten Anmeldung Administrator. Ob das noch gilt, wird jedes Mal beim Identitätsanbieter erfragt.',
+  'In no group.': 'In keiner Gruppe.',
+  'Own calendars': 'Eigene Kalender',
+  'No calendar of their own yet.': 'Noch kein eigener Kalender.',
+  'Calendars shared with them': 'Mit ihnen geteilte Kalender',
+  'No calendar is shared with them.': 'Kein Kalender ist mit ihnen geteilt.',
+  'Links they made': 'Ihre Links',
+  'No links.': 'Keine Links.',
+  '{label}: {calendar}, {level}': '{label}: {calendar}, {level}',
+  'Last signed in {date}': 'Zuletzt angemeldet am {date}',
+  'No sign-in recorded': 'Keine Anmeldung gespeichert',
+  'load the person': 'die Person laden',
+
+  // Admin › Resources: deleting
+  'The resource and the rules of who may use it are deleted. A resource with bookings cannot be deleted; deactivate it instead.':
+    'Die Ressource und die Regeln, wer sie nutzen darf, werden gelöscht. Eine Ressource mit Buchungen kann nicht gelöscht werden; deaktiviere sie stattdessen.',
 }

@@ -106,9 +106,23 @@ describe('the calendars shared with the caller', () => {
     expect(res.status).toBe(200)
     expect(res.headers.get('cache-control')).toBe('no-store')
     expect(((await res.json()) as { calendars: unknown[] }).calendars).toEqual([
-      { id: ids.alice, name: 'Personal Calendar', kind: 'personal', owner: 'Alice Example' },
-      { id: ids.cara, name: 'Personal Calendar', kind: 'personal', owner: 'cara' },
-      { id: ids.team, name: 'Team', kind: 'shared', owner: null },
+      {
+        id: ids.alice,
+        name: 'Personal Calendar',
+        kind: 'personal',
+        owner: 'Alice Example',
+        groupId: null,
+        canManage: false,
+      },
+      {
+        id: ids.cara,
+        name: 'Personal Calendar',
+        kind: 'personal',
+        owner: 'cara',
+        groupId: null,
+        canManage: false,
+      },
+      { id: ids.team, name: 'Team', kind: 'shared', owner: null, groupId: null, canManage: false },
     ])
   })
 
@@ -123,6 +137,26 @@ describe('the calendars shared with the caller', () => {
     expect(calendars.map((item) => item.id)).toEqual([ids.bob, ids.team])
     const bob = ((await (await get('bob')).json()) as { calendars: { id: number }[] }).calendars
     expect(bob.map((item) => item.id)).toContain(ids.secret)
+  })
+
+  it('says which group owns a calendar, and whether the caller manages it', async () => {
+    const staff = db.prepare("SELECT id FROM groups WHERE name = 'staff'").pluck().get() as number
+    const own = Number(
+      db
+        .prepare(
+          `INSERT INTO calendars (name, kind, owner_id, collection_path, group_id)
+           VALUES ('Rota', 'shared', NULL, ?, ?)`,
+        )
+        .run(`/_group-${staff}/rota/`, staff).lastInsertRowid,
+    )
+    addCalendarAcl(db, own, { principalType: 'group', principal: 'staff', permission: 'write' })
+    const rota = async () =>
+      ((await (await get('bob')).json()) as { calendars: { id: number }[] }).calendars.find(
+        (item) => item.id === own,
+      )
+    expect(await rota()).toMatchObject({ name: 'Rota', groupId: staff, canManage: false })
+    db.prepare("UPDATE group_members SET manager = 1 WHERE sub = 'sub-bob'").run()
+    expect(await rota()).toMatchObject({ groupId: staff, canManage: true })
   })
 
   it('needs a signed-in person', async () => {

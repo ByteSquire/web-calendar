@@ -82,3 +82,17 @@ export function updateResource(
 export function deactivateResource(db: Database, id: number): ResourceRow | null {
   return updateResource(db, id, { active: false })
 }
+
+/** How many bookings of any state name the resource; one keeps it from being deleted. */
+export function countResourceBookings(db: Database, id: number): number {
+  return db
+    .prepare<[number], { n: number }>(
+      'SELECT COUNT(*) AS n FROM calendar_bookings WHERE resource_id = ?',
+    )
+    .get(id)!.n
+}
+
+/** Deletes the resource and its rules (ON DELETE CASCADE). The caller checked it has no bookings. */
+export function deleteResourceRow(db: Database, id: number): boolean {
+  return db.prepare('DELETE FROM resources WHERE id = ?').run(id).changes > 0
+}

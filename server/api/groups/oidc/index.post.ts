@@ -22,5 +22,5 @@ export default defineAdminHandler(async (event, { db, audit, atomic }) => {
   })
   getGroupsPorts().onGroupsChanged()
   setResponseStatus(event, 201)
-  return { group: groupSummary({ ...group, memberCount: 0, member: false }) }
+  return { group: groupSummary({ ...group, memberCount: 0, member: false, manager: false }) }
 })

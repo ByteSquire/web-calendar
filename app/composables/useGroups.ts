@@ -6,6 +6,7 @@ import { N_ } from '~/utils/i18n'
 import type {
   GroupCalendar,
   GroupDetail,
+  GroupMember,
   GroupPerson,
   GroupSummary,
   OidcCandidate,
@@ -58,9 +59,16 @@ export function useGroups() {
     deleteGroup: (id: number) => api<unknown>(`/api/groups/${id}`, { method: 'DELETE' }),
     saveMembers: async (id: number, members: string[]) =>
       (
-        await api<{ members: GroupPerson[] }>(`/api/groups/${id}/members`, {
+        await api<{ members: GroupMember[] }>(`/api/groups/${id}/members`, {
           method: 'PUT',
           body: { members },
+        })
+      ).members,
+    saveManagers: async (id: number, managers: string[]) =>
+      (
+        await api<{ members: GroupMember[] }>(`/api/groups/${id}/managers`, {
+          method: 'PUT',
+          body: { managers },
         })
       ).members,
     createCalendar: async (id: number, body: { name: string; color?: string }) =>

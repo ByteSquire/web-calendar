@@ -238,12 +238,13 @@ const items = computed<DropdownMenuItem[][]>(() => {
       { label: t('Settings'), icon: 'i-lucide-settings', to: '/settings' },
       // Groups and their calendars: for everybody signed in (the server limits what each may do).
       { label: t('Groups'), icon: 'i-lucide-users-round', to: '/groups' },
+      // The administration pages: admins only (each page and its routes check again).
       ...(adminFlag.admin.value === true
-        ? [{ label: t('Calendar access'), icon: 'i-lucide-shield-check', to: '/admin/access' }]
-        : []),
-      // Resources administration: admins only, beside Calendar access.
-      ...(adminFlag.admin.value === true
-        ? [{ label: t('Resources'), icon: 'i-lucide-door-open', to: '/admin/resources' }]
+        ? [
+            { label: t('Calendars'), icon: 'i-lucide-shield-check', to: '/admin/calendars' },
+            { label: t('People'), icon: 'i-lucide-contact', to: '/admin/people' },
+            { label: t('Resources'), icon: 'i-lucide-door-open', to: '/admin/resources' },
+          ]
         : []),
       ...fullScreenItems,
       darkMode,

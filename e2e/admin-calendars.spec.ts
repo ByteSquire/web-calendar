@@ -2,10 +2,11 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { TODAY, press } from './helpers'
 
-// The access administration page (FR-14). The app runs in demo mode here, which serves the SPA
-// without a login; `/api/me` and `/api/admin/access/**` are answered by a small stateful stand-in
-// for the real routes (server/api/admin/access/**, me.get.ts), the links of the calendar included.
-// The menu entry is hidden in demo mode, so the page is opened by its address.
+// Admin › Calendars (FR-14). The app runs in demo mode here, which serves the SPA without a login;
+// `/api/me` and `/api/admin/access/**` are answered by a small stateful stand-in for the real routes
+// (server/api/admin/access/**, me.get.ts), the links of the calendar included. The menu entry is
+// hidden in demo mode, so the page is opened by its old address, /admin/access, which still leads
+// there; most tests open the Team calendar's dialog on "Who has access".
 
 interface MockRule {
   id: number
@@ -74,6 +75,8 @@ class MockAccess {
     },
   ]
   passwords = new Map<number, string>([[3, FRONT_DESK_PASSWORD]])
+  name = 'Team'
+  deleted = false
   private nextId = 10
 
   constructor(readonly admin: boolean) {}
@@ -81,10 +84,11 @@ class MockAccess {
   private calendar() {
     return {
       id: 5,
-      name: 'Team',
+      name: this.name,
       kind: 'shared',
       color: null,
       owner: null,
+      group: null,
       rules: this.rules,
     }
   }
@@ -121,7 +125,15 @@ class MockAccess {
     const body: unknown = raw ? JSON.parse(raw) : undefined
     this.calls.push({ method, path, body })
     if (path === '/api/admin/access/calendars' && method === 'GET') {
-      return route.fulfill({ json: { calendars: [this.calendar()] } })
+      return route.fulfill({ json: { calendars: this.deleted ? [] : [this.calendar()] } })
+    }
+    if (path === '/api/admin/access/calendars/5' && method === 'PATCH') {
+      this.name = (body as { name: string }).name
+      return route.fulfill({ json: { calendar: this.calendar() } })
+    }
+    if (path === '/api/admin/access/calendars/5' && method === 'DELETE') {
+      this.deleted = true
+      return route.fulfill({ json: {} })
     }
     if (path === '/api/admin/access/users') {
       return route.fulfill({
@@ -186,7 +198,7 @@ class MockAccess {
   }
 }
 
-async function openPage(page: Page, admin = true) {
+async function openPage(page: Page, admin = true, openAccess = true) {
   const api = new MockAccess(admin)
   const errors: string[] = []
   const benign = /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)/
@@ -196,6 +208,10 @@ async function openPage(page: Page, admin = true) {
   await page.route('**/api/**', (route) => api.handle(route))
   await page.clock.setFixedTime(TODAY)
   await page.goto('/admin/access')
+  if (admin && openAccess) {
+    await press(page.getByRole('button', { name: 'Access for Team' }))
+    await expect(page.getByRole('dialog', { name: 'Team' })).toBeVisible()
+  }
   return { api, errors }
 }
 
@@ -209,7 +225,7 @@ const rule = (page: Page, name: string) =>
     hasText: name,
   })
 
-test.describe('calendar access', () => {
+test.describe('admin calendars', () => {
   test('sends somebody who is not an admin back to the calendar', async ({ page }) => {
     const { api } = await openPage(page, false)
     await expect(page.locator('[data-calendar-main]')).toBeVisible()
@@ -217,9 +233,32 @@ test.describe('calendar access', () => {
     expect(api.calls).toEqual([])
   })
 
+  test('lists the calendars, renames one and deletes it after asking', async ({ page }) => {
+    const { api, errors } = await openPage(page, true, false)
+    await expect(page).toHaveURL(/\/admin\/access$/)
+    await expect(page.getByRole('heading', { level: 1, name: 'Calendars' })).toBeVisible()
+    const row = page.locator('[data-admin-calendar]')
+    await expect(row).toContainText('Calendar of the organization · 2 access rules')
+    await press(page.getByRole('button', { name: 'Edit Team' }))
+    const dialog = page.getByRole('dialog', { name: 'Team' })
+    await dialog.getByRole('textbox', { name: 'Name' }).fill('Front office')
+    await press(dialog.getByRole('button', { name: 'Save changes' }))
+    await expect(row).toContainText('Front office')
+    expect(api.calls.find((call) => call.method === 'PATCH')?.body).toEqual({
+      name: 'Front office',
+      color: null,
+    })
+    await press(page.getByRole('button', { name: 'Delete calendar' }))
+    const confirm = page.getByRole('dialog', { name: 'Delete "Front office"?' })
+    await expect(confirm).toContainText('deleted for everybody who has it')
+    await press(confirm.getByRole('button', { name: 'Delete' }))
+    await expect(row).toHaveCount(0)
+    await expect(page.getByText('There are no calendars to manage yet.')).toBeVisible()
+    expect(errors).toEqual([])
+  })
+
   test('lists the rules with who, what and whether they are applied', async ({ page }) => {
     await openPage(page)
-    await expect(page.getByRole('heading', { level: 1, name: 'Calendar access' })).toBeVisible()
     await expect(rule(page, 'Bob Builder')).toContainText('Can view')
     await expect(rule(page, 'Bob Builder')).toContainText('Applied')
     await expect(rule(page, 'staff')).toContainText('Can edit')
@@ -374,8 +413,8 @@ test.describe('calendar access', () => {
     await expect(rule(page, 'staff')).toBeVisible()
     await press(page.getByRole('button', { name: 'Details of Front desk' }))
     const overflow = await page.evaluate(() => {
-      const main = document.querySelector('main.main-area')!
-      return main.scrollWidth - main.clientWidth
+      const dialog = document.querySelector('[role="dialog"]')!
+      return dialog.scrollWidth - dialog.clientWidth
     })
     expect(overflow).toBeLessThanOrEqual(0)
     for (const name of [
@@ -413,6 +452,7 @@ test.describe('calendar access', () => {
     await expect(page.locator('[data-calendar-main]')).toBeVisible()
     await press(page.getByRole('button', { name: 'More options' }))
     await expect(page.getByRole('menuitem', { name: 'Settings' })).toBeVisible()
-    await expect(page.getByRole('menuitem', { name: 'Calendar access' })).toHaveCount(0)
+    await expect(page.getByRole('menuitem', { name: 'Calendars' })).toHaveCount(0)
+    await expect(page.getByRole('menuitem', { name: 'People' })).toHaveCount(0)
   })
 })

@@ -16,6 +16,7 @@ import oidcGet from '../../server/api/groups/oidc/index.get'
 import oidcPost from '../../server/api/groups/oidc/index.post'
 import oidcDelete from '../../server/api/groups/oidc/[id].delete'
 import membersPut from '../../server/api/groups/[id]/members.put'
+import managersPut from '../../server/api/groups/[id]/managers.put'
 import calendarPost from '../../server/api/groups/[id]/calendars/index.post'
 import calendarPatch from '../../server/api/groups/[id]/calendars/[calendarId]/index.patch'
 import calendarDelete from '../../server/api/groups/[id]/calendars/[calendarId]/index.delete'
@@ -78,6 +79,7 @@ const ROUTES: [method: string, path: string, handler: EventHandler][] = [
   ['GET', '/api/groups/:id', groupGet],
   ['DELETE', '/api/groups/:id', groupDelete],
   ['PUT', '/api/groups/:id/members', membersPut],
+  ['PUT', '/api/groups/:id/managers', managersPut],
   ['POST', '/api/groups/:id/calendars', calendarPost],
   ['PATCH', '/api/groups/:id/calendars/:calendarId', calendarPatch],
   ['DELETE', '/api/groups/:id/calendars/:calendarId', calendarDelete],
@@ -110,12 +112,19 @@ function call(method: string, path: string, who: Who | null, body?: unknown) {
   )
 }
 
-/** A group with an app origin, its member alice and one calendar; returns the ids. */
-function seedGroup(name = 'team_a') {
+/**
+ * A group with an app origin, its member alice (its manager unless `manager` is false) and one
+ * calendar; returns the ids.
+ */
+function seedGroup(name = 'team_a', { manager = true } = {}) {
   const group = Number(
     db.prepare(`INSERT INTO groups (name, source) VALUES (?, 'app')`).run(name).lastInsertRowid,
   )
-  db.prepare('INSERT INTO group_members (group_id, sub) VALUES (?, ?)').run(group, SUBS.alice)
+  db.prepare('INSERT INTO group_members (group_id, sub, manager) VALUES (?, ?, ?)').run(
+    group,
+    SUBS.alice,
+    manager ? 1 : 0,
+  )
   const calendar = Number(
     db
       .prepare(
@@ -231,13 +240,14 @@ describe('signed-in reads', () => {
     const people = db.prepare('SELECT COUNT(*) FROM users').pluck().get() as number
     expect(await res.json()).toEqual({
       groups: [
-        { id: 2, name: 'team_a', source: 'app', memberCount: 1, member: false },
+        { id: 2, name: 'team_a', source: 'app', memberCount: 1, member: false, manager: false },
         {
           id: 1,
           name: 'web_calendar_users',
           source: 'everyone',
           memberCount: people,
           member: true,
+          manager: false,
         },
       ],
     })
@@ -251,23 +261,62 @@ describe('signed-in reads', () => {
   })
 })
 
+interface DetailBody {
+  canManageMembers: boolean
+  canManageCalendars: boolean
+  canNameManagers: boolean
+  members: { sub: string; manager: boolean }[]
+}
+
 describe('group detail (member or admin)', () => {
-  it('shows a member the group, without the admin-only flag', async () => {
-    const { group } = seedGroup()
-    const body = (await (await call('GET', `/api/groups/${group}`, 'alice')).json()) as {
-      canManageMembers: boolean
-      members: { sub: string }[]
-    }
-    expect(body.canManageMembers).toBe(false)
-    expect(body.members.map((m) => m.sub)).toEqual([SUBS.alice])
+  it('shows a member the group, with nothing to change', async () => {
+    const { group } = seedGroup('team_a', { manager: false })
+    const body = (await (await call('GET', `/api/groups/${group}`, 'alice')).json()) as DetailBody
+    expect(body).toMatchObject({
+      canManageMembers: false,
+      canManageCalendars: false,
+      canNameManagers: false,
+    })
+    expect(body.members).toEqual([
+      { sub: SUBS.alice, name: 'Alice Ann', username: 'alice', manager: false },
+    ])
   })
 
-  it('lets an admin see it, with members editable', async () => {
+  it('shows a manager the members and calendars to change, but not the managers', async () => {
     const { group } = seedGroup()
-    const body = (await (await call('GET', `/api/groups/${group}`, 'admin')).json()) as {
-      canManageMembers: boolean
+    const body = (await (await call('GET', `/api/groups/${group}`, 'alice')).json()) as DetailBody
+    expect(body).toMatchObject({
+      canManageMembers: true,
+      canManageCalendars: true,
+      canNameManagers: false,
+    })
+    expect(body.members.map((m) => m.manager)).toEqual([true])
+  })
+
+  it('lets an admin see it, with everything to change', async () => {
+    const { group } = seedGroup()
+    const body = (await (await call('GET', `/api/groups/${group}`, 'admin')).json()) as DetailBody
+    expect(body).toMatchObject({
+      canManageMembers: true,
+      canManageCalendars: true,
+      canNameManagers: true,
+    })
+  })
+
+  it('lists whether the caller manages each group', async () => {
+    seedGroup('team_a')
+    seedGroup('team_b', { manager: false })
+    const body = (await (await call('GET', '/api/groups', 'alice')).json()) as {
+      groups: { name: string; member: boolean; manager: boolean }[]
     }
-    expect(body.canManageMembers).toBe(true)
+    expect(
+      body.groups
+        .filter((g) => g.name.startsWith('team_'))
+        .map(({ name, member, manager }) => ({ name, member, manager })),
+    ).toEqual([
+      { name: 'team_a', member: true, manager: true },
+      { name: 'team_b', member: true, manager: false },
+    ])
   })
 
   it('refuses a non-member with 403 and an unknown group with 404', async () => {
@@ -314,7 +363,7 @@ describe('admin-only group routes', () => {
   })
 
   it('replaces the members for an admin, and validates the list', async () => {
-    const { group } = seedGroup()
+    const { group } = seedGroup('team_a', { manager: false })
     expect(
       (await call('PUT', `/api/groups/${group}/members`, 'alice', { members: [SUBS.bob] })).status,
     ).toBe(403)
@@ -349,8 +398,106 @@ describe('admin-only group routes', () => {
   })
 })
 
-describe('group calendars (member or admin)', () => {
-  it('lets a member create a calendar in the group principal, with its colour', async () => {
+describe('group managers', () => {
+  it('lets a manager add and remove members, but not remove a manager', async () => {
+    const { group } = seedGroup()
+    const added = await call('PUT', `/api/groups/${group}/members`, 'alice', {
+      members: [SUBS.alice, SUBS.bob],
+    })
+    expect(added.status).toBe(200)
+    expect(((await added.json()) as DetailBody).members).toEqual([
+      { sub: SUBS.alice, name: 'Alice Ann', username: 'alice', manager: true },
+      { sub: SUBS.bob, name: 'Bob', username: 'bob', manager: false },
+    ])
+    const removed = await call('PUT', `/api/groups/${group}/members`, 'alice', {
+      members: [SUBS.alice],
+    })
+    expect(removed.status).toBe(200)
+    // Removing a manager (here herself) takes the role away, which only an admin may do.
+    const refused = await call('PUT', `/api/groups/${group}/members`, 'alice', { members: [] })
+    expect(refused.status).toBe(403)
+    expect(((await refused.json()) as { data: { code: string } }).data.code).toBe('manager')
+    expect(db.prepare('SELECT COUNT(*) FROM group_members').pluck().get()).toBe(1)
+    // An admin may.
+    expect(
+      (await call('PUT', `/api/groups/${group}/members`, 'admin', { members: [] })).status,
+    ).toBe(200)
+  })
+
+  it('are named by admins only, from the members, with the audit entry', async () => {
+    const { group } = seedGroup('team_a', { manager: false })
+    db.prepare('INSERT INTO group_members (group_id, sub) VALUES (?, ?)').run(group, SUBS.bob)
+    const body = { managers: [SUBS.bob] }
+    expect((await call('PUT', `/api/groups/${group}/managers`, 'alice', body)).status).toBe(403)
+    expect((await call('PUT', `/api/groups/${group}/managers`, 'bob', body)).status).toBe(403)
+    const res = await call('PUT', `/api/groups/${group}/managers`, 'admin', body)
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as DetailBody).members.map((m) => [m.sub, m.manager])).toEqual([
+      [SUBS.alice, false],
+      [SUBS.bob, true],
+    ])
+    const audit = db
+      .prepare<[], { action: string; details: string }>('SELECT action, details FROM audit_log')
+      .all()
+    expect(audit.map((row) => row.action)).toEqual(['group.managers_replaced'])
+    expect(JSON.parse(audit[0]!.details)).toMatchObject({ added: 1, removed: 0, total: 1 })
+    // The same list again changes nothing and writes nothing.
+    expect((await call('PUT', `/api/groups/${group}/managers`, 'admin', body)).status).toBe(200)
+    expect(db.prepare('SELECT COUNT(*) FROM audit_log').pluck().get()).toBe(1)
+    // Back to none.
+    await call('PUT', `/api/groups/${group}/managers`, 'admin', { managers: [] })
+    expect(db.prepare('SELECT COUNT(*) FROM group_members WHERE manager = 1').pluck().get()).toBe(0)
+  })
+
+  it('refuses a manager who is not a member, a bad list, and the group of everyone', async () => {
+    const { group } = seedGroup()
+    const notMember = await call('PUT', `/api/groups/${group}/managers`, 'admin', {
+      managers: [SUBS.bob],
+    })
+    expect(notMember.status).toBe(400)
+    for (const body of [
+      {},
+      { managers: 'x' },
+      { managers: ['a/b'] },
+      { managers: [SUBS.alice, SUBS.alice] },
+    ]) {
+      expect((await call('PUT', `/api/groups/${group}/managers`, 'admin', body)).status).toBe(400)
+    }
+    const everyone = db
+      .prepare(`SELECT id FROM groups WHERE source = 'everyone'`)
+      .pluck()
+      .get() as number
+    expect(
+      (await call('PUT', `/api/groups/${everyone}/managers`, 'admin', { managers: [] })).status,
+    ).toBe(403)
+    expect((await call('PUT', '/api/groups/999/managers', 'admin', { managers: [] })).status).toBe(
+      404,
+    )
+  })
+
+  it('keeps a plain member away from the calendars of the group', async () => {
+    const { group, calendar } = seedGroup('team_a', { manager: false })
+    const base = `/api/groups/${group}/calendars`
+    expect((await call('POST', base, 'alice', { name: 'Mine' })).status).toBe(403)
+    expect((await call('PATCH', `${base}/${calendar}`, 'alice', { name: 'Renamed' })).status).toBe(
+      403,
+    )
+    expect((await call('PUT', `${base}/${calendar}/shares`, 'alice', { shares: [] })).status).toBe(
+      403,
+    )
+    expect((await call('DELETE', `${base}/${calendar}`, 'alice')).status).toBe(403)
+    expect(radicale.makeCalendar).not.toHaveBeenCalled()
+    expect(radicale.updateCalendar).not.toHaveBeenCalled()
+    expect(radicale.deleteCollection).not.toHaveBeenCalled()
+    // An admin may, member or not.
+    expect((await call('PATCH', `${base}/${calendar}`, 'admin', { name: 'Renamed' })).status).toBe(
+      200,
+    )
+  })
+})
+
+describe('group calendars (manager or admin)', () => {
+  it('lets a manager create a calendar in the group principal, with its colour', async () => {
     const { group } = seedGroup()
     const res = await call('POST', `/api/groups/${group}/calendars`, 'alice', {
       name: 'Team plan',
@@ -373,17 +520,18 @@ describe('group calendars (member or admin)', () => {
   })
 
   it('refuses to create a calendar in the group of all users, for a member and an admin', async () => {
-    // The group of everyone is a row of the migration; nobody is stored in it, a person who signed
-    // in recently counts as in it, and an admin may act in every group.
+    // The group of everyone is a row of the migration; nobody is stored in it, so nobody manages
+    // it: a person who signed in recently counts as in it, and an admin may act in every group.
     const group = db
       .prepare(`SELECT id FROM groups WHERE source = 'everyone'`)
       .pluck()
       .get() as number
-    for (const who of ['alice', 'admin'] as const) {
-      const res = await call('POST', `/api/groups/${group}/calendars`, who, { name: 'Everyone' })
-      expect(res.status).toBe(400)
-      expect(JSON.stringify(await res.json())).toContain('cannot own calendars')
-    }
+    expect(
+      (await call('POST', `/api/groups/${group}/calendars`, 'alice', { name: 'Everyone' })).status,
+    ).toBe(403)
+    const res = await call('POST', `/api/groups/${group}/calendars`, 'admin', { name: 'Everyone' })
+    expect(res.status).toBe(400)
+    expect(JSON.stringify(await res.json())).toContain('cannot own calendars')
     expect(radicale.makeCalendar).not.toHaveBeenCalled()
     expect(db.prepare('SELECT COUNT(*) AS n FROM calendars').pluck().get()).toBe(0)
   })

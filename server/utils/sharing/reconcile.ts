@@ -16,6 +16,7 @@ import {
 import { groupPrincipal, splitCollectionPath } from './names'
 import { isActingPrincipal, type RadicaleClient } from './radicale-client'
 import {
+  ORGANIZATION_PRINCIPAL,
   RESOURCES_PRINCIPAL,
   SHARING_ACTOR,
   sharingFail,
@@ -185,7 +186,7 @@ export function createSharingReconciler(options: ReconcileOptions): SharingRecon
     for (const id of gone) differences.push(`calendar ${id} is missing in Radicale`)
 
     const byOwner = new Map<string, DesiredShare[]>()
-    const owners = new Set<string>([RESOURCES_PRINCIPAL, ...sharedOwners])
+    const owners = new Set<string>([RESOURCES_PRINCIPAL, ORGANIZATION_PRINCIPAL, ...sharedOwners])
     for (const user of db.prepare<[], { oidc_sub: string }>('SELECT oidc_sub FROM users').all()) {
       if (isValidSubject(user.oidc_sub) && isActingPrincipal(user.oidc_sub))
         owners.add(user.oidc_sub)

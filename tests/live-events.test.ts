@@ -287,8 +287,9 @@ describe('categories', () => {
       ]),
     ).toEqual([
       { id: '4', name: 'Work', color: '#aabbcc' },
-      { id: '5', name: 'Travel', color: colorForName('Travel') },
-      { id: '6', name: 'Odd', color: colorForName('Odd') },
+      // a shared one says so: only admins change it
+      { id: '5', name: 'Travel', color: colorForName('Travel'), shared: true },
+      { id: '6', name: 'Odd', color: colorForName('Odd'), shared: true },
     ])
   })
 

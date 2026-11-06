@@ -500,4 +500,12 @@ export const settings: Readonly<Record<string, string>> = {
   'The server is busy. Try again in a moment.':
     'Der Server ist gerade ausgelastet. Versuche es gleich noch einmal.',
   'create the link': 'Das Erstellen des Links',
+
+  // Refusals the server names by a code
+  'The calendar server did not do it; nothing was changed. Try again.':
+    'Der Kalenderserver hat es nicht getan; nichts wurde geändert. Versuche es erneut.',
+  'The resource has bookings, so it cannot be deleted. Deactivate it instead.':
+    'Die Ressource hat Buchungen und kann deshalb nicht gelöscht werden. Deaktiviere sie stattdessen.',
+  'Only an administrator can remove a manager of the group.':
+    'Nur eine Administratorin oder ein Administrator kann die Verwaltung der Gruppe entfernen.',
 }

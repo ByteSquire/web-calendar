@@ -1,3 +1,5 @@
+import { ORGANIZATION_PRINCIPAL, RESOURCES_PRINCIPAL } from './types'
+
 export const DEFAULT_RECONCILE_INTERVAL_SEC = 300
 export const MAX_RECONCILE_INTERVAL_SEC = 900
 export const DEFAULT_AUDIT_INTERVAL_HOURS = 24
@@ -23,11 +25,19 @@ export function clampAuditIntervalHours(raw: unknown): number {
 
 const SERVICE_OWNER = /^_[A-Za-z0-9_.-]{1,63}$/
 
-/** The service principals to mirror, sorted and unique; invalid entries and `_resources` dropped. */
+/**
+ * The service principals to mirror, sorted and unique; invalid entries dropped, and the app's own
+ * `_resources` and `_organization`, which it handles itself.
+ */
 export function parseSharedOwners(raw: unknown): string[] {
   const entries = String(raw ?? '')
     .split(',')
     .map((entry) => entry.trim())
-    .filter((entry) => SERVICE_OWNER.test(entry) && entry !== '_resources')
+    .filter(
+      (entry) =>
+        SERVICE_OWNER.test(entry) &&
+        entry !== RESOURCES_PRINCIPAL &&
+        entry !== ORGANIZATION_PRINCIPAL,
+    )
   return [...new Set(entries)].sort()
 }

@@ -43,33 +43,39 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-describe('the Calendar access entry', () => {
-  it('is in the menu for an admin and leads to the page', async () => {
+describe('the Calendars and People entries', () => {
+  it('are in the menu for an admin and lead to the pages', async () => {
     configure(false)
     useState('admin-flag').value = true
     await open()
-    expect(items()).toContain('Calendar access')
+    expect(items()).toEqual(expect.arrayContaining(['Calendars', 'People']))
     expect(
-      document.querySelector('[role="menuitem"][href="/admin/access"]')?.textContent,
-    ).toContain('Calendar access')
+      document.querySelector('[role="menuitem"][href="/admin/calendars"]')?.textContent,
+    ).toContain('Calendars')
+    expect(
+      document.querySelector('[role="menuitem"][href="/admin/people"]')?.textContent,
+    ).toContain('People')
   })
 
   it.each([
     ['somebody who is not an admin', false],
     ['somebody whose status is not known yet', null],
-  ])('is not in the menu for %s', async (_label, flag) => {
+  ])('are not in the menu for %s', async (_label, flag) => {
     configure(false)
     useState('admin-flag').value = flag
     await open()
-    expect(items()).not.toContain('Calendar access')
-    expect(document.querySelector('[href="/admin/access"]')).toBeNull()
+    expect(items()).not.toContain('Calendars')
+    expect(items()).not.toContain('People')
+    expect(document.querySelector('[href="/admin/calendars"]')).toBeNull()
+    expect(document.querySelector('[href="/admin/people"]')).toBeNull()
   })
 
-  it('is not in the menu in demo mode', async () => {
+  it('are not in the menu in demo mode', async () => {
     configure(true)
     useState('admin-flag').value = true
     await open()
-    expect(items()).not.toContain('Calendar access')
+    expect(items()).not.toContain('Calendars')
+    expect(items()).not.toContain('People')
   })
 })
 

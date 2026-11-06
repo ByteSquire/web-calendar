@@ -3,7 +3,7 @@
 // imported from the server so the browser bundle stays free of server code.
 import type { AccessPrincipalType } from '~/utils/admin/access'
 import { N_, t, tv } from '~/utils/i18n'
-import { parseApiError } from '~/utils/settings/api-errors'
+import { describeKnownCode, parseApiError } from '~/utils/settings/api-errors'
 
 export type ResourceType = 'room' | 'car' | 'equipment'
 export type ResourceRight = 'read' | 'book' | 'manage'
@@ -118,6 +118,7 @@ export function describeResourceProblem(cause: unknown): {
     message = t('The server could not be reached. Nothing was changed.')
   else if (info.kind === 'not-found')
     message = t('This resource no longer exists. Reload the page.')
+  else if (describeKnownCode(info)) message = describeKnownCode(info)!
   else if (info.status === 403) message = t('You are not allowed to manage resources.')
   else if (info.fields.length > 0) {
     message = t('Nothing was changed. {details}', {

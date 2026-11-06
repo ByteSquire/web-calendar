@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { isReservedPrincipal, isUserSubject, isValidSubject } from '../../server/utils/auth/subject'
 import { parseSharedOwners } from '../../server/utils/sharing/config'
 import { groupPrincipal } from '../../server/utils/sharing/names'
-import { RESOURCES_PRINCIPAL } from '../../server/utils/sharing/types'
+import { ORGANIZATION_PRINCIPAL, RESOURCES_PRINCIPAL } from '../../server/utils/sharing/types'
 
 // The shape rule comes from probing Radicale 3.9.0: what it accepts as a user id, a path component,
 // `X-Remote-User`, an htgroup member and a sharing map entry.
@@ -66,12 +66,13 @@ describe('isValidSubject', () => {
 })
 
 describe('the app’s own principals', () => {
-  const owners = parseSharedOwners('_team, _other, _resources, bad name')
+  const owners = parseSharedOwners('_team, _other, _resources, _organization, bad name')
 
   it('are valid ids for the app to act as, and never ids of a person', () => {
     expect(owners).toEqual(['_other', '_team'])
     const principals = [
       RESOURCES_PRINCIPAL,
+      ORGANIZATION_PRINCIPAL,
       groupPrincipal(1),
       groupPrincipal(999_999_999_999_999),
       ...owners,
@@ -99,7 +100,7 @@ describe('the app’s own principals', () => {
   // The guard behind `isReservedPrincipal`: a principal the code can create must be covered above.
   // A new underscore name in the server code fails here until it is reserved or listed as not one.
   it('is complete: the server code names no other underscore principal', () => {
-    const known = new Set(['_resources', '_group-'])
+    const known = new Set(['_resources', '_organization', '_group-'])
     // An XML parser option, and the claim in which Entra points at groups it left out of a token.
     const notPrincipals = new Set(['_attributes', '_claim_names'])
     const root = fileURLToPath(new URL('../../server', import.meta.url))

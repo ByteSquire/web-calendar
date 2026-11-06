@@ -383,6 +383,18 @@ export interface CalendarStateHooks {
   persistFilter?: (filter: CalendarFilter) => Promise<CalendarFilter>
   /** A new category or filter could not be saved and was removed again. */
   onPersistError?: (what: 'category' | 'filter', name: string, error: unknown) => void
+  /** Saves a renamed or recoloured category; resolves to the stored one, rejects when not saved. */
+  saveCategory?: (category: Category) => Promise<Category>
+  /** Deletes a category; rejects when it was not deleted. */
+  removeCategory?: (category: Category) => Promise<void>
+  /** Saves a changed filter; resolves to the stored one, rejects when not saved. */
+  saveFilter?: (filter: CalendarFilter) => Promise<CalendarFilter>
+  /** Deletes a filter; rejects when it was not deleted. */
+  removeFilter?: (filter: CalendarFilter) => Promise<void>
+  /** Renames a calendar the viewer may manage (`Calendar.manage`); rejects when not renamed. */
+  renameCalendar?: (calendar: Calendar, name: string) => Promise<void>
+  /** Deletes a calendar the viewer may manage, with its events; rejects when not deleted. */
+  removeCalendar?: (calendar: Calendar) => Promise<void>
 }
 
 export interface CalendarStateOptions {
@@ -535,6 +547,27 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     )
   }
 
+  /**
+   * Renames a calendar the viewer may manage. With a backend the name is saved first and shown
+   * after; rejects, and the calendar keeps its name, when it was not saved.
+   */
+  async function renameCalendar(id: string, name: string): Promise<void> {
+    const calendar = calendars.value.find((item) => item.id === id)
+    if (!calendar?.manage) return
+    await options.hooks?.renameCalendar?.(calendar, name)
+    calendars.value = calendars.value.map((item) => (item.id === id ? { ...item, name } : item))
+  }
+
+  /** Deletes a calendar the viewer may manage; like `renameCalendar`, the server goes first. */
+  async function deleteCalendar(id: string): Promise<void> {
+    const calendar = calendars.value.find((item) => item.id === id)
+    if (!calendar?.manage) return
+    await options.hooks?.removeCalendar?.(calendar)
+    calendars.value = calendars.value.filter((item) => item.id !== id)
+    visibleCalendarIds.value = withIdPresent(visibleCalendarIds.value, id, false)
+    events.value = events.value.filter((event) => event.calendarId !== id)
+  }
+
   function setFilterActive(id: string, active: boolean) {
     activeFilterIds.value = withIdPresent(activeFilterIds.value, id, active)
   }
@@ -549,6 +582,15 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   }
 
   /**
+   * Ids of new categories and filters whose save has not come back: they cannot be changed yet,
+   * because the server's id is about to replace the local one.
+   */
+  const savingIds = state<string[]>('cal-saving-ids', () => [])
+  const savedId = (id: string) => {
+    savingIds.value = withIdPresent(savingIds.value, id, false)
+  }
+
+  /**
    * Returns the new category, or null if the name is empty or already taken. With a backend the
    * category appears at once under a local id; the server's id replaces it when the save is done,
    * and a failed save removes it again.
@@ -559,6 +601,7 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     categories.value = [...categories.value, category]
     const persist = options.hooks?.persistCategory
     if (persist) {
+      savingIds.value = withIdPresent(savingIds.value, category.id, true)
       persist(category).then(
         (saved) => {
           // A reload from the server meanwhile may have dropped the local copy: add the saved one.
@@ -570,8 +613,10 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
             categories.value = [...categories.value, saved]
           }
           swapId(selectedCategoryIds, category.id, saved.id)
+          savedId(category.id)
         },
         (error: unknown) => {
+          savedId(category.id)
           categories.value = categories.value.filter((item) => item.id !== category.id)
           selectedCategoryIds.value = withIdPresent(selectedCategoryIds.value, category.id, false)
           options.hooks?.onPersistError?.('category', category.name, error)
@@ -592,6 +637,7 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     setFilterActive(filter.id, true)
     const persist = options.hooks?.persistFilter
     if (persist) {
+      savingIds.value = withIdPresent(savingIds.value, filter.id, true)
       persist(filter).then(
         (saved) => {
           if (filters.value.some((item) => item.id === filter.id)) {
@@ -600,8 +646,10 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
             filters.value = [...filters.value, saved]
           }
           swapId(activeFilterIds, filter.id, saved.id)
+          savedId(filter.id)
         },
         (error: unknown) => {
+          savedId(filter.id)
           filters.value = filters.value.filter((item) => item.id !== filter.id)
           activeFilterIds.value = withIdPresent(activeFilterIds.value, filter.id, false)
           options.hooks?.onPersistError?.('filter', filter.name, error)
@@ -609,6 +657,73 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
       )
     }
     return filter
+  }
+
+  /** Whether another real category (auto ones are names events carry, not rows) has this name. */
+  function categoryNameTaken(name: string, except: string): boolean {
+    const key = name.toLowerCase()
+    return categories.value.some(
+      (item) => item.id !== except && !isAutoCategory(item) && item.name.toLowerCase() === key,
+    )
+  }
+
+  /**
+   * Renames or recolours a category. Resolves to false, changing nothing, for an empty or taken
+   * name; with a backend the change is saved first and shown after, and rejects when it was not.
+   * Events carry categories by name, so one that carries the old name keeps it.
+   */
+  async function updateCategory(
+    id: string,
+    change: { name?: string; color?: string },
+  ): Promise<boolean> {
+    const current = categories.value.find((item) => item.id === id)
+    if (!current || isAutoCategory(current)) return false
+    const name = (change.name ?? current.name).trim()
+    if (!name || categoryNameTaken(name, id)) return false
+    const next: Category = { ...current, name, color: change.color ?? current.color }
+    const stored = options.hooks?.saveCategory ? await options.hooks.saveCategory(next) : next
+    categories.value = categories.value.map((item) => (item.id === id ? stored : item))
+    return true
+  }
+
+  /** Deletes a category (no event changes); with a backend the server goes first. */
+  async function deleteCategory(id: string): Promise<void> {
+    const current = categories.value.find((item) => item.id === id)
+    if (!current || isAutoCategory(current)) return
+    await options.hooks?.removeCategory?.(current)
+    categories.value = categories.value.filter((item) => item.id !== id)
+    selectedCategoryIds.value = withIdPresent(selectedCategoryIds.value, id, false)
+  }
+
+  /**
+   * Changes a filter: a text filter's text is its name and what it looks for; another kind keeps
+   * what it matches and gets a new name. Resolves to false for an empty or taken name.
+   */
+  async function updateFilter(id: string, name: string): Promise<boolean> {
+    const current = filters.value.find((item) => item.id === id)
+    const trimmed = name.trim()
+    if (!current || !trimmed) return false
+    const key = trimmed.toLowerCase()
+    if (filters.value.some((item) => item.id !== id && item.name.toLowerCase() === key)) {
+      return false
+    }
+    const next: CalendarFilter = {
+      ...current,
+      name: trimmed,
+      value: current.kind === 'text' ? trimmed : current.value,
+    }
+    const stored = options.hooks?.saveFilter ? await options.hooks.saveFilter(next) : next
+    filters.value = filters.value.map((item) => (item.id === id ? stored : item))
+    return true
+  }
+
+  /** Deletes a filter; with a backend the server goes first. */
+  async function deleteFilter(id: string): Promise<void> {
+    const current = filters.value.find((item) => item.id === id)
+    if (!current) return
+    await options.hooks?.removeFilter?.(current)
+    filters.value = filters.value.filter((item) => item.id !== id)
+    activeFilterIds.value = withIdPresent(activeFilterIds.value, id, false)
   }
 
   function addEvent(input: NewEventInput): CalendarEvent {
@@ -671,14 +786,21 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     visibleResourceIds,
     setCalendarVisible,
     setCalendarColor,
+    renameCalendar,
+    deleteCalendar,
     setResourceVisible,
     activeFilterIds,
     activeFilters,
     setFilterActive,
     addFilter,
+    updateFilter,
+    deleteFilter,
     selectedCategoryIds,
     setCategorySelected,
     addCategory,
+    updateCategory,
+    deleteCategory,
+    savingIds,
     visibleEvents,
     visibleEventsInRange,
     splitBands,

@@ -1,9 +1,10 @@
 <!--
   Groups (for everybody signed in): the groups a person is in, with their members and calendars.
-  Members create, rename, recolour, delete and share their group's calendars. Admins also create
-  custom groups, change their members and delete them, and import groups of the identity provider
-  (their members follow each sign-in); imported groups and the group of everyone stay read-only. The
-  page shows admin controls to admins only, and the server checks every change again. Each part
+  Members use their group's calendars; its managers create, rename, recolour, delete and share them,
+  and change the members of a custom group. Admins may do all of that in every group, name its
+  managers, create custom groups and delete them, and import groups of the identity provider (their
+  members follow each sign-in); imported groups and the group of everyone keep their members. The
+  page shows each control to those who may use it, and the server checks every change again. Each part
   loads and reports its own errors, so one failing call leaves the rest of the page working.
   Choosing a group opens it below the list, and focus moves there, as on the resources page.
 -->
@@ -22,7 +23,7 @@
     <p>
       {{
         t(
-          'Groups share calendars. Open a group to see its members and calendars, create calendars and share them with people or other groups.',
+          'Groups share calendars. Open a group to see its members and calendars. Its managers create calendars and share them with people or other groups.',
         )
       }}
     </p>
@@ -69,7 +70,14 @@
           </p>
         </div>
         <UBadge
-          v-if="group.member"
+          v-if="group.manager"
+          :label="t('You manage this group')"
+          icon="i-lucide-user-cog"
+          color="neutral"
+          variant="outline"
+        />
+        <UBadge
+          v-else-if="group.member"
           :label="t('You are a member')"
           icon="i-lucide-user-check"
           color="neutral"
@@ -143,6 +151,7 @@
           :people="people.data.value?.people ?? []"
           :busy="busy"
           :save-members="saveMembers"
+          :save-managers="saveManagers"
         />
         <GroupsGroupCalendars
           :key="`calendars-${detail.id}`"
@@ -216,7 +225,7 @@ import {
   type OidcCandidate,
   type GroupCalendar,
   type GroupDetail,
-  type GroupPerson,
+  type GroupMember,
   type GroupSummary,
 } from '~/utils/groups/model'
 import { toShareInput } from '~/utils/groups/shares'
@@ -312,7 +321,7 @@ async function loadDetail() {
  * Replaces the detail and the list row's member count after the members changed. `id` is the group
  * the call was made for: an answer for a group that is no longer open changes nothing.
  */
-function applyMembers(id: number, members: GroupPerson[]) {
+function applyMembers(id: number, members: GroupMember[]) {
   const current = detail.value
   if (!current || current.id !== id) return
   detail.value = { ...current, members }
@@ -430,6 +439,16 @@ async function saveMembers(members: string[]): Promise<true | string> {
     const saved = await api.saveMembers(id, members)
     applyMembers(id, saved)
     return t('Members of {name} were saved.', { name: detail.value?.name ?? '' })
+  })
+}
+
+async function saveManagers(managers: string[]): Promise<true | string> {
+  const id = detail.value?.id
+  if (id === undefined) return t('This group no longer exists. Reload the page.')
+  return run(async () => {
+    const saved = await api.saveManagers(id, managers)
+    applyMembers(id, saved)
+    return t('Managers of {name} were saved.', { name: detail.value?.name ?? '' })
   })
 }
 

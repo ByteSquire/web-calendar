@@ -1,7 +1,8 @@
 <!--
   The calendars a group owns: create one, rename it, change its colour, share it and delete it.
-  Everybody who sees the group may do these (the server decides for members and admins alike); a
-  calendar's share list is shown as a sentence, and the dialog changes it. Deleting asks first
+  The group's managers and admins may do these (`canManageCalendars`; the server decides again); the
+  other members see the list. A calendar's share list is shown as a sentence, and the dialog changes
+  it. Deleting asks first
   (SettingsConfirmModal), since the calendar, its events and its shares go with it. Each action
   returns true when it worked, else the words for the failure, which are shown here.
 -->
@@ -18,7 +19,7 @@
     <p class="text-sm text-toned">
       {{
         t(
-          'Calendars of this group. Everybody in the group can create and share them; the people and groups you share with can view or edit their events.',
+          'Calendars of this group. Everybody in the group can use them; its managers create and share them, and the people and groups they share with can view or edit their events.',
         )
       }}
     </p>
@@ -60,7 +61,7 @@
                 {{ shareSummary(calendar.shares, group.name) }}
               </p>
             </div>
-            <div class="flex flex-wrap gap-2">
+            <div v-if="group.canManageCalendars" class="flex flex-wrap gap-2">
               <UButton
                 :aria-label="t('Edit {name}', { name: calendar.name })"
                 icon="i-lucide-pencil"
@@ -94,7 +95,7 @@
       </li>
     </ul>
 
-    <div class="rounded-lg border border-default p-4">
+    <div v-if="group.canManageCalendars" class="rounded-lg border border-default p-4">
       <GroupsCalendarForm :busy="busy" :save="create" />
     </div>
 

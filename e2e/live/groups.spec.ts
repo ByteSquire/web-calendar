@@ -159,18 +159,29 @@ test('alice creates the group and puts bob in it', async () => {
   await alice.getByRole('button', { name: 'Save members' }).click()
   await expect(alice.getByRole('button', { name: 'Save members' })).toHaveCount(0)
   await expect(alice.getByText('Members of').first()).toBeVisible()
+  // bob manages the group's calendars: only an administrator names a manager.
+  await alice
+    .getByRole('button', { name: new RegExp(`^Make manager of ${GROUP}: .*\\(bob\\)$`) })
+    .click()
+  await expect(
+    alice.getByRole('button', { name: new RegExp(`^Remove as manager of ${GROUP}: .*\\(bob\\)$`) }),
+  ).toBeVisible()
 })
 
-test('bob sees the group, without the controls of an administrator', async () => {
+test('bob sees the group he manages, without the controls of an administrator', async () => {
   await openGroupsPage(bob)
-  await expect(bob.locator('[data-group]').filter({ hasText: GROUP })).toBeVisible()
+  await expect(bob.locator('[data-group]').filter({ hasText: GROUP })).toContainText(
+    'You manage this group',
+  )
   await expect(bob.getByRole('button', { name: 'Create group' })).toHaveCount(0)
   await openGroup(bob)
   await expect(bob.getByRole('button', { name: 'Save members' })).toHaveCount(0)
-  await expect(bob.getByRole('button', { name: /^Remove / })).toHaveCount(0)
+  // a manager is not removed by another manager, nor named by one
+  await expect(bob.getByRole('button', { name: /^Remove .*\(bob\) from/ })).toHaveCount(0)
+  await expect(bob.getByRole('button', { name: /^Make / })).toHaveCount(0)
 })
 
-test('bob makes a calendar for the group and shares it with alice to read', async () => {
+test('bob, a manager, makes a calendar for the group and shares it with alice to read', async () => {
   const create = bob.locator('form').filter({ hasText: 'New calendar' })
   await create.getByLabel('Name').fill(CALENDAR)
   // The form's own button: the sidebar has an "Add calendar" plus of its own, for personal calendars.

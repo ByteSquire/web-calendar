@@ -130,6 +130,7 @@ describe('updating from v0.1.0 (001 to 008)', () => {
       '010_sidebar_order.sql',
       '011_calendar_links.sql',
       '012_calendar_link_levels.sql',
+      '013_group_managers.sql',
     ])
     expect(result.backup).toBe(`${path}.pre-009.bak`)
     expectKept(before, db)
@@ -202,6 +203,7 @@ describe('updating from v0.2.0 (001 to 009)', () => {
       '010_sidebar_order.sql',
       '011_calendar_links.sql',
       '012_calendar_link_levels.sql',
+      '013_group_managers.sql',
     ])
     expect(result.backup).toBe(`${path}.pre-010.bak`)
     expectKept(before, db)
@@ -211,17 +213,20 @@ describe('updating from v0.2.0 (001 to 009)', () => {
 })
 
 describe('updating from v0.2.1 (001 to 012)', () => {
-  it('finds nothing to do, keeps every row, and the code reads the links and the sidebar order', () => {
+  it('adds the group managers, keeps every row, and the code reads the links and the sidebar order', () => {
     leftBy('v0.1.0', 'v0.2.0', 'v0.2.1')
     db = openDatabase(path)
     const before = snapshot(db)
     expect(before.calendar_links!.rows).toHaveLength(4)
     expect(appliedMigrations(db)).toHaveLength(11)
 
-    // A later release adds its migrations here, like the tests above.
-    expect(upgradeDatabase(db, path, current())).toEqual({ applied: [], backup: null })
+    const result = upgradeDatabase(db, path, current())
+    expect(result.applied).toEqual(['013_group_managers.sql'])
+    expect(result.backup).toBe(`${path}.pre-013.bak`)
     expectKept(before, db)
     expectHealthy(db)
+    // nobody manages a group until an admin names them
+    expect(db.prepare('SELECT DISTINCT manager FROM group_members').pluck().all()).toEqual([0])
 
     expect(findUserBySub(db, 'sub-alice')!.sidebarOrder).toEqual([
       'filters',

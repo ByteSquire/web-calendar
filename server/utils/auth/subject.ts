@@ -1,5 +1,5 @@
 import { GROUP_PRINCIPAL_PREFIX } from '../sharing/names'
-import { RESOURCES_PRINCIPAL } from '../sharing/types'
+import { ORGANIZATION_PRINCIPAL, RESOURCES_PRINCIPAL } from '../sharing/types'
 
 /**
  * The user id that becomes Radicale's user name (a path component), the `X-Remote-User` value and a
@@ -13,7 +13,7 @@ import { RESOURCES_PRINCIPAL } from '../sharing/types'
  * - not starting with `.` (a dot name) and not ending with `~` (Radicale answers 500).
  *
  * Case is kept: Radicale tells `Ab` and `ab` apart everywhere. The app's own service principals
- * (`_resources`, `_group-<id>`, the shared owners) have this shape too, because the app acts as
+ * (`_resources`, `_organization`, `_group-<id>`, the shared owners) have this shape too, because the app acts as
  * them; `isUserSubject` is the check for an id that names a person.
  */
 export function isValidSubject(sub: unknown): sub is string {
@@ -25,8 +25,8 @@ export function isValidSubject(sub: unknown): sub is string {
 
 /**
  * Whether a name belongs to one of the app's own Radicale principals: the owner of the resource
- * availability blocks, every group principal (the whole `_group-` prefix) and the configured shared
- * owners (`NUXT_SHARING_SHARED_OWNERS`). Radicale treats them like any user, so an identity provider
+ * availability blocks, the owner of the organization's calendars, every group principal (the whole
+ * `_group-` prefix) and the configured shared owners (`NUXT_SHARING_SHARED_OWNERS`). Radicale treats them like any user, so an identity provider
  * id equal to one would own that principal's calendars; no person may have such an id.
  *
  * Every principal the app creates must be covered here; `tests/server/auth-subject.test.ts` lists them.
@@ -34,6 +34,7 @@ export function isValidSubject(sub: unknown): sub is string {
 export function isReservedPrincipal(sub: string, sharedOwners: readonly string[] = []): boolean {
   return (
     sub === RESOURCES_PRINCIPAL ||
+    sub === ORGANIZATION_PRINCIPAL ||
     sub.startsWith(GROUP_PRINCIPAL_PREFIX) ||
     sharedOwners.includes(sub)
   )

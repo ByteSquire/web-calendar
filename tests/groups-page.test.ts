@@ -34,9 +34,12 @@ let stopFailure: unknown = null
 const calls: { path: string; method: string; body: unknown }[] = []
 let app: Awaited<ReturnType<typeof mountSuspended>>
 
+// The person manages staff (they may change its members and calendars) unless a test says not.
+let manages = true
+
 const start = (): GroupSummary[] => [
-  { id: 1, name: 'staff', source: 'app', memberCount: 1, member: true },
-  { id: 2, name: 'it', source: 'oidc', memberCount: 2, member: true },
+  { id: 1, name: 'staff', source: 'app', memberCount: 1, member: true, manager: true },
+  { id: 2, name: 'it', source: 'oidc', memberCount: 2, member: true, manager: false },
 ]
 
 function detailOf(id: number): GroupDetail {
@@ -44,8 +47,10 @@ function detailOf(id: number): GroupDetail {
     id,
     name: id === 1 ? 'staff' : id === 2 ? 'it' : 'web_calendar_users',
     source: id === 1 ? 'app' : id === 2 ? 'oidc' : 'everyone',
-    canManageMembers: id === 1 && admin,
-    members: id === 1 ? [{ sub: 'sub-me', name: 'Me', username: 'me' }] : [],
+    canManageMembers: id === 1 && (admin || manages),
+    canManageCalendars: id !== 3 && (admin || (id === 1 && manages)),
+    canNameManagers: id !== 3 && admin,
+    members: id === 1 ? [{ sub: 'sub-me', name: 'Me', username: 'me', manager: manages }] : [],
     calendars:
       id === 3
         ? []
@@ -69,6 +74,7 @@ function detailOf(id: number): GroupDetail {
 
 beforeEach(() => {
   admin = false
+  manages = true
   failGroups = false
   stopFailure = null
   candidateList = [
@@ -131,7 +137,14 @@ beforeEach(() => {
       const { externalId } = options?.body as { externalId: string }
       const candidate = candidateList.find((item) => item.id === externalId)!
       return {
-        group: { id: 7, name: candidate.name, source: 'oidc', memberCount: 0, member: false },
+        group: {
+          id: 7,
+          name: candidate.name,
+          source: 'oidc',
+          memberCount: 0,
+          member: false,
+          manager: false,
+        },
       }
     }
     const stop = /^\/api\/groups\/oidc\/(\d+)$/.exec(path)
@@ -165,7 +178,19 @@ beforeEach(() => {
     }
     if (path === '/api/groups/1/members' && method === 'PUT') {
       const body = options?.body as { members: string[] }
-      const members = body.members.map((sub) => PEOPLE.find((person) => person.sub === sub)!)
+      const members = body.members.map((sub) => ({
+        ...PEOPLE.find((person) => person.sub === sub)!,
+        manager: false,
+      }))
+      details[1]!.members = members
+      return { members }
+    }
+    if (path === '/api/groups/1/managers' && method === 'PUT') {
+      const body = options?.body as { managers: string[] }
+      const members = details[1]!.members.map((member) => ({
+        ...member,
+        manager: body.managers.includes(member.sub),
+      }))
       details[1]!.members = members
       return { members }
     }
@@ -212,6 +237,38 @@ describe('for a member', () => {
     await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
     const radio = [...document.querySelectorAll<HTMLElement>('[role="radio"], input[type="radio"]')]
     expect(radio.length).toBeGreaterThan(0)
+  })
+
+  it('shows a member who does not manage the group its calendars, without changing them', async () => {
+    manages = false
+    groups = start().map((group) => ({ ...group, manager: false }))
+    details = { 1: detailOf(1), 2: detailOf(2) }
+    await mountPage()
+    await vi.waitFor(() => expect(rows()).toHaveLength(2))
+    expect(rows()[0]).toContain('You are a member')
+    await openGroup('staff')
+    expect(document.querySelector('[data-group-calendar]')?.textContent).toContain('Team calendar')
+    for (const name of [
+      /^Edit Team calendar$/,
+      /^Share Team calendar$/,
+      /^Delete Team calendar$/,
+    ]) {
+      expect(button(name)).toBeUndefined()
+    }
+    expect(button(/^Add calendar$/)).toBeUndefined()
+    expect(button(/^Remove /)).toBeUndefined()
+    expect(button(/^Make /)).toBeUndefined()
+  })
+
+  it('shows a manager as such, and gives them no way to remove a manager or name one', async () => {
+    await mountPage()
+    await vi.waitFor(() => expect(rows()).toHaveLength(2))
+    expect(rows()[0]).toContain('You manage this group')
+    await openGroup('staff')
+    expect(text(document.querySelector('[data-group-member]'))).toContain('Manager')
+    expect(button(/^Remove Me \(me\) from staff$/)).toBeUndefined()
+    expect(button(/^Make /)).toBeUndefined()
+    expect(button(/^Add calendar$/)).toBeDefined()
   })
 
   it('says when the people offered are not everybody, and not otherwise', async () => {
@@ -346,6 +403,32 @@ describe('for an admin', () => {
       expect(document.body.textContent).toContain('Start with a letter or a digit'),
     )
     expect(sent('POST')).toHaveLength(0)
+  })
+
+  it('names and removes a manager at once, from the row of a saved member', async () => {
+    manages = false
+    details = { 1: detailOf(1), 2: detailOf(2) }
+    await mountPage()
+    await vi.waitFor(() => expect(rows()).toHaveLength(2))
+    await openGroup('staff')
+    button(/^Make manager of staff: Me \(me\)$/)!.click()
+    await vi.waitFor(() => expect(sent('PUT')).toHaveLength(1))
+    expect(sent('PUT')[0]).toMatchObject({
+      path: '/api/groups/1/managers',
+      body: { managers: ['sub-me'] },
+    })
+    await vi.waitFor(() => expect(button(/^Remove as manager of staff: Me \(me\)$/)).toBeDefined())
+    expect(text(document.querySelector('[data-group-member]'))).toContain('Manager')
+    button(/^Remove as manager of staff: Me \(me\)$/)!.click()
+    await vi.waitFor(() => expect(sent('PUT')).toHaveLength(2))
+    expect(sent('PUT')[1]).toMatchObject({ body: { managers: [] } })
+    await vi.waitFor(() =>
+      expect(button(/^Make manager of staff: Me \(me\)$/)?.disabled).toBe(false),
+    )
+    // While the member list has unsaved changes, the managers wait for it.
+    button(/^Remove Me \(me\) from staff$/)!.click()
+    await vi.waitFor(() => expect(button(/^Save members$/)).toBeDefined())
+    expect(document.body.textContent).toContain('Save or undo the changes to the members')
   })
 
   it('edits the members of a custom group as one complete list', async () => {

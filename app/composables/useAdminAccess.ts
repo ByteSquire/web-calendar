@@ -72,5 +72,46 @@ export function useAdminAccess() {
     }
   }
 
-  return { calendars, users, groups, saveRules }
+  function replace(saved: AccessCalendar) {
+    calendars.update((current) => ({
+      ...current,
+      calendars: current.calendars.some((item) => item.id === saved.id)
+        ? current.calendars.map((item) => (item.id === saved.id ? saved : item))
+        : [...current.calendars, saved].sort((a, b) => a.name.localeCompare(b.name)),
+    }))
+  }
+
+  /** A calendar of the organization; throws when it was not made. */
+  async function createCalendar(body: { name: string; color?: string }): Promise<AccessCalendar> {
+    const saved = await api<{ calendar: AccessCalendar }>('/api/admin/access/calendars', {
+      method: 'POST',
+      body,
+    })
+    replace(saved.calendar)
+    return saved.calendar
+  }
+
+  /** The calendar's own name and colour; throws when they were not saved. */
+  async function changeCalendar(
+    id: number,
+    body: { name: string; color: string | null },
+  ): Promise<AccessCalendar> {
+    const saved = await api<{ calendar: AccessCalendar }>(`/api/admin/access/calendars/${id}`, {
+      method: 'PATCH',
+      body,
+    })
+    replace(saved.calendar)
+    return saved.calendar
+  }
+
+  /** Deletes a calendar with its entries, rules and links; throws when it was not deleted. */
+  async function deleteCalendar(id: number): Promise<void> {
+    await api(`/api/admin/access/calendars/${id}`, { method: 'DELETE' })
+    calendars.update((current) => ({
+      ...current,
+      calendars: current.calendars.filter((item) => item.id !== id),
+    }))
+  }
+
+  return { calendars, users, groups, saveRules, createCalendar, changeCalendar, deleteCalendar }
 }

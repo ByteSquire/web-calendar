@@ -93,8 +93,24 @@ export function parseApiError(error: unknown): ApiErrorInfo {
   }
 }
 
+/** Refusals the server names by a code, in the viewer's language (the server words them in English). */
+const KNOWN_CODES: Record<string, string> = {
+  upstream_unavailable: N_('The calendar server did not do it; nothing was changed. Try again.'),
+  has_bookings: N_('The resource has bookings, so it cannot be deleted. Deactivate it instead.'),
+  manager: N_('Only an administrator can remove a manager of the group.'),
+  resource: N_('A resource calendar is deleted with its resource, on the Resources page.'),
+}
+
+/** The words for a refusal the server named by a known code, or null. */
+export function describeKnownCode(info: ApiErrorInfo): string | null {
+  const known = info.code ? KNOWN_CODES[info.code] : undefined
+  return known && info.kind !== 'signed-out' && info.kind !== 'network' ? tv(known) : null
+}
+
 /** The part after "Could not ...:" for everything that is not about a specific input. */
 export function describeFailure(info: ApiErrorInfo): string {
+  const known = describeKnownCode(info)
+  if (known) return known
   switch (info.kind) {
     case 'signed-out':
       return t('You are signed out. Reload the page to sign in again.')

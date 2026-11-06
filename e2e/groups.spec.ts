@@ -22,7 +22,7 @@ interface MockGroup {
   id: number
   name: string
   source: 'app' | 'oidc' | 'everyone'
-  members: { sub: string; name: string | null; username: string | null }[]
+  members: { sub: string; name: string | null; username: string | null; manager: boolean }[]
   calendars: MockCalendar[]
 }
 
@@ -80,7 +80,8 @@ class MockGroups {
       id: 1,
       name: 'staff',
       source: 'app',
-      members: [{ sub: 'sub-me', name: 'Alice Example', username: 'alice' }],
+      // The person signed in manages staff: they change its members and calendars.
+      members: [{ sub: 'sub-me', name: 'Alice Example', username: 'alice', manager: true }],
       calendars: [
         {
           id: 10,
@@ -96,7 +97,7 @@ class MockGroups {
       id: 2,
       name: 'it',
       source: 'oidc',
-      members: [{ sub: 'sub-bob', name: 'Bob Builder', username: 'bob' }],
+      members: [{ sub: 'sub-bob', name: 'Bob Builder', username: 'bob', manager: false }],
       calendars: [],
     },
   ]
@@ -111,7 +112,12 @@ class MockGroups {
       source: group.source,
       memberCount: group.members.length,
       member: group.members.some((member) => member.sub === 'sub-me'),
+      manager: this.manages(group),
     }
+  }
+
+  private manages(group: MockGroup): boolean {
+    return group.members.some((member) => member.sub === 'sub-me' && member.manager)
   }
 
   async handle(route: Route): Promise<void> {
@@ -199,7 +205,9 @@ class MockGroups {
           id: group.id,
           name: group.name,
           source: group.source,
-          canManageMembers: group.source === 'app' && this.admin,
+          canManageMembers: group.source === 'app' && (this.admin || this.manages(group)),
+          canManageCalendars: group.source !== 'everyone' && (this.admin || this.manages(group)),
+          canNameManagers: group.source !== 'everyone' && this.admin,
           members: group.members,
           calendars: group.calendars,
         },
@@ -216,8 +224,12 @@ class MockGroups {
       return route.fulfill({ json: {} })
     }
     if (rest === '/members' && method === 'PUT') {
-      group.members = (body as { members: string[] }).members.map((sub) =>
-        PEOPLE.find((person) => person.sub === sub)!,
+      group.members = (body as { members: string[] }).members.map(
+        (sub) =>
+          group.members.find((member) => member.sub === sub) ?? {
+            ...PEOPLE.find((person) => person.sub === sub)!,
+            manager: false,
+          },
       )
       return route.fulfill({ json: { members: group.members } })
     }
@@ -300,7 +312,7 @@ async function choose(page: Page, label: string, option: string) {
   await page.getByRole('option', { name: option }).click()
 }
 
-test.describe('groups for a member', () => {
+test.describe('groups for a member who manages one', () => {
   test('sees the groups, creates, renames and deletes a calendar', async ({ page }) => {
     const api = await openPage(page, false)
     // The server lists "it" too (the share dialog offers it), but the member is not in it.

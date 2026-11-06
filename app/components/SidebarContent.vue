@@ -63,14 +63,9 @@
                 :model-value="visibleCalendarIds.includes(calendar.id)"
                 @update:model-value="setCalendarVisible(calendar.id, $event)"
               />
-              <UButton
-                icon="i-lucide-palette"
-                color="neutral"
-                variant="ghost"
-                square
-                class="min-h-11 min-w-11 shrink-0 justify-center"
-                :aria-label="t('Colour of {name}', { name: calendar.name })"
-                @click="colorTarget = calendar"
+              <SidebarRowMenu
+                :label="t('Actions for calendar {name}', { name: calendar.name })"
+                :items="calendarItems(calendar)"
               />
             </li>
           </ul>
@@ -109,12 +104,18 @@
           :add-submit="submitCategory"
         >
           <ul>
-            <li v-for="category in categories" :key="category.id">
+            <li v-for="category in categories" :key="category.id" class="flex items-center gap-1">
               <SidebarToggleRow
+                class="min-w-0 flex-1"
                 :label="category.name"
                 :color="category.color"
                 :model-value="selectedCategoryIds.includes(category.id)"
                 @update:model-value="setCategorySelected(category.id, $event)"
+              />
+              <SidebarRowMenu
+                v-if="mayChangeCategory(category)"
+                :label="t('Actions for category {name}', { name: category.name })"
+                :items="categoryItems(category)"
               />
             </li>
           </ul>
@@ -128,11 +129,16 @@
           :add-submit="submitFilter"
         >
           <ul>
-            <li v-for="filter in filters" :key="filter.id">
+            <li v-for="filter in filters" :key="filter.id" class="flex items-center gap-1">
               <SidebarToggleRow
+                class="min-w-0 flex-1"
                 :label="filter.name"
                 :model-value="activeFilterIds.includes(filter.id)"
                 @update:model-value="setFilterActive(filter.id, $event)"
+              />
+              <SidebarRowMenu
+                :label="t('Actions for filter {name}', { name: filter.name })"
+                :items="filterItems(filter)"
               />
             </li>
           </ul>
@@ -173,6 +179,39 @@
       @confirm="confirmDelete"
     />
     <CalendarColorDialog :calendar="colorTarget" @close="colorTarget = null" />
+    <RenameDialog
+      :open="itemRename !== null"
+      :title="renameTitle"
+      :description="renameDescription"
+      :label="
+        itemRename?.kind === 'filter' && itemRename.item.kind === 'text' ? t('Text') : undefined
+      "
+      :value="itemRename?.item.name ?? ''"
+      :pending="itemPending"
+      :error="itemError"
+      @update:open="(open: boolean) => !open && closeItemDialogs()"
+      @save="saveItemRename"
+    />
+    <ColorDialog
+      :open="categoryColor !== null"
+      :title="t('Colour of {name}', { name: categoryColor?.name ?? '' })"
+      :description="categoryColor?.shared ? t('Everybody sees this colour.') : undefined"
+      :choices="[...COLOR_PALETTE]"
+      :value="categoryColor?.color.toLowerCase() ?? ''"
+      :pending="itemPending"
+      :error="itemError || null"
+      @close="closeItemDialogs"
+      @save="saveCategoryColor"
+    />
+    <ConfirmDeleteDialog
+      :open="itemDelete !== null"
+      :event-title="itemDelete?.item.name ?? ''"
+      :detail="deleteDetail"
+      :pending="itemPending"
+      :error="itemError"
+      @update:open="(open: boolean) => !open && closeItemDialogs()"
+      @confirm="confirmItemDelete"
+    />
   </div>
 </template>
 
@@ -189,7 +228,7 @@ import {
   updateSharedView,
   type AdminViewsApi,
 } from '~/utils/live/admin-views'
-import { t } from '~/utils/i18n'
+import { N_, t } from '~/utils/i18n'
 import { SECTION_TITLES } from '~/utils/sidebar-sections'
 import { calendarNameProblem } from '~/utils/groups/model'
 import { describeLoadError } from '~/utils/live/errors'
@@ -206,7 +245,17 @@ import {
   type SharedOwnView,
   type UnsharedView,
 } from '~/utils/live/user-views'
-import type { Calendar, CalendarView, ViewIcon } from '../../shared/types/calendar'
+import type { DropdownMenuItem } from '@nuxt/ui'
+import { isAutoCategory } from '~/utils/live/categories'
+import { describeError } from '~/utils/settings/api-errors'
+import { COLOR_PALETTE } from '~/utils/settings/palette'
+import type {
+  Calendar,
+  CalendarFilter,
+  CalendarView,
+  Category,
+  ViewIcon,
+} from '../../shared/types/calendar'
 
 const {
   views,
@@ -216,6 +265,8 @@ const {
   calendarById,
   visibleCalendarIds,
   setCalendarVisible,
+  renameCalendar,
+  deleteCalendar,
   resources,
   visibleResourceIds,
   setResourceVisible,
@@ -223,10 +274,15 @@ const {
   selectedCategoryIds,
   setCategorySelected,
   addCategory,
+  updateCategory,
+  deleteCategory,
   filters,
   activeFilterIds,
   setFilterActive,
   addFilter,
+  updateFilter,
+  deleteFilter,
+  savingIds,
 } = useCalendarState()
 
 /** The calendar whose colour dialog is open. */
@@ -550,5 +606,236 @@ function submitCategory(name: string) {
 
 function submitFilter(text: string) {
   return addFilter(text) ? undefined : t('A filter with this name already exists.')
+}
+
+// ---- The menus of calendars, categories and filters --------------------------------------------
+// Each row offers what the viewer may do with it (the server checks again): every calendar its
+// colour for the viewer; a calendar of their own, or of a group they manage, Rename and Delete too
+// (an admin changes everybody's on Admin › Calendars, not here); a category of their own, or a
+// shared one for an admin, Rename, Colour and Delete; every filter (filters are always one's own)
+// Edit and Delete. A category that only events carry is a name, not a row, and has no menu. A new
+// category or filter can be changed once the server has saved it.
+
+type Item =
+  | { kind: 'calendar'; item: Calendar }
+  | { kind: 'category'; item: Category }
+  | { kind: 'filter'; item: CalendarFilter }
+
+const itemRename = ref<Item | null>(null)
+const itemDelete = ref<Item | null>(null)
+const categoryColor = ref<Category | null>(null)
+const itemPending = ref(false)
+const itemError = ref('')
+
+const mayChangeCategory = (category: Category) =>
+  !isAutoCategory(category) && (!category.shared || isAdmin.value)
+
+function startItemRename(item: Item) {
+  itemError.value = ''
+  itemRename.value = item
+}
+
+function startItemDelete(item: Item) {
+  itemError.value = ''
+  itemDelete.value = item
+}
+
+function closeItemDialogs() {
+  if (itemPending.value) return
+  itemRename.value = null
+  itemDelete.value = null
+  categoryColor.value = null
+}
+
+/** Rename and Delete, made here while rendering so that the labels follow a change of language. */
+function renameAndDelete(item: Item, disabled = false) {
+  const rename: DropdownMenuItem = {
+    label: item.kind === 'filter' ? t('Edit') : t('Rename'),
+    icon: 'i-lucide-pencil',
+    disabled,
+    onSelect: () => startItemRename(item),
+  }
+  const remove: DropdownMenuItem = {
+    label: t('Delete'),
+    icon: 'i-lucide-trash-2',
+    color: 'error',
+    disabled,
+    onSelect: () => startItemDelete(item),
+  }
+  return { rename, remove }
+}
+
+function calendarItems(calendar: Calendar): DropdownMenuItem[][] {
+  const colour: DropdownMenuItem = {
+    label: t('Colour'),
+    icon: 'i-lucide-palette',
+    onSelect: () => {
+      colorTarget.value = calendar
+    },
+  }
+  if (!calendar.manage) return [[colour]]
+  const { rename, remove } = renameAndDelete({ kind: 'calendar', item: calendar })
+  return [[rename, colour], [remove]]
+}
+
+function categoryItems(category: Category): DropdownMenuItem[][] {
+  const disabled = savingIds.value.includes(category.id)
+  const { rename, remove } = renameAndDelete({ kind: 'category', item: category }, disabled)
+  const colour: DropdownMenuItem = {
+    label: t('Colour'),
+    icon: 'i-lucide-palette',
+    disabled,
+    onSelect: () => {
+      itemError.value = ''
+      categoryColor.value = category
+    },
+  }
+  return [[rename, colour], [remove]]
+}
+
+function filterItems(filter: CalendarFilter): DropdownMenuItem[][] {
+  const { rename, remove } = renameAndDelete(
+    { kind: 'filter', item: filter },
+    savingIds.value.includes(filter.id),
+  )
+  return [[rename], [remove]]
+}
+
+const renameTitle = computed(() => {
+  const target = itemRename.value
+  if (!target) return ''
+  const name = target.item.name
+  if (target.kind === 'calendar') return t('Rename calendar {name}', { name })
+  if (target.kind === 'category') return t('Rename category {name}', { name })
+  return t('Edit filter {name}', { name })
+})
+
+const renameDescription = computed(() => {
+  const target = itemRename.value
+  if (!target) return undefined
+  if (target.kind === 'calendar') {
+    return target.item.manage?.kind === 'group'
+      ? t('Everybody who has this calendar sees the new name.')
+      : t('The calendar keeps its events and whom it is shared with.')
+  }
+  if (target.kind === 'category') {
+    return target.item.shared
+      ? t('Everybody sees the new name. Events that have the old name keep it.')
+      : t('Events that have the old name keep it.')
+  }
+  return target.item.kind === 'text'
+    ? t('The filter shows the events whose title, place or notes contain this text.')
+    : undefined
+})
+
+const deleteDetail = computed(() => {
+  const target = itemDelete.value
+  if (!target) return ''
+  if (target.kind === 'calendar') {
+    return target.item.manage?.kind === 'group'
+      ? t(
+          'The calendar and all its events are deleted for everybody in the group and everybody it is shared with, and its links stop working.',
+        )
+      : t(
+          'The calendar and all its events are deleted, the people it is shared with lose it, and its links stop working.',
+        )
+  }
+  if (target.kind === 'category') {
+    return target.item.shared
+      ? t('The shared category disappears for everybody. Events keep the category name.')
+      : t('Only the category is deleted; events keep the category name.')
+  }
+  return t('Only this filter is deleted; no event changes.')
+})
+
+/** What is wrong with a new calendar name, or null: as when one is made, and not taken. */
+function calendarRenameProblem(calendar: Calendar, name: string): string | null {
+  const problem = calendarNameProblem(name)
+  if (problem) return problem
+  const taken = regularCalendars.value.some(
+    (other) => other.id !== calendar.id && other.name.toLowerCase() === name.toLowerCase(),
+  )
+  return taken ? t('A calendar with this name already exists.') : null
+}
+
+/** Runs a change of a dialog: closes it when done, keeps it open with the reason when not. */
+async function runItemChange(work: () => Promise<string | null>, action: string) {
+  itemPending.value = true
+  itemError.value = ''
+  try {
+    const problem = await work()
+    itemPending.value = false
+    if (problem) itemError.value = problem
+    else closeItemDialogs()
+  } catch (cause) {
+    itemPending.value = false
+    itemError.value = describeError(cause, action)
+  }
+}
+
+async function saveItemRename(name: string) {
+  const target = itemRename.value
+  if (!target || itemPending.value) return
+  if (target.item.name === name) {
+    closeItemDialogs()
+    return
+  }
+  if (target.kind === 'calendar') {
+    const problem = calendarRenameProblem(target.item, name)
+    if (problem) {
+      itemError.value = problem
+      return
+    }
+    await runItemChange(async () => {
+      await renameCalendar(target.item.id, name)
+      return null
+    }, N_('rename the calendar'))
+  } else if (target.kind === 'category') {
+    await runItemChange(
+      async () =>
+        (await updateCategory(target.item.id, { name }))
+          ? null
+          : t('A category with this name already exists.'),
+      N_('rename the category'),
+    )
+  } else {
+    await runItemChange(
+      async () =>
+        (await updateFilter(target.item.id, name))
+          ? null
+          : t('A filter with this name already exists.'),
+      N_('change the filter'),
+    )
+  }
+}
+
+async function saveCategoryColor(color: string) {
+  const category = categoryColor.value
+  if (!category || itemPending.value) return
+  await runItemChange(async () => {
+    await updateCategory(category.id, { color })
+    return null
+  }, N_('save the colour'))
+}
+
+async function confirmItemDelete() {
+  const target = itemDelete.value
+  if (!target || itemPending.value) return
+  if (target.kind === 'calendar') {
+    await runItemChange(async () => {
+      await deleteCalendar(target.item.id)
+      return null
+    }, N_('delete the calendar'))
+  } else if (target.kind === 'category') {
+    await runItemChange(async () => {
+      await deleteCategory(target.item.id)
+      return null
+    }, N_('delete the category'))
+  } else {
+    await runItemChange(async () => {
+      await deleteFilter(target.item.id)
+      return null
+    }, N_('delete the filter'))
+  }
 }
 </script>

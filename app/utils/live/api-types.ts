@@ -34,6 +34,10 @@ export interface ApiSharedCalendar {
   kind: 'personal' | 'shared' | 'resource'
   /** The owner of a person's calendar; null otherwise. */
   owner: string | null
+  /** The group that owns the calendar, or null. */
+  groupId?: number | null
+  /** The viewer manages that group, so they may rename and delete the calendar. */
+  canManage?: boolean
 }
 
 export interface ApiFilter {
@@ -69,5 +73,10 @@ export interface ApiIcalSubscription {
 /** A JSON request to the app's own API; the Nuxt glue binds it to the authenticated `$fetch`. */
 export type ApiRequest = <T>(
   path: string,
-  options?: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown },
+  options?: {
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+    body?: unknown
+    /** Sent as the query string, encoded by `$fetch`. */
+    query?: Record<string, string>
+  },
 ) => Promise<T>

@@ -1,6 +1,6 @@
 <!--
-  The name and colour of a group calendar: a new one, or the rename and recolour of an existing
-  one. The name is checked here the way the server checks it (1..100 characters after trimming, no
+  The name and colour of a calendar (a group's, or any on Admin › Calendars): a new one, or the
+  rename and recolour of an existing one. The name is checked here the way the server checks it (1..100 characters after trimming, no
   control characters). The colour is one of the palette's named colours (settings/ColorPicker), so
   the choice is not colour-only information. The parent's save returns true, or the server's words.
 -->
@@ -49,7 +49,7 @@ export interface CalendarFormBody {
 
 const props = defineProps<{
   /** The calendar being changed; without it the form adds one. */
-  initial?: GroupCalendar
+  initial?: Pick<GroupCalendar, 'name' | 'color'>
   busy: boolean
   cancellable?: boolean
   /** Saves; true when it worked, else the words for the failure. */

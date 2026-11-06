@@ -1,6 +1,7 @@
 <!--
-  Resources administration, admins only: add, change and deactivate resources (rooms, cars,
-  equipment) and say who may see, book and manage each. The page checks `/api/me` and sends
+  Resources administration, admins only: add, change, deactivate and delete resources (rooms, cars,
+  equipment) and say who may see, book and manage each. A resource with bookings, past ones
+  included, is not deleted (the server refuses it); deactivating it stops new bookings instead. The page checks `/api/me` and sends
   everybody else back to the calendar; that is only tidiness, the admin routes refuse non-admins
   themselves. Administrators are not managers by default, so the rules of a new resource must name
   somebody with "Can manage" or nobody can accept a request. Every rule change sends the complete
@@ -96,6 +97,15 @@
               :disabled="saving"
               @click="setActive(resource, !resource.active)"
             />
+            <UButton
+              :aria-label="t('Delete {name}', { name: resource.name })"
+              icon="i-lucide-trash-2"
+              :label="t('Delete')"
+              color="neutral"
+              variant="outline"
+              :disabled="saving"
+              @click="askDelete(resource)"
+            />
           </div>
         </li>
       </ul>
@@ -182,6 +192,21 @@
         </template>
       </UModal>
 
+      <ConfirmDeleteDialog
+        :open="deleting !== null"
+        :event-title="deleting?.name ?? ''"
+        :detail="
+          t(
+            'The resource and the rules of who may use it are deleted. A resource with bookings cannot be deleted; deactivate it instead.',
+          )
+        "
+        :pending="saving"
+        :error="deleteError"
+        :return-focus-to="false"
+        @update:open="(open) => (open ? undefined : saving ? undefined : (deleting = null))"
+        @confirm="confirmDelete"
+      />
+
       <AdminResourceForm v-if="loaded" :errors="createErrors" :busy="saving" :save="create" />
     </template>
   </div>
@@ -235,6 +260,9 @@ const tabItems = computed(() => [
   { label: t('Resource'), value: 'details', slot: 'details' },
   { label: t('Access'), value: 'access', slot: 'access' },
 ])
+// The resource whose delete is being confirmed, and why the last try failed.
+const deleting = ref<AdminResource | null>(null)
+const deleteError = ref('')
 // The rules of the resource that is open; null until they are loaded.
 const rules = ref<ResourceRule[] | null>(null)
 const rulesFor = ref<number | null>(null)
@@ -355,6 +383,28 @@ async function setActive(resource: AdminResource, active: boolean) {
       ? t('{name} is active again.', { name: saved.name })
       : t('{name} is deactivated.', { name: saved.name })
   })
+}
+
+function askDelete(resource: AdminResource) {
+  deleteError.value = ''
+  deleting.value = resource
+}
+
+async function confirmDelete() {
+  const target = deleting.value
+  if (!target) return
+  const result = await run(async () => {
+    await api(`/api/admin/resources/${target.id}`, { method: 'DELETE' })
+    resources.value = resources.value.filter((item) => item.id !== target.id)
+    return t('{name} was deleted.', { name: target.name })
+  })
+  if (result.ok) {
+    deleting.value = null
+  } else {
+    // The reason belongs in the dialog, not behind it.
+    deleteError.value = problem.value ?? ''
+    problem.value = null
+  }
 }
 
 function openDialog(resource: AdminResource, which: 'details' | 'access') {

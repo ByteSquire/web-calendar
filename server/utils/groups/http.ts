@@ -1,5 +1,6 @@
 // The part of the group routes that every route shares: finding the group (404), the member-or-admin
-// check (403), and the calendar context of a member route. Routes call these after the body is
+// check of the reads and the manager-or-admin check of the changes (403), and the calendar context of
+// a member route. Routes call these after the body is
 // validated and before anything is changed.
 import type { Database } from 'better-sqlite3'
 import { findGroupById } from '../../db/groups'
@@ -8,9 +9,8 @@ import type { MemberContext } from '../api/member-handler'
 import { apiConfig } from '../api/config'
 import { signinCutoff } from '../auth/window'
 import { forbidden, notFound } from '../api/errors'
-import type { CalendarContext } from './calendars'
-import { mayActForGroup } from './service'
-import { getGroupsPorts } from './ports'
+import { calendarContextOf, type CalendarContext } from '../calendars/manage'
+import { mayActForGroup, mayManageGroup } from './service'
 
 export function loadGroup(db: Database, id: number): GroupRow {
   const group = findGroupById(db, id)
@@ -26,14 +26,14 @@ export async function requireMemberOrAdmin(ctx: MemberContext, group: GroupRow):
   }
 }
 
+/** The manager-or-admin decision of the routes that change a group. Throws 403 when neither holds. */
+export async function requireManagerOrAdmin(ctx: MemberContext, group: GroupRow): Promise<void> {
+  if (!(await mayManageGroup(ctx.db, group, ctx.identity.sub, () => ctx.isAdmin()))) {
+    throw forbidden()
+  }
+}
+
 /** The calendar context of a route: the Radicale client is built only after the access check. */
 export function calendarContext(ctx: MemberContext): CalendarContext {
-  return {
-    db: ctx.db,
-    get radicale() {
-      return getGroupsPorts().radicale()
-    },
-    audit: ctx.audit,
-    atomic: ctx.atomic,
-  }
+  return calendarContextOf(ctx)
 }

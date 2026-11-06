@@ -20,8 +20,10 @@ export interface AccessCalendarView {
   name: string
   kind: 'personal' | 'shared' | 'resource'
   color: string | null
-  /** The owner's name, or null for a calendar of the organization. */
+  /** The owner's name, or null for a calendar of the organization or a group. */
   owner: string | null
+  /** The group that owns the calendar, or null. */
+  group: { id: number; name: string } | null
   rules: AccessRuleView[]
 }
 
@@ -38,6 +40,8 @@ interface CalendarRow {
   color: string | null
   owner_name: string | null
   owner_username: string | null
+  group_id: number | null
+  group_name: string | null
 }
 
 const personLabel = (name: string | null, username: string | null, fallback: string) =>
@@ -47,8 +51,9 @@ export function getCalendarRow(db: Database, id: number): CalendarRow | undefine
   return db.prepare<[number], CalendarRow>(CALENDAR_SQL + ' WHERE c.id = ?').get(id)
 }
 
-const CALENDAR_SQL = `SELECT c.id, c.name, c.kind, c.color, u.name AS owner_name, u.username AS owner_username
-  FROM calendars c LEFT JOIN users u ON u.id = c.owner_id`
+const CALENDAR_SQL = `SELECT c.id, c.name, c.kind, c.color, u.name AS owner_name, u.username AS owner_username,
+    c.group_id AS group_id, g.name AS group_name
+  FROM calendars c LEFT JOIN users u ON u.id = c.owner_id LEFT JOIN groups g ON g.id = c.group_id`
 
 function viewRules(db: Database, calendarId: number): AccessRuleView[] {
   const person = db.prepare<[string], { name: string | null; username: string | null }>(
@@ -80,6 +85,10 @@ function toCalendarView(db: Database, row: CalendarRow): AccessCalendarView {
     kind: row.kind,
     color: row.color,
     owner: row.owner_name || row.owner_username || null,
+    group:
+      row.group_id !== null && row.group_name !== null
+        ? { id: row.group_id, name: row.group_name }
+        : null,
     rules: viewRules(db, row.id),
   }
 }
@@ -91,6 +100,10 @@ export interface SharedCalendarView {
   kind: AccessCalendarView['kind']
   /** The owner's name for a person's calendar; null for a calendar of the organization or a group. */
   owner: string | null
+  /** The group that owns the calendar, or null. */
+  groupId: number | null
+  /** The caller manages that group: they may rename and delete the calendar (the routes check). */
+  canManage: boolean
 }
 
 /**
@@ -102,6 +115,12 @@ export function listCalendarsSharedWith(
   db: Database,
   user: { id: number; sub: string },
 ): SharedCalendarView[] {
+  const manages = new Set(
+    db
+      .prepare<[string], number>('SELECT group_id FROM group_members WHERE sub = ? AND manager = 1')
+      .pluck()
+      .all(user.sub),
+  )
   return db
     .prepare<[number, string, string], CalendarRow>(
       `${CALENDAR_SQL}
@@ -128,6 +147,8 @@ export function listCalendarsSharedWith(
       name: row.name,
       kind: row.kind,
       owner: row.kind === 'personal' ? row.owner_name || row.owner_username || null : null,
+      groupId: row.group_id,
+      canManage: row.group_id !== null && manages.has(row.group_id),
     }))
 }
 

@@ -26,12 +26,15 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { t } from '~/utils/i18n'
+import { settledMenuItems } from '~/utils/menu-select'
 import type { CalendarView } from '../../shared/types/calendar'
 
 // Every view has a menu (FR-21). A shared view offers "Copy to my views" to everyone; its own
 // actions (Rename, Update from selection, Unshare, Delete) need `canManage`: the viewer is an
 // administrator (a convenience; the server enforces). A user's own view offers Rename, Duplicate
-// and Delete, and an administrator may also share it with everybody; Unshare takes it back.
+// and Delete, and an administrator may also share it with everybody; Unshare takes it back. An item
+// chosen by touch runs after the tap is over (utils/menu-select.ts): the dialogs of Rename and Delete
+// would otherwise take the tap's click.
 const props = defineProps<{ view: CalendarView; selected: boolean; canManage?: boolean }>()
 const emit = defineEmits<{
   select: []
@@ -43,7 +46,9 @@ const emit = defineEmits<{
   unshare: []
 }>()
 
-const items = computed<DropdownMenuItem[][]>(() => {
+const items = computed<DropdownMenuItem[][]>(() => settledMenuItems(menu()))
+
+function menu(): DropdownMenuItem[][] {
   // Made here, while rendering, so that the labels follow a change of language.
   const copy: DropdownMenuItem = {
     label: t('Copy to my views'),
@@ -90,5 +95,5 @@ const items = computed<DropdownMenuItem[][]>(() => {
     })
   }
   return [own, [remove]]
-})
+}
 </script>

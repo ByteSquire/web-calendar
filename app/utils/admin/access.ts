@@ -24,7 +24,18 @@ export interface AccessCalendar {
   kind: 'personal' | 'shared' | 'resource'
   color: string | null
   owner: string | null
+  /** The group that owns the calendar, or null. */
+  group?: { id: number; name: string } | null
   rules: AccessRule[]
+}
+
+/** Who a calendar belongs to, as the filter of Admin › Calendars sorts them. */
+export type CalendarOwnerKind = 'people' | 'organization' | 'groups' | 'resources'
+
+export function ownerKindOf(calendar: Pick<AccessCalendar, 'kind' | 'group'>): CalendarOwnerKind {
+  if (calendar.kind === 'resource') return 'resources'
+  if (calendar.kind === 'personal') return 'people'
+  return calendar.group ? 'groups' : 'organization'
 }
 
 // How a calendar is named in a drop-down: app/utils/calendar-label.ts (the sidebar uses it too).

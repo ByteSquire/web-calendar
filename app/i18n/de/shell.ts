@@ -167,4 +167,39 @@ export const shell: Readonly<Record<string, string>> = {
     'Zu viele Versuche. Warte eine Minute und versuche es dann noch einmal.',
   'The calendar could not be opened. Try again.':
     'Der Kalender konnte nicht geöffnet werden. Versuche es noch einmal.',
+
+  // The menus of the sidebar's calendars, categories and filters
+  'Actions for calendar {name}': 'Aktionen für Kalender {name}',
+  'Actions for category {name}': 'Aktionen für Kategorie {name}',
+  'Actions for filter {name}': 'Aktionen für Filter {name}',
+  Text: 'Text',
+  'Everybody sees this colour.': 'Alle sehen diese Farbe.',
+  'Rename calendar {name}': 'Kalender {name} umbenennen',
+  'Rename category {name}': 'Kategorie {name} umbenennen',
+  'Edit filter {name}': 'Filter {name} bearbeiten',
+  'Everybody who has this calendar sees the new name.':
+    'Alle, die diesen Kalender haben, sehen den neuen Namen.',
+  'The calendar keeps its events and whom it is shared with.':
+    'Der Kalender behält seine Termine und mit wem er geteilt ist.',
+  'Everybody sees the new name. Events that have the old name keep it.':
+    'Alle sehen den neuen Namen. Termine mit dem alten Namen behalten ihn.',
+  'Events that have the old name keep it.': 'Termine mit dem alten Namen behalten ihn.',
+  'The filter shows the events whose title, place or notes contain this text.':
+    'Der Filter zeigt die Termine, deren Titel, Ort oder Notizen diesen Text enthalten.',
+  'The calendar and all its events are deleted for everybody in the group and everybody it is shared with, and its links stop working.':
+    'Der Kalender und alle seine Termine werden für alle in der Gruppe und alle, mit denen er geteilt ist, gelöscht, und seine Links funktionieren nicht mehr.',
+  'The calendar and all its events are deleted, the people it is shared with lose it, and its links stop working.':
+    'Der Kalender und alle seine Termine werden gelöscht, die Personen, mit denen er geteilt ist, verlieren ihn, und seine Links funktionieren nicht mehr.',
+  'The shared category disappears for everybody. Events keep the category name.':
+    'Die geteilte Kategorie verschwindet für alle. Termine behalten den Kategorienamen.',
+  'Only the category is deleted; events keep the category name.':
+    'Nur die Kategorie wird gelöscht; Termine behalten den Kategorienamen.',
+  'Only this filter is deleted; no event changes.':
+    'Nur dieser Filter wird gelöscht; kein Termin ändert sich.',
+  'rename the calendar': 'den Kalender umbenennen',
+  'rename the category': 'die Kategorie umbenennen',
+  'change the filter': 'den Filter ändern',
+  'delete the calendar': 'den Kalender löschen',
+  'delete the category': 'die Kategorie löschen',
+  'delete the filter': 'den Filter löschen',
 }

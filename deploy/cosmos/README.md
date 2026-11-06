@@ -15,9 +15,9 @@ install. Pushing a version tag publishes the image through Codeberg's CI, and th
 repository root, with a new tag for every release:
 
 ```sh
-docker build -t codeberg.org/bytesquire/web-calendar:0.2.1 .
+docker build -t codeberg.org/bytesquire/web-calendar:0.3.0 .
 docker login codeberg.org
-docker push codeberg.org/bytesquire/web-calendar:0.2.1
+docker push codeberg.org/bytesquire/web-calendar:0.3.0
 ```
 
 Put the same name into the form's **App image** field. If the package is private, Cosmos pulls with

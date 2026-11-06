@@ -1144,6 +1144,12 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
     discovery lists that home (skipping Radicale's default calendar, as in a group's) and the
     sharing writer shares them like any calendar. Nobody sees one until a rule shares it, so the
     dialog opens on "Who has access" after making one. At most 200.
+  - _A person's default calendar_ (`/<sub>/def-calendar/`, the one Radicale makes in every new
+    home, `shared/utils/default-calendar.ts`) is **kept**: it can be renamed and recoloured but not
+    deleted, by its owner or an admin (`409 default_calendar`; the sidebar and the admin page offer
+    no Delete for it). Without it a person had no calendar to write to until the next load, which
+    then made an empty one under their name (found by a live test). A CalDAV app can still delete
+    it in Radicale; the loader then makes a new first calendar as before.
   - _Deleting a calendar_ (an admin's, a manager's of a group calendar, or a person's own from the
     sidebar, `DELETE /api/me/calendars?href=`): Radicale's shares of the collection go first, then
     the collection, then the row with its rules and links (and the links made in Settings to its
@@ -1333,7 +1339,7 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   - Every row of the sidebar's calendars, categories and filters ends in a `⋯` menu (at least
     44 px, named after the item: "Actions for calendar Team") with what the viewer may do there:
     every calendar its colour for the viewer; a calendar of their own, or of a group they manage,
-    Rename and Delete too; a category of their own (a shared one for an admin) Rename, Colour and
+    Rename and Delete too (their default calendar Rename only, it is kept); a category of their own (a shared one for an admin) Rename, Colour and
     Delete; a filter Edit and Delete. Admins change other people's calendars on Admin › Calendars,
     not in the sidebar, where a slip would delete a colleague's calendar. A category that only
     events carry is a name, not a row, and has no menu. Deleting asks first and names what goes:

@@ -611,6 +611,7 @@ function submitFilter(text: string) {
 // ---- The menus of calendars, categories and filters --------------------------------------------
 // Each row offers what the viewer may do with it (the server checks again): every calendar its
 // colour for the viewer; a calendar of their own, or of a group they manage, Rename and Delete too
+// (their default calendar Rename only: it is kept, so there is always one to write to)
 // (an admin changes everybody's on Admin › Calendars, not here); a category of their own, or a
 // shared one for an admin, Rename, Colour and Delete; every filter (filters are always one's own)
 // Edit and Delete. A category that only events carry is a name, not a row, and has no menu. A new
@@ -675,6 +676,7 @@ function calendarItems(calendar: Calendar): DropdownMenuItem[][] {
   }
   if (!calendar.manage) return [[colour]]
   const { rename, remove } = renameAndDelete({ kind: 'calendar', item: calendar })
+  if (calendar.manage.kind === 'own' && calendar.manage.default) return [[rename, colour]]
   return [[rename, colour], [remove]]
 }
 

@@ -6,6 +6,7 @@ import type { ExternalAccount } from '../../../shared/types/external'
 import type { DavCalendar } from '../caldav/types'
 import { ensureTrailingSlash, toDavPath } from '../caldav/urls'
 import { sharedCalendarId } from '../../../shared/utils/shared-calendar-name'
+import { DEFAULT_CALENDAR_SEGMENT } from '../../../shared/utils/default-calendar'
 import { calendarLabel } from '../calendar-label'
 import type { ApiCalendarPref, ApiIcalSubscription, ApiSharedCalendar } from './api-types'
 import { normalizeHexColor, paletteColor } from './palette'
@@ -96,7 +97,7 @@ export interface BuildCalendarsInput {
 /**
  * The name of a collection in the viewer's home, with the owner when it is someone's calendar, and
  * whether the viewer may rename and delete it: their own (no share name), or a share of a calendar
- * of a group they manage.
+ * of a group they manage. Their default calendar says so: it is renamed but never deleted.
  */
 function describeCollection(
   collection: DavCalendar,
@@ -110,7 +111,13 @@ function describeCollection(
     // keep the encoded segment; it is then no share name
   }
   const id = sharedCalendarId(decoded)
-  if (id === null) return { name: collection.displayName, manage: { kind: 'own' } }
+  if (id === null) {
+    return {
+      name: collection.displayName,
+      manage:
+        decoded === DEFAULT_CALENDAR_SEGMENT ? { kind: 'own', default: true } : { kind: 'own' },
+    }
+  }
   const calendar = shared.get(id)
   if (!calendar) return { name: collection.displayName }
   const name = calendarLabel({

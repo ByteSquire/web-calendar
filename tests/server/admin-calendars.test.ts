@@ -248,6 +248,7 @@ describe('POST /api/admin/access/calendars', () => {
       color: '#aa5500',
       owner: null,
       group: null,
+      isDefault: false,
       rules: [],
     })
     expect(radicale.makeCalendar).toHaveBeenCalledExactlyOnceWith(
@@ -514,6 +515,17 @@ describe('DELETE /api/admin/access/calendars/:id', () => {
     expect(count('calendars')).toBe(1)
   })
 
+  it("answers 409 default_calendar for a person's default calendar and changes nothing", async () => {
+    const id = seedCalendar(`/${SUBS.alice}/def-calendar/`, { kind: 'personal', owner: 'alice' })
+    const res = await call('DELETE', `/api/admin/access/calendars/${id}`, 'admin')
+    expect(res.status).toBe(409)
+    expect(await res.json()).toMatchObject({ data: { code: 'default_calendar' } })
+    expect(radicale.listShares).not.toHaveBeenCalled()
+    expect(radicale.deleteCollection).not.toHaveBeenCalled()
+    expect(count('calendars')).toBe(1)
+    expect(audit()).toEqual([])
+  })
+
   it('answers 404 for an unknown calendar', async () => {
     const res = await call('DELETE', '/api/admin/access/calendars/999', 'admin')
     expect(res.status).toBe(404)
@@ -580,6 +592,17 @@ describe('GET /api/admin/access/calendars', () => {
     expect(byId.get(org)?.group).toBeNull()
     expect(byId.get(mine)?.group).toBeNull()
     expect(byId.get(mine)?.owner).toBe('Alice Ann')
+  })
+
+  it("marks a person's default calendar, and no other", async () => {
+    const own = seedCalendar(`/${SUBS.alice}/def-calendar/`, { kind: 'personal', owner: 'alice' })
+    const other = seedCalendar(`/${SUBS.alice}/Mine/`, { kind: 'personal', owner: 'alice' })
+    // a calendar of a service principal of that name is nobody's default
+    const shared = seedCalendar('/_team/def-calendar/')
+    const res = await call('GET', '/api/admin/access/calendars', 'admin')
+    const { calendars } = (await res.json()) as { calendars: { id: number; isDefault: boolean }[] }
+    const byId = new Map(calendars.map((c) => [c.id, c.isDefault]))
+    expect([byId.get(own), byId.get(other), byId.get(shared)]).toEqual([true, false, false])
   })
 })
 
@@ -653,6 +676,21 @@ describe('DELETE /api/me/calendars', () => {
     expect(res.status).toBe(400)
     expect(radicale.deleteCollection).not.toHaveBeenCalled()
     expect(radicale.listShares).not.toHaveBeenCalled()
+  })
+
+  it('refuses the default calendar with 409 default_calendar, with or without a row', async () => {
+    const href = `/caldav/${SUBS.alice}/def-calendar/`
+    const before = await del('alice', href)
+    expect(before.status).toBe(409)
+    expect(await before.json()).toMatchObject({ data: { code: 'default_calendar' } })
+    seedCalendar(`/${SUBS.alice}/def-calendar/`, { kind: 'personal', owner: 'alice' })
+    // encoded or not, it is the same calendar
+    expect((await del('alice', `/caldav/${SUBS.alice}/def%2Dcalendar/`)).status).toBe(409)
+    expect((await del('alice', href)).status).toBe(409)
+    expect(radicale.listShares).not.toHaveBeenCalled()
+    expect(radicale.deleteCollection).not.toHaveBeenCalled()
+    expect(count('calendars')).toBe(1)
+    expect(audit()).toEqual([])
   })
 
   it('refuses a missing href with 400', async () => {

@@ -4,7 +4,8 @@ import { openApp, press } from './helpers'
 
 // The menu at the end of each row of the sidebar's calendars, categories and filters (design §9).
 // In demo mode everything is changed in the page only; the live specs cover the server. Team is one
-// of the person's own calendars (Rename, Colour, Delete); Engineering is somebody else's (Colour).
+// of the person's own calendars (Rename, Colour, Delete); Personal is their default calendar (Rename,
+// Colour: it is kept); Engineering is somebody else's (Colour).
 
 async function showSidebar(page: Page): Promise<void> {
   const open = page.getByRole('button', { name: 'Open sidebar' })
@@ -37,6 +38,13 @@ test('a calendar of the person’s own is renamed and deleted, somebody else’s
   expect(box!.width).toBeGreaterThanOrEqual(44)
   await press(others)
   await expect(page.getByRole('menuitem')).toHaveText(['Colour'])
+  await page.keyboard.press('Escape')
+
+  // the person's default calendar is renamed and coloured, never deleted
+  await press(
+    sidebar(page).getByRole('button', { name: 'Actions for calendar Personal', exact: true }),
+  )
+  await expect(page.getByRole('menuitem')).toHaveText(['Rename', 'Colour'])
   await page.keyboard.press('Escape')
 
   await press(sidebar(page).getByRole('button', { name: 'Actions for calendar Team', exact: true }))

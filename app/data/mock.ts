@@ -45,7 +45,8 @@ const calendars: Calendar[] = [
     color: '#1d4ed8',
     defaultVisible: true,
     ownerId: currentUser.id,
-    manage: { kind: 'own' },
+    // the person's default calendar: renamed, never deleted
+    manage: { kind: 'own', default: true },
   },
   {
     id: 'cal-team',

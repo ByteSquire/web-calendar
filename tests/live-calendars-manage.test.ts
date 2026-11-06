@@ -36,7 +36,9 @@ function build(path: string, entry?: ApiSharedCalendar) {
 
 describe('manage', () => {
   it('is own for a collection with an ordinary name', () => {
-    expect(build('/caldav/u/def-calendar/').manage).toEqual({ kind: 'own' })
+    // the default calendar is the person's own too, and marked: it is renamed, never deleted
+    expect(build('/caldav/u/def-calendar/').manage).toEqual({ kind: 'own', default: true })
+    expect(build('/caldav/u/Work/').manage).toEqual({ kind: 'own' })
   })
 
   it('is the group and calendar for a share the viewer manages', () => {

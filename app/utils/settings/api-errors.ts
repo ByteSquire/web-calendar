@@ -99,6 +99,7 @@ const KNOWN_CODES: Record<string, string> = {
   has_bookings: N_('The resource has bookings, so it cannot be deleted. Deactivate it instead.'),
   manager: N_('Only an administrator can remove a manager of the group.'),
   resource: N_('A resource calendar is deleted with its resource, on the Resources page.'),
+  default_calendar: N_('The default calendar cannot be deleted. You can rename it.'),
 }
 
 /** The words for a refusal the server named by a known code, or null. */

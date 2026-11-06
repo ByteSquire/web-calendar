@@ -73,6 +73,7 @@ import type { Timers } from './hooks'
 import { loadRange, rangeKey } from './range'
 import type { LiveStatusState } from './status'
 import { toFilters, toViews } from './views'
+import { DEFAULT_CALENDAR_SEGMENT } from '../../../shared/utils/default-calendar'
 
 export const DEFAULT_CALENDAR_NAME = 'Personal'
 /**
@@ -80,7 +81,10 @@ export const DEFAULT_CALENDAR_NAME = 'Personal'
  * deploy/radicale/config and the Cosmos template): the same name for everybody, since Radicale
  * cannot put the person's name in it.
  */
-export const PREDEFINED_CALENDAR = { segment: 'def-calendar', name: 'Personal Calendar' } as const
+export const PREDEFINED_CALENDAR = {
+  segment: DEFAULT_CALENDAR_SEGMENT,
+  name: 'Personal Calendar',
+} as const
 export const EVENTS_DEBOUNCE_MS = 150
 
 /** The part of the calendar state the loader reads and writes. */

@@ -306,6 +306,20 @@ describe('as an admin', () => {
     await vi.waitFor(() => expect(rows()).toHaveLength(3))
   })
 
+  it('offers no Delete for a person’s default calendar, and says why', async () => {
+    list = list.map((item) => (item.id === 6 ? { ...item, isDefault: true } : item))
+    await mountPage()
+    await vi.waitFor(() => expect(rows()).toHaveLength(4))
+    button(/^Edit Personal Calendar \(Bob Builder\)$/)!.click()
+    await vi.waitFor(() => expect(document.querySelector('[data-default-calendar]')).not.toBeNull())
+    expect(text(document.querySelector('[data-default-calendar]'))).toContain(
+      'This is the default calendar of Bob Builder',
+    )
+    expect(button(/^Delete calendar$/)).toBeUndefined()
+    // it is still renamed
+    expect(button(/^Save changes$/)).toBeDefined()
+  })
+
   it('keeps the calendar and says why when the calendar server did not delete it', async () => {
     saveFailure = {
       statusCode: 502,

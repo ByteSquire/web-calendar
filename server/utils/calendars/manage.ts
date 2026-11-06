@@ -6,7 +6,8 @@
 import type { Database } from 'better-sqlite3'
 import { deleteCalendarRow, updateCalendarNameColor } from '../../db/groups'
 import type { CalendarRow } from '../../db/types'
-import { upstreamFailed } from '../api/errors'
+import { conflict, upstreamFailed } from '../api/errors'
+import { isDefaultCalendarPath } from '../../../shared/utils/default-calendar'
 import { getGroupsPorts } from '../groups/ports'
 import { splitCollectionPath } from '../sharing/names'
 import type { RadicaleClient } from '../sharing/radicale-client'
@@ -29,6 +30,16 @@ export function calendarContextOf(ctx: Omit<CalendarContext, 'radicale'>): Calen
     },
     audit: ctx.audit,
     atomic: ctx.atomic,
+  }
+}
+
+/** A person's default calendar is kept (shared/utils/default-calendar.ts): 409 `default_calendar`. */
+export function refuseDefaultCalendar(collectionPath: string): void {
+  if (isDefaultCalendarPath(collectionPath)) {
+    throw conflict(
+      'default_calendar',
+      'The default calendar cannot be deleted; it can be renamed, and its events deleted',
+    )
   }
 }
 

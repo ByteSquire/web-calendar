@@ -2,6 +2,7 @@ import type { Database } from 'better-sqlite3'
 import { isUserSubject } from '../auth/subject'
 import { groupPrincipal, isShareName } from './names'
 import { ORGANIZATION_PRINCIPAL } from './types'
+import { DEFAULT_CALENDAR_SEGMENT } from '../../../shared/utils/default-calendar'
 import type { RadicaleClient } from './radicale-client'
 import { sharingFail, type SharingResult } from './types'
 
@@ -15,7 +16,7 @@ import { sharingFail, type SharingResult } from './types'
  * app's first request as its principal, so the same default would appear there as a calendar nobody
  * asked for, and the group could not be deleted until someone removed it.
  */
-const PREDEFINED_CALENDAR = 'def-calendar'
+const PREDEFINED_CALENDAR = DEFAULT_CALENDAR_SEGMENT
 
 export interface RemoteCalendar {
   /** `/owner/name/`, decoded. */

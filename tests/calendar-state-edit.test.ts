@@ -64,6 +64,7 @@ function setup(hooks?: CalendarStateHooks) {
         calendar('own', { manage: { kind: 'own' } }),
         calendar('grp', { manage: { kind: 'group', groupId: 3, calendarId: 7 } }),
         calendar('plain'),
+        calendar('default', { manage: { kind: 'own', default: true } }),
       ],
       categories: [
         cat('1', 'Work'),
@@ -257,6 +258,17 @@ describe('renameCalendar and deleteCalendar', () => {
     expect(byId(store.calendars.value, 'own')).toBeUndefined()
     expect(store.visibleCalendarIds.value).not.toContain('own')
     expect(store.events.value.map((e) => e.id)).toEqual(['e3'])
+  })
+
+  it('renames the default calendar, and never deletes it', async () => {
+    const renameCalendar = vi.fn(async () => {})
+    const removeCalendar = vi.fn(async () => {})
+    const store = setup({ renameCalendar, removeCalendar })
+    await store.renameCalendar('default', 'Jane Doe')
+    expect(byId(store.calendars.value, 'default')!.name).toBe('Jane Doe')
+    await store.deleteCalendar('default')
+    expect(removeCalendar).not.toHaveBeenCalled()
+    expect(byId(store.calendars.value, 'default')).toBeDefined()
   })
 
   it('a rejecting hook leaves the state and rejects', async () => {

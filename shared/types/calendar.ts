@@ -56,10 +56,11 @@ export interface Calendar {
 /**
  * Why the viewer may rename and delete a calendar: it is in their own home, or a group they manage
  * owns it (`calendarId` is its id on the server). Absent for everything else, which offers only the
- * viewer's own colour.
+ * viewer's own colour. `default` marks the viewer's default calendar, which is renamed but never
+ * deleted (shared/utils/default-calendar.ts).
  */
 export type CalendarManage =
-  { kind: 'own' } | { kind: 'group'; groupId: number; calendarId: number }
+  { kind: 'own'; default?: true } | { kind: 'group'; groupId: number; calendarId: number }
 
 export interface CalendarResource {
   id: string

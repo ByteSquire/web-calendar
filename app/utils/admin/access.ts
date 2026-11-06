@@ -26,6 +26,8 @@ export interface AccessCalendar {
   owner: string | null
   /** The group that owns the calendar, or null. */
   group?: { id: number; name: string } | null
+  /** A person's default calendar: it cannot be deleted. */
+  isDefault?: boolean
   rules: AccessRule[]
 }
 

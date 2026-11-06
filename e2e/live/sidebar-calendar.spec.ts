@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import Database from 'better-sqlite3'
-import { openSignedIn } from './session'
+import { APP_ORIGIN, openSignedIn } from './session'
 
 // "Add calendar" in the sidebar with the real stack (design S8 setup): a plus in the heading of the
 // section that shows a text field, like the ones for views, categories and filters. The calendar is
@@ -177,6 +177,41 @@ test('deletes it from its menu after asking, in Radicale too', async () => {
   await page.reload()
   await expect(page.locator('[data-calendar-main]')).toBeVisible()
   await expect(calendarsSection().getByText(RENAMED, { exact: true })).toHaveCount(0)
+})
+
+test('her default calendar is renamed but not deleted, and the server refuses it too', async () => {
+  const sub = aliceSub()
+  // The app named it after her (login.spec.ts checks that).
+  const db = new Database(DB_PATH, { readonly: true, fileMustExist: true })
+  const me = db.prepare("SELECT name, username FROM users WHERE username = 'alice'").get() as {
+    name: string | null
+    username: string
+  }
+  db.close()
+  const name = me.name || me.username
+  await calendarsSection()
+    .getByRole('button', { name: `Actions for calendar ${name}`, exact: true })
+    .click()
+  await expect(page.getByRole('menuitem')).toHaveText(['Rename', 'Colour'])
+  await page.keyboard.press('Escape')
+
+  // The route refuses it as well, with the app's own token.
+  const request = page.waitForRequest(
+    (candidate) => candidate.url().includes('/api/') && !!candidate.headers()['authorization'],
+  )
+  await page.reload()
+  const bearer = (await request).headers()['authorization']!
+  const refused = await page.request.fetch(
+    `${APP_ORIGIN}/api/me/calendars?href=${encodeURIComponent(`/caldav/${sub}/def-calendar/`)}`,
+    { method: 'DELETE', headers: { authorization: bearer } },
+  )
+  expect(refused.status()).toBe(409)
+  expect(await refused.json()).toMatchObject({ data: { code: 'default_calendar' } })
+  const kept = await fetch(`${RADICALE}/${sub}/def-calendar/`, {
+    method: 'PROPFIND',
+    headers: { 'X-Remote-User': sub, Depth: '0' },
+  })
+  expect(kept.status).toBe(207)
 })
 
 test('no script or console errors came up', () => {

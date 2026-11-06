@@ -2,6 +2,7 @@
 import type { Database } from 'better-sqlite3'
 import { listCalendarAcl, replaceCalendarAcl, type CalendarAclInput } from '../../db/calendar-acl'
 import type { CalendarAclRow, PrincipalType } from '../../db/types'
+import { isDefaultCalendarPath } from '../../../shared/utils/default-calendar'
 
 export interface AccessRuleView {
   id: number
@@ -24,6 +25,8 @@ export interface AccessCalendarView {
   owner: string | null
   /** The group that owns the calendar, or null. */
   group: { id: number; name: string } | null
+  /** A person's default calendar: it cannot be deleted (shared/utils/default-calendar.ts). */
+  isDefault: boolean
   rules: AccessRuleView[]
 }
 
@@ -42,6 +45,7 @@ interface CalendarRow {
   owner_username: string | null
   group_id: number | null
   group_name: string | null
+  collection_path: string
 }
 
 const personLabel = (name: string | null, username: string | null, fallback: string) =>
@@ -52,7 +56,7 @@ export function getCalendarRow(db: Database, id: number): CalendarRow | undefine
 }
 
 const CALENDAR_SQL = `SELECT c.id, c.name, c.kind, c.color, u.name AS owner_name, u.username AS owner_username,
-    c.group_id AS group_id, g.name AS group_name
+    c.group_id AS group_id, g.name AS group_name, c.collection_path AS collection_path
   FROM calendars c LEFT JOIN users u ON u.id = c.owner_id LEFT JOIN groups g ON g.id = c.group_id`
 
 function viewRules(db: Database, calendarId: number): AccessRuleView[] {
@@ -89,6 +93,7 @@ function toCalendarView(db: Database, row: CalendarRow): AccessCalendarView {
       row.group_id !== null && row.group_name !== null
         ? { id: row.group_id, name: row.group_name }
         : null,
+    isDefault: row.kind === 'personal' && isDefaultCalendarPath(row.collection_path),
     rules: viewRules(db, row.id),
   }
 }

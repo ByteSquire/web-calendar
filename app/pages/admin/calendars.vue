@@ -7,7 +7,7 @@
   removes them (every change sends the complete rule list). "New calendar" makes a calendar of the
   organization, which belongs to nobody, so nobody sees it until a rule shares it: the dialog then
   opens on "Who has access". A resource's calendar is deleted with its resource, on Admin ›
-  Resources. The page checks `/api/me` and sends everybody else back to the calendar; that is only
+  Resources, and a person's default calendar is not deleted at all (they always keep one). The page checks `/api/me` and sends everybody else back to the calendar; that is only
   tidiness, the admin routes refuse non-admins themselves. The old address /admin/access opens it.
 -->
 <template>
@@ -158,7 +158,15 @@
                     <h3 id="calendar-delete-heading" class="font-semibold">
                       {{ t('Delete calendar') }}
                     </h3>
-                    <p v-if="dialog.kind === 'resource'" class="text-sm text-toned">
+                    <p v-if="dialog.isDefault" class="text-sm text-toned" data-default-calendar>
+                      {{
+                        t(
+                          'This is the default calendar of {name}. It is kept, so they always have a calendar to write to: it can be renamed, not deleted.',
+                          { name: dialog.owner ?? t('a person') },
+                        )
+                      }}
+                    </p>
+                    <p v-else-if="dialog.kind === 'resource'" class="text-sm text-toned">
                       {{
                         t(
                           'A resource calendar is deleted with its resource, on the Resources page.',

@@ -188,6 +188,8 @@ export const admin: Readonly<Record<string, string>> = {
   'The name and colour are the calendar’s own: everybody who has the calendar sees them, unless they picked a colour of their own.':
     'Name und Farbe gehören zum Kalender: Alle, die den Kalender haben, sehen sie, außer sie haben eine eigene Farbe gewählt.',
   'Delete calendar': 'Kalender löschen',
+  'This is the default calendar of {name}. It is kept, so they always have a calendar to write to: it can be renamed, not deleted.':
+    'Das ist der Standardkalender von {name}. Er bleibt, damit immer ein Kalender zum Eintragen da ist: Er kann umbenannt, aber nicht gelöscht werden.',
   'A resource calendar is deleted with its resource, on the Resources page.':
     'Ein Ressourcenkalender wird mit seiner Ressource gelöscht, auf der Seite Ressourcen.',
   'This calendar belongs to the organization: only the people and groups below see it.':

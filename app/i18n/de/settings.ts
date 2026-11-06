@@ -506,6 +506,8 @@ export const settings: Readonly<Record<string, string>> = {
     'Der Kalenderserver hat es nicht getan; nichts wurde geändert. Versuche es erneut.',
   'The resource has bookings, so it cannot be deleted. Deactivate it instead.':
     'Die Ressource hat Buchungen und kann deshalb nicht gelöscht werden. Deaktiviere sie stattdessen.',
+  'The default calendar cannot be deleted. You can rename it.':
+    'Der Standardkalender kann nicht gelöscht werden. Du kannst ihn umbenennen.',
   'Only an administrator can remove a manager of the group.':
     'Nur eine Administratorin oder ein Administrator kann die Verwaltung der Gruppe entfernen.',
 }

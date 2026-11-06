@@ -558,10 +558,13 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     calendars.value = calendars.value.map((item) => (item.id === id ? { ...item, name } : item))
   }
 
-  /** Deletes a calendar the viewer may manage; like `renameCalendar`, the server goes first. */
+  /**
+   * Deletes a calendar the viewer may manage, not their default one; like `renameCalendar`, the
+   * server goes first.
+   */
   async function deleteCalendar(id: string): Promise<void> {
     const calendar = calendars.value.find((item) => item.id === id)
-    if (!calendar?.manage) return
+    if (!calendar?.manage || (calendar.manage.kind === 'own' && calendar.manage.default)) return
     await options.hooks?.removeCalendar?.(calendar)
     calendars.value = calendars.value.filter((item) => item.id !== id)
     visibleCalendarIds.value = withIdPresent(visibleCalendarIds.value, id, false)

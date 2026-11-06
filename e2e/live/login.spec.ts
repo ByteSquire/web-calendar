@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import Database from 'better-sqlite3'
 import {
   APP_ORIGIN,
   collectAppProblems,
@@ -47,19 +48,48 @@ test('an unauthenticated visit goes to Kanidm and comes back signed in', async (
   expect(page.url()).toBe(`${APP_ORIGIN}/`)
 })
 
-test('the app shows the signed-in user and their own calendar', async () => {
+/** alice's name, as the app knows it (the name the identity provider gives, else the username). */
+function aliceName(): { sub: string; name: string } {
+  const db = new Database('/tmp/e2e-live.db', { readonly: true, fileMustExist: true })
+  try {
+    const row = db
+      .prepare("SELECT oidc_sub AS sub, name, username FROM users WHERE username = 'alice'")
+      .get() as { sub: string; name: string | null; username: string }
+    return { sub: row.sub, name: row.name || row.username }
+  } finally {
+    db.close()
+  }
+}
+
+/** The name Radicale has for alice's first calendar (it trusts X-Remote-User on this network). */
+async function firstCalendarName(sub: string): Promise<string | null> {
+  const response = await fetch(`http://radicale:5232/${encodeURIComponent(sub)}/def-calendar/`, {
+    method: 'PROPFIND',
+    headers: { 'X-Remote-User': sub, Depth: '0', 'Content-Type': 'application/xml' },
+    body: '<?xml version="1.0"?><D:propfind xmlns:D="DAV:"><D:prop><D:displayname/></D:prop></D:propfind>',
+  })
+  return /<displayname>([^<]*)</.exec(await response.text())?.[1] ?? null
+}
+
+test('the app shows the signed-in user and their own calendar, named after them', async () => {
   await menu().click()
   await expect(page.getByRole('menuitem', { name: 'Sign out' })).toBeVisible()
   await expect(page.getByText('Times in Europe/Berlin')).toBeVisible()
   await page.keyboard.press('Escape')
-  // alice's default calendar comes from Radicale through the gateway with her token.
-  await expect(page.locator('#app-sidebar')).toContainText('Personal Calendar')
+  // alice's first calendar comes from Radicale through the gateway with her token; the app gave it
+  // her name in place of Radicale's "Personal Calendar", in Radicale, so every CalDAV app shows it.
+  const alice = aliceName()
+  await expect(
+    page.locator('#app-sidebar').getByRole('switch', { name: alice.name, exact: true }),
+  ).toBeVisible()
+  await expect.poll(() => firstCalendarName(alice.sub)).toBe(alice.name)
+  await expect(page.locator('#app-sidebar')).not.toContainText('Personal Calendar')
 })
 
 test('a reload signs in again without asking for the password', async () => {
   await page.reload()
   await waitForSignedInApp(page)
-  await expect(page.locator('#app-sidebar')).toContainText('Personal Calendar')
+  await expect(page.locator('#app-sidebar')).toContainText(aliceName().name)
 })
 
 test('an expired access token is renewed with the refresh token', async () => {

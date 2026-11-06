@@ -108,6 +108,36 @@ test('the calendar is still there after a reload', async () => {
   await expect(calendarsSection().getByText(NAME, { exact: true })).toBeVisible()
 })
 
+test('its colour is any colour alice picks, saved for her, and its own again on request', async () => {
+  const button = calendarsSection().getByRole('button', { name: `Colour of ${NAME}`, exact: true })
+  await button.click()
+  const dialog = page.getByRole('dialog', { name: `Colour of ${NAME}` })
+  await expect(dialog.getByRole('radio', { name: 'Default' })).toBeChecked()
+  await dialog.getByText('Custom', { exact: true }).click()
+  await dialog.getByRole('textbox', { name: 'Colour code' }).fill('#ffe066')
+  const saved = page.waitForResponse(
+    (response) =>
+      response.url().includes('/api/calendar-prefs') && response.request().method() === 'PUT',
+  )
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  expect((await saved).status()).toBe(200)
+  await expect(dialog).toBeHidden()
+
+  // after a reload the server's preference brings it back
+  await page.reload()
+  await expect(calendarsSection().getByText(NAME, { exact: true })).toBeVisible()
+  await button.click()
+  await expect(dialog.getByRole('radio', { name: 'Custom' })).toBeChecked()
+  await expect(dialog.getByRole('textbox', { name: 'Colour code' })).toHaveValue('#ffe066')
+  await dialog.getByText('Default', { exact: true }).click()
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  await expect(dialog).toBeHidden()
+  await page.reload()
+  await button.click()
+  await expect(dialog.getByRole('radio', { name: 'Default' })).toBeChecked()
+  await page.keyboard.press('Escape')
+})
+
 test('removes the calendar the test made', async () => {
   const sub = aliceSub()
   const path = await findCollection(sub)

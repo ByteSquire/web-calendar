@@ -33,7 +33,7 @@ export type CalendarFreeBusy =
 export interface LinkReader {
   /** The name and colour of the calendar, as `principal` sees it. */
   probe(principal: string, path: string): Promise<CalendarProbe>
-  /** The calendar objects with events in `[start, end)`, series expanded by Radicale. */
+  /** The calendar objects with events in `[start, end)`, as stored (the page expands series). */
   read(principal: string, path: string, start: Date, end: Date): Promise<CalendarRead>
   /**
    * The busy times in `[start, end)`: Radicale's `VFREEBUSY` (a free-busy-query), which is all a
@@ -88,7 +88,9 @@ export function createLinkReader(options: EventReaderOptions): LinkReader {
         path,
         '1',
         '<?xml version="1.0"?><C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">' +
-          `<D:prop><C:calendar-data><C:expand start="${from}" end="${to}"/></C:calendar-data></D:prop>` +
+          // As stored: the page expands the series, as the app does (Radicale's own expansion is
+          // slow on a busy calendar and refused past 10000 occurrences).
+          '<D:prop><C:calendar-data/></D:prop>' +
           '<C:filter><C:comp-filter name="VCALENDAR"><C:comp-filter name="VEVENT">' +
           `<C:time-range start="${from}" end="${to}"/>` +
           '</C:comp-filter></C:comp-filter></C:filter></C:calendar-query>',

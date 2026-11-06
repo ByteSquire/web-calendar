@@ -142,6 +142,55 @@ describe('buildCalendars', () => {
     expect(feed!.href).toBeUndefined()
   })
 
+  it('names a person’s calendar shared with the viewer with its owner, and leaves the rest', () => {
+    const calendars = buildCalendars({
+      collections: [
+        collection('/caldav/u/def-calendar/', { displayName: 'Personal Calendar' }),
+        collection('/caldav/u/shared-7/', { displayName: 'Personal Calendar', readOnly: true }),
+        collection('/caldav/u/shared-7-staff/', { displayName: 'Personal Calendar' }),
+        collection('/caldav/u/shared-9/', { displayName: 'Team' }),
+        collection('/caldav/u/shared-12/', { displayName: 'Personal Calendar' }),
+      ],
+      subscriptions: [],
+      prefs: [],
+      shared: [
+        { id: 7, name: 'Personal Calendar', kind: 'personal', owner: 'Alice Example' },
+        { id: 9, name: 'Team', kind: 'shared', owner: null },
+      ],
+    })
+    expect(calendars.map((c) => c.name)).toEqual([
+      'Personal Calendar',
+      'Personal Calendar (Alice Example)',
+      'Personal Calendar (Alice Example)',
+      'Team',
+      // a share the list does not know yet keeps Radicale's name
+      'Personal Calendar',
+    ])
+  })
+
+  it('keeps each calendar’s own colour beside the viewer’s choice', () => {
+    const [chosen, plain] = buildCalendars({
+      collections: [
+        collection('/caldav/u/a/', { color: '#FF8800' }),
+        collection('/caldav/u/b/', { color: '#123456' }),
+      ],
+      subscriptions: [],
+      prefs: [{ ref: 'dav:/caldav/u/a/', color: '#ffe066', visible: true }],
+    })
+    expect([chosen!.color, chosen!.ownColor]).toEqual(['#ffe066', '#ff8800'])
+    expect([plain!.color, plain!.ownColor]).toEqual(['#123456', '#123456'])
+  })
+
+  it('does not name the owner twice when the calendar is named after them', () => {
+    const [named] = buildCalendars({
+      collections: [collection('/caldav/u/shared-7/', { displayName: 'Alice Example' })],
+      subscriptions: [],
+      prefs: [],
+      shared: [{ id: 7, name: 'Alice Example', kind: 'personal', owner: 'Alice Example' }],
+    })
+    expect(named!.name).toBe('Alice Example')
+  })
+
   it('marks a calendar the viewer sees as busy times only, and only that one', () => {
     const calendars = buildCalendars({
       collections: [

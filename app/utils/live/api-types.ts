@@ -27,6 +27,15 @@ export interface ApiView {
   ownerId: number | null
 }
 
+/** A calendar an access rule shares with the viewer (`/api/shared-calendars`). */
+export interface ApiSharedCalendar {
+  id: number
+  name: string
+  kind: 'personal' | 'shared' | 'resource'
+  /** The owner of a person's calendar; null otherwise. */
+  owner: string | null
+}
+
 export interface ApiFilter {
   id: number
   name: string

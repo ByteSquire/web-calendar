@@ -28,6 +28,11 @@ export interface Calendar {
   name: string
   type: CalendarType
   color: string
+  /**
+   * The colour without the viewer's own choice: the source's, else the palette's. `color` is the
+   * viewer's choice when they made one (`/api/calendar-prefs`), else this.
+   */
+  ownColor?: string
   /** Initial sidebar toggle state. */
   defaultVisible: boolean
   ownerId?: string

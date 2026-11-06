@@ -27,16 +27,8 @@ export interface AccessCalendar {
   rules: AccessRule[]
 }
 
-/**
- * How a calendar is named in a drop-down. Every person's own calendar has the name Radicale gave it
- * ("Personal Calendar"), so a personal calendar carries its owner: "Personal Calendar (Bob Builder)".
- * The name of an organization's calendar is enough. Without an owner's name the calendar keeps its own.
- */
-export function calendarLabel(calendar: Pick<AccessCalendar, 'name' | 'kind' | 'owner'>): string {
-  return calendar.kind === 'personal' && calendar.owner
-    ? `${calendar.name} (${calendar.owner})`
-    : calendar.name
-}
+// How a calendar is named in a drop-down: app/utils/calendar-label.ts (the sidebar uses it too).
+export { calendarLabel } from '../calendar-label'
 
 export interface AccessCalendarsResponse {
   calendars: AccessCalendar[]

@@ -8,7 +8,7 @@ import { getDb } from '../db'
 import { noteBearerSighting } from '../groups/sighting-service'
 import { groupFilePath } from '../groups/config'
 import { createFileMembership } from '../sharing/membership'
-import { createPathPrecheck, type PathPrecheck } from '../sharing/precheck'
+import { createPathPrecheck, refusalLogger, type PathPrecheck } from '../sharing/precheck'
 import { createGateway, type GatewayRequest } from './gateway'
 
 // Nitro glue: reads the runtime config and adapts the Node request. The logic is in the plain modules.
@@ -43,6 +43,7 @@ function getGateway() {
       groupFilePath(groupsFile, process.env.NODE_ENV),
       (message) => console.warn(`[gateway] ${message}`),
     )
+    const logRefusal = refusalLogger((message) => console.warn(`[gateway] ${message}`))
     gateway = createGateway({
       upstream: radicale.url,
       corsOrigins: origins,
@@ -61,7 +62,9 @@ function getGateway() {
           ? undefined
           : (sub, request) => {
               // Built on first use: the database opens after the plugins start.
-              precheck ??= createPathPrecheck(getDb(), precheckMembership)
+              precheck ??= createPathPrecheck(getDb(), precheckMembership, {
+                onRefused: logRefusal,
+              })
               return precheck(sub, request)
             },
       log: (message, cause) => console.warn(`[gateway] ${message}`, cause ?? ''),

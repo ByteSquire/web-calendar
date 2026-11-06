@@ -63,6 +63,24 @@ describe('the events of a calendar link page at "Can view"', () => {
     expect(new Set(events.map((event) => event.id)).size).toBe(2)
   })
 
+  it('expand a series the server sends as stored, in the range', () => {
+    const events = linkEvents(
+      {
+        level: 'read',
+        objects: [object('s', 'Training', ['RRULE:FREQ=DAILY;COUNT=10'])],
+      },
+      context,
+    )
+    // 29 Oct to 1 Nov: the range ends on 2 Nov
+    expect(events.map((event) => event.start.slice(0, 10))).toEqual([
+      '2026-10-29',
+      '2026-10-30',
+      '2026-10-31',
+      '2026-11-01',
+    ])
+    expect(new Set(events.map((event) => event.id)).size).toBe(4)
+  })
+
   it('leave out what cannot be read and list an event once', () => {
     const events = linkEvents(
       { level: 'read', objects: ['garbage', object('c', 'Once'), object('c', 'Once')] },

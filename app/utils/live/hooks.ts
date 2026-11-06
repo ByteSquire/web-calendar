@@ -1,8 +1,8 @@
-// Saving what the viewer changes in the sidebar (FR-4, FR-5, FR-2): the calendar toggles go to
-// `/api/calendar-prefs`, new categories and filters to their own routes. Plugged into the calendar
+// Saving what the viewer changes in the sidebar (FR-4, FR-5, FR-2): the calendar toggles and
+// colours go to `/api/calendar-prefs`, new categories and filters to their own routes. Plugged into the calendar
 // state as its hooks; the state itself stays local-only without them (demo mode, unit tests).
 import type { CalendarStateHooks } from '../calendar-state'
-import type { ApiCategory, ApiFilter, ApiRequest } from './api-types'
+import type { ApiCalendarPref, ApiCategory, ApiFilter, ApiRequest } from './api-types'
 import { toCategories } from './categories'
 import { locale, t } from '../i18n'
 import { describeLoadError } from './errors'
@@ -91,7 +91,13 @@ export interface LiveHooksDeps {
   delayMs?: number
 }
 
-export function createLiveHooks(deps: LiveHooksDeps): CalendarStateHooks {
+/** The hooks, and who hears of a saved preference (the loader keeps its copy current). */
+export type LiveHooks = CalendarStateHooks & {
+  onPreferenceSaved: (listener: (pref: ApiCalendarPref) => void) => () => void
+}
+
+export function createLiveHooks(deps: LiveHooksDeps): LiveHooks {
+  const listeners = new Set<(pref: ApiCalendarPref) => void>()
   const visibility = createKeyedDebouncer<boolean>({
     delayMs: deps.delayMs ?? 400,
     ...(deps.timers ? { timers: deps.timers } : {}),
@@ -107,6 +113,19 @@ export function createLiveHooks(deps: LiveHooksDeps): CalendarStateHooks {
   })
 
   return {
+    onPreferenceSaved(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    async persistCalendarColor(calendarId, color) {
+      // Calendars that are not sources of the server (the mock data) keep the colour locally.
+      if (!isPersistableRef(calendarId)) return
+      const saved = await deps.api<ApiCalendarPref>('/api/calendar-prefs', {
+        method: 'PUT',
+        body: { ref: calendarId, color },
+      })
+      for (const listener of listeners) listener(saved)
+    },
     onCalendarVisibility(calendarId, visible) {
       // Calendars that are not sources of the server (the mock data) have no preference to store.
       if (isPersistableRef(calendarId)) visibility.schedule(calendarId, visible)

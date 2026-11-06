@@ -5,7 +5,9 @@ import type { Calendar } from '../../../shared/types/calendar'
 import type { ExternalAccount } from '../../../shared/types/external'
 import type { DavCalendar } from '../caldav/types'
 import { ensureTrailingSlash, toDavPath } from '../caldav/urls'
-import type { ApiCalendarPref, ApiIcalSubscription } from './api-types'
+import { sharedCalendarId } from '../../../shared/utils/shared-calendar-name'
+import { calendarLabel } from '../calendar-label'
+import type { ApiCalendarPref, ApiIcalSubscription, ApiSharedCalendar } from './api-types'
 import { normalizeHexColor, paletteColor } from './palette'
 
 /**
@@ -83,6 +85,28 @@ export interface BuildCalendarsInput {
   external?: readonly ExternalCollections[]
   /** Position of the first calendar in the whole list, for the palette (see `external`). */
   paletteOffset?: number
+  /**
+   * The calendars shared with the viewer (`/api/shared-calendars`): a person's calendar mapped into
+   * the viewer's home (`shared-<id>…`) is named with its owner, "Personal Calendar (Alice)", as on
+   * the access page, so it is not mistaken for the viewer's own of the same name.
+   */
+  shared?: readonly ApiSharedCalendar[]
+}
+
+/** The name of a collection in the viewer's home, with the owner when it is someone's calendar. */
+function collectionName(collection: DavCalendar, shared: ReadonlyMap<number, ApiSharedCalendar>) {
+  const segment = toDavPath(collection.url).split('/').filter(Boolean).pop() ?? ''
+  let decoded = segment
+  try {
+    decoded = decodeURIComponent(segment)
+  } catch {
+    // keep the encoded segment; it is then no share name
+  }
+  const id = sharedCalendarId(decoded)
+  const calendar = id === null ? undefined : shared.get(id)
+  return calendar
+    ? calendarLabel({ name: collection.displayName, kind: calendar.kind, owner: calendar.owner })
+    : collection.displayName
 }
 
 /**
@@ -94,11 +118,12 @@ export interface BuildCalendarsInput {
  */
 export function buildCalendars(input: BuildCalendarsInput): Calendar[] {
   const prefs = new Map(input.prefs.map((pref) => [pref.ref, pref]))
+  const shared = new Map((input.shared ?? []).map((calendar) => [calendar.id, calendar]))
   const seen = new Set<string>()
   const calendars: Calendar[] = []
 
   const add = (
-    calendar: Omit<Calendar, 'color' | 'defaultVisible'>,
+    calendar: Omit<Calendar, 'color' | 'ownColor' | 'defaultVisible'>,
     sourceColor: string | null,
   ) => {
     // Two collections can never share a path, but a broken server answer must not make duplicate
@@ -106,12 +131,12 @@ export function buildCalendars(input: BuildCalendarsInput): Calendar[] {
     if (seen.has(calendar.id)) return
     seen.add(calendar.id)
     const pref = prefs.get(calendar.id)
+    const ownColor =
+      normalizeHexColor(sourceColor) ?? paletteColor((input.paletteOffset ?? 0) + calendars.length)
     calendars.push({
       ...calendar,
-      color:
-        normalizeHexColor(pref?.color) ??
-        normalizeHexColor(sourceColor) ??
-        paletteColor((input.paletteOffset ?? 0) + calendars.length),
+      color: normalizeHexColor(pref?.color) ?? ownColor,
+      ownColor,
       defaultVisible: pref?.visible ?? true,
     })
   }
@@ -120,7 +145,7 @@ export function buildCalendars(input: BuildCalendarsInput): Calendar[] {
     add(
       {
         id: davRef(collection.url),
-        name: collection.displayName,
+        name: collectionName(collection, shared),
         type: 'caldav',
         href: toDavPath(collection.url),
         readOnly: collection.readOnly,

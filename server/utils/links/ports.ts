@@ -8,7 +8,7 @@ import { createLinkReader, type LinkReader } from './reader'
 
 let reader: LinkReader | undefined
 
-/** A year of a busy shared calendar, expanded, is more than the 4 MiB of the booking reader. */
+/** A year of a busy shared calendar is more than the 4 MiB of the booking reader. */
 const LINK_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 export function getLinkReader(): LinkReader {

@@ -53,10 +53,8 @@ describe('colorChoices', () => {
     expect(colorChoices(null, true)).toHaveLength(COLOR_PALETTE.length + 1)
   })
 
-  it('keeps a colour the palette does not cover', () => {
-    const choices = colorChoices('#ABCDEF', true)
-    expect(choices.at(-1)).toEqual({ value: '#abcdef', name: 'Current' })
-    expect(choices).toHaveLength(COLOR_PALETTE.length + 1)
+  it('leaves a colour the palette does not cover to the picker’s "Custom"', () => {
+    expect(colorChoices('#ABCDEF', true)).toEqual(COLOR_PALETTE)
   })
 
   it('adds nothing for a palette colour', () => {

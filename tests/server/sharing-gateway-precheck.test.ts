@@ -7,7 +7,11 @@ import { openDatabase } from '../../server/db/connection'
 import { loadMigrationsFromDir, runMigrations } from '../../server/db/migrate'
 import { createGateway } from '../../server/utils/gateway/gateway'
 import { parseGroupFile, type GroupMembership } from '../../server/utils/sharing/membership'
-import { createPathPrecheck } from '../../server/utils/sharing/precheck'
+import {
+  createPathPrecheck,
+  refusalLogger,
+  type PathRefusal,
+} from '../../server/utils/sharing/precheck'
 
 const ALICE = '8f1c2b0e-4d51-4c7e-9a52-0b6f3c1d2e77'
 const BOB = '3d9a7e51-0c2b-4f86-b1aa-6e4d8c0f9a12'
@@ -38,6 +42,50 @@ beforeEach(() => {
 })
 
 afterEach(() => db.close())
+
+describe('what the pre-check says about a refusal', () => {
+  it('names the calendar and the reason, never the person or the event', async () => {
+    const refusals: PathRefusal[] = []
+    const check = createPathPrecheck(db, membership, { onRefused: (r) => refusals.push(r) })
+    // bob may read calendar 1 but not write it
+    expect(
+      await check(BOB, { method: 'PUT', upstreamPath: `/${BOB}/shared-${calendarId}/x.ics` }),
+    ).toBe(false)
+    expect(
+      await check(BOB, { method: 'PUT', upstreamPath: `/${BOB}/resource-availability/x.ics` }),
+    ).toBe(false)
+    expect(await check(BOB, { method: 'GET', upstreamPath: `/${ALICE}/` })).toBe(false)
+    // allowed requests report nothing
+    expect(
+      await check(BOB, { method: 'GET', upstreamPath: `/${BOB}/shared-${calendarId}/x.ics` }),
+    ).toBe(true)
+    expect(refusals).toEqual([
+      { method: 'PUT', write: true, calendarId, reason: 'no-rule' },
+      { method: 'PUT', write: true, calendarId: null, reason: 'availability' },
+      { method: 'GET', write: false, calendarId: null, reason: 'other-home' },
+    ])
+  })
+
+  it('is logged once per calendar and kind in ten minutes', () => {
+    const lines: string[] = []
+    let time = 0
+    const log = refusalLogger(
+      (line) => lines.push(line),
+      () => time,
+    )
+    const refusal: PathRefusal = { method: 'PUT', write: true, calendarId: 7, reason: 'no-rule' }
+    log(refusal)
+    log(refusal)
+    log({ ...refusal, calendarId: 8 })
+    log({ ...refusal, method: 'GET', write: false })
+    time += 10 * 60 * 1000
+    log(refusal)
+    expect(lines).toHaveLength(4)
+    expect(lines[0]).toContain('no access rule gives the caller write access to calendar 7')
+    expect(lines[2]).toContain('read access to calendar 7')
+    for (const line of lines) expect(line).not.toMatch(/sub-|[0-9a-f]{8}-[0-9a-f]{4}/)
+  })
+})
 
 describe('path pre-check', () => {
   it("allows the root and the caller's own home and calendars", async () => {

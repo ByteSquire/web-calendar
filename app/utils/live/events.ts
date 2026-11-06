@@ -22,8 +22,8 @@ export type CalendarOutcome =
       calendarId: string
       objects: readonly DavObject[]
       /**
-       * The reader expands the series. Off for the built-in service, whose server does it; on for
-       * external accounts, whose servers may ignore `expand`.
+       * The reader expands the series: on for the built-in service and the external accounts, whose
+       * objects are read as stored. Off only for objects a server already expanded.
        */
       expandRecurrence?: boolean
     }

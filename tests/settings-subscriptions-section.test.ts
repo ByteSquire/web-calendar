@@ -143,11 +143,12 @@ describe('the colour picker', () => {
     const group = document.querySelector('fieldset')!
     expect(group.querySelector('legend')!.textContent).toBe('Colour')
     const radios = colorRadios(group)
-    expect(radios).toHaveLength(COLOR_PALETTE.length)
+    // the palette, then "Custom" for any colour
+    expect(radios).toHaveLength(COLOR_PALETTE.length + 1)
     // one group: native radios of one name arrow through each other
     expect(new Set(radios.map((radio) => radio.name)).size).toBe(1)
     const names = radios.map((radio) => radio.closest('label')!.textContent!.trim())
-    expect(names).toEqual(COLOR_PALETTE.map((color) => color.name))
+    expect(names).toEqual([...COLOR_PALETTE.map((color) => color.name), 'Custom'])
     expect(radios.filter((radio) => radio.checked)).toHaveLength(1)
     expect(radios[0]!.checked).toBe(true)
     // the selected choice has a check mark, so it is not shown by colour alone
@@ -309,7 +310,7 @@ describe('changing a subscription', () => {
     expect(urlInput(dialog()!).value).toBe('https://example.org/calendar-1.ics')
     // no colour stays "Default" and is offered as such
     const radios = colorRadios(dialog()!)
-    expect(radios).toHaveLength(COLOR_PALETTE.length + 1)
+    expect(radios).toHaveLength(COLOR_PALETTE.length + 2)
     expect(radios.find((radio) => radio.checked)!.closest('label')!.textContent).toContain(
       'Default',
     )
@@ -330,13 +331,36 @@ describe('changing a subscription', () => {
     expect(document.activeElement).toBe(requireButton('Edit Public holidays'))
   })
 
+  it('takes any colour through "Custom", by the colour code', async () => {
+    requireButton('Edit Sports').click()
+    await vi.waitFor(() => expect(dialog()).not.toBeNull())
+    const code = dialog()!.querySelector<HTMLInputElement>('input.font-mono')!
+    code.value = 'zz'
+    code.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.waitFor(() =>
+      expect(dialog()!.textContent).toContain('Enter a colour code like #1d4ed8.'),
+    )
+    code.value = 'FFE066'
+    code.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.waitFor(() =>
+      expect(dialog()!.textContent).not.toContain('Enter a colour code like #1d4ed8.'),
+    )
+    requireButton('Save changes').click()
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(backend.callsTo('PUT', '/api/ical-subscriptions/2')[0]!.body).toMatchObject({
+      color: '#ffe066',
+    })
+  })
+
   it('keeps a colour the palette does not have unless another one is chosen', async () => {
     requireButton('Edit Sports').click()
     await vi.waitFor(() => expect(dialog()).not.toBeNull())
     const radios = colorRadios(dialog()!)
     const current = radios.find((radio) => radio.checked)!
-    expect(current.value).toBe('#123456')
-    expect(current.closest('label')!.textContent).toContain('Current')
+    expect(current.value).toBe('custom')
+    expect(current.closest('label')!.textContent).toContain('Custom')
+    const code = dialog()!.querySelector<HTMLInputElement>('input.font-mono')!
+    expect(code.value).toBe('#123456')
     requireButton('Save changes').click()
     await vi.waitFor(() => expect(dialog()).toBeNull())
     expect(backend.callsTo('PUT', '/api/ical-subscriptions/2')[0]!.body).toMatchObject({

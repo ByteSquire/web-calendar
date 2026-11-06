@@ -372,6 +372,11 @@ export type StateFactory = <T>(key: string, init: () => T) => Ref<T>
 export interface CalendarStateHooks {
   /** A calendar was switched on or off by the viewer (not by selecting a view). */
   onCalendarVisibility?: (calendarId: string, visible: boolean) => void
+  /**
+   * Saves the viewer's colour for a calendar (`null`: back to the calendar's own); rejects when it
+   * was not saved, and the colour then stays as it was.
+   */
+  persistCalendarColor?: (calendarId: string, color: string | null) => Promise<void>
   /** Saves a new category; resolves to the stored one (the server's id). */
   persistCategory?: (category: Category) => Promise<Category>
   /** Saves a new filter; resolves to the stored one (the server's id). */
@@ -515,6 +520,21 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     if (resource) setCalendarVisible(resource.calendarId, visible)
   }
 
+  /**
+   * The viewer's colour for a calendar, `null` for the calendar's own. Saved first (when there is
+   * somewhere to save it): a refusal rejects and changes nothing.
+   */
+  async function setCalendarColor(id: string, color: string | null): Promise<void> {
+    const calendar = calendars.value.find((item) => item.id === id)
+    if (!calendar) return
+    // A calendar that came without its own colour (the mock data) keeps the one it has now as such.
+    const ownColor = calendar.ownColor ?? calendar.color
+    await options.hooks?.persistCalendarColor?.(id, color)
+    calendars.value = calendars.value.map((item) =>
+      item.id === id ? { ...item, color: color ?? ownColor, ownColor } : item,
+    )
+  }
+
   function setFilterActive(id: string, active: boolean) {
     activeFilterIds.value = withIdPresent(activeFilterIds.value, id, active)
   }
@@ -650,6 +670,7 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     visibleCalendarIds,
     visibleResourceIds,
     setCalendarVisible,
+    setCalendarColor,
     setResourceVisible,
     activeFilterIds,
     activeFilters,

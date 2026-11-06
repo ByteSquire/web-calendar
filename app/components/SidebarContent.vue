@@ -51,12 +51,26 @@
           :add-submit="submitCalendar"
         >
           <ul>
-            <li v-for="calendar in regularCalendars" :key="calendar.id">
+            <li
+              v-for="calendar in regularCalendars"
+              :key="calendar.id"
+              class="flex items-center gap-1"
+            >
               <SidebarToggleRow
+                class="min-w-0 flex-1"
                 :label="calendar.name"
                 :color="calendar.color"
                 :model-value="visibleCalendarIds.includes(calendar.id)"
                 @update:model-value="setCalendarVisible(calendar.id, $event)"
+              />
+              <UButton
+                icon="i-lucide-palette"
+                color="neutral"
+                variant="ghost"
+                square
+                class="min-h-11 min-w-11 shrink-0 justify-center"
+                :aria-label="t('Colour of {name}', { name: calendar.name })"
+                @click="colorTarget = calendar"
               />
             </li>
           </ul>
@@ -158,6 +172,7 @@
       @update:open="closeDialogs"
       @confirm="confirmDelete"
     />
+    <CalendarColorDialog :calendar="colorTarget" @close="colorTarget = null" />
   </div>
 </template>
 
@@ -191,7 +206,7 @@ import {
   type SharedOwnView,
   type UnsharedView,
 } from '~/utils/live/user-views'
-import type { CalendarView, ViewIcon } from '../../shared/types/calendar'
+import type { Calendar, CalendarView, ViewIcon } from '../../shared/types/calendar'
 
 const {
   views,
@@ -213,6 +228,9 @@ const {
   setFilterActive,
   addFilter,
 } = useCalendarState()
+
+/** The calendar whose colour dialog is open. */
+const colorTarget = ref<Calendar | null>(null)
 
 // Shared views are changed through `/api/admin/views` in live mode, a user's own views through
 // `/api/views`. The shared-view controls show for admins only (the server checks again); without a

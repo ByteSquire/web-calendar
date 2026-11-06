@@ -84,6 +84,53 @@ function toCalendarView(db: Database, row: CalendarRow): AccessCalendarView {
   }
 }
 
+/** A calendar of the access page that a rule shares with the caller, as their sidebar names it. */
+export interface SharedCalendarView {
+  id: number
+  name: string
+  kind: AccessCalendarView['kind']
+  /** The owner's name for a person's calendar; null for a calendar of the organization or a group. */
+  owner: string | null
+}
+
+/**
+ * The calendars a rule shares with `user` (as a person, through a group of theirs, or as somebody
+ * signed in), not their own: the same rules the gateway's check reads. Name and owner only, so the
+ * browser can tell "Personal Calendar (Alice)" from the person's own; nothing about the other rules.
+ */
+export function listCalendarsSharedWith(
+  db: Database,
+  user: { id: number; sub: string },
+): SharedCalendarView[] {
+  return db
+    .prepare<[number, string, string], CalendarRow>(
+      `${CALENDAR_SQL}
+       WHERE (c.owner_id IS NULL OR c.owner_id <> ?)
+         AND EXISTS (
+           SELECT 1 FROM calendar_acl a
+           WHERE a.calendar_id = c.id
+             AND a.permission IN ('free_busy', 'read', 'write')
+             AND (
+               a.principal_type = 'authenticated'
+               OR (a.principal_type = 'user' AND a.principal = ?)
+               OR (a.principal_type = 'group' AND a.principal IN (
+                 SELECT g.name FROM groups g
+                 WHERE g.source = 'everyone'
+                    OR g.id IN (SELECT m.group_id FROM group_members m WHERE m.sub = ?)
+               ))
+             )
+         )
+       ORDER BY c.id`,
+    )
+    .all(user.id, user.sub, user.sub)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      kind: row.kind,
+      owner: row.kind === 'personal' ? row.owner_name || row.owner_username || null : null,
+    }))
+}
+
 export function listAccessCalendars(db: Database): AccessCalendarView[] {
   return db
     .prepare<[], CalendarRow>(CALENDAR_SQL + ' ORDER BY c.name COLLATE NOCASE, c.id')

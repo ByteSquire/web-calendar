@@ -42,6 +42,8 @@
  *   calendar afterwards keeps the view selected (FR-5: filtering within a view).
  * - `visibleCalendarIds: Ref<string[]>` (initially the calendars with `defaultVisible`),
  *   `setCalendarVisible(id, visible)`, `visibleResourceIds`, `setResourceVisible(id, visible)`.
+ * - `setCalendarColor(id, color | null)`: the viewer's colour for a calendar, null for its own
+ *   (`ownColor`); saved first, and a refusal rejects and changes nothing.
  * - `filters` (all) and `activeFilterIds`, `activeFilters`, `setFilterActive(id, active)`,
  *   `addFilter(text)` (adds and activates a text filter; null if empty or taken).
  * - `categories` and `selectedCategoryIds`, `setCategorySelected(id, selected)`,
@@ -100,20 +102,17 @@
 import { Temporal } from 'temporal-polyfill'
 import { useAuthFetch } from '~/composables/useAuthFetch'
 import { useServerConfigState } from '~/composables/useServerConfigState'
-import {
-  createCalendarState,
-  type CalendarState,
-  type CalendarStateHooks,
-} from '~/utils/calendar-state'
+import { createCalendarState, type CalendarState } from '~/utils/calendar-state'
 import type { ApiRequest } from '~/utils/live/api-types'
-import { createLiveHooks } from '~/utils/live/hooks'
+import { createLiveHooks, type LiveHooks } from '~/utils/live/hooks'
 import { emptySeed, isLiveConfig } from '~/utils/live/seed'
 import { sidebarStartsOpen } from '~/utils/viewport'
 
 // One set of hooks per app: they hold the pending (debounced) preference saves.
-const liveHooks = new WeakMap<object, CalendarStateHooks>()
+const liveHooks = new WeakMap<object, LiveHooks>()
 
-function useLiveHooks(): CalendarStateHooks {
+/** The hooks that save the sidebar's changes; the live loader listens to the saved preferences. */
+export function useLiveHooks(): LiveHooks {
   const nuxtApp = useNuxtApp()
   let hooks = liveHooks.get(nuxtApp)
   if (!hooks) {

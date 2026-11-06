@@ -1010,3 +1010,26 @@ describe('busy times', () => {
     expect(await kindOf(other.client.fetchFreeBusy(CAL, RANGE))).toBe('bad-response')
   })
 })
+
+describe('renameCalendar', () => {
+  const CAL = `${HOME}def-calendar/`
+  const patched = (status: string) =>
+    ms(
+      `<multistatus ${DAV_NS}><response><href>${CAL}</href><propstat><prop><displayname/></prop><status>HTTP/1.1 ${status}</status></propstat></response></multistatus>`,
+    )
+
+  it('sets the name with one PROPPATCH, escaped', async () => {
+    const { client, calls } = clientFor(() => patched('200 OK'))
+    await client.renameCalendar(CAL, '  Jane <&> Doe ')
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ method: 'PROPPATCH', path: CAL })
+    expect(calls[0]!.body).toContain('<d:displayname>Jane &lt;&amp;&gt; Doe</d:displayname>')
+  })
+
+  it('fails when the server refuses the property, and checks the name first', async () => {
+    expect(
+      await kindOf(clientFor(() => patched('403 Forbidden')).client.renameCalendar(CAL, 'Jane')),
+    ).toBe('forbidden')
+    await expect(clientFor(NO_ROUTE).client.renameCalendar(CAL, '   ')).rejects.toThrow(TypeError)
+  })
+})

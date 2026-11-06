@@ -1,9 +1,11 @@
+import { sharedCalendarId } from '../../../shared/utils/shared-calendar-name'
 import { AVAILABILITY_SHARE_NAME } from './types'
 
 // How a shared calendar is named in a member's home. The gateway pre-check relies on it: the
-// calendar id in the name says which access rules apply, so no extra table is needed.
+// calendar id in the name says which access rules apply, so no extra table is needed. The name
+// itself is read in shared/utils/shared-calendar-name.ts, which the browser uses too.
 
-const SHARED_NAME = /^shared-([1-9][0-9]{0,14})(?:-[A-Za-z0-9][A-Za-z0-9_.-]{0,63})?$/
+export { sharedCalendarId }
 
 /** Every group principal starts with this; no person's id may (`isReservedPrincipal`). */
 export const GROUP_PRINCIPAL_PREFIX = '_group-'
@@ -32,12 +34,6 @@ export function userShareName(calendarId: number): string {
 /** Home collection of a group share; `{user}` is Radicale's placeholder for the member. */
 export function groupShareName(calendarId: number, group: string): string {
   return `shared-${calendarId}-${group}`
-}
-
-/** The calendar id a home collection name refers to, or null for an ordinary collection. */
-export function sharedCalendarId(name: string): number | null {
-  const match = SHARED_NAME.exec(name)
-  return match ? Number(match[1]) : null
 }
 
 /** A home collection the sharing writer created (so discovery and the audit job skip it). */

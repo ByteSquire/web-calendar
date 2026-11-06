@@ -5,7 +5,7 @@
 import { useAuth } from '~/composables/useAuth'
 import { useAuthFetch } from '~/composables/useAuthFetch'
 import { useCalDav } from '~/composables/useCalDav'
-import { useCalendarState } from '~/composables/useCalendarState'
+import { useCalendarState, useLiveHooks } from '~/composables/useCalendarState'
 import { useExternalAccess } from '~/composables/useExternalAccess'
 import { useResourceUpdates } from '~/composables/useResourceUpdates'
 import { useSavedSidebarOrder } from '~/composables/useSidebarOrder'
@@ -109,6 +109,10 @@ export function useLiveCalendar(): void {
     },
   })
   loaders.set(nuxtApp, loader)
+  // A colour the viewer saves is part of what the next partial reload builds the calendars from.
+  const stopPreferences = useLiveHooks().onPreferenceSaved((pref) =>
+    loader.rememberPreference(pref),
+  )
 
   // The route guard keeps the layout from rendering before the login; this is the second lock.
   const stop = watch(
@@ -123,6 +127,7 @@ export function useLiveCalendar(): void {
   )
   onScopeDispose(() => {
     stop()
+    stopPreferences()
     loader.dispose()
     if (loaders.get(nuxtApp) === loader) loaders.delete(nuxtApp)
   })

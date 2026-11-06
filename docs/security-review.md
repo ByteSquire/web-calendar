@@ -87,6 +87,7 @@ limits, output encoding and headers, rate limits, logging.
 | `/api/config`                                                                   | none                                               | only non-secret settings (issuer, client id, scope, demo flag, organization zone, sign-in window days)                                                                                          |
 | `/api/me`, `/api/me/time-zone`                                                  | bearer                                             | token verification, userinfo amplification, input validation, the groups import (claim parsing)                                                                                                 |
 | `/api/app-tokens`                                                               | bearer                                             | shown once, hashed, expiry, 10 per user, revoke all, last use                                                                                                                                   |
+| `/api/shared-calendars`                                                         | bearer                                             | only the calendars a rule shares with the caller, name and owner only, never their other rules                                                                                                  |
 | `/api/calendar-links`, `[id]`, `[id]/reveal`                                    | bearer                                             | owner scoping (another person's link is 404), the level checked as the maker, sealed address and password, reveal audited, 50 per user                                                          |
 | `/api/admin/access/calendars/:id/links`, `/api/admin/access/links/:id[/reveal]` | admin group, checked fresh per request             | reads as the calendar's owner, only links with a calendar of the access page, reveal and removal audited (`byAdmin`)                                                                            |
 | `/api/link/:slug/session`, `/api/link/:slug/events`                             | the link's password, then an 8-hour session header | `no-store`, `noindex`, wrong passwords counted before the scrypt check, one 404 for unknown and removed links, the session bound to its link, "Busy times only" never queries events, read caps |
@@ -317,7 +318,11 @@ and Radicale's CSV is a silent authorization error in either direction.
   caller who got past authentication, without reading the file, names
   `shared-<calendarId>` in a member's home are what it looks up (so members cannot own a calendar
   with such a name), COPY/MOVE destinations are checked too; the job first runs 2 minutes after
-  start. Audit actions (actor `system:sharing-writer`): `sharing.removed_unknown`,
+  start. A refusal is logged (`[gateway] PUT refused before Radicale: no access rule gives the
+caller write access to calendar 5 …`) with the method, the calendar's id and the reason, never the
+  person or the event, at most once per calendar and kind in 10 minutes (`refusalLogger`), so a
+  drift between Radicale's shares and the access rules shows in the log instead of only as a
+  refused save. Audit actions (actor `system:sharing-writer`): `sharing.removed_unknown`,
   `sharing.replaced`, `sharing.mismatch`, `sharing.failing`, `sharing.recovered`,
   `sharing.audit_mismatch`. The reconcile also removes any `token` share. Residual: API shapes S5
   did not show are assumed (see `docs/design.md` §12); each owner costs one list request per run.

@@ -153,6 +153,12 @@ function harness(setup: Setup = {}) {
       [B, [object(`${B}two.ics`, 'two', 'Beta meeting')]],
     ]),
     icsText: new Map<string, string | unknown>(),
+    shared: [] as {
+      id: number
+      name: string
+      kind: 'personal' | 'shared' | 'resource'
+      owner: string | null
+    }[],
     /** url -> the VFREEBUSY a free/busy share gives */
     freeBusy: new Map<string, string>(),
   }
@@ -172,6 +178,8 @@ function harness(setup: Setup = {}) {
         return { views: data.views }
       case '/api/ical-subscriptions':
         return { subscriptions: data.subscriptions }
+      case '/api/shared-calendars':
+        return { calendars: data.shared }
       default:
         throw new Error(`unexpected request ${path}`)
     }
@@ -180,6 +188,9 @@ function harness(setup: Setup = {}) {
   const listCalendars = vi.fn(async () => {
     if ('caldav' in data.failing) throw data.failing.caldav
     return data.collections.slice()
+  })
+  const renameCalendar = vi.fn(async (_url: string, _name: string) => {
+    if ('rename' in data.failing) throw data.failing.rename
   })
   const createCalendar = vi.fn(async (args: { displayName: string }) => {
     const created = collection('/caldav/u/new/', args.displayName)
@@ -213,7 +224,7 @@ function harness(setup: Setup = {}) {
   const deps: LiveDeps = {
     store,
     status,
-    client: { listCalendars, createCalendar } as unknown as LiveDeps['client'],
+    client: { listCalendars, createCalendar, renameCalendar } as unknown as LiveDeps['client'],
     reader: { read } as unknown as Pick<CalendarReader, 'read'>,
     api: api as unknown as LiveDeps['api'],
     fetchIcs,
@@ -235,6 +246,7 @@ function harness(setup: Setup = {}) {
     api,
     listCalendars,
     createCalendar,
+    renameCalendar,
     read,
     fetchIcs,
     notifyProblems,
@@ -300,13 +312,14 @@ describe('first load', () => {
     expect(h.status.errors.value).toEqual({})
   })
 
-  it('asks the reader for the padded range in the display zone, with the server expanding series', async () => {
+  it('asks the reader for the padded range in the display zone, the objects as stored', async () => {
     const h = harness()
     await h.loader.start()
     const [calendars, range, options] = h.read.mock.calls[0]!
+    // Radicale's own expansion is slow on a busy calendar and refused past 10000 occurrences.
     expect(calendars).toEqual([
-      { url: A, expand: true },
-      { url: B, expand: true },
+      { url: A, expand: false },
+      { url: B, expand: false },
     ])
     expect(range).toEqual(loadRange(h.store.visibleRange.value, ZONE))
     expect(options).toEqual({ force: false })
@@ -331,8 +344,8 @@ describe('first load', () => {
     )
     await h.loader.start()
     expect(h.read.mock.calls[0]![0]).toEqual([
-      { url: A, expand: true },
-      { url: B, expand: true, freeBusy: true },
+      { url: A, expand: false },
+      { url: B, expand: false, freeBusy: true },
     ])
     expect(h.store.calendars.value.find((c) => c.id === idB)).toMatchObject({
       readOnly: true,
@@ -341,6 +354,94 @@ describe('first load', () => {
     const busy = h.store.events.value.filter((e) => e.calendarId === idB)
     expect(busy).toEqual([expect.objectContaining({ isBlocked: true, title: '' })])
     expect(h.status.errors.value).toEqual({})
+  })
+
+  it('names a calendar shared with the viewer with its owner, and loads without that list too', async () => {
+    const SHARED = '/caldav/u/shared-7/'
+    const h = harness({
+      collections: [
+        collection(A, 'Personal Calendar'),
+        collection(SHARED, 'Personal Calendar', { readOnly: true }),
+      ],
+    })
+    h.data.shared = [{ id: 7, name: 'Personal Calendar', kind: 'personal', owner: 'Alice Example' }]
+    await h.loader.start()
+    expect(h.store.calendars.value.map((c) => c.name)).toEqual([
+      'Personal Calendar',
+      'Personal Calendar (Alice Example)',
+    ])
+
+    const without = harness({ collections: [collection(SHARED, 'Personal Calendar')] })
+    without.data.failing['/api/shared-calendars'] = new Error('down')
+    await without.loader.start()
+    expect(without.store.calendars.value.map((c) => c.name)).toEqual(['Personal Calendar'])
+    expect(without.status.errors.value).toEqual({})
+  })
+
+  it('expands a stored series itself, into occurrences that can be edited one by one', async () => {
+    const h = harness({ collections: [collection(A, 'Alpha')] })
+    h.data.objects.set(A, [
+      object(`${A}series.ics`, 'series', 'Standup', [
+        'RRULE:FREQ=DAILY;COUNT=3',
+        'EXDATE:20261029T090000Z',
+      ]),
+    ])
+    await h.loader.start()
+    const events = h.store.events.value.filter((e) => e.uid === 'series')
+    expect(events.map((e) => [e.title, e.recurring, e.recurrenceId, e.href])).toEqual([
+      ['Standup', true, '2026-10-28T09:00:00Z', `${A}series.ics`],
+      ['Standup', true, '2026-10-30T09:00:00Z', `${A}series.ics`],
+    ])
+    expect(new Set(events.map((e) => e.id)).size).toBe(2)
+  })
+
+  it('names the person’s first calendar after them once, while it has Radicale’s name', async () => {
+    const OWN = '/caldav/sub-7/def-calendar/'
+    const h = harness({
+      collections: [
+        collection(OWN, 'Personal Calendar'),
+        // someone else's shared one keeps its name
+        collection('/caldav/sub-7/shared-3/', 'Personal Calendar', { readOnly: true }),
+      ],
+    })
+    await h.loader.start()
+    expect(h.renameCalendar.mock.calls).toEqual([[OWN, 'Alice']])
+    expect(h.store.calendars.value.map((c) => c.name)).toEqual(['Alice', 'Personal Calendar'])
+    // the next load of the sources does not ask again
+    await h.loader.refresh()
+    expect(h.renameCalendar).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves a renamed calendar, and its name when the server refuses, without a problem', async () => {
+    const renamed = harness({ collections: [collection('/caldav/sub-7/def-calendar/', 'Work')] })
+    await renamed.loader.start()
+    expect(renamed.renameCalendar).not.toHaveBeenCalled()
+
+    const refused = harness({
+      collections: [collection('/caldav/sub-7/def-calendar/', 'Personal Calendar')],
+    })
+    refused.data.failing.rename = new DavError('forbidden', 'no')
+    await refused.loader.start()
+    expect(refused.store.calendars.value.map((c) => c.name)).toEqual(['Personal Calendar'])
+    expect(refused.status.errors.value).toEqual({})
+  })
+
+  it('makes a first calendar called "Personal" for a person without a name', async () => {
+    const h = harness({
+      collections: [],
+      me: {
+        id: 7,
+        sub: 'sub-7',
+        username: null,
+        name: null,
+        email: null,
+        isAdmin: false,
+        timeZone: null,
+        sidebarOrder: null,
+      },
+    })
+    await h.loader.start()
+    expect(h.createCalendar).toHaveBeenCalledWith({ displayName: DEFAULT_CALENDAR_NAME })
   })
 
   it('starts with no calendar and no events, and a placeholder user, before the load', () => {
@@ -470,17 +571,18 @@ describe('the availability collection of the resources', () => {
     const h = harness({ collections: [collection(AVAILABILITY, 'Availability')] })
     await h.loader.start()
     expect(h.createCalendar).toHaveBeenCalledTimes(1)
-    expect(h.store.calendars.value.map((c) => c.name)).toEqual(['Personal'])
+    // named after the person (their name from /api/me)
+    expect(h.store.calendars.value.map((c) => c.name)).toEqual(['Alice'])
   })
 })
 
 describe('the first calendar', () => {
-  it('creates "Personal" when the first listing worked and is empty', async () => {
+  it('creates one named after the person when the first listing worked and is empty', async () => {
     const h = harness({ collections: [] })
     await h.loader.start()
     expect(h.createCalendar).toHaveBeenCalledTimes(1)
-    expect(h.createCalendar).toHaveBeenCalledWith({ displayName: DEFAULT_CALENDAR_NAME })
-    expect(h.store.calendars.value.map((c) => c.name)).toEqual(['Personal'])
+    expect(h.createCalendar).toHaveBeenCalledWith({ displayName: 'Alice' })
+    expect(h.store.calendars.value.map((c) => c.name)).toEqual(['Alice'])
     expect(h.store.visibleCalendarIds.value).toEqual(['dav:/caldav/u/new/'])
   })
 
@@ -508,7 +610,7 @@ describe('the first calendar', () => {
     await first
     await settle()
     expect(h.createCalendar).toHaveBeenCalledTimes(1)
-    expect(h.store.calendars.value.map((c) => c.name)).toEqual(['Personal'])
+    expect(h.store.calendars.value.map((c) => c.name)).toEqual(['Alice'])
   })
 
   it('does not create it again after a later reload finds none (it was deleted on purpose)', async () => {

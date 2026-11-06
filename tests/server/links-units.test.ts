@@ -76,7 +76,12 @@ describe('the password of a link', () => {
 
   it('never matches a damaged hash, and refuses one that would ask for huge memory', async () => {
     const stored = await hashPassword('correct horse')
-    expect(await verifyPassword('correct horse', stored.replace(/.$/, 'A'))).toBe(false)
+    // The first character of the key, changed for another: every bit of it counts (the last one of
+    // a 32-byte key in base64url carries only 4 bits, so changing it to "A" does nothing 1 time in 16).
+    const keyAt = stored.lastIndexOf('$') + 1
+    const other = stored[keyAt] === 'A' ? 'B' : 'A'
+    const damaged = stored.slice(0, keyAt) + other + stored.slice(keyAt + 1)
+    expect(await verifyPassword('correct horse', damaged)).toBe(false)
     expect(await verifyPassword('correct horse', stored.replace('scrypt$15$', 'scrypt$30$'))).toBe(
       false,
     )

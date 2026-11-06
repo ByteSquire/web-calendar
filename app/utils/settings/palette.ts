@@ -1,6 +1,7 @@
-// The colours a subscription can be given. A small fixed set instead of a free colour picker: each
-// colour has a name (so the choice is not colour-only information, WCAG 1.4.1), and all of them are
-// dark enough for white event text. The values are the 700 shades also used by the mock calendars.
+// The named colours of the colour picker (ColorPicker.vue), which also offers "Custom" for any
+// colour. Each has a name (so the choice is not colour-only information, WCAG 1.4.1), and all of
+// them are dark enough for white event text; a custom colour gets black or white text, whichever
+// reads. The values are the 700 shades also used by the mock calendars.
 
 import { N_, t, tv } from '~/utils/i18n'
 
@@ -8,6 +9,8 @@ export interface ColorChoice {
   /** `#rrggbb`, or '' for "no colour chosen" (the server then stores null). */
   value: string
   name: string
+  /** What '' looks like, when it stands for a colour (a calendar's own); else an empty circle. */
+  swatch?: string
 }
 
 export const COLOR_PALETTE: readonly ColorChoice[] = [
@@ -31,17 +34,16 @@ export function colorName(value: string | null): string {
 }
 
 /**
- * The choices of the picker. Adding offers the palette. Changing also keeps what the subscription
- * has now when the palette does not cover it (no colour, or one set through the API), so saving
- * the form without touching the colour never changes it.
+ * The named choices of the picker. Adding offers the palette. Changing something without a colour
+ * also offers "Default" (no colour), so saving the form without touching the colour never changes
+ * it; a colour the palette does not have shows as the picker's "Custom".
  */
 export function colorChoices(current: string | null | undefined, editing: boolean): ColorChoice[] {
   const choices = [...COLOR_PALETTE]
   if (!editing) return choices
   const value = current?.toLowerCase() ?? ''
   if (value === '') return [{ value: '', name: N_('Default') }, ...choices]
-  if (choices.some((color) => color.value === value)) return choices
-  return [...choices, { value, name: N_('Current') }]
+  return choices
 }
 
 /** The choice a form starts with: the stored colour, else the first palette colour for a new one. */

@@ -454,6 +454,20 @@ describe('calendar state', () => {
     )
   })
 
+  it('sets a calendar’s colour, and null goes back to its own', async () => {
+    const state = makeStore()
+    state.calendars.value = state.calendars.value.map((calendar) =>
+      calendar.id === 'cal-team' ? { ...calendar, ownColor: '#047857' } : calendar,
+    )
+    await state.setCalendarColor('cal-team', '#ffe066')
+    expect(state.calendarById.value.get('cal-team')!.color).toBe('#ffe066')
+    await state.setCalendarColor('cal-team', null)
+    expect(state.calendarById.value.get('cal-team')!.color).toBe('#047857')
+    // an unknown calendar is left alone
+    await state.setCalendarColor('cal-none', '#000000')
+    expect(state.calendarById.value.has('cal-none')).toBe(false)
+  })
+
   it('keeps the view selected while single calendars are toggled', () => {
     const state = makeStore()
     state.selectView('view-my-week')

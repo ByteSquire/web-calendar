@@ -162,6 +162,27 @@ describe('the calendar state with hooks', () => {
     id: calendar.id.startsWith('dav:') ? calendar.id : `dav:/caldav/u/${index}/`,
   })
 
+  it('saves a colour, tells who listens, and keeps the old one when the save fails', async () => {
+    const saved = { ref: 'dav:/caldav/u/0/', color: '#ffe066', visible: true }
+    const api = vi.fn(async (_path: string, _options?: unknown): Promise<unknown> => saved)
+    const { store, hooks } = setup(api)
+    const heard: unknown[] = []
+    const stop = hooks.onPreferenceSaved((pref) => heard.push(pref))
+    const calendar = store.calendars.value[0]!
+    await store.setCalendarColor(calendar.id, '#ffe066')
+    expect(api.mock.calls).toEqual([
+      ['/api/calendar-prefs', { method: 'PUT', body: { ref: calendar.id, color: '#ffe066' } }],
+    ])
+    expect(heard).toEqual([saved])
+    expect(store.calendars.value[0]!.color).toBe('#ffe066')
+    stop()
+
+    api.mockRejectedValueOnce(new Error('down'))
+    await expect(store.setCalendarColor(calendar.id, '#000000')).rejects.toThrow('down')
+    expect(store.calendars.value[0]!.color).toBe('#ffe066')
+    expect(heard).toHaveLength(1)
+  })
+
   it('saves a toggle as a preference, one request for quick toggles of the same calendar', async () => {
     const { api, clock, store } = setup()
     const id = store.calendars.value[0]!.id

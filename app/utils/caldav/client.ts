@@ -89,6 +89,8 @@ export interface CalDavClient {
     slug?: string
     signal?: AbortSignal
   }): Promise<DavCalendar>
+  /** Gives a calendar a new name (`displayname`, PROPPATCH); every CalDAV app shows it. */
+  renameCalendar(calendarUrl: string, displayName: string, signal?: AbortSignal): Promise<void>
 }
 
 interface Discovery {
@@ -270,7 +272,7 @@ export function createCalDavClient(options: CalDavClientOptions): CalDavClient {
 
   /** A WebDAV request with an XML body; the single place that hands tsdav a `fetch`. */
   function xml(
-    method: 'PROPFIND' | 'REPORT' | 'MKCALENDAR',
+    method: 'PROPFIND' | 'PROPPATCH' | 'REPORT' | 'MKCALENDAR',
     url: string,
     body: string,
     depth: '0' | '1' | undefined,
@@ -600,6 +602,29 @@ export function createCalDavClient(options: CalDavClientOptions): CalDavClient {
     }
   }
 
+  async function renameCalendar(
+    calendarUrl: string,
+    displayName: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const name = displayName.trim()
+    if (name === '' || name.length > 200) {
+      throw new TypeError('renameCalendar: the name must have 1 to 200 characters')
+    }
+    const body =
+      `${XML_HEAD}<d:propertyupdate ${NAMESPACES}><d:set><d:prop>` +
+      `<d:displayname>${xmlEscape(name)}</d:displayname></d:prop></d:set></d:propertyupdate>`
+    const answer = multistatus(
+      await xml('PROPPATCH', requestUrl(calendarUrl), body, undefined, signal),
+      'PROPPATCH',
+    )
+    // One propstat per property: anything but 200 means the name was refused.
+    const refused = answer.find((response) => !response.ok)
+    if (answer.length === 0 || refused) {
+      throw errorForStatus('PROPPATCH', refused?.status ?? 500)
+    }
+  }
+
   return {
     discover,
     clearDiscovery,
@@ -610,5 +635,6 @@ export function createCalDavClient(options: CalDavClientOptions): CalDavClient {
     putObject,
     deleteObject,
     createCalendar,
+    renameCalendar,
   }
 }

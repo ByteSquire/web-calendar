@@ -721,9 +721,16 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
   accessible name and in the event sheet), which the viewer has in the sidebar anyway. A text filter
   never matches a blocked entry: it has no text of its own. A calendar link to it offers "Busy
   times only" alone (§8).
-- **Recurrence (FR-28)** — prefer Radicale's server-side `expand` if it works
-  (untested, S4); otherwise expand `RRULE`, `EXDATE` and `RECURRENCE-ID` overrides
-  with `ical.js`.
+- **Recurrence (FR-28)** — the browser expands every series (`RRULE`, `RDATE`, `EXDATE` and the
+  `RECURRENCE-ID` overrides, `app/utils/ical/read.ts`): the built-in calendars, the external
+  accounts and the calendar links are all read as stored. Radicale's own `<C:expand>` works (S4),
+  but on a calendar of about 4,100 events over ten years (measured 2026-11-06, Radicale 3.9.0) it
+  took 3.3 s for a week and 3.6 s for a month against 0.9–1.4 s for the same query without it, and
+  a year failed: Radicale refuses an expansion past 10000 occurrences (`max_expand_occurrence`,
+  400 "REPORT occurrences limit of 10000 hit"). Expanding the week in the browser took 20–40 ms,
+  the year 180–250 ms. The query itself costs about the same for any range, because Radicale
+  checks every event against it; a whole calendar without a time range took 0.35 s (2.1 MB), the
+  basis of a later cache. `use_mtime_and_size_for_item_cache` gained 5–10 %.
 - **Time zones (FR-29, FR-32)** — two zones, and nothing else names one.
   - _Organization zone_: the server reads `TZ` (an IANA name, default `Europe/Berlin`; an
     invalid value stops the container at start) and serves it in `/api/config`
@@ -1221,11 +1228,11 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
     tab only) and sends it in `X-Calendar-Link-Session`, never as a cookie or in the address.
   - _Reading_ (`GET /api/link/:slug/events?from&to`, at most 400 days, 120 reads per address then 4
     a second, at most 2 reads at once per principal read as because they bypass the gateway's own
-    per-user cap, answers up to 16 MiB for an expanded year): the link is looked up on every read, so
+    per-user cap, answers up to 16 MiB for a year of a busy calendar): the link is looked up on every read, so
     a removal ends open pages at once; the session must be of that very link. The reader
     (`server/utils/links/reader.ts`, the booking reader's request code) sends fixed bodies as the
     principal (`X-Remote-User` on the internal network): at "Can view" a `calendar-query` REPORT with
-    a time range and `<C:expand>`, whose objects are passed on **unchanged** (`{ level: 'read',
+    a time range, whose objects are passed on **unchanged**, series as stored for the page to expand (`{ level: 'read',
 objects }`: descriptions, attendees and private events as a read share sees them); at "Busy times
     only" **only** a `free-busy-query` (`{ level: 'free_busy', freeBusy }`, Radicale's VFREEBUSY in
     UTC, series expanded, transparent events left out), never a query of the events. A 403 or 404
@@ -1304,6 +1311,34 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   folds the section away (chevron down while open, to the right while closed; `aria-expanded`); the
   closed sections are remembered in this browser (`localStorage`, `app/utils/sidebar-sections.ts`),
   the same on the column and in the drawer. A closed section is hidden, not removed.
+  - _Names of shared calendars_: Radicale maps a calendar shared with a person into their home as
+    `shared-<id>…` under its owner's name, so someone else's "Personal Calendar" would look like the
+    person's own in the sidebar and in every calendar choice. `GET /api/shared-calendars` lists the
+    calendars an access rule shares with the caller (as a person, through one of their groups, or as
+    somebody signed in; never their own), with the owner of a person's calendar, and the calendar
+    list names those "Personal Calendar (Alice Example)", as the access page does
+    (`app/utils/calendar-label.ts`). Without that list (it failed to load) a shared calendar keeps
+    Radicale's name; the calendars still load.
+  - _A person's first calendar is named after them_: Radicale makes it for everybody as
+    `def-calendar` named "Personal Calendar" (`predefined_collections`; it cannot put a name in it,
+    and it knows only the user's id). The first time a session of the app lists the calendars, it
+    renames that calendar in Radicale (PROPPATCH `displayname` through the gateway) to the person's
+    display name, else their username, but only while it still has the name "Personal Calendar":
+    a calendar the person renamed keeps its name. Every CalDAV app then shows it, and a share of it
+    carries the owner's name by itself, so the label does not name the owner twice ("Alice
+    Example", not "Alice Example (Alice Example)"). A first calendar the app makes itself (when
+    Radicale made none) gets the person's name at once. A refused rename leaves the name as it was
+    and is not reported; the next session tries again.
+  - _Colour of a calendar (FR-4)_: each calendar's row has a colour button ("Colour of Team",
+    44 px, a palette icon) that opens a dialog with the named colours, "Custom" (the browser's own
+    colour picker and a colour code field, `#rrggbb`, the way to choose without seeing it) and
+    "Default", the calendar's own colour (its source's, else the palette's). The choice is the
+    person's (`calendar_prefs.color`, on all their devices; `null` is "Default"); a refusal keeps
+    the dialog open with the reason. The same picker, with "Custom", is the one of subscriptions,
+    external accounts and group calendars. Event text on any colour is black or white, whichever
+    reads (`readableTextColor`). Design note: a button of its own on every calendar row, because a
+    calendar row had no menu to put "Colour" in and a menu with one item is no shorter; it is for
+    everybody, not for admins.
   - _The plus (FR-21)_: the sections that add something (views, calendars, categories, filters)
     have a small plus to the right of the heading, a button of its own beside the fold button and
     not inside the heading, 44 px square, named "Add view", "Add calendar" and so on. This

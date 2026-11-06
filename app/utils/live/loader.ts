@@ -24,6 +24,7 @@ import { DavError } from '../caldav/errors'
 import { t } from '../i18n'
 import type { CalendarReader } from '../caldav/reader'
 import type { DavCalendar } from '../caldav/types'
+import { toDavPath } from '../caldav/urls'
 import type { CalendarState } from '../calendar-state'
 import {
   availabilityRanges,
@@ -39,6 +40,7 @@ import type {
   ApiCalendarPref,
   ApiCategory,
   ApiFilter,
+  ApiSharedCalendar,
   ApiIcalSubscription,
   ApiMe,
   ApiView,
@@ -73,6 +75,12 @@ import type { LiveStatusState } from './status'
 import { toFilters, toViews } from './views'
 
 export const DEFAULT_CALENDAR_NAME = 'Personal'
+/**
+ * The first calendar Radicale makes for a person (`predefined_collections` in
+ * deploy/radicale/config and the Cosmos template): the same name for everybody, since Radicale
+ * cannot put the person's name in it.
+ */
+export const PREDEFINED_CALENDAR = { segment: 'def-calendar', name: 'Personal Calendar' } as const
 export const EVENTS_DEBOUNCE_MS = 150
 
 /** The part of the calendar state the loader reads and writes. */
@@ -101,7 +109,7 @@ export interface ResourceSource {
 export interface LiveDeps {
   store: LiveStore
   status: LiveStatusState
-  client: Pick<CalDavClient, 'listCalendars' | 'createCalendar'>
+  client: Pick<CalDavClient, 'listCalendars' | 'createCalendar' | 'renameCalendar'>
   reader: Pick<CalendarReader, 'read'>
   /** GET a JSON route of the app's own API. */
   api: <T>(path: string) => Promise<T>
@@ -148,6 +156,8 @@ export interface LiveLoader {
     only?: readonly string[]
     skipExternal?: boolean
   }) => Promise<void>
+  /** A preference the viewer just saved, so a later partial reload builds with it. */
+  rememberPreference: (pref: ApiCalendarPref) => void
   /** Reload the sources; calls that overlap run one after the other. */
   loadSources: () => Promise<void>
   dispose: () => void
@@ -176,6 +186,27 @@ function toUser(me: ApiMe): CalendarUser {
   }
 }
 
+/** The name a person goes by: their display name, else their username; null without either. */
+function personName(me: ApiMe): string | null {
+  const name = (me.name ?? '').trim() || (me.username ?? '').trim()
+  return name === '' ? null : name.slice(0, 200)
+}
+
+/** `/caldav/<sub>/<segment>/` (any spelling of it): the person's own collection of that name. */
+function isOwnCollection(url: string, sub: string, segment: string): boolean {
+  const parts = toDavPath(url).split('/').filter(Boolean)
+  try {
+    return (
+      parts.length === 3 &&
+      parts[0] === 'caldav' &&
+      decodeURIComponent(parts[1]!) === sub &&
+      decodeURIComponent(parts[2]!) === segment
+    )
+  } catch {
+    return false
+  }
+}
+
 export function createLiveLoader(deps: LiveDeps): LiveLoader {
   const { store, status } = deps
   const timers = deps.timers ?? defaultTimers
@@ -186,6 +217,10 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
   let sourcesReady = false
   /** The first successful listing of the collections decides about the default calendar. */
   let defaultChecked = false
+  /** Whether the person's first calendar was looked at for its name in this session. */
+  let defaultNamed = false
+  /** Who owns the calendars shared with the viewer, for their names; the last list that loaded. */
+  let sharedCalendars: ApiSharedCalendar[] = []
   let timer: unknown = null
   let working = 0
   let tokenCounter = 0
@@ -266,22 +301,35 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
   async function runSources(): Promise<void> {
     beginWork()
     try {
-      const [me, prefs, categories, filters, views, subscriptions, collections, resourceList] =
-        await Promise.all([
-          attempt(() => deps.api<ApiMe>('/api/me')),
-          attempt(() => deps.api<{ prefs: ApiCalendarPref[] }>('/api/calendar-prefs')),
-          attempt(() => deps.api<{ categories: ApiCategory[] }>('/api/categories')),
-          attempt(() => deps.api<{ filters: ApiFilter[] }>('/api/filters')),
-          attempt(() => deps.api<{ views: ApiView[] }>('/api/views')),
-          attempt(() =>
-            deps.api<{ subscriptions: ApiIcalSubscription[] }>('/api/ical-subscriptions'),
-          ),
-          attempt(() => listOwnCalendars()),
-          deps.resources
-            ? attempt(() => deps.api<{ resources: ApiResource[] }>('/api/resources'))
-            : Promise.resolve(null),
-        ])
+      const [
+        me,
+        prefs,
+        categories,
+        filters,
+        views,
+        subscriptions,
+        collections,
+        resourceList,
+        shared,
+      ] = await Promise.all([
+        attempt(() => deps.api<ApiMe>('/api/me')),
+        attempt(() => deps.api<{ prefs: ApiCalendarPref[] }>('/api/calendar-prefs')),
+        attempt(() => deps.api<{ categories: ApiCategory[] }>('/api/categories')),
+        attempt(() => deps.api<{ filters: ApiFilter[] }>('/api/filters')),
+        attempt(() => deps.api<{ views: ApiView[] }>('/api/views')),
+        attempt(() =>
+          deps.api<{ subscriptions: ApiIcalSubscription[] }>('/api/ical-subscriptions'),
+        ),
+        attempt(() => listOwnCalendars()),
+        deps.resources
+          ? attempt(() => deps.api<{ resources: ApiResource[] }>('/api/resources'))
+          : Promise.resolve(null),
+        attempt(() => deps.api<{ calendars: ApiSharedCalendar[] }>('/api/shared-calendars')),
+      ])
       if (disposed) return
+      // Only the names depend on it: without it a shared calendar keeps the name Radicale gives it,
+      // and the calendars still load, so it is no problem of its own.
+      if (shared.status === 'fulfilled') sharedCalendars = shared.value.calendars
 
       const problems: Record<string, string> = {}
       const fail = (key: string, result: PromiseRejectedResult) => {
@@ -313,8 +361,14 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
         if (!defaultChecked) {
           defaultChecked = true
           if (collectionList.length === 0) {
-            collectionList = await createDefaultCalendar(problems)
+            collectionList = await createDefaultCalendar(
+              problems,
+              me.status === 'fulfilled' ? personName(me.value) : null,
+            )
           }
+        }
+        if (me.status === 'fulfilled') {
+          collectionList = await nameDefaultCalendar(collectionList, me.value)
         }
       } else fail(SOURCE_KEYS.calendars, collections)
       if (disposed) return
@@ -328,6 +382,7 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
           subscriptions: subscriptionList ?? [],
           prefs: prefs.status === 'fulfilled' ? prefs.value.prefs : [],
           ...(me.status === 'fulfilled' ? { ownerId: String(me.value.id) } : {}),
+          shared: sharedCalendars,
           // What the external accounts' servers listed last; their own track keeps that current.
           external: externalTrack?.collections() ?? [],
         })
@@ -470,10 +525,44 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
     )
   }
 
-  /** The user has no calendar at all: make one. A failure is reported and retried on the next load. */
-  async function createDefaultCalendar(problems: Record<string, string>): Promise<DavCalendar[]> {
+  /**
+   * The person's first calendar still has the name Radicale gives everybody's: it is given the
+   * person's name once ("Jane Doe"), in Radicale, so every CalDAV app shows it and a share of it
+   * names its owner. A calendar the person renamed keeps its name. Tried once a session; a refusal
+   * leaves the name as it was and is no problem of the calendars.
+   */
+  async function nameDefaultCalendar(
+    collections: DavCalendar[],
+    me: ApiMe,
+  ): Promise<DavCalendar[]> {
+    if (defaultNamed) return collections
+    defaultNamed = true
+    const name = personName(me)
+    if (name === null) return collections
+    const index = collections.findIndex(
+      (collection) =>
+        collection.displayName === PREDEFINED_CALENDAR.name &&
+        !collection.readOnly &&
+        isOwnCollection(collection.url, me.sub, PREDEFINED_CALENDAR.segment),
+    )
+    if (index === -1) return collections
     try {
-      return [await deps.client.createCalendar({ displayName: DEFAULT_CALENDAR_NAME })]
+      await deps.client.renameCalendar(collections[index]!.url, name)
+    } catch {
+      return collections
+    }
+    return collections.map((collection, at) =>
+      at === index ? { ...collection, displayName: name } : collection,
+    )
+  }
+
+  /** The user has no calendar at all: make one. A failure is reported and retried on the next load. */
+  async function createDefaultCalendar(
+    problems: Record<string, string>,
+    name: string | null,
+  ): Promise<DavCalendar[]> {
+    try {
+      return [await deps.client.createCalendar({ displayName: name ?? DEFAULT_CALENDAR_NAME })]
     } catch (error) {
       if (error instanceof DavError && error.kind === 'exists') {
         // Another tab was faster: use what is there now.
@@ -536,11 +625,13 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
   ): Promise<CalendarOutcome[]> {
     try {
       const results = await deps.reader.read(
-        // `expand`: Radicale returns the occurrences of a series as separate VEVENTs.
+        // The objects as stored; the browser expands the series (design §7, "Recurrence"):
+        // Radicale's own `expand` costs it about twice the time of the query on a busy calendar,
+        // and it refuses a range with more than 10000 occurrences (a year of a busy calendar).
         // A free/busy share cannot query its events: its busy times are read instead.
         calendars.map((calendar) => ({
           url: calendar.href ?? '',
-          expand: true,
+          expand: false,
           ...(calendar.freeBusyOnly ? { freeBusy: true } : {}),
         })),
         range,
@@ -549,7 +640,12 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
       return calendars.map((calendar, index): CalendarOutcome => {
         const result = results[index]
         if (result?.objects) {
-          return { kind: 'caldav', calendarId: calendar.id, objects: result.objects }
+          return {
+            kind: 'caldav',
+            calendarId: calendar.id,
+            objects: result.objects,
+            expandRecurrence: true,
+          }
         }
         if (result?.freeBusy !== undefined) {
           return { kind: 'free-busy', calendarId: calendar.id, text: result.freeBusy }
@@ -807,6 +903,9 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
     retry,
     loadEvents,
     loadSources,
+    rememberPreference(pref) {
+      preferences = [...preferences.filter((item) => item.ref !== pref.ref), pref]
+    },
     dispose() {
       disposed = true
       cancelTimer()

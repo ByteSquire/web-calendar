@@ -81,7 +81,7 @@ export function fetchLinkRead(
 
 /**
  * The events of what the server sent, as the calendar view shows them: the objects read like the
- * live loader reads an expanded REPORT (what a read share shows), or the busy times as "Busy"
+ * live loader reads a REPORT, series expanded here (what a read share shows), or the busy times as "Busy"
  * entries (what a free/busy share shows). Booking properties are not trusted here, as for a feed.
  */
 export function linkEvents(
@@ -105,7 +105,8 @@ export function linkEvents(
       displayTimeZone: context.displayTimeZone,
       orgTimeZone: context.orgTimeZone,
       range: context.range,
-      expandRecurrence: false,
+      // The server sends the objects as stored: the series are expanded here, in the range.
+      expandRecurrence: true,
     })
     for (const event of found.events) {
       // The same occurrence twice (one object listed twice) is shown once.

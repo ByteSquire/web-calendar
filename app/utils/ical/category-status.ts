@@ -1,7 +1,8 @@
-// A category turned into a status, in one resource: every event of it (a single event, a series
-// and its changed occurrences) that has the category gets that STATUS, which every calendar app
-// understands, and loses the category when asked. For people whose old system had "Tentative" or
-// "Confirmed" as a category. Names compare as the app compares categories: trimmed, without regard
+// A category turned into a status, or taken away, in one resource: every event of it (a single
+// event, a series and its changed occurrences) that has the category gets that STATUS, which every
+// calendar app understands, and loses the category when asked; without a status it only loses the
+// category (deleting a category). For people whose old system had "Tentative" or "Confirmed" as a
+// category. Names compare as the app compares categories: trimmed, without regard
 // to case. Everything else in the resource stays as it was (the same lossless writer as an edit).
 import type { EventStatusValue, WriteContext } from './write-types'
 import { applyScalars, openDocument, touch } from './write-core'
@@ -33,14 +34,14 @@ export function hasCategory(ics: string, name: string, ctx: WriteContext): boole
 }
 
 /**
- * The resource with `status` on every event that has the category, and the category gone from
- * them when `removeCategory`. Null when no event has it, or when nothing would change. Throws
- * `EditError` (`unparseable`) for a text that is no event.
+ * The resource with `status` on every event that has the category (none when null), and the
+ * category gone from them when `removeCategory`. Null when no event has it, or when nothing would
+ * change. Throws `EditError` (`unparseable`) for a text that is no event.
  */
 export function categoryToStatus(
   ics: string,
   name: string,
-  status: EventStatusValue,
+  status: EventStatusValue | null,
   options: { removeCategory: boolean },
   ctx: WriteContext,
 ): string | null {
@@ -53,7 +54,7 @@ export function categoryToStatus(
     if (!categories.some((category) => keyOf(category) === key)) continue
     const kept = categories.filter((category) => keyOf(category) !== key)
     const touched = applyScalars(comp, {
-      status,
+      ...(status ? { status } : {}),
       ...(options.removeCategory ? { categoryNames: kept } : {}),
     })
     if (touched) {

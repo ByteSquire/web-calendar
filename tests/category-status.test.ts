@@ -115,6 +115,28 @@ describe('one resource', () => {
     expect(next).not.toContain('CATEGORIES')
   })
 
+  it('without a status only takes the category away, and keeps the status the event has', () => {
+    const next = categoryToStatus(
+      event(['CATEGORIES:Work,Old', 'STATUS:TENTATIVE']),
+      'old',
+      null,
+      { removeCategory: true },
+      ctx,
+    )!
+    expect(next).toMatch(/CATEGORIES:Work\r\n/)
+    expect(next).toContain('STATUS:TENTATIVE')
+    expect(next).toContain('SEQUENCE:1')
+    const bare = categoryToStatus(
+      event(['CATEGORIES:Old']),
+      'Old',
+      null,
+      { removeCategory: true },
+      ctx,
+    )!
+    expect(bare).not.toContain('CATEGORIES')
+    expect(bare).not.toContain('STATUS')
+  })
+
   it('answers null for a resource without the category', () => {
     expect(
       categoryToStatus(

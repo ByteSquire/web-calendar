@@ -5,7 +5,8 @@ import { openSignedIn } from './session'
 // A category that only events carry, with the real stack: alice has an event with CATEGORIES in
 // Radicale and no category of that name. Its row in the sidebar offers Colour, which saves it as
 // one of her categories; after a reload it keeps the colour and is a category like any other. With
-// "Category colours on events" the event shows a dot of it. The test removes what it made.
+// "Category colours on events" the event shows a dot of it. Delete takes it off the event as well,
+// so it does not come back as a name the event carries. The test removes what it made.
 test.describe.configure({ mode: 'serial' })
 
 const STAMP = Date.now()
@@ -84,7 +85,7 @@ test('the name the event carries is listed, and its only action is Colour', asyn
   await expect(page.locator('[data-calendar-main]')).toContainText('Tagged lunch')
   await expect(sidebar().getByText(TAG, { exact: true })).toBeVisible()
   await tagMenu().click()
-  await expect(page.getByRole('menuitem')).toHaveText(['Colour', 'Turn into a status…'])
+  await expect(page.getByRole('menuitem')).toHaveText(['Colour', 'Turn into a status…', 'Delete'])
   expect(storedCategory()).toBeUndefined()
 })
 
@@ -122,18 +123,26 @@ test('with category colours on, the event shows a dot of it', async () => {
   )
 })
 
-test('deleting the category leaves the event its name', async () => {
+test('Delete takes it off the event too, so it leaves the list for good', async () => {
   await tagMenu().click()
   await page.getByRole('menuitem', { name: 'Delete' }).click()
-  await page
-    .getByRole('dialog', { name: `Delete "${TAG}"?` })
-    .getByRole('button', { name: 'Delete' })
-    .click()
+  const dialog = page.getByRole('dialog', { name: `Delete "${TAG}"?` })
+  await expect(dialog.locator('[data-category-status-found]')).toContainText(
+    '1 event has this category.',
+  )
+  await dialog.getByRole('button', { name: 'Delete from 1 event' }).click()
+  await expect(dialog.locator('[data-category-status-done]')).toContainText('1 event was changed.')
   await expect.poll(() => storedCategory()).toBeUndefined()
-  // it is a name of the event again
-  await expect(sidebar().getByText(TAG, { exact: true })).toBeVisible()
   const event = await fetch(`${RADICALE}${eventPath()}`, { headers: { 'X-Remote-User': sub } })
-  expect(await event.text()).toContain(`CATEGORIES:${TAG}`)
+  const text = await event.text()
+  expect(text).not.toContain(TAG)
+  expect(text).toContain('SUMMARY:Tagged lunch')
+  await page.keyboard.press('Escape')
+  await expect(sidebar().getByText(TAG, { exact: true })).toHaveCount(0)
+  // and it does not come back with the next load
+  await page.reload()
+  await expect(page.locator('[data-calendar-main]')).toContainText('Tagged lunch')
+  await expect(sidebar().getByText(TAG, { exact: true })).toHaveCount(0)
 })
 
 test('no script or console errors came up', () => {

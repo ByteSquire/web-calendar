@@ -1346,9 +1346,16 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     Delete. Admins change other people's calendars on Admin › Calendars, not in the sidebar, where
     a slip would delete a colleague's calendar. A category that only events carry (a name in their
     CATEGORIES, with no saved row: in live use most are) offers Colour, which saves it as one of
-    the person's categories with that colour; it has no row to rename or delete, and renaming it
-    would mean changing the events. Deleting asks first and names what goes: a calendar's events,
-    its shares and its links.
+    the person's categories with that colour; it has no row to rename, and renaming it would mean
+    changing the events. Deleting asks first and names what goes: a calendar's events, its shares
+    and its links.
+  - **Deleting a category** (where there is a calendar service) takes it off every event in the
+    calendars the person can change, as "Turn into a status…" does but without a status, and then
+    deletes the saved category (its colour), so a name only events carry can be deleted too. Only
+    deleting the saved row was not enough: the sidebar lists every name the events carry, so the
+    category came straight back as such a name, with no Delete (found by a person trying it). Events
+    in calendars the person can only read keep the name, and the list shows it for them. Without a
+    calendar service (the demo) Delete deletes the saved category alone.
   - Every item of a dropdown menu runs once per click or tap (`app/utils/menu-select.ts`). Reka UI
     takes an item when the button or the finger lifts and clicks it itself, and the browser then
     sends the rest of the gesture: the click chose the item a second time (an on/off item went on

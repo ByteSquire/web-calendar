@@ -1,9 +1,9 @@
-// Turning a category into a status in every calendar the person can change: first the events are
-// found (the server filters by the category, then the exact name is checked here), and shown as a
-// count before anything is written; then each resource is rewritten with `categoryToStatus` and put
-// back with its ETag. A resource that changed meanwhile is read again and tried once more; one that
-// still fails is counted and named, and the others go on. Calendars the person can only read are
-// not searched: their events are not theirs to change.
+// Turning a category into a status, or deleting it from the events (no status), in every calendar
+// the person can change: first the events are found (the server filters by the category, then the
+// exact name is checked here), and shown as a count before anything is written; then each resource
+// is rewritten with `categoryToStatus` and put back with its ETag. A resource that changed meanwhile
+// is read again and tried once more; one that still fails is counted and named, and the others go
+// on. Calendars the person can only read are not searched: their events are not theirs to change.
 import type { Calendar } from '../../../shared/types/calendar'
 import type { CalDavClient } from '../caldav/client'
 import { DavError } from '../caldav/errors'
@@ -71,7 +71,7 @@ export async function convertCategoryEvents(
   client: CategoryStatusClient,
   found: readonly FoundInCalendar[],
   name: string,
-  status: EventStatusValue,
+  status: EventStatusValue | null,
   options: { removeCategory: boolean },
   ctx: WriteContext,
   onProgress?: (done: number, total: number) => void,
@@ -99,7 +99,7 @@ async function convertOne(
   client: CategoryStatusClient,
   object: DavObject,
   name: string,
-  status: EventStatusValue,
+  status: EventStatusValue | null,
   options: { removeCategory: boolean },
   ctx: WriteContext,
 ): Promise<'changed' | 'unchanged'> {

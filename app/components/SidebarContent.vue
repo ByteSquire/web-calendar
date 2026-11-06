@@ -185,7 +185,11 @@
       @confirm="confirmDelete"
     />
     <CalendarColorDialog :calendar="colorTarget" @close="colorTarget = null" />
-    <CategoryStatusDialog :category="statusTarget" @close="statusTarget = null" />
+    <CategoryEventsDialog
+      :category="statusTarget ?? deleteTarget"
+      :mode="deleteTarget ? 'delete' : 'status'"
+      @close="closeCategoryEvents"
+    />
     <RenameDialog
       :open="itemRename !== null"
       :title="renameTitle"
@@ -627,7 +631,8 @@ function submitFilter(text: string) {
 // Edit and Delete. A category that only events carry is a name, not a row: it offers Colour, which
 // saves it as a category of that colour (it has no row to rename or delete; renaming it would mean
 // changing the events). Where there is a calendar service, every category also offers "Turn into a
-// status…": its events get a status instead (CategoryStatusDialog). A new category or filter can be
+// status…": its events get a status instead, and Delete takes the category off the events too (both
+// CategoryEventsDialog; without it a deleted category came back as a name its events carry). A new category or filter can be
 // changed once the server has saved it.
 
 type Item =
@@ -636,8 +641,14 @@ type Item =
   | { kind: 'filter'; item: CalendarFilter }
 
 const itemRename = ref<Item | null>(null)
-/** The category whose "Turn into a status" dialog is open. */
+/** The category whose "Turn into a status" dialog is open, or whose delete dialog. */
 const statusTarget = ref<Category | null>(null)
+const deleteTarget = ref<Category | null>(null)
+
+function closeCategoryEvents() {
+  statusTarget.value = null
+  deleteTarget.value = null
+}
 const itemDelete = ref<Item | null>(null)
 const categoryColor = ref<Category | null>(null)
 const itemPending = ref(false)
@@ -732,8 +743,18 @@ function categoryItems(category: Category): DropdownMenuItem[][] {
         },
       ]
     : []
-  if (isAutoCategory(category)) return [[colour, ...toStatus]]
-  return [[rename, colour, ...toStatus], [remove]]
+  // With a calendar service, Delete takes the category off the events too (CategoryEventsDialog),
+  // so a name only events carry can be deleted as well; without one it deletes the saved category.
+  const removeFromEvents: DropdownMenuItem = {
+    ...remove,
+    onSelect: () => {
+      deleteTarget.value = category
+    },
+  }
+  if (isAutoCategory(category)) {
+    return canCreateCalendars ? [[colour, ...toStatus], [removeFromEvents]] : [[colour]]
+  }
+  return [[rename, colour, ...toStatus], [canCreateCalendars ? removeFromEvents : remove]]
 }
 
 /**

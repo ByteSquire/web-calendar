@@ -230,4 +230,12 @@ export const shell: Readonly<Record<string, string>> = {
     '{calendar} konnte nicht durchsucht werden: {problem}',
   '{count} event could not be changed: {reason} | {count} events could not be changed. The first: {reason}':
     '{count} Termin konnte nicht geändert werden: {reason} | {count} Termine konnten nicht geändert werden. Der erste: {reason}',
+
+  // Deleting a category from the events that have it
+  'The category is taken off every event in your calendars that has it; their other categories and everything else stay. This cannot be undone.':
+    'Die Kategorie wird von jedem Termin in deinen Kalendern entfernt, der sie hat; seine anderen Kategorien und alles andere bleiben. Das lässt sich nicht rückgängig machen.',
+  'Only the category itself is deleted.': 'Nur die Kategorie selbst wird gelöscht.',
+  'The category was deleted.': 'Die Kategorie wurde gelöscht.',
+  'Delete from {count} event | Delete from {count} events':
+    'Von {count} Termin löschen | Von {count} Terminen löschen',
 }

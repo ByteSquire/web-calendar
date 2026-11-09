@@ -50,11 +50,13 @@ character such as `!` is written as `\!`, and the backslash is not part of the p
 value from the file by hand; read it with `sh -c '. .local/secrets.env && printf %s "$ALICE_PASSWORD"'`
 (for example `... | wl-copy` to put it on the clipboard).
 
-| What                 | Name           | Notes                                                                                                                                                   |
-| -------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Kanidm users         | `alice`, `bob` | Both in `web_calendar_users`; `alice` also in `calendar_admins`                                                                                         |
-| Kanidm OAuth2 client | `web-calendar` | Public, PKCE. The SPA's login. Scopes `openid profile email groups caldav`; localhost redirects allowed, callback `http://localhost:3000/auth/callback` |
-| Kanidm admin         | `idm_admin`    | Break-glass account, password recovered at bootstrap                                                                                                    |
+| What                 | Name                 | Notes                                                                                                                                                   |
+| -------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Kanidm users         | `alice`, `bob`       | Both in `web_calendar_users`; `alice` also in `calendar_admins`                                                                                         |
+| Kanidm OAuth2 client | `web-calendar`       | Public, PKCE. The SPA's login. Scopes `openid profile email groups caldav`; localhost redirects allowed, callback `http://localhost:3000/auth/callback` |
+| Kanidm admin         | `idm_admin`          | Break-glass account, password recovered at bootstrap                                                                                                    |
+| Kanidm user          | `carol`              | Made by `short-session`: in `web_calendar_users` and `short_sessions`, whose account policy ends her Kanidm browser session after the given seconds     |
+| Kanidm OAuth2 client | `web-calendar-short` | Made by `short-session`: like `web-calendar`, but its refresh tokens end the given seconds after they were issued. Only `short-app.sh` uses it          |
 
 ## Commands
 
@@ -63,6 +65,7 @@ value from the file by hand; read it with `sh -c '. .local/secrets.env && printf
 | `./spike.sh init`                              | Create test certificates and the `.local/rules` directory                  |
 | `./spike.sh up`                                | Start the stack, wait for Kanidm                                           |
 | `./spike.sh bootstrap`                         | Create users, groups, OAuth2 clients and passwords                         |
+| `./spike.sh short-session [seconds]`           | `carol` and `web-calendar-short`, with sessions of that length (30 s)      |
 | `./spike.sh token alice`                       | Log in without a browser and print the SPA client's token response         |
 | `./spike.sh radicale alice METHOD /path/ [..]` | Call Radicale directly, as the gateway will (sends `X-Remote-User: alice`) |
 | `./spike.sh kanidm <args>`                     | Run the Kanidm CLI as `idm_admin`, for example `system oauth2 list`        |
@@ -77,6 +80,55 @@ value from the file by hand; read it with `sh -c '. .local/secrets.env && printf
   --content-type 'text/calendar; charset=utf-8' --header 'If-None-Match: *' --body "$(cat event.ics)"
 ./spike.sh radicale alice REPORT /alice/def-calendar/ --depth 1 --body "$(cat query.xml)"
 ```
+
+## Trying out an expiring sign-in
+
+In your own browser, with the app's dev server and Kanidm's own pages. Kanidm has two separate
+limits, and `short-session` sets both (to 30 s unless you give another number):
+
+- **carol's Kanidm browser session** (her login at Kanidm's pages) ends after 30 s. An app tab that
+  is already open is not affected; a new sign-in (a new tab, a reload, "Sign in again") then asks for
+  her password again.
+- **The refresh tokens of `web-calendar-short`** end 30 s after they were issued; each renewal issues
+  a new one. The app's access token keeps Kanidm's 15 minutes regardless, so an open tab only notices
+  at its next renewal, about 14 minutes after the last one, and then shows "Your sign-in has
+  expired" over the app (design §6).
+
+Once, on the host:
+
+```sh
+cd dev/spike-s1
+./spike.sh up && ./spike.sh bootstrap   # if the stack is not running yet
+./spike.sh short-session 30
+docker network connect spike-s1_default intelligent_mayer   # "already exists" is fine
+sh -c '. .local/secrets.env && printf %s "$CAROL_PASSWORD"' | wl-copy   # carol's password
+```
+
+Import `.local/certs/ca.crt` into your browser as a certificate authority (Firefox: Settings › Privacy
+& Security › Certificates › View Certificates › Authorities › Import; Chrome: Settings › Privacy and
+security › Security › Manage certificates). Clicking past the warning is not enough in every browser:
+the app's own calls to Kanidm's token endpoint can then fail, shown as a CORS error.
+
+Then start the app in the Dev Container (it serves `http://localhost:3000`, with its own database
+`.data/spike-short.db`; stop it with Ctrl+C):
+
+```sh
+docker exec -it -u node -w /workspaces/web-calendar intelligent_mayer sh dev/spike-s1/short-app.sh
+```
+
+- **Kanidm's dashboard** is `https://idm.localhost:8443`. Sign in there as `carol`; its Apps page
+  lists "Web Calendar" and "Web Calendar (short sessions)", and both open the app on port 3000.
+- **Signed in at Kanidm, then the app:** open `http://localhost:3000` within 30 s and it signs in
+  without asking. After 30 s, a new tab of the app goes to Kanidm, which asks for the password, and
+  comes back to the calendar.
+- **The open tab:** sign in to the app, leave the tab open for at least 14 minutes (before that it
+  still has a valid access token and asks Kanidm for nothing), then do something that needs the
+  server (the ⋮ menu › Refresh, a save). "Your sign-in has expired" opens over the app;
+  "Not now" or Back closes it, "Sign in again" asks for carol's password (her Kanidm session ended
+  too) and returns to the same page.
+
+alice and bob sign in through this app as well; their Kanidm sessions last Kanidm's default, so
+"Sign in again" does not ask them for a password. The live suite does not use `web-calendar-short`.
 
 ## Which spike this serves
 

@@ -162,6 +162,14 @@ the test stack (`dev/spike-s1`):
   is a new group). Kanidm's own groups (`idm_*`, `system_*`, `domain_*`) are on the default ignore list.
   The parser is tested with a real Kanidm claim, and the live suite imports a real group (see the
   top of this page). What an admin does with the groups is in [kanidm-setup.md](kanidm-setup.md).
+- Session lengths (tried on the test stack, 2026-11-09): the access token always has its 900 s; a
+  group's account policy `auth-expiry` ends only Kanidm's own browser session, not an app's: the
+  refresh grant still worked after it, so an open tab carries on and only a new sign-in asks for the
+  password again. A client's `set-refresh-token-expiry` does end the app's session: a refresh token
+  is refused (`invalid_grant`) that long after it was issued, and each renewal issues a new one. The
+  open tab notices at its next renewal, near the end of its access token, and asks to sign in again
+  (design §6). How to try both: [dev/spike-s1/README.md](../dev/spike-s1/README.md), "Trying out an
+  expiring sign-in".
 
 ## Keycloak
 

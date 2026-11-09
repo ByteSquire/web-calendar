@@ -4,6 +4,7 @@
 #   ./spike.sh init                       create test certificates and the rules directory
 #   ./spike.sh up                         start the stack, wait until Kanidm answers
 #   ./spike.sh bootstrap                  create Kanidm test users, groups and OAuth2 clients
+#   ./spike.sh short-session [seconds]    test user carol, whose sessions end after that (30 s)
 #   ./spike.sh token <user>               browserless login as the SPA client; print the tokens
 #   ./spike.sh radicale <user> <METHOD> <path> [options]   call Radicale directly as that user
 #   ./spike.sh kanidm <cli args>          run the Kanidm CLI as idm_admin
@@ -22,6 +23,7 @@ NET="${PROJECT}_default"
 IDM_URL='https://idm.localhost:8443'
 SPA_REDIRECT='http://localhost:3000/auth/callback'
 SPA_SCOPE='openid profile email groups caldav'
+SHORT_CLIENT='web-calendar-short'
 KANIDM_TOOLS_IMAGE="${KANIDM_TOOLS_IMAGE:-kanidm/tools:latest}"
 PYTHON_IMAGE="${PYTHON_IMAGE:-python:3.12-alpine}"
 
@@ -171,15 +173,57 @@ cmd_bootstrap() {
   "${k[@]}" system oauth2 update-scope-map web-calendar web_calendar_users $SPA_SCOPE
   "${k[@]}" system oauth2 prefer-short-username web-calendar
 
-  # Passwords through Kanidm's credential-update API, so no browser trusting the test CA is needed.
-  for u in alice bob; do
-    local tok pw
-    tok="$("${k[@]}" person credential create-reset-token "$u" | grep -o 'use-reset-token [a-z0-9-]*' | awk '{print $2}')"
-    pw="$(openssl rand -hex 10)-Spike-${u^}!"
-    pytool kanidm_set_password.py "$IDM_URL" /ca.crt "$tok" "$pw"
-    secret_set "${u^^}_PASSWORD" "$pw"
-  done
+  for u in alice bob; do set_password "$u"; done
   echo "Bootstrap done. Users alice and bob; their passwords are in $SECRETS"
+}
+
+# A new password for a user (idm_admin logged in), stored in the secrets file. Set through Kanidm's
+# credential-update API, so no browser trusting the test CA is needed.
+set_password() {
+  local u="$1" tok pw
+  tok="$(kcli -D idm_admin person credential create-reset-token "$u" | grep -o 'use-reset-token [a-z0-9-]*' | awk '{print $2}')"
+  pw="$(openssl rand -hex 10)-Spike-${u^}!"
+  pytool kanidm_set_password.py "$IDM_URL" /ca.crt "$tok" "$pw"
+  secret_set "${u^^}_PASSWORD" "$pw"
+}
+
+# Short sessions, to try out an expiring sign-in by hand (README: "Trying out an expiring sign-in").
+# Two separate limits, both set to the given seconds (default 30):
+# - carol, in web_calendar_users like alice and bob, and in short_sessions, whose account policy
+#   ends her Kanidm browser session (the login at Kanidm's own pages) after that long;
+# - the OAuth2 client web-calendar-short (public, PKCE, the scopes of web-calendar), whose refresh
+#   tokens stop working that long after they were issued; each renewal issues a new one. An app
+#   signed in through it keeps its access token for Kanidm's 15 minutes regardless.
+# alice, bob and the live suite keep web-calendar and its defaults. Created on the first run; a later
+# run only sets the seconds again.
+cmd_short_session() {
+  local seconds="${1:-30}"
+  [[ "$seconds" =~ ^[1-9][0-9]*$ ]] || { echo "usage: short-session [seconds]" >&2; exit 1; }
+  [ -n "$(secret_get ALICE_PASSWORD)" ] || { echo "Run ./spike.sh bootstrap first." >&2; exit 1; }
+  KPW="$(secret_get KANIDM_IDM_ADMIN_PASSWORD)" kcli login -D idm_admin >/dev/null
+  local k=(kcli -D idm_admin)
+  if [ -z "$(secret_get CAROL_PASSWORD)" ]; then
+    "${k[@]}" group create short_sessions
+    "${k[@]}" group account-policy enable short_sessions
+    "${k[@]}" person create carol 'Carol Example'
+    "${k[@]}" person update carol -m carol@example.test
+    "${k[@]}" group add-members web_calendar_users carol
+    "${k[@]}" group add-members short_sessions carol
+    set_password carol
+  fi
+  # `get` exits 0 for a missing client too, and says so.
+  if "${k[@]}" system oauth2 get "$SHORT_CLIENT" | grep -q 'No matching entries'; then
+    "${k[@]}" system oauth2 create-public "$SHORT_CLIENT" 'Web Calendar (short sessions)' http://localhost:3000
+    "${k[@]}" system oauth2 add-redirect-url "$SHORT_CLIENT" "$SPA_REDIRECT"
+    "${k[@]}" system oauth2 enable-localhost-redirects "$SHORT_CLIENT"
+    "${k[@]}" system oauth2 update-scope-map "$SHORT_CLIENT" web_calendar_users $SPA_SCOPE
+    "${k[@]}" system oauth2 prefer-short-username "$SHORT_CLIENT"
+  fi
+  "${k[@]}" group account-policy auth-expiry short_sessions "$seconds"
+  "${k[@]}" system oauth2 set-refresh-token-expiry "$SHORT_CLIENT" "$seconds"
+  echo "carol's Kanidm browser sessions now end after $seconds s, and refresh tokens of"
+  echo "$SHORT_CLIENT $seconds s after they were issued (sessions started before keep their end)."
+  echo "carol's password: sh -c '. $SECRETS && printf %s \"\$CAROL_PASSWORD\"'"
 }
 
 cmd_token() {
@@ -216,6 +260,7 @@ case "${1:-}" in
   init) cmd_init ;;
   up) cmd_up ;;
   bootstrap) cmd_bootstrap ;;
+  short-session) shift; cmd_short_session "$@" ;;
   token) shift; cmd_token "$@" ;;
   radicale) shift; cmd_radicale "$@" ;;
   kanidm) shift; cmd_kanidm "$@" ;;
@@ -223,5 +268,5 @@ case "${1:-}" in
   logs) shift; dc logs -f "$@" ;;
   down) cmd_down ;;
   reset) cmd_reset ;;
-  *) sed -n '2,12p' "${BASH_SOURCE[0]}"; exit 1 ;;
+  *) sed -n '2,13p' "${BASH_SOURCE[0]}"; exit 1 ;;
 esac

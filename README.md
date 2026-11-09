@@ -348,7 +348,8 @@ Kanidm is then at `https://idm.localhost:8443` (issuer
 `https://idm.localhost:8443/oauth2/openid/web-calendar`) and Radicale at
 `http://127.0.0.1:5232`, published on the loopback interface only for development. See
 [`dev/spike-s1/README.md`](dev/spike-s1/README.md) for the accounts, all commands and what
-each spike tested.
+each spike tested; its section "Trying out an expiring sign-in" sets up short sessions to try in
+your own browser.
 
 `idm.localhost` is the loopback address of your own machine. Open the app from `http://localhost`
 (the dev server and the live tests do). If the app is served from a public name instead, newer

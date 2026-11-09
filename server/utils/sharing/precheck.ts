@@ -1,6 +1,6 @@
 import type { Database } from 'better-sqlite3'
+import { sharedCalendarId } from '../../../shared/utils/shared-calendar-name'
 import type { GroupMembership } from './membership'
-import { sharedCalendarId } from './names'
 import { AVAILABILITY_SHARE_NAME } from './types'
 
 // The gateway's second opinion (security review §7.1): before a request reaches Radicale, SQLite

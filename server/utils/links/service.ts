@@ -10,6 +10,7 @@
 // the collection's owner (made by an admin on the access page, like an access rule of the calendar).
 import { createHash, randomBytes } from 'node:crypto'
 import type { Database } from 'better-sqlite3'
+import { sharedCalendarId } from '../../../shared/utils/shared-calendar-name'
 import type { TokenHashKeys } from '../../db/app-tokens'
 import {
   countCalendarLinks,
@@ -25,7 +26,6 @@ import { ApiError, conflict, toBadRequest, upstreamFailed } from '../api/errors'
 import { FieldErrors, finish, readObject, readText, type Parsed } from '../api/validation'
 import { signinCutoff } from '../auth/window'
 import { PathRejection, resolvePublicPath } from '../gateway/paths'
-import { sharedCalendarId } from '../sharing/names'
 import { passwordProblem, verifyPassword } from './password'
 import type { LinkReader } from './reader'
 import { openLinkSecret, sealLinkSecret } from './secret'

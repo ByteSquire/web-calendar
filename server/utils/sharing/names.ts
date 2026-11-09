@@ -3,9 +3,8 @@ import { AVAILABILITY_SHARE_NAME } from './types'
 
 // How a shared calendar is named in a member's home. The gateway pre-check relies on it: the
 // calendar id in the name says which access rules apply, so no extra table is needed. The name
-// itself is read in shared/utils/shared-calendar-name.ts, which the browser uses too.
-
-export { sharedCalendarId }
+// itself is read in shared/utils/shared-calendar-name.ts, which the browser uses too; import
+// `sharedCalendarId` from there (a re-export here would be a second auto-import of the same name).
 
 /** Every group principal starts with this; no person's id may (`isReservedPrincipal`). */
 export const GROUP_PRINCIPAL_PREFIX = '_group-'

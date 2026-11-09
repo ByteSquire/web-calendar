@@ -423,7 +423,7 @@ Once:
 
 Each release:
 
-1. Set `version` in `package.json` (here `0.3.3`), run the
+1. Set `version` in `package.json` (here `0.3.4`), run the
    [release checks](#release-checks-run-on-your-machine) and commit. If the release has migrations
    that no earlier release had, freeze them for the upgrade tests
    (`tests/server/fixtures/released/README.md`).

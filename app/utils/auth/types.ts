@@ -11,7 +11,13 @@ export interface AuthUserInfo {
   username: string | null
 }
 
-export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated' | 'error'
+/**
+ * `expired`: the session ended while the app was on screen (the token could not be renewed). The
+ * app stays drawn, so nothing the person has not saved is thrown away by surprise, and asks them to
+ * sign in again (SignInExpiredDialog). `unauthenticated` draws nothing: before the first sign-in,
+ * and from the moment the person signs out.
+ */
+export type AuthStatus = 'loading' | 'authenticated' | 'expired' | 'unauthenticated' | 'error'
 
 export interface TokenOptions {
   /**

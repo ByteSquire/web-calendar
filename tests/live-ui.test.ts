@@ -396,6 +396,23 @@ describe('layout', () => {
     expect(document.body.textContent).not.toContain('page content')
   })
 
+  it('keeps the app drawn when the sign-in expires, and asks to sign in again over it', async () => {
+    useState<AuthStatus>('auth-status').value = 'authenticated'
+    app = await mountSuspended(layout(), { attachTo: document.body })
+    expect(document.querySelector('main')?.textContent).toContain('page content')
+    useState<AuthStatus>('auth-status').value = 'expired'
+    await vi.waitFor(() =>
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+        'Your sign-in has expired',
+      ),
+    )
+    expect(document.querySelector('main')?.textContent).toContain('page content')
+    // signing out hides everything, the dialog too
+    useState<AuthStatus>('auth-status').value = 'unauthenticated'
+    await vi.waitFor(() => expect(document.querySelector('main')).toBeNull())
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  })
+
   it('draws the app once signed in, and marks the main area busy while loading', async () => {
     useState<AuthStatus>('auth-status').value = 'authenticated'
     app = await mountSuspended(layout(), { attachTo: document.body })

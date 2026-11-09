@@ -147,6 +147,10 @@ export const shell: Readonly<Record<string, string>> = {
   'You have signed out of Web Calendar in this browser tab. Your sign-in provider may still remember you, so signing in again may not ask for your password.':
     'Du hast dich in diesem Browser-Tab von Web Calendar abgemeldet. Dein Anmeldedienst kennt dich vielleicht noch, daher fragt die erneute Anmeldung möglicherweise nicht nach deinem Passwort.',
   'Sign in again': 'Erneut anmelden',
+  'Your sign-in has expired': 'Deine Anmeldung ist abgelaufen',
+  'Sign in again to go on. Anything you have not saved yet is lost when you do: choose “Not now” to copy it first.':
+    'Melde dich erneut an, um weiterzumachen. Was du noch nicht gespeichert hast, geht dabei verloren: Wähle „Nicht jetzt“, um es vorher zu kopieren.',
+  'Not now': 'Nicht jetzt',
 
   // Events as read out and drawn
   Busy: 'Belegt',

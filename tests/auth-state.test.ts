@@ -12,7 +12,7 @@ import {
 import type { AuthStatus } from '../app/utils/auth/types'
 
 describe('routeGuardAction', () => {
-  const STATUSES: AuthStatus[] = ['loading', 'authenticated', 'unauthenticated', 'error']
+  const STATUSES: AuthStatus[] = ['loading', 'authenticated', 'expired', 'unauthenticated', 'error']
 
   it.each([
     // [demo, status, path, action]
@@ -21,6 +21,8 @@ describe('routeGuardAction', () => {
     [false, 'unauthenticated', '/', 'login'],
     [false, 'unauthenticated', '/calendar', 'login'],
     [false, 'error', '/', 'login'],
+    // an expired sign-in stays on screen, but moving on to another page signs in again
+    [false, 'expired', '/settings', 'login'],
     [false, 'loading', '/', 'wait'],
     // the login's own pages never need a session
     [false, 'unauthenticated', AUTH_CALLBACK_PATH, 'pass'],
@@ -33,6 +35,18 @@ describe('routeGuardAction', () => {
     [false, 'unauthenticated', '/x/auth/callback', 'login'],
   ] as const)('demo=%s status=%s path=%s -> %s', (demo, status, path, action) => {
     expect(routeGuardAction({ demo, status, path })).toBe(action)
+  })
+
+  it('an expired sign-in lets a navigation on the same page pass (Back closing a dialog)', () => {
+    const guard = (path: string, from: string) =>
+      routeGuardAction({ demo: false, status: 'expired', path, from })
+    expect(guard('/', '/')).toBe('pass')
+    expect(guard('/resources/requests', '/resources/requests')).toBe('pass')
+    expect(guard('/settings', '/')).toBe('login')
+    // the same page is no reason to pass for anyone else: they are not signed in at all
+    expect(routeGuardAction({ demo: false, status: 'unauthenticated', path: '/', from: '/' })).toBe(
+      'login',
+    )
   })
 
   it('demo mode passes everything in every state', () => {

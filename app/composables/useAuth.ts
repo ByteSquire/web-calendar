@@ -23,6 +23,8 @@ export function useAuth() {
   const status = useState<AuthStatus>('auth-status', () => 'loading')
   const user = useState<AuthUserInfo | null>('auth-user', () => null)
   const error = useState<string | null>('auth-error', () => null)
+  // Counts the requests that found the session expired, so the prompt can ask again.
+  const expiredSignal = useState<number>('auth-expired-signal', () => 0)
   const config = useServerConfigState()
 
   let cached = controllers.get(nuxtApp)
@@ -47,6 +49,10 @@ export function useAuth() {
         if (patch.user !== undefined) user.value = patch.user
         if (patch.error !== undefined) error.value = patch.error
       },
+      getStatus: () => status.value,
+      onExpired: () => {
+        expiredSignal.value += 1
+      },
     })
     cached = { config: config.value, controller }
     controllers.set(nuxtApp, cached)
@@ -59,6 +65,8 @@ export function useAuth() {
     user: readonly(user),
     /** Why the status is `error`, worded for people. */
     error: readonly(error),
+    /** Goes up at every request that finds the session expired (status `expired`). */
+    expiredSignal: readonly(expiredSignal),
     isDemo: computed(() => isDemoConfig(config.value)),
     /** For the auth plugin only. */
     initialize: auth.initialize,

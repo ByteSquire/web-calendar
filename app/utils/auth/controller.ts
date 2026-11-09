@@ -17,6 +17,13 @@ export interface AuthControllerOptions {
   client: AuthClient | null
   demo: boolean
   setState: (patch: AuthStatePatch) => void
+  /** The status as the UI has it now (set through `setState`, or by a test). */
+  getStatus: () => AuthStatus
+  /**
+   * A request found the session gone while the app is on screen (status `expired`): once when it
+   * expires and again at every later request, so the UI can ask once more after "Not now".
+   */
+  onExpired?: () => void
   baseFetch?: typeof fetch
   /** The app's origin for `createAuthFetch`; default: the page's. */
   origin?: string
@@ -36,7 +43,7 @@ export interface AuthController {
 }
 
 export function createAuthController(options: AuthControllerOptions): AuthController {
-  const { client, demo, setState } = options
+  const { client, demo, setState, getStatus } = options
   const baseFetch = options.baseFetch ?? ((input, init) => globalThis.fetch(input, init))
 
   function requireClient(): AuthClient {
@@ -49,7 +56,10 @@ export function createAuthController(options: AuthControllerOptions): AuthContro
     try {
       await requireClient().login(returnTo)
     } catch (error) {
-      setState({ status: 'error', error: describeAuthError(error).message })
+      const message = describeAuthError(error).message
+      // From the expired prompt the app stays on screen: the prompt shows why, and the person can
+      // try again or copy what they have not saved. Anywhere else nothing is drawn yet.
+      setState(getStatus() === 'expired' ? { error: message } : { status: 'error', error: message })
       throw error
     }
   }
@@ -62,9 +72,17 @@ export function createAuthController(options: AuthControllerOptions): AuthContro
       if (error instanceof AuthRequiredError) {
         // The session is gone and there is nothing to retry with. No redirect from here: it would
         // throw away what the user has not saved yet (design §6), and an offline renewal failure
-        // would send the browser to an unreachable page. The status tells the UI to ask; the route
-        // guard signs in at the next navigation.
-        setState({ status: 'unauthenticated', user: null })
+        // would send the browser to an unreachable page. With the app on screen it stays there and
+        // the status tells the UI to ask (the user is kept for what the screen shows); the route
+        // guard signs in at the next navigation. During a sign-out, or before the first sign-in,
+        // the status is already `unauthenticated` and stays so: nothing is drawn.
+        const status = getStatus()
+        if (status === 'authenticated' || status === 'expired') {
+          setState({ status: 'expired' })
+          options.onExpired?.()
+        } else {
+          setState({ status: 'unauthenticated', user: null })
+        }
       }
       throw error
     }

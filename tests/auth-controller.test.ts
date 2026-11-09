@@ -62,15 +62,18 @@ function setup(options: Partial<AuthControllerOptions> = {}) {
   const store = stateStore()
   const baseFetch = vi.fn(async () => new Response('ok')) as unknown as typeof fetch &
     ReturnType<typeof vi.fn>
+  const onExpired = vi.fn()
   const controller = createAuthController({
     client: null,
     demo: false,
     setState: store.setState,
+    getStatus: () => store.state.status,
+    onExpired,
     baseFetch,
     origin: ORIGIN,
     ...options,
   })
-  return { controller, store, baseFetch }
+  return { controller, store, baseFetch, onExpired }
 }
 
 describe('demo mode', () => {
@@ -189,6 +192,18 @@ describe('login', () => {
     expect(store.state.status).toBe('error')
     expect(store.state.error).toMatch(/connection/i)
   })
+
+  it('keeps the app on screen when signing in again from an expired sign-in fails', async () => {
+    const client = fakeClient({
+      login: vi.fn(async () => Promise.reject(new TypeError('Failed to fetch'))),
+    })
+    const { controller, store } = setup({ client })
+    store.setState({ status: 'expired', user: ALICE })
+    await expect(controller.login('/calendar')).rejects.toThrow('Failed to fetch')
+    expect(store.state.status).toBe('expired')
+    expect(store.state.user).toEqual(ALICE)
+    expect(store.state.error).toMatch(/connection/i)
+  })
 })
 
 describe('completeLogin', () => {
@@ -220,17 +235,62 @@ describe('getAccessToken', () => {
     expect(client.getAccessToken).toHaveBeenCalledWith({ rejectedToken: 'old' })
   })
 
-  it('marks the session as lost and fails the caller, without redirecting by itself', async () => {
+  it('marks the session as expired and fails the caller, without redirecting by itself', async () => {
     const client = fakeClient({
       getAccessToken: vi.fn(async () => Promise.reject(new AuthRequiredError('renewal-failed'))),
     })
-    const { controller, store } = setup({ client })
+    const { controller, store, onExpired } = setup({ client })
     store.setState({ status: 'authenticated', user: ALICE })
     await expect(controller.getAccessToken()).rejects.toBeInstanceOf(AuthRequiredError)
-    expect(store.state.status).toBe('unauthenticated')
-    expect(store.state.user).toBeNull()
-    // the route guard does that at the next navigation; the UI may ask first
+    // the app stays on screen, still showing who it was for, and the UI asks
+    expect(store.state.status).toBe('expired')
+    expect(store.state.user).toEqual(ALICE)
+    expect(onExpired).toHaveBeenCalledOnce()
+    // the UI or the route guard at the next navigation does that
     expect(client.login).not.toHaveBeenCalled()
+  })
+
+  it('tells the UI again at each later request, so it can ask again', async () => {
+    const client = fakeClient({
+      getAccessToken: vi.fn(async () => Promise.reject(new AuthRequiredError('signed-out'))),
+    })
+    const { controller, store, onExpired } = setup({ client })
+    store.setState({ status: 'expired', user: ALICE })
+    await expect(controller.getAccessToken()).rejects.toBeInstanceOf(AuthRequiredError)
+    await expect(controller.getAccessToken()).rejects.toBeInstanceOf(AuthRequiredError)
+    expect(store.state.status).toBe('expired')
+    expect(onExpired).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['unauthenticated', 'loading', 'error'] as const)(
+    'stays without an app on screen when the status was %s (a sign-out, the start)',
+    async (status) => {
+      const client = fakeClient({
+        getAccessToken: vi.fn(async () => Promise.reject(new AuthRequiredError('signed-out'))),
+      })
+      const { controller, store, onExpired } = setup({ client })
+      store.setState({ status, user: null })
+      await expect(controller.getAccessToken()).rejects.toBeInstanceOf(AuthRequiredError)
+      expect(store.state.status).toBe('unauthenticated')
+      expect(store.state.user).toBeNull()
+      expect(onExpired).not.toHaveBeenCalled()
+    },
+  )
+
+  it('keeps the signed-out state when a request fails during the sign-out', async () => {
+    let finishLogout: () => void = () => undefined
+    const client = fakeClient({
+      getAccessToken: vi.fn(async () => Promise.reject(new AuthRequiredError('signed-out'))),
+      logout: vi.fn(() => new Promise<void>((resolve) => (finishLogout = resolve))),
+    })
+    const { controller, store, onExpired } = setup({ client })
+    store.setState({ status: 'authenticated', user: ALICE })
+    const leaving = controller.logout()
+    await expect(controller.getAccessToken()).rejects.toBeInstanceOf(AuthRequiredError)
+    expect(store.state.status).toBe('unauthenticated')
+    expect(onExpired).not.toHaveBeenCalled()
+    finishLogout()
+    await leaving
   })
 
   it('does not treat other errors as a lost session', async () => {

@@ -235,6 +235,7 @@ describe('useAuthFetch', () => {
       },
       demo: false,
       setState: () => undefined,
+      getStatus: () => 'authenticated',
       origin: window.location.origin,
     })
     const create = $fetch.create as unknown as (

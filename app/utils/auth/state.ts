@@ -42,15 +42,21 @@ export type GuardAction =
 /**
  * What the global route guard does. A state of `error` also starts the login: the next attempt may
  * work (the provider was down), and if sign-in is not configured at all, `login` fails again and
- * the guard shows that.
+ * the guard shows that. So does `expired` when the person moves on to another page (nothing on the
+ * screen is kept then, and the sign-in brings them to that page); a navigation that stays on the
+ * page passes: the browser's Back closing a dialog is one (useBackDismiss), and must not leave for
+ * the provider with what the person has not saved.
  */
 export function routeGuardAction(input: {
   demo: boolean
   status: AuthStatus
   path: string
+  /** The path the navigation starts from. */
+  from?: string
 }): GuardAction {
   if (input.demo || isPublicAuthPath(input.path)) return 'pass'
   if (input.status === 'loading') return 'wait'
+  if (input.status === 'expired') return input.from === input.path ? 'pass' : 'login'
   return input.status === 'authenticated' ? 'pass' : 'login'
 }
 

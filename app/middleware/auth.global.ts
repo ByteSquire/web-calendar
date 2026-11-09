@@ -4,7 +4,7 @@
 import { useAuth } from '~/composables/useAuth'
 import { routeGuardAction } from '~/utils/auth/state'
 
-export default defineNuxtRouteMiddleware(async (to) => {
+export default defineNuxtRouteMiddleware(async (to, from) => {
   if (import.meta.server) return
   const auth = useAuth()
 
@@ -28,6 +28,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
     demo: auth.isDemo.value,
     status: auth.status.value,
     path: to.path,
+    from: from.path,
   })
   if (action === 'pass') return
 

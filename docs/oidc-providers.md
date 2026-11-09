@@ -40,6 +40,14 @@ no groups import has been run against a live Keycloak.
    them out where nothing else tells them apart.
 6. **A public client with the authorization code flow and PKCE** for the browser, with the app's
    origin as redirect URL. The browser asks for the scopes of `NUXT_OIDC_SCOPE`.
+   **It needs a refresh token** to renew the access token: without one the sign-in expires with the
+   first access token and the app asks the person to sign in again (design §6). Kanidm and Keycloak
+   issue one for the default scopes. Providers that issue it only for **`offline_access`** (as far
+   as known Zitadel, Okta, Auth0 and recent Authentik versions; Auth0 and Okta also want refresh-token
+   rotation turned on for a browser client) need that scope added to `NUXT_OIDC_SCOPE`; this was
+   not run here. How long the refresh token lasts is the provider's: Keycloak ties it to its own
+   session (30 minutes idle and 10 hours by default), Entra gives a browser client 24 hours (both
+   from their documentation, not run).
 7. **Groups, for the admin check and for imported groups.** The provider sends the person's groups in a
    claim, in the userinfo answer or in the access token. Signing in works without it, but nobody is an
    admin and no group can be imported. How the app reads it, and what each provider sends, is under

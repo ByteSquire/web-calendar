@@ -1,6 +1,7 @@
 <!--
   Nothing of the user's data is drawn before the sign-in is known (the route guard normally keeps
-  this layout from rendering at all; this also covers the moment of signing out).
+  this layout from rendering at all; this also covers the moment of signing out). A sign-in that
+  expires while the app is open keeps it drawn, with SignInExpiredDialog over it (design §6).
 -->
 <template>
   <div class="app-shell" :class="{ 'sidebar-open': sidebarOpen }">
@@ -48,6 +49,7 @@
 
       <EventSheet />
       <QuickAddModal />
+      <SignInExpiredDialog v-if="live" />
     </template>
   </div>
 </template>
@@ -70,7 +72,10 @@ useDisplayZoneFollow()
 const { loading } = useLiveStatus()
 const auth = useAuth()
 const live = isLiveConfig(useServerConfigState().value)
-const ready = computed(() => !live || auth.status.value === 'authenticated')
+// An expired sign-in keeps the app: what the person has not saved stays until they sign in again.
+const ready = computed(
+  () => !live || auth.status.value === 'authenticated' || auth.status.value === 'expired',
+)
 
 // Open by default on desktop, closed on a phone (slideover, or the column of a phone turned
 // sideways). Turning the phone keeps what the person chose: the state is not reset when the width

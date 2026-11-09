@@ -111,6 +111,74 @@ test('an expired access token is renewed with the refresh token', async () => {
   await waitForSignedInApp(page)
 })
 
+test('a session that cannot be renewed keeps the app and asks to sign in again', async () => {
+  // Kanidm refuses the refresh token, as it does once its session has ended or was revoked.
+  let refusals = 0
+  await page.route('**/oauth2/token', async (route) => {
+    if (!(route.request().postData() ?? '').includes('grant_type=refresh_token')) {
+      await route.continue()
+      return
+    }
+    refusals += 1
+    await route.fulfill({
+      status: 400,
+      contentType: 'application/json',
+      headers: { 'access-control-allow-origin': APP_ORIGIN },
+      body: JSON.stringify({ error: 'invalid_grant' }),
+    })
+  })
+  // Past the access token's 15 minutes (and the renewal of the test before), then a reload of the
+  // events, which needs a token. First the loads of the reload before have to be done: one still
+  // under way would find the token expired and open the dialog before the menu is clicked.
+  await expect(page.locator('#main-content')).toHaveAttribute('aria-busy', 'false')
+  await page.waitForLoadState('networkidle')
+  await page.clock.setSystemTime(new Date(Date.now() + 60 * 60_000))
+  await menu().click()
+  await page.getByRole('menuitem', { name: 'Refresh' }).click()
+  const prompt = page.getByRole('dialog', { name: 'Your sign-in has expired' })
+  await expect(prompt).toBeVisible()
+  // One renewal for all the requests; the app is still there and the browser has not left.
+  expect(refusals).toBe(1)
+  await expect(page.locator('[data-calendar-main]')).toBeAttached()
+  expect(page.url()).toBe(`${APP_ORIGIN}/`)
+
+  // The browser's Back closes it, as it closes any dialog, and does not leave for Kanidm.
+  let signIns = 0
+  const countSignIns = (request: { url(): string }) => {
+    if (request.url().includes('/ui/oauth2')) signIns += 1
+  }
+  page.on('request', countSignIns)
+  await expect
+    .poll(() => page.evaluate(() => Boolean(history.state?.__webCalendarBackDismiss)))
+    .toBe(true)
+  await page.goBack()
+  await expect(prompt).toBeHidden()
+  await expect(page.locator('[data-calendar-main]')).toBeVisible()
+  expect(page.url()).toBe(`${APP_ORIGIN}/`)
+
+  // "Not now" closes it as well.
+  await menu().click()
+  await page.getByRole('menuitem', { name: 'Refresh' }).click()
+  await expect(prompt).toBeVisible()
+  await prompt.getByRole('button', { name: 'Not now' }).click()
+  await expect(prompt).toBeHidden()
+  await expect(page.locator('[data-calendar-main]')).toBeVisible()
+  page.off('request', countSignIns)
+  expect(signIns).toBe(0)
+  // The next thing that needs the session asks again, without another try at Kanidm.
+  await menu().click()
+  await page.getByRole('menuitem', { name: 'Refresh' }).click()
+  await expect(prompt).toBeVisible()
+  expect(refusals).toBe(1)
+
+  // Kanidm still has its own session: signing in again needs no password and comes back here.
+  await page.unroute('**/oauth2/token')
+  await prompt.getByRole('button', { name: 'Sign in again' }).click()
+  await waitForSignedInApp(page)
+  expect(page.url()).toBe(`${APP_ORIGIN}/`)
+  await expect(prompt).toBeHidden()
+})
+
 test('the settings page loads the user and their app tokens through the API', async () => {
   await page.goto('/settings')
   await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()

@@ -620,6 +620,28 @@ no token is logged). Kanidm answers `200 text/plain`, which oidc-client-ts rejec
 session, another tab's login is unaffected, and an access token that was already copied still
 passes the gateway for up to 15 minutes.
 
+**When the renewal fails** — the provider ended the session (it expired, was revoked, or its
+refresh token is tied to a provider session that timed out, as Keycloak's is), or the provider
+gave no refresh token. Without one, oidc-client-ts would renew in a hidden frame, which the app
+does not set up (no `silent_redirect_uri`; third-party cookies are often blocked anyway), so the
+sign-in ends with the first access token: a provider that issues refresh tokens only for
+`offline_access` needs that scope in `NUXT_OIDC_SCOPE` (`docs/oidc-providers.md`). There is no
+redirect then (it would throw away what is not saved, and an offline failure would leave for an
+unreachable page). If the app is on screen the status becomes `expired`: the app stays drawn and
+`SignInExpiredDialog` opens over it, an open event sheet included. "Sign in again" goes to the
+provider and back to the same page; "Not now" closes it so the person can copy what they typed, and
+every later request that needs the session opens it again (no request is sent without a token).
+Moving to another page signs in as well (the route guard); a navigation that stays on the page
+passes, so the browser's Back closes the dialog or an event sheet (useBackDismiss) instead of
+leaving for the provider. Before the first sign-in and from the moment of a
+sign-out the status is `unauthenticated` instead, and nothing of the app is drawn. A new element
+was needed because there was no place to ask: before it, the layout hid the whole app and the
+person saw an empty page. What was loaded stays visible in the tab until they sign in again; it is
+the same person's tab and data the browser already holds, and the external accounts' passwords are
+dropped from memory at once, as at a sign-out (`useExternalAccess`). Tests:
+`tests/auth-controller.test.ts`, `tests/sign-in-expired-dialog.test.ts`, the layout in
+`tests/live-ui.test.ts`, and `e2e/live/login.spec.ts` (Kanidm refuses the renewal).
+
 **Libraries** — the browser login uses an OIDC client library (candidate
 `oidc-client-ts`, unverified, licence to check). The server verifies JWTs with a JOSE
 library (candidate `jose`, unverified, licence to check).

@@ -151,6 +151,11 @@ and client renders match.
   Not built yet: the public view. Spikes S1 to S6 and S8 to S10 are done; S7
   (real clients) is open (design §12). A test stack
   for the spikes is in `dev/spike-s1`.
+- Calendar apps such as Thunderbird list calendars they may only query for busy times: the
+  "Availability" calendar of the resources (shared with everyone) and calendars shared with you at
+  "Busy times only". They cannot sync them and show them as not available (Radicale refuses with
+  `403`); untick them when the app lists the calendars it found, or unsubscribe them. The web app
+  shows both.
 
 ### Dependency versions (as of 2026-10-24)
 

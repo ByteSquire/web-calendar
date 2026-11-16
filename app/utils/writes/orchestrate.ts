@@ -43,7 +43,12 @@ export function editScopeFor(target: EventTarget, choice: ScopeChoice | null): E
 }
 
 function writeContext(deps: WriteDeps): WriteContext {
-  return { ...deps.zones(), ...(deps.now ? { now: deps.now() } : {}) }
+  const creator = deps.creator?.()
+  return {
+    ...deps.zones(),
+    ...(deps.now ? { now: deps.now() } : {}),
+    ...(creator ? { creator } : {}),
+  }
 }
 
 /** Forget the cached answer for the calendar and load again; a failed reload is the loader's to show. */

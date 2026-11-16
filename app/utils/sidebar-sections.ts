@@ -48,10 +48,19 @@ export const SECTION_TITLES: Record<SidebarSectionId, string> = {
 /** What a section's plus adds. */
 export type AddNoun = 'view' | 'calendar' | 'category' | 'filter'
 
+/** What is added by its name alone, in a field; views and filters have a dialog of their own. */
+export type FieldAddNoun = 'calendar' | 'category'
+
 /** The texts of each kind, whole, so that a translation can put the word where it belongs. */
-export const ADD_TEXTS: Record<AddNoun, { label: string; add: string }> = {
-  view: { label: N_('New view name'), add: N_('Add view') },
-  calendar: { label: N_('New calendar name'), add: N_('Add calendar') },
-  category: { label: N_('New category name'), add: N_('Add category') },
-  filter: { label: N_('New filter name'), add: N_('Add filter') },
+export const ADD_TEXTS: Record<AddNoun, { add: string }> = {
+  view: { add: N_('Add view') },
+  calendar: { add: N_('Add calendar') },
+  category: { add: N_('Add category') },
+  filter: { add: N_('Add filter') },
+}
+
+/** The label of the field that takes the name. */
+export const FIELD_LABELS: Record<FieldAddNoun, string> = {
+  calendar: N_('New calendar name'),
+  category: N_('New category name'),
 }

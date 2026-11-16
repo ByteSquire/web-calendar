@@ -63,13 +63,11 @@ export const shell: Readonly<Record<string, string>> = {
   'Update from selection': 'Aus Auswahl aktualisieren',
   Unshare: 'Teilen beenden',
   'Share with everybody': 'Mit allen teilen',
-  'New view name': 'Name der neuen Ansicht',
   'Add view': 'Ansicht hinzufügen',
   'New calendar name': 'Name des neuen Kalenders',
   'A calendar with this name already exists.': 'Ein Kalender mit diesem Namen gibt es schon.',
   'New category name': 'Name der neuen Kategorie',
   'Add category': 'Kategorie hinzufügen',
-  'New filter name': 'Name des neuen Filters',
   'Add filter': 'Filter hinzufügen',
   'Arrange sections': 'Bereiche anordnen',
   'Move a section up or down. The order is saved for your account.':
@@ -78,15 +76,64 @@ export const shell: Readonly<Record<string, string>> = {
   'Move {name} down': '{name} nach unten verschieben',
   '{name}: number {position} of {total}': '{name}: Platz {position} von {total}',
   'save the order of the sections': 'Das Speichern der Reihenfolge der Bereiche',
-  'Rename view': 'Ansicht umbenennen',
-  'Rename shared view': 'Geteilte Ansicht umbenennen',
-  'Everybody sees the new name.': 'Alle sehen den neuen Namen.',
-  'Only you see this view.': 'Nur du siehst diese Ansicht.',
   'The shared view disappears for everybody.': 'Die geteilte Ansicht verschwindet für alle.',
   'Only this view is deleted; the calendars stay.':
     'Nur diese Ansicht wird gelöscht; die Kalender bleiben.',
   '(copy)': '(Kopie)',
   '(copy {number})': '(Kopie {number})',
+
+  // The view dialog
+  'Edit view {name}': 'Ansicht {name} bearbeiten',
+  'Edit shared view {name}': 'Geteilte Ansicht {name} bearbeiten',
+  'Everybody sees this view. Selecting it shows the calendars chosen here.':
+    'Alle sehen diese Ansicht. Wählst du sie aus, zeigt sie die hier gewählten Kalender.',
+  'Only you see this view. Selecting it shows the calendars chosen here.':
+    'Nur du siehst diese Ansicht. Wählst du sie aus, zeigt sie die hier gewählten Kalender.',
+  'Choose all': 'Alle auswählen',
+  'Choose none': 'Keinen auswählen',
+  'There are no calendars to choose from.': 'Es gibt keine Kalender zur Auswahl.',
+  'One more calendar of this view is not listed, as you cannot see it here; it stays in the view. | {count} more calendars of this view are not listed, as you cannot see them here; they stay in the view.':
+    'Ein weiterer Kalender dieser Ansicht ist nicht aufgeführt, da du ihn hier nicht sehen kannst; er bleibt in der Ansicht. | {count} weitere Kalender dieser Ansicht sind nicht aufgeführt, da du sie hier nicht sehen kannst; sie bleiben in der Ansicht.',
+  'Choose at least one calendar.': 'Wähle mindestens einen Kalender aus.',
+  'Use at most {count} characters.': 'Verwende höchstens {count} Zeichen.',
+  'Choose at least one calendar first.': 'Wähle zuerst mindestens einen Kalender aus.',
+
+  // The filter dialog
+  'Filters narrow down the events shown. Switch a filter on in the list to use it.':
+    'Filter grenzen die gezeigten Termine ein. Schalte einen Filter in der Liste ein, um ihn zu verwenden.',
+  'Follows what the filter looks for until you change it.':
+    'Folgt dem, wonach der Filter sucht, bis du ihn änderst.',
+  'Filter by': 'Filtern nach',
+  Category: 'Kategorie',
+  'Text to look for': 'Gesuchter Text',
+  'Looks in the title, the place and the notes, without regard to case.':
+    'Sucht im Titel, im Ort und in den Notizen, ohne auf Groß- und Kleinschreibung zu achten.',
+  'Choose a category': 'Kategorie wählen',
+  'There are no categories yet. Add one in the categories of the sidebar.':
+    'Es gibt noch keine Kategorien. Füge eine bei den Kategorien in der Seitenleiste hinzu.',
+  'Choose people, or type a name or an e-mail address':
+    'Personen auswählen oder einen Namen bzw. eine E-Mail-Adresse eingeben',
+  'Matches who organised or made the event; for an event that names nobody, the owner of its calendar.':
+    'Grenzt auf die Person ein, die den Termin organisiert oder angelegt hat; bei einem Termin ohne Organisator auf die Person, der sein Kalender gehört.',
+  'Matching events': 'Passende Termine',
+  'Show only matching events': 'Nur passende Termine zeigen',
+  'Hide matching events': 'Passende Termine ausblenden',
+  'Hide: {what}': 'Ausblenden: {what}',
+  'Hides the events whose title, place or notes contain "{what}".':
+    'Blendet die Termine aus, deren Titel, Ort oder Notizen „{what}“ enthalten.',
+  'Shows only the events whose title, place or notes contain "{what}".':
+    'Zeigt nur die Termine, deren Titel, Ort oder Notizen „{what}“ enthalten.',
+  'Hides the events in the category {what}.': 'Blendet die Termine der Kategorie {what} aus.',
+  'Shows only the events in the category {what}.': 'Zeigt nur die Termine der Kategorie {what}.',
+  'Hides the events with the status {what}.': 'Blendet die Termine mit dem Status {what} aus.',
+  'Shows only the events with the status {what}.': 'Zeigt nur die Termine mit dem Status {what}.',
+  'Hides the events of {what}.': 'Blendet die Termine von {what} aus.',
+  'Shows only the events of {what}.': 'Zeigt nur die Termine von {what}.',
+  'Choose a status.': 'Wähle einen Status.',
+  'Choose a category.': 'Wähle eine Kategorie.',
+  'Choose or enter at least one person.': 'Wähle mindestens eine Person aus oder gib eine ein.',
+  'Choose at most {count} people.': 'Wähle höchstens {count} Personen aus.',
+  'Enter the text to look for.': 'Gib den Text ein, nach dem gesucht wird.',
 
   // Messages about views, categories and filters
   'A view with this name already exists.': 'Eine Ansicht mit diesem Namen gibt es schon.',
@@ -107,6 +154,7 @@ export const shell: Readonly<Record<string, string>> = {
   'Copied {name} to your views, but the shared view could not be removed.':
     '{name} in deine Ansichten kopiert, aber die geteilte Ansicht konnte nicht entfernt werden.',
   'Updated shared view {name}': 'Geteilte Ansicht {name} aktualisiert',
+  'Updated view {name}': 'Ansicht {name} aktualisiert',
   'Only administrators can change shared views.':
     'Nur Administratoren können geteilte Ansichten ändern.',
   'This shared view no longer exists. Reload the page.':
@@ -128,8 +176,6 @@ export const shell: Readonly<Record<string, string>> = {
     'Die Kalendereinstellung konnte nicht gespeichert werden: {reason}.',
   'The category "{name}" could not be saved: {reason}.':
     'Die Kategorie „{name}“ konnte nicht gespeichert werden: {reason}.',
-  'The filter "{name}" could not be saved: {reason}.':
-    'Der Filter „{name}“ konnte nicht gespeichert werden: {reason}.',
   'the server did not accept it': 'Der Server hat es nicht angenommen',
 
   // Problems list
@@ -196,8 +242,6 @@ export const shell: Readonly<Record<string, string>> = {
   'Everybody sees the new name. Events that have the old name keep it.':
     'Alle sehen den neuen Namen. Termine mit dem alten Namen behalten ihn.',
   'Events that have the old name keep it.': 'Termine mit dem alten Namen behalten ihn.',
-  'The filter shows the events whose title, place or notes contain this text.':
-    'Der Filter zeigt die Termine, deren Titel, Ort oder Notizen diesen Text enthalten.',
   'The calendar and all its events are deleted for everybody in the group and everybody it is shared with, and its links stop working.':
     'Der Kalender und alle seine Termine werden für alle in der Gruppe und alle, mit denen er geteilt ist, gelöscht, und seine Links funktionieren nicht mehr.',
   'The calendar and all its events are deleted, the people it is shared with lose it, and its links stop working.':
@@ -211,6 +255,7 @@ export const shell: Readonly<Record<string, string>> = {
   'rename the calendar': 'den Kalender umbenennen',
   'rename the category': 'die Kategorie umbenennen',
   'change the filter': 'den Filter ändern',
+  'add the filter': 'den Filter hinzufügen',
   'delete the calendar': 'den Kalender löschen',
   'delete the category': 'die Kategorie löschen',
   'delete the filter': 'den Filter löschen',

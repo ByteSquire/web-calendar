@@ -40,6 +40,8 @@ export interface WriteDeps {
   zones: () => { displayTimeZone: string; orgTimeZone: string }
   /** The clock for DTSTAMP and friends; tests pin it. */
   now?: () => Date
+  /** The person who writes, recorded in the events they create (read when the write starts). */
+  creator?: () => { name?: string; email?: string } | null
 }
 
 export type WriteFailureKind =

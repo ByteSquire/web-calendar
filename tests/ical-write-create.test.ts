@@ -10,6 +10,7 @@ import {
   type NewEventRecurrence,
   type WriteContext,
 } from '../app/utils/ical/write'
+import { read } from './ical-read-helpers'
 import { contentLines, expand, instants, splitEvents } from './ical-write-helpers'
 
 const NOW = new Date('2026-10-30T12:00:00Z')
@@ -84,6 +85,27 @@ describe('createEventResource', () => {
     expect(lines.indexOf('BEGIN:VTIMEZONE')).toBeLessThan(lines.indexOf('BEGIN:VEVENT'))
     expect(instants(ics)).toEqual(['2026-11-02T08:00:00.000Z'])
     expect(() => ICAL.parse(ics)).not.toThrow()
+  })
+
+  it('records who made the event, without an ORGANIZER, and reads it back', () => {
+    const { ics } = createEventResource(input(), {
+      ...BERLIN,
+      creator: { name: 'Lee; Sam "S"', email: 'sam@example.org' },
+    })
+    const lines = contentLines(ics)
+    expect(lines).toContain(`X-WEB-CALENDAR-CREATOR;CN="Lee; Sam ^'S^'":mailto:sam@example.org`)
+    expect(lines.some((line) => line.startsWith('ORGANIZER'))).toBe(false)
+    expect(read(ics).events[0]?.creator).toEqual({
+      name: 'Lee; Sam "S"',
+      email: 'sam@example.org',
+    })
+
+    const named = contentLines(
+      createEventResource(input(), { ...BERLIN, creator: { name: 'Bob' } }).ics,
+    )
+    expect(named).toContain('X-WEB-CALENDAR-CREATOR;CN=Bob:Bob')
+    const nobody = contentLines(createEventResource(input(), { ...BERLIN, creator: {} }).ics)
+    expect(nobody.some((line) => line.startsWith('X-WEB-CALENDAR-CREATOR'))).toBe(false)
   })
 
   it('gives every event its own UID', () => {

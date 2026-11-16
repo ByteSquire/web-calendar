@@ -34,24 +34,39 @@ function parsed(body: unknown) {
   return result.ok ? result.value : result.fields.map((f) => f.field)
 }
 
-const FILTER: FilterInput = { name: 'Meetings', kind: 'text', value: 'standup' }
+const FILTER: FilterInput = { name: 'Meetings', kind: 'text', value: 'standup', mode: 'only' }
 
 describe('parseFilterInput', () => {
   it.each([
     [
       'a text filter',
       { name: ' Meetings ', kind: 'text', value: ' standup ' },
-      { name: 'Meetings', kind: 'text', value: 'standup' },
+      { name: 'Meetings', kind: 'text', value: 'standup', mode: 'only' },
     ],
     [
       'a category filter',
       { name: 'Work', kind: 'category', value: 'Project X' },
-      { name: 'Work', kind: 'category', value: 'Project X' },
+      { name: 'Work', kind: 'category', value: 'Project X', mode: 'only' },
+    ],
+    [
+      'a person filter that hides',
+      { name: 'Not Sam', kind: 'person', value: '["sam@example.org"]', mode: 'hide' },
+      { name: 'Not Sam', kind: 'person', value: '["sam@example.org"]', mode: 'hide' },
+    ],
+    [
+      'a person filter with several people, trimmed',
+      { name: 'Team', kind: 'person', value: '[" Sam Lee <sam@example.org> ", "Bob"]' },
+      { name: 'Team', kind: 'person', value: '["Sam Lee <sam@example.org>","Bob"]', mode: 'only' },
+    ],
+    [
+      'a status filter that shows only its status',
+      { name: 'S', kind: 'status', value: 'tentative', mode: 'only' },
+      { name: 'S', kind: 'status', value: 'tentative', mode: 'only' },
     ],
     [
       'extra fields',
       { name: 'A', kind: 'text', value: 'b', id: 3, ownerId: 9, extra: {} },
-      { name: 'A', kind: 'text', value: 'b' },
+      { name: 'A', kind: 'text', value: 'b', mode: 'only' },
     ],
     [
       'the longest name and value',
@@ -64,6 +79,7 @@ describe('parseFilterInput', () => {
         name: 'n'.repeat(MAX_FILTER_NAME_LENGTH),
         kind: 'text',
         value: 'v'.repeat(MAX_FILTER_VALUE_LENGTH),
+        mode: 'only',
       },
     ],
   ])('accepts %s', (_label, body, expected) => {
@@ -71,10 +87,12 @@ describe('parseFilterInput', () => {
   })
 
   it.each(['confirmed', 'tentative', 'cancelled'])('accepts the status %s', (status) => {
+    // Without a mode a status filter hides its status, as status filters did before modes.
     expect(parsed({ name: 'S', kind: 'status', value: status })).toEqual({
       name: 'S',
       kind: 'status',
       value: status,
+      mode: 'hide',
     })
   })
 
@@ -106,6 +124,37 @@ describe('parseFilterInput', () => {
     ['a huge value', { name: 'A', kind: 'category', value: 'x'.repeat(1_000_000) }, ['value']],
     ['an unknown status', { name: 'A', kind: 'status', value: 'busy' }, ['value']],
     ['a status with other case', { name: 'A', kind: 'status', value: 'Confirmed' }, ['value']],
+    ['an unknown mode', { name: 'A', kind: 'text', value: 'v', mode: 'show' }, ['mode']],
+    ['a mode with other case', { name: 'A', kind: 'text', value: 'v', mode: 'Hide' }, ['mode']],
+    ['a blank person', { name: 'A', kind: 'person', value: ' ' }, ['value']],
+    ['a person that is no list', { name: 'A', kind: 'person', value: 'Sam' }, ['value']],
+    ['an empty list of people', { name: 'A', kind: 'person', value: '[]' }, ['value']],
+    [
+      'too many people',
+      {
+        name: 'A',
+        kind: 'person',
+        value: JSON.stringify(Array.from({ length: 21 }, (_, index) => `p${index}`)),
+      },
+      ['value'],
+    ],
+    ['a person that is no text', { name: 'A', kind: 'person', value: '["Sam", 3]' }, ['value[1]']],
+    [
+      'a blank one of the people',
+      { name: 'A', kind: 'person', value: '["Sam", " "]' },
+      ['value[1]'],
+    ],
+    ['a person twice', { name: 'A', kind: 'person', value: '["Sam", "SAM"]' }, ['value[1]']],
+    [
+      'a person over the limit',
+      { name: 'A', kind: 'person', value: JSON.stringify(['x'.repeat(201)]) },
+      ['value[0]'],
+    ],
+    [
+      'a control character in a person',
+      { name: 'A', kind: 'person', value: JSON.stringify(['Sam\u0007']) },
+      ['value[0]'],
+    ],
     ['everything wrong', { name: '', kind: 'x', value: '' }, ['name', 'kind', 'value']],
   ])('rejects %s', (_label, body, fields) => {
     expect(parsed(body)).toEqual(fields)
@@ -127,12 +176,14 @@ describe('filters in the database', () => {
       name: 'Cancelled',
       kind: 'status',
       value: 'cancelled',
+      mode: 'hide',
     })
     expect(changed).toEqual({
       id: created.id,
       name: 'Cancelled',
       kind: 'status',
       value: 'cancelled',
+      mode: 'hide',
     })
     expect(listFilters(db, alice)).toEqual([changed])
 

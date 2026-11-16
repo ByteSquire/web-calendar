@@ -30,6 +30,7 @@ export function useEventWrites() {
   const { refresh } = useLiveStatus()
   const displayTimeZone = useDisplayTimeZone()
   const orgTimeZone = useOrgTimeZone()
+  const { currentUser } = useCalendarState()
 
   const deps: WriteDeps | null = caldav
     ? {
@@ -41,6 +42,10 @@ export function useEventWrites() {
           displayTimeZone: displayTimeZone.value,
           orgTimeZone: orgTimeZone.value,
         }),
+        creator: () => {
+          const { name, email } = currentUser.value
+          return name || email ? { name, email } : null
+        },
       }
     : null
 

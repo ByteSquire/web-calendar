@@ -236,7 +236,10 @@ erDiagram
 - **categories** — `id` (PK), `name`, `color`, `owner_id` (FK, nullable). Events
   carry categories through the iCal `CATEGORIES` property.
 - **filters** — `id` (PK), `owner_id` (FK), `name`, `kind` (`text` | `category` |
-  `status`), `value`.
+  `status` | `person`), `value` (for `person` a JSON list of 1 to 20 people, each a name, an
+  address or `Name <address>`), `mode` (`only` | `hide`; migration 014, which gave the status
+  filters of before `hide` and the others `only`, what they did then). §9 "Filters" says what each
+  kind matches.
 - **ical_subscriptions** — `id` (PK), `owner_id` (FK, nullable = shared), `name`,
   `url`, `color`.
 - **resources** — `id` (PK), `name`, `type` (`room` | `car` | `equipment`), `location`,
@@ -1208,14 +1211,30 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   with the name). Only `is_admin = 1` rows are touched; user routes answer `404` for a shared view.
   `ext:` refs are refused per field, refs are shape-checked only (no lookup; what a viewer cannot read
   Radicale answers with `403`). There is no separate input for a shared view: an administrator adds a view like anyone else and
-  then chooses "Share with everybody" in its `⋯` menu (below). Admins also get Rename / Update from
-  selection / Unshare / Delete on a shared view. Every view has a `⋯` menu (FR-21): on a shared view everybody
+  then chooses "Share with everybody" in its `⋯` menu (below). Admins also get Edit / Update from
+  selection / Unshare / Delete on a shared view (Edit is the view dialog of own views, which there
+  offers no external calendar). Every view has a `⋯` menu (FR-21): on a shared view everybody
   else gets one item, "Copy to my views", and sees the "Shared" badge. In demo mode the controls
   change the local list only.
-- **Own views (FR-2, FR-21)** — every user adds, renames, duplicates and deletes their own views
+- **Own views (FR-2, FR-21)** — every user adds, edits, duplicates and deletes their own views
   through `POST /api/views`, `PUT` and `DELETE /api/views/:id` (at most 100 per user; another user's
-  view and a shared one answer `404`). The sidebar has one "Add view" plus in the heading of the views section, which shows a name
-  field (the view starts as the calendars now shown). "Duplicate" on an own view and "Copy to my views"
+  view and a shared one answer `404`). A view groups calendars: selecting it shows exactly those
+  (and selecting it again brings back the calendars as they were). The sidebar has one "Add view"
+  plus in the heading of the views section, which opens the **view dialog** (`ViewDialog.vue`,
+  like the dialogs of an event and of a resource): the name and a list of the calendars to group,
+  with "Choose all" and "Choose none". It starts with the calendars switched on now, refuses a name
+  that another view of the same kind has (letter case aside) and a view without a calendar, and the
+  new view is selected once it is made, so that it shows what it groups. "Edit" in the `⋯` menu
+  opens the same dialog for a view the person may change (their own; a shared one for an
+  administrator), and saving a selected view shows its new calendars at once. A view names no
+  resource (the routes refuse `res:` refs) and a shared one no external calendar, so the dialog does
+  not offer them; calendars of a view that the viewer cannot see (gone, or not shared with them)
+  are not listed, stay in the view, and the dialog says how many there are
+  (`app/utils/view-form.ts`). "Update from selection", in the same menus, makes the view group the
+  calendars switched on now (of those it can hold), and is refused while none is on. The dialog
+  replaced a name field that made a view of the calendars shown at that moment: the view then
+  showed what was shown already, so selecting it seemed to do nothing, and what it grouped could
+  not be seen or changed. "Duplicate" on an own view and "Copy to my views"
   on a shared one make a copy of the user's own, named "<name> (copy)" ("(copy 2)" and on when
   taken), with the same calendars; an own view may hold external calendars, a shared one never.
   "Share with everybody" (administrators only, in the menu of their own views) makes a shared view
@@ -1229,8 +1248,9 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   fails both are listed and a message says so); it is refused while the administrator already has an
   own view of that name. Other people stop seeing the view. Without a server
   (demo) the same controls change the local list. Tests: `tests/user-views.test.ts`,
-  `e2e/own-views.spec.ts` and `e2e/admin-views.spec.ts` (demo), `e2e/live/shared-view-menu.spec.ts`
-  (alice makes a view and shares it; bob, who is no administrator, copies, renames and deletes).
+  `tests/view-form.test.ts`, `e2e/own-views.spec.ts` and `e2e/admin-views.spec.ts` (demo),
+  `e2e/live/shared-view-menu.spec.ts` (alice makes a view and shares it; bob, who is no
+  administrator, copies, renames and deletes).
 - **Public view** _(planned)_ — no logged-in user, so it reads **only** the calendars
   in `published_calendars` with a service credential, read-only. Decided when the
   feature is scheduled.
@@ -1467,7 +1487,44 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     the on-screen keyboard would cover a field low on the page; the focus goes to the field, which
     deliberately goes against `keepFocusOffControlsOnTouch` (the tap was made to type), Android's
     Back gesture closes the pop-up (`useBackDismiss`), and the focus returns to the plus. The
-    calendars plus is absent without a calendar service (demo mode), as the field was.
+    calendars plus is absent without a calendar service (demo mode), as the field was. A view and a
+    filter need more than a name, so their plus opens their dialog instead, on every screen
+    (`addDialog` of `SidebarSection`, `aria-haspopup="dialog"`): the view dialog (§8, Own views)
+    and the filter dialog (below); the focus returns to the plus when it closes.
+  - _Filters (FR-5)_: a filter is the person's own (`/api/filters`) and is switched on and off in
+    the list; a new one is on at once. Its row shows an icon of its kind. The plus and "Edit" in the
+    row's `⋯` menu open the **filter dialog** (`FilterDialog.vue`, like the dialogs of an event and
+    of a resource): the name; "Filter by" Text, Category, Status or Person; what to look for (a
+    text; a category, chosen from the person's; a status; or people: as many as wanted, up to 20,
+    chosen from a list of those the loaded events and calendars name, each with the address under
+    the name and found by either, or typed as a name or an address; they show as tags with a cross
+    each, `UInputMenu`; the form and its fields carry the attributes with which the common password
+    managers leave a field alone, `app/utils/password-managers.ts`, and the people are a
+    `type="search"` field: Bitwarden took them for a login, and by default it honours its ignore
+    attribute only when its user switched that on, but never fills a search field); and "Matching
+    events": "Show
+    only matching events" or "Hide matching events". A sentence under the fields says what the filter
+    will do ("Hides the events with the status Cancelled."). Until the person types a name, the name
+    follows what the filter looks for ("Work", "Hide: Cancelled"). A taken name (letter case aside)
+    or an empty value keeps the dialog open with the reason; a new filter is saved first and listed
+    after, so a refusal is told in the dialog. What each kind matches (`app/utils/filters.ts`): a
+    text the title, place or notes, without regard to case (never a busy time, which has no text);
+    a category the events carrying it, by its name, so a name only events carry works too (a filter
+    from before held the category's id, which still matches); a status the events with it; people
+    the events whose ORGANIZER or creator is one of them: the same address, or a name or address
+    that contains what the filter holds (without regard to case; a person chosen from the list is
+    kept as `Name <address>`, so either finds them), and an event that names nobody by the owner of
+    its calendar, whose name alone is known (`Calendar.ownerName`: the
+    person for their own calendars, the owner of a person's calendar shared with them; a group's
+    calendar, a subscription and an external calendar have none). "Show only" filters of one kind
+    are alternatives, different kinds all have to pass, and every "hide" filter hides what it
+    matches; the category selection and the calendars switched on apply as well. The creator is the
+    person who made the event in this app: a new event gets `X-WEB-CALENDAR-CREATOR;CN=<name>:mailto:<address>`
+    (the shape of an ORGANIZER, which is not written: other apps would take the event for an
+    invitation). Events made elsewhere have no creator and rely on ORGANIZER and the calendar's
+    owner; anybody who may write in a calendar can write the property, so it is a help for finding
+    events, not a proof of who made them. The dialog replaced a field that made a text filter from
+    a name, with no way to make the other kinds or to see what a filter did.
   - _Order (FR-21)_: a person arranges the sections as they like. The order is **saved for the
     account** (`users.sidebar_order`, `/api/me` returns `sidebarOrder`, `PUT /api/me/sidebar-order`
     takes `{ order: string[] }`: known section ids, each at most once, the rest follow in their

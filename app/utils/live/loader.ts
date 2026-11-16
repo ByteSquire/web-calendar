@@ -381,11 +381,13 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
       const subscriptionList =
         subscriptions.status === 'fulfilled' ? subscriptions.value.subscriptions : null
       if (collectionList !== null || subscriptionList !== null) {
+        const ownerName = me.status === 'fulfilled' ? personName(me.value) : null
         const built = buildCalendars({
           collections: collectionList ?? [],
           subscriptions: subscriptionList ?? [],
           prefs: prefs.status === 'fulfilled' ? prefs.value.prefs : [],
           ...(me.status === 'fulfilled' ? { ownerId: String(me.value.id) } : {}),
+          ...(ownerName ? { ownerName } : {}),
           shared: sharedCalendars,
           // What the external accounts' servers listed last; their own track keeps that current.
           external: externalTrack?.collections() ?? [],

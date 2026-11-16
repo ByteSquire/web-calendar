@@ -53,14 +53,18 @@
  * - `setCalendarColor(id, color | null)`: the viewer's colour for a calendar, null for its own
  *   (`ownColor`); saved first, and a refusal rejects and changes nothing.
  * - `filters` (all) and `activeFilterIds`, `activeFilters`, `setFilterActive(id, active)`,
- *   `addFilter(text)` (adds and activates a text filter; null if empty or taken).
+ *   `addFilter(draft)` (adds and switches on a filter; null if the name is empty or taken),
+ *   `updateFilter(id, draft)`, `deleteFilter(id)`. A draft is `{ name, kind, value, mode }`.
  * - `categories` and `selectedCategoryIds`, `setCategorySelected(id, selected)`,
  *   `addCategory(name)` (null if empty or taken). Selected categories narrow the events to
  *   those carrying any of them; none selected means no restriction.
- * - Filter rules: category filters keep events carrying that category; text filters keep events
- *   whose title, location or description contains the text; status filters hide events with that
- *   status. Several filters of one kind: category and text either one, status all. Kinds, the
- *   category selection and calendar visibility are combined with AND.
+ * - Filter rules (utils/filters.ts): a text filter matches events whose title, location or
+ *   description contains the text; a category filter events carrying the category; a status filter
+ *   events with that status; a person filter events whose organiser or creator has that name or
+ *   address, or, when the event names nobody, whose calendar's owner (`Calendar.ownerName`) does.
+ *   A filter's `mode` shows only what it matches (`only`) or hides it (`hide`). "Show only"
+ *   filters of one kind: either one; every "hide" filter applies. Kinds, the category selection and
+ *   calendar visibility are combined with AND.
  *
  * Events
  * - `events`: the in-memory store, seeded from the mock data (live mode: the events of the visible
@@ -97,8 +101,9 @@
  *   Progress and problems: `useLiveStatus()`.
  * - `setCalendarVisible` saves the viewer's choice (`/api/calendar-prefs`, debounced; a failure
  *   shows a toast and keeps the toggle) and updates the calendar's `defaultVisible`. Selecting a
- *   view is not saved. `addCategory` / `addFilter` still return at once; the item carries a local
- *   id until the server answers and is removed again (with a toast) if the save fails.
+ *   view is not saved. `addCategory` still returns at once; the item carries a local id until the
+ *   server answers and is removed again (with a toast) if the save fails. `addFilter` waits for the
+ *   server and rejects when it did not save.
  * - Without a sign-in provider (demo mode) none of this runs and the mock data is used.
  *
  * Layout

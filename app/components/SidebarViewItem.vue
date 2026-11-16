@@ -29,16 +29,17 @@ import { t } from '~/utils/i18n'
 import { settledMenuItems } from '~/utils/menu-select'
 import type { CalendarView } from '../../shared/types/calendar'
 
-// Every view has a menu (FR-21). A shared view offers "Copy to my views" to everyone; its own
-// actions (Rename, Update from selection, Unshare, Delete) need `canManage`: the viewer is an
-// administrator (a convenience; the server enforces). A user's own view offers Rename, Duplicate
-// and Delete, and an administrator may also share it with everybody; Unshare takes it back. An item
-// runs once per click or tap, and the rest of the tap is swallowed (utils/menu-select.ts): the
-// dialogs of Rename and Delete would otherwise take the tap's click.
+// Every view has a menu (FR-21). Every view the viewer may change offers Edit (its name and its
+// calendars, in the view dialog) and Update from selection (the calendars switched on now): a
+// user's own view, and a shared one for an administrator (`canManage`; a convenience, the server
+// enforces). A shared view offers "Copy to my views" to everyone, and to an administrator Unshare
+// and Delete too. A user's own view offers Duplicate and Delete, and an administrator may also
+// share it with everybody. An item runs once per click or tap, and the rest of the tap is
+// swallowed (utils/menu-select.ts): the dialogs of Edit and Delete would otherwise take its click.
 const props = defineProps<{ view: CalendarView; selected: boolean; canManage?: boolean }>()
 const emit = defineEmits<{
   select: []
-  rename: []
+  edit: []
   update: []
   delete: []
   copy: []
@@ -55,10 +56,15 @@ function menu(): DropdownMenuItem[][] {
     icon: 'i-lucide-copy-plus',
     onSelect: () => emit('copy'),
   }
-  const rename: DropdownMenuItem = {
-    label: t('Rename'),
+  const edit: DropdownMenuItem = {
+    label: t('Edit'),
     icon: 'i-lucide-pencil',
-    onSelect: () => emit('rename'),
+    onSelect: () => emit('edit'),
+  }
+  const update: DropdownMenuItem = {
+    label: t('Update from selection'),
+    icon: 'i-lucide-refresh-cw',
+    onSelect: () => emit('update'),
   }
   const remove: DropdownMenuItem = {
     label: t('Delete'),
@@ -70,12 +76,8 @@ function menu(): DropdownMenuItem[][] {
     return props.canManage
       ? [
           [
-            rename,
-            {
-              label: t('Update from selection'),
-              icon: 'i-lucide-refresh-cw',
-              onSelect: () => emit('update'),
-            },
+            edit,
+            update,
             copy,
             { label: t('Unshare'), icon: 'i-lucide-lock', onSelect: () => emit('unshare') },
           ],
@@ -84,7 +86,8 @@ function menu(): DropdownMenuItem[][] {
       : [[copy]]
   }
   const own: DropdownMenuItem[] = [
-    rename,
+    edit,
+    update,
     { label: t('Duplicate'), icon: 'i-lucide-copy', onSelect: () => emit('copy') },
   ]
   if (props.canManage) {

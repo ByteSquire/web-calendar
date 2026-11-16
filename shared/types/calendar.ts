@@ -51,6 +51,12 @@ export interface Calendar {
   freeBusyOnly?: boolean
   /** The viewer may rename and delete the calendar from the sidebar (the server checks again). */
   manage?: CalendarManage
+  /**
+   * The person whose calendar it is, as the viewer knows them: the viewer for their own, the owner
+   * of a person's calendar shared with them. Absent for the calendars of groups, subscriptions and
+   * external accounts. A person filter falls back on it (`filterCalendarEvents`).
+   */
+  ownerName?: string
 }
 
 /**
@@ -80,13 +86,28 @@ export interface Category {
   shared?: boolean
 }
 
-export type FilterKind = 'text' | 'category' | 'status'
+export type FilterKind = 'text' | 'category' | 'status' | 'person'
 
+/** What a filter does with the events it matches: show only those, or hide them. */
+export type FilterMode = 'only' | 'hide'
+
+/**
+ * A saved filter (FR-5). `value` is the text to look for (`text`), a category's name (`category`;
+ * older filters may hold its id), an `EventStatus` (`status`) or a JSON list of people (`person`),
+ * each a name, an address or `Name <address>` (app/utils/filters.ts).
+ */
 export interface CalendarFilter {
   id: string
   name: string
   kind: FilterKind
   value: string
+  mode: FilterMode
+}
+
+/** A person as an event names them (ORGANIZER, or the creator the app records). */
+export interface EventPerson {
+  name?: string
+  email?: string
 }
 
 export interface CalendarView {
@@ -135,4 +156,8 @@ export interface CalendarEvent {
   recurring?: boolean
   /** The names in the iCal `CATEGORIES`; `categoryIds` are resolved from them by the app. */
   categoryNames?: string[]
+  /** The iCal `ORGANIZER`: set for meetings, rarely for an event of one person. */
+  organizer?: EventPerson
+  /** Who made the event in this app (`X-WEB-CALENDAR-CREATOR`); absent if made elsewhere. */
+  creator?: EventPerson
 }

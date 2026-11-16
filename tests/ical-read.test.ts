@@ -284,6 +284,38 @@ describe('event fields', () => {
     expect(read(calendar(vevent(['DTSTART:20261110T090000Z']))).events[0]?.title).toBe('')
   })
 
+  it('reads the ORGANIZER and the creator the app records, by name and address', () => {
+    const [event] = read(
+      calendar(
+        vevent([
+          'DTSTART:20261110T090000Z',
+          'ORGANIZER;CN="Lee, Sam":mailto:sam@example.org',
+          'X-WEB-CALENDAR-CREATOR;CN=Bob Builder:mailto:bob@example.org',
+        ]),
+      ),
+    ).events
+    expect(event?.organizer).toEqual({ name: 'Lee, Sam', email: 'sam@example.org' })
+    expect(event?.creator).toEqual({ name: 'Bob Builder', email: 'bob@example.org' })
+
+    // An address alone, a name alone, and a property that names nobody.
+    const [bare] = read(
+      calendar(
+        vevent([
+          'DTSTART:20261110T090000Z',
+          'ORGANIZER:MAILTO:amy@example.org',
+          'X-WEB-CALENDAR-CREATOR;CN=Bob:Bob',
+        ]),
+      ),
+    ).events
+    expect(bare?.organizer).toEqual({ email: 'amy@example.org' })
+    expect(bare?.creator).toEqual({ name: 'Bob' })
+    const [nobody] = read(
+      calendar(vevent(['DTSTART:20261110T090000Z', 'ORGANIZER:urn:uuid:1234'])),
+    ).events
+    expect(nobody).not.toHaveProperty('organizer')
+    expect(nobody).not.toHaveProperty('creator')
+  })
+
   it('maps STATUS: confirmed by default, tentative, cancelled', () => {
     const status = (value: string | null): string | undefined =>
       read(calendar(vevent(['DTSTART:20261110T090000Z', ...(value ? [`STATUS:${value}`] : [])])))

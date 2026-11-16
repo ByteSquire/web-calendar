@@ -6,7 +6,8 @@ import type { SidebarSectionId } from '../../shared/utils/sidebar-sections'
 export type CalendarKind = 'personal' | 'shared' | 'resource'
 export type PrincipalType = 'user' | 'group' | 'authenticated' | 'public'
 export type Permission = 'free_busy' | 'read' | 'write' | 'admin'
-export type FilterKind = 'text' | 'category' | 'status'
+export type FilterKind = 'text' | 'category' | 'status' | 'person'
+export type FilterMode = 'only' | 'hide'
 export type ResourceType = 'room' | 'car' | 'equipment'
 export type ResourceAclPrincipalType = 'user' | 'group' | 'authenticated'
 export type ResourceRight = 'read' | 'book' | 'manage'
@@ -129,6 +130,7 @@ export interface FilterRow extends Timestamps {
   name: string
   kind: FilterKind
   value: string
+  mode: FilterMode
 }
 
 export interface IcalSubscriptionRow extends Timestamps {

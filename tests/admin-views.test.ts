@@ -119,11 +119,13 @@ describe('SidebarContent without a server (mock data)', () => {
     await mount(Shell, { attachTo: document.body })
     expect(document.querySelectorAll('section button[aria-label="Add view"]')).toHaveLength(1)
     expect(document.querySelector('button[aria-label="Add shared view"]')).toBeNull()
-    // The field shows when the plus is pressed.
-    expect(document.querySelector('input[placeholder="Add view"]')).toBeNull()
+    // The plus opens the view dialog, which adds a view of one's own, not a field for a name.
     document.querySelector<HTMLButtonElement>('section button[aria-label="Add view"]')!.click()
     await vi.waitFor(() =>
-      expect(document.querySelector('input[placeholder="Add view"]')).not.toBeNull(),
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+        'Only you see this view.',
+      ),
     )
+    expect(document.querySelector('input[placeholder="Add view"]')).toBeNull()
   })
 })

@@ -135,7 +135,7 @@ describe('mock data', () => {
   it('has resolvable filters and hex colors', () => {
     for (const filter of mockData.filters) {
       if (filter.kind === 'category') {
-        expect(categoryIds.has(filter.value)).toBe(true)
+        expect(mockData.categories.map((category) => category.name)).toContain(filter.value)
       } else if (filter.kind === 'status') {
         expect(['confirmed', 'tentative', 'cancelled']).toContain(filter.value)
       } else {

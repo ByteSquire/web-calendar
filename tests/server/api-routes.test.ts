@@ -637,16 +637,20 @@ describe('filters', () => {
     expect(created).toMatchObject({ status: 201, body: { id: expect.any(Number), ...FILTER } })
     expect((await call('alice', 'GET', '/api/filters')).body).toEqual({ filters: [created.body] })
 
+    expect(created.body.mode).toBe('only')
+
     const updated = await call('alice', 'PUT', `/api/filters/${created.body.id}`, {
-      name: 'Cancelled',
-      kind: 'status',
-      value: 'cancelled',
+      name: 'Not Sam',
+      kind: 'person',
+      value: '["Sam Lee <sam@example.org>"]',
+      mode: 'hide',
     })
     expect(updated.body).toEqual({
       id: created.body.id,
-      name: 'Cancelled',
-      kind: 'status',
-      value: 'cancelled',
+      name: 'Not Sam',
+      kind: 'person',
+      value: '["Sam Lee <sam@example.org>"]',
+      mode: 'hide',
     })
 
     expect((await call('alice', 'DELETE', `/api/filters/${created.body.id}`)).status).toBe(204)

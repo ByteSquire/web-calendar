@@ -185,7 +185,8 @@ export default defineNuxtConfig({
     fallbackToApi: false,
     serverBundle: 'local',
     // `scan` finds the icons written in templates; these are chosen at runtime in .ts files
-    // (app/utils/calendar-icons.ts and the status icons there), so they are named here.
+    // (app/utils/calendar-icons.ts and the status icons there, the kinds of filters in
+    // app/utils/filters.ts), so they are named here.
     clientBundle: {
       scan: true,
       icons: [
@@ -198,6 +199,10 @@ export default defineNuxtConfig({
         'lucide:car',
         'lucide:wrench',
         'lucide:triangle-alert',
+        'lucide:text-search',
+        'lucide:tag',
+        'lucide:circle-check',
+        'lucide:user',
       ],
     },
   },

@@ -31,5 +31,7 @@ export function toFilters(filters: readonly ApiFilter[]): CalendarFilter[] {
     name: filter.name,
     kind: filter.kind,
     value: filter.value,
+    // Before filters had a mode, a status filter hid its status and the others showed only matches.
+    mode: filter.mode ?? (filter.kind === 'status' ? 'hide' : 'only'),
   }))
 }

@@ -8,7 +8,7 @@ import {
   createCalendarEvent,
   createCalendarState,
   createCategory,
-  createTextFilter,
+  createFilter,
   eventOverlapsRange,
   filterCalendarEvents,
   formatRangeLabel,
@@ -194,7 +194,8 @@ describe('event filtering', () => {
   const events = createMockData(anchor).events
   const all = new Set(createMockData(anchor).calendars.map((calendar) => calendar.id))
   const ids = (list: CalendarEvent[]) => list.map((item) => item.id)
-  const criteria = { visibleCalendarIds: all, filters: [], categoryIds: [] }
+  const categories = createMockData(anchor).categories
+  const criteria = { visibleCalendarIds: all, filters: [], categoryIds: [], categories }
 
   it('keeps everything without restrictions', () => {
     expect(filterCalendarEvents(events, criteria)).toHaveLength(events.length)
@@ -221,11 +222,9 @@ describe('event filtering', () => {
     const filters = createMockData(anchor).filters
     const only = (id: string) => filters.filter((filter) => filter.id === id)
 
-    expect(
-      filterCalendarEvents(events, { ...criteria, filters: only('filter-work') }).every((item) =>
-        item.categoryIds.includes('cat-work'),
-      ),
-    ).toBe(true)
+    const work = filterCalendarEvents(events, { ...criteria, filters: only('filter-work') })
+    expect(work.length).toBeGreaterThan(0)
+    expect(work.every((item) => item.categoryIds.includes('cat-work'))).toBe(true)
     expect(
       ids(filterCalendarEvents(events, { ...criteria, filters: only('filter-offsite') })),
     ).toEqual(['evt-offsite'])
@@ -238,7 +237,9 @@ describe('event filtering', () => {
   })
 
   it('matches text in location and description, ignoring case', () => {
-    const filter = (value: string) => [{ id: 'f', name: value, kind: 'text' as const, value }]
+    const filter = (value: string) => [
+      { id: 'f', name: value, kind: 'text' as const, value, mode: 'only' as const },
+    ]
     expect(ids(filterCalendarEvents(events, { ...criteria, filters: filter('LAKESIDE') }))).toEqual(
       ['evt-offsite'],
     )
@@ -248,7 +249,9 @@ describe('event filtering', () => {
   })
 
   it('never matches a text filter with a blocked entry, whatever it is drawn as', () => {
-    const filter = (value: string) => [{ id: 'f', name: value, kind: 'text' as const, value }]
+    const filter = (value: string) => [
+      { id: 'f', name: value, kind: 'text' as const, value, mode: 'only' as const },
+    ]
     const busy = { ...events[0]!, id: 'busy', title: 'Busy', isBlocked: true }
     const blank = { ...events[0]!, id: 'blank', title: '', isBlocked: true }
     const shown = filterCalendarEvents([busy, blank, ...events], {
@@ -261,8 +264,15 @@ describe('event filtering', () => {
 
   it('combines filters of one kind with OR and different kinds with AND', () => {
     const filters = [
-      { id: 'a', name: 'Focus', kind: 'category' as const, value: 'cat-focus' },
-      { id: 'b', name: 'Personal', kind: 'category' as const, value: 'cat-personal' },
+      { id: 'a', name: 'Focus', kind: 'category' as const, value: 'Focus', mode: 'only' as const },
+      // an older filter holds the category's id instead of its name
+      {
+        id: 'b',
+        name: 'Mine',
+        kind: 'category' as const,
+        value: 'cat-personal',
+        mode: 'only' as const,
+      },
     ]
     expect(ids(filterCalendarEvents(events, { ...criteria, filters })).sort()).toEqual([
       'evt-coast',
@@ -270,7 +280,10 @@ describe('event filtering', () => {
       'evt-focus',
     ])
 
-    const withText = [...filters, { id: 'c', name: 'Trip', kind: 'text' as const, value: 'trip' }]
+    const withText = [
+      ...filters,
+      { id: 'c', name: 'Trip', kind: 'text' as const, value: 'trip', mode: 'only' as const },
+    ]
     expect(ids(filterCalendarEvents(events, { ...criteria, filters: withText }))).toEqual([
       'evt-coast',
     ])
@@ -354,17 +367,26 @@ describe('creation helpers', () => {
     expect(createCategory('work', existing)).toBeNull()
   })
 
-  it('creates text filters and rejects empty or duplicate names', () => {
+  it('creates filters and rejects empty or duplicate names and empty values', () => {
     const existing = createMockData(anchor).filters
+    const draft = {
+      name: ' Lunch ',
+      kind: 'person' as const,
+      value: ' Sam ',
+      mode: 'hide' as const,
+    }
 
-    expect(createTextFilter('Lunch', existing)).toMatchObject({
+    expect(createFilter(draft, existing)).toEqual({
       id: 'filter-lunch',
       name: 'Lunch',
-      kind: 'text',
-      value: 'Lunch',
+      kind: 'person',
+      value: '["Sam"]',
+      mode: 'hide',
     })
-    expect(createTextFilter('', existing)).toBeNull()
-    expect(createTextFilter('offsite', existing)).toBeNull()
+    expect(createFilter({ ...draft, name: ' ' }, existing)).toBeNull()
+    expect(createFilter({ ...draft, value: ' ' }, existing)).toBeNull()
+    expect(createFilter({ ...draft, value: '[]' }, existing)).toBeNull()
+    expect(createFilter({ ...draft, name: 'offsite' }, existing)).toBeNull()
   })
 
   it('adds and removes ids without duplicates', () => {
@@ -623,9 +645,10 @@ describe('calendar state', () => {
     expect(state.visibleEvents.value).toHaveLength(total)
   })
 
-  it('adds and activates a text filter', () => {
+  it('adds and activates a filter', async () => {
     const state = makeStore()
-    const filter = state.addFilter('design')
+    const draft = { name: 'design', kind: 'text' as const, value: 'design', mode: 'only' as const }
+    const filter = await state.addFilter(draft)
 
     expect(filter?.kind).toBe('text')
     expect(state.filters.value.map((item) => item.name)).toContain('design')
@@ -634,8 +657,37 @@ describe('calendar state', () => {
       'evt-design-review',
       'evt-room-a-booking',
     ])
-    expect(state.addFilter('DESIGN')).toBeNull()
-    expect(state.addFilter(' ')).toBeNull()
+    expect(await state.addFilter({ ...draft, name: 'DESIGN' })).toBeNull()
+    expect(await state.addFilter({ ...draft, name: ' ' })).toBeNull()
+  })
+
+  it('filters by the person who organised an event, else by its calendar’s owner', () => {
+    const state = makeStore()
+    state.setFilterActive('filter-sam', true)
+    expect(state.visibleEvents.value.map((item) => item.id)).toEqual(['evt-one-on-one'])
+    state.setFilterActive('filter-sam', false)
+
+    state.filters.value = [
+      ...state.filters.value,
+      { id: 'alex', name: 'Alex', kind: 'person', value: 'alex doe', mode: 'only' },
+    ]
+    state.setFilterActive('alex', true)
+    const shown = state.visibleEvents.value
+    expect(shown.length).toBeGreaterThan(0)
+    // the events of Alex's calendars, but not the 1:1 that Sam organised in one of them
+    expect(shown.every((item) => ['cal-personal', 'cal-team'].includes(item.calendarId))).toBe(true)
+    expect(shown.map((item) => item.id)).not.toContain('evt-one-on-one')
+  })
+
+  it('records the person who adds an event as its creator', () => {
+    const state = makeStore()
+    const event = state.addEvent({
+      title: 'Lunch',
+      calendarId: 'cal-team',
+      start: '2026-10-28T12:00',
+      end: '2026-10-28T13:00',
+    })
+    expect(event.creator).toEqual({ name: 'Alex Doe', email: 'alex@example.com' })
   })
 
   it('adds a category', () => {

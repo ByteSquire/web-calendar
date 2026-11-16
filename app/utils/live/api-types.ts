@@ -43,8 +43,10 @@ export interface ApiSharedCalendar {
 export interface ApiFilter {
   id: number
   name: string
-  kind: 'text' | 'category' | 'status'
+  kind: 'text' | 'category' | 'status' | 'person'
   value: string
+  /** Absent from a server older than migration 014; `filterMode` reads it as it was meant then. */
+  mode?: 'only' | 'hide'
 }
 
 export interface ApiCategory {

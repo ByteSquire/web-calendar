@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { findCalendarLinkById, listCalendarLinksOfCalendar } from '../../server/db/calendar-links'
+import { createFilter, listFilters } from '../../server/db/filters'
 import { openDatabase } from '../../server/db/connection'
 import { isGroupManager, listGroupMembers } from '../../server/db/groups'
 import { loadMigrationsFromDir, runMigrations, type Migration } from '../../server/db/migrate'
@@ -132,6 +133,7 @@ describe('updating from v0.1.0 (001 to 008)', () => {
       '011_calendar_links.sql',
       '012_calendar_link_levels.sql',
       '013_group_managers.sql',
+      '014_filter_modes.sql',
     ])
     expect(result.backup).toBe(`${path}.pre-009.bak`)
     expectKept(before, db)
@@ -205,6 +207,7 @@ describe('updating from v0.2.0 (001 to 009)', () => {
       '011_calendar_links.sql',
       '012_calendar_link_levels.sql',
       '013_group_managers.sql',
+      '014_filter_modes.sql',
     ])
     expect(result.backup).toBe(`${path}.pre-010.bak`)
     expectKept(before, db)
@@ -222,7 +225,7 @@ describe('updating from v0.2.1 (001 to 012)', () => {
     expect(appliedMigrations(db)).toHaveLength(11)
 
     const result = upgradeDatabase(db, path, current())
-    expect(result.applied).toEqual(['013_group_managers.sql'])
+    expect(result.applied).toEqual(['013_group_managers.sql', '014_filter_modes.sql'])
     expect(result.backup).toBe(`${path}.pre-013.bak`)
     expectKept(before, db)
     expectHealthy(db)
@@ -255,16 +258,37 @@ describe('updating from v0.2.1 (001 to 012)', () => {
 })
 
 describe('updating from v0.3.0 (001 to 013)', () => {
-  it('finds nothing to do, keeps every row, and the code reads the managers', () => {
+  it('gives the filters a mode, keeps every row, and the code reads the managers', () => {
     leftBy('v0.1.0', 'v0.2.0', 'v0.2.1', 'v0.3.0')
     db = openDatabase(path)
+    // A status filter and a deleted one: their meaning and the ids that were used stay.
+    db.exec(`INSERT INTO filters (id, owner_id, name, kind, value) VALUES
+      (2, 1, 'No cancelled', 'status', 'cancelled'),
+      (3, 1, 'Gone', 'text', 'gone')`)
+    db.exec('DELETE FROM filters WHERE id = 3')
     const before = snapshot(db)
     expect(appliedMigrations(db)).toHaveLength(12)
 
     // A later release adds its migrations here, like the tests above.
-    expect(upgradeDatabase(db, path, current())).toEqual({ applied: [], backup: null })
+    expect(upgradeDatabase(db, path, current())).toEqual({
+      applied: ['014_filter_modes.sql'],
+      backup: `${path}.pre-014.bak`,
+    })
     expectKept(before, db)
     expectHealthy(db)
+    // before modes, a status filter hid its status and the others showed only what they matched
+    expect(listFilters(db, 1).map((filter) => [filter.name, filter.kind, filter.mode])).toEqual([
+      ['Standups', 'text', 'only'],
+      ['No cancelled', 'status', 'hide'],
+    ])
+    const sam = createFilter(db, 1, { name: 'Sam', kind: 'person', value: '["Sam"]', mode: 'only' })
+    // the id of the deleted filter is not used again
+    expect(sam.id).toBe(4)
+    expect(() =>
+      db.exec(
+        "INSERT INTO filters (owner_id, name, kind, value, mode) VALUES (1, 'x', 'text', 'x', 'show')",
+      ),
+    ).toThrow(/CHECK/)
 
     // alice manages staff, bob the imported group; bob is a plain member of staff
     expect(listGroupMembers(db, 2).map((member) => [member.sub, member.manager])).toEqual([

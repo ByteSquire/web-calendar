@@ -5,6 +5,7 @@ import { computed, type Ref } from 'vue'
 import { Temporal } from 'temporal-polyfill'
 import type { MockData } from '../data/mock'
 import { monthLong, monthShort, weekdayShort } from './date-names'
+import { cleanFilterDraft, isEmptyFilterValue, passesFilters, type FilterDraft } from './filters'
 import { N_, t } from './i18n'
 import { isAutoCategory } from './live/categories'
 import type {
@@ -98,6 +99,10 @@ export interface EventCriteria {
   filters: readonly CalendarFilter[]
   /** Selected categories; empty means no restriction. */
   categoryIds: readonly string[]
+  /** All categories: a category filter names one, found here by its name. */
+  categories?: readonly Category[]
+  /** The name of each calendar's owner by calendar id, for person filters. */
+  calendarOwners?: ReadonlyMap<string, string>
 }
 
 const dayMonth = (date: Temporal.PlainDate) =>
@@ -279,20 +284,18 @@ function byStart(a: CalendarEvent, b: CalendarEvent): number {
 /**
  * Events of visible calendars that pass the filters and the category selection.
  * Combination rules: a calendar must be visible; if categories are selected the event needs one
- * of them; category filters match any carried category (several: either), text filters match
- * title, location or description case-insensitively (several: either); status filters hide the
- * events with that status (several: all apply). Different groups all have to pass.
+ * of them; the active filters then apply as `passesFilters` (utils/filters.ts) says: "show only"
+ * filters of one kind are alternatives, different kinds all have to pass, and every "hide" filter
+ * hides what it matches.
  */
 export function filterCalendarEvents(
   events: readonly CalendarEvent[],
   criteria: EventCriteria,
 ): CalendarEvent[] {
-  const categoryFilters = criteria.filters.filter((f) => f.kind === 'category').map((f) => f.value)
-  const textFilters = criteria.filters
-    .filter((f) => f.kind === 'text')
-    .map((f) => f.value.trim().toLowerCase())
-  const hiddenStatuses = criteria.filters.filter((f) => f.kind === 'status').map((f) => f.value)
-
+  const context = {
+    ...(criteria.categories ? { categories: criteria.categories } : {}),
+    ...(criteria.calendarOwners ? { calendarOwners: criteria.calendarOwners } : {}),
+  }
   return events.filter((event) => {
     if (!criteria.visibleCalendarIds.has(event.calendarId)) return false
     if (
@@ -301,20 +304,7 @@ export function filterCalendarEvents(
     ) {
       return false
     }
-    if (
-      categoryFilters.length > 0 &&
-      !categoryFilters.some((id) => event.categoryIds.includes(id))
-    ) {
-      return false
-    }
-    if (textFilters.length > 0) {
-      // A blocked entry has no text of its own ("Busy" is only how it is drawn): no text matches.
-      const text = event.isBlocked
-        ? ''
-        : `${event.title} ${event.location ?? ''} ${event.description ?? ''}`.toLowerCase()
-      if (!textFilters.some((needle) => text.includes(needle))) return false
-    }
-    return !hiddenStatuses.includes(event.status)
+    return passesFilters(event, criteria.filters, context)
   })
 }
 
@@ -377,6 +367,7 @@ function uniqueId(base: string, taken: Iterable<string>): string {
 export function createCalendarEvent(
   input: NewEventInput,
   existing: readonly CalendarEvent[],
+  creator?: CalendarEvent['creator'],
 ): CalendarEvent {
   const id = uniqueId(
     'evt-new',
@@ -394,6 +385,7 @@ export function createCalendarEvent(
     categoryIds: input.categoryIds ?? [],
     ...(input.description ? { description: input.description } : {}),
     ...(input.location ? { location: input.location } : {}),
+    ...(creator ? { creator } : {}),
   }
 }
 
@@ -421,22 +413,24 @@ export function createCategory(name: string, existing: readonly Category[]): Cat
   }
 }
 
-/** A new text filter, or null for an empty or duplicate text. */
-export function createTextFilter(
-  text: string,
+/**
+ * A new filter with a local id, or null for an empty or taken name or an empty value. The dialog
+ * checks the details first (`checkFilterDraft`, utils/filters.ts).
+ */
+export function createFilter(
+  draft: FilterDraft,
   existing: readonly CalendarFilter[],
 ): CalendarFilter | null {
-  const trimmed = text.trim()
-  if (!trimmed) return null
-  if (existing.some((filter) => filter.name.toLowerCase() === trimmed.toLowerCase())) return null
+  const clean = cleanFilterDraft(draft)
+  if (!clean.name || isEmptyFilterValue(clean)) return null
+  const key = clean.name.toLowerCase()
+  if (existing.some((filter) => filter.name.toLowerCase() === key)) return null
   return {
     id: uniqueId(
-      `filter-${slugify(trimmed) || 'new'}`,
+      `filter-${slugify(clean.name) || 'new'}`,
       existing.map((filter) => filter.id),
     ),
-    name: trimmed,
-    kind: 'text',
-    value: trimmed,
+    ...clean,
   }
 }
 
@@ -460,10 +454,10 @@ export interface CalendarStateHooks {
   persistCalendarColor?: (calendarId: string, color: string | null) => Promise<void>
   /** Saves a new category; resolves to the stored one (the server's id). */
   persistCategory?: (category: Category) => Promise<Category>
-  /** Saves a new filter; resolves to the stored one (the server's id). */
+  /** Saves a new filter; resolves to the stored one (the server's id), rejects when not saved. */
   persistFilter?: (filter: CalendarFilter) => Promise<CalendarFilter>
-  /** A new category or filter could not be saved and was removed again. */
-  onPersistError?: (what: 'category' | 'filter', name: string, error: unknown) => void
+  /** A new category could not be saved and was removed again. */
+  onPersistError?: (what: 'category', name: string, error: unknown) => void
   /** Saves a renamed or recoloured category; resolves to the stored one, rejects when not saved. */
   saveCategory?: (category: Category) => Promise<Category>
   /** Deletes a category; rejects when it was not deleted. */
@@ -558,11 +552,23 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     filters.value.filter((filter) => activeFilterIds.value.includes(filter.id)),
   )
 
+  /** The name of each calendar's owner, where it is known; person filters fall back on it. */
+  const calendarOwners = computed(
+    () =>
+      new Map(
+        calendars.value.flatMap((calendar) =>
+          calendar.ownerName ? [[calendar.id, calendar.ownerName] as const] : [],
+        ),
+      ),
+  )
+
   const visibleEvents = computed(() =>
     filterCalendarEvents(events.value, {
       visibleCalendarIds: new Set(visibleCalendarIds.value),
       filters: activeFilters.value,
       categoryIds: selectedCategoryIds.value,
+      categories: categories.value,
+      calendarOwners: calendarOwners.value,
     }),
   )
   const visibleEventsInRange = computed(() =>
@@ -690,8 +696,8 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   }
 
   /**
-   * Ids of new categories and filters whose save has not come back: they cannot be changed yet,
-   * because the server's id is about to replace the local one.
+   * Ids of new categories whose save has not come back: they cannot be changed yet, because the
+   * server's id is about to replace the local one.
    */
   const savingIds = state<string[]>('cal-saving-ids', () => [])
   const savedId = (id: string) => {
@@ -735,36 +741,18 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   }
 
   /**
-   * Adds a text filter and activates it; null if the text is empty or already taken. Saved like
-   * `addCategory`.
+   * Adds a filter and switches it on. Resolves to null, adding nothing, for an empty or taken name
+   * or an empty value; with a backend it is saved first and shown after (the dialog that adds it
+   * stays open until then), and rejects when it was not saved.
    */
-  function addFilter(text: string): CalendarFilter | null {
-    const filter = createTextFilter(text, filters.value)
+  async function addFilter(draft: FilterDraft): Promise<CalendarFilter | null> {
+    const filter = createFilter(draft, filters.value)
     if (!filter) return null
-    filters.value = [...filters.value, filter]
-    setFilterActive(filter.id, true)
-    const persist = options.hooks?.persistFilter
-    if (persist) {
-      savingIds.value = withIdPresent(savingIds.value, filter.id, true)
-      persist(filter).then(
-        (saved) => {
-          if (filters.value.some((item) => item.id === filter.id)) {
-            filters.value = filters.value.map((item) => (item.id === filter.id ? saved : item))
-          } else if (!filters.value.some((item) => item.id === saved.id)) {
-            filters.value = [...filters.value, saved]
-          }
-          swapId(activeFilterIds, filter.id, saved.id)
-          savedId(filter.id)
-        },
-        (error: unknown) => {
-          savedId(filter.id)
-          filters.value = filters.value.filter((item) => item.id !== filter.id)
-          activeFilterIds.value = withIdPresent(activeFilterIds.value, filter.id, false)
-          options.hooks?.onPersistError?.('filter', filter.name, error)
-        },
-      )
-    }
-    return filter
+    const stored = options.hooks?.persistFilter ? await options.hooks.persistFilter(filter) : filter
+    // A reload from the server meanwhile may have brought the saved one already.
+    filters.value = [...filters.value.filter((item) => item.id !== stored.id), stored]
+    setFilterActive(stored.id, true)
+    return stored
   }
 
   /** Whether another real category (auto ones are names events carry, not rows) has this name. */
@@ -831,22 +819,19 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   }
 
   /**
-   * Changes a filter: a text filter's text is its name and what it looks for; another kind keeps
-   * what it matches and gets a new name. Resolves to false for an empty or taken name.
+   * Changes a filter: its name, kind, value and mode. Resolves to false, changing nothing, for an
+   * empty or taken name or an empty value; with a backend the change is saved first and shown
+   * after, and rejects when it was not.
    */
-  async function updateFilter(id: string, name: string): Promise<boolean> {
+  async function updateFilter(id: string, draft: FilterDraft): Promise<boolean> {
     const current = filters.value.find((item) => item.id === id)
-    const trimmed = name.trim()
-    if (!current || !trimmed) return false
-    const key = trimmed.toLowerCase()
+    const clean = cleanFilterDraft(draft)
+    if (!current || !clean.name || isEmptyFilterValue(clean)) return false
+    const key = clean.name.toLowerCase()
     if (filters.value.some((item) => item.id !== id && item.name.toLowerCase() === key)) {
       return false
     }
-    const next: CalendarFilter = {
-      ...current,
-      name: trimmed,
-      value: current.kind === 'text' ? trimmed : current.value,
-    }
+    const next: CalendarFilter = { ...current, ...clean }
     const stored = options.hooks?.saveFilter ? await options.hooks.saveFilter(next) : next
     filters.value = filters.value.map((item) => (item.id === id ? stored : item))
     return true
@@ -862,7 +847,11 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   }
 
   function addEvent(input: NewEventInput): CalendarEvent {
-    const event = createCalendarEvent(input, events.value)
+    // The demo records who made an event, as the app does in CalDAV (X-WEB-CALENDAR-CREATOR).
+    const { name, email } = currentUser.value
+    const creator =
+      name || email ? { ...(name ? { name } : {}), ...(email ? { email } : {}) } : undefined
+    const event = createCalendarEvent(input, events.value, creator)
     events.value = [...events.value, event]
     return event
   }

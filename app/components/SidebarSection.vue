@@ -13,8 +13,9 @@
   A section that lets people add something (`addNoun`) has a plus to the right of its heading,
   next to the fold button and not inside it. On a large screen the plus shows the field under the
   heading and turns into a cross; on a small screen it opens a pop-up near the top of the screen,
-  where the on-screen keyboard does not cover it. A folded section is opened first, so that the
-  new entry is seen.
+  where the on-screen keyboard does not cover it. Where a name is not enough (views and filters,
+  `addDialog`), the plus asks the caller to open its dialog instead (`add`, with the plus to give
+  the focus back to). A folded section is opened first, so that the new entry is seen.
 -->
 <template>
   <section
@@ -51,16 +52,16 @@
         square
         class="min-h-11 min-w-11 shrink-0 justify-center"
         :aria-label="tv(ADD_TEXTS[addNoun!].add)"
-        :aria-expanded="isDesktop ? addOpen : undefined"
-        :aria-controls="isDesktop && addOpen ? addId : undefined"
-        :aria-haspopup="isDesktop ? undefined : 'dialog'"
+        :aria-expanded="isDesktop && !addDialog ? addOpen : undefined"
+        :aria-controls="isDesktop && !addDialog && addOpen ? addId : undefined"
+        :aria-haspopup="isDesktop && !addDialog ? undefined : 'dialog'"
         @click="toggleAdd"
       />
     </div>
     <div v-show="open && dragging === null" :id="bodyId" class="flex flex-col">
-      <div v-if="adding && addOpen && isDesktop" :id="addId">
+      <div v-if="addingByName && addOpen && isDesktop" :id="addId">
         <SidebarAddInput
-          :noun="addNoun!"
+          :noun="addNoun as FieldAddNoun"
           :submit="addSubmit!"
           @added="closeAdd"
           @cancel="closeAdd"
@@ -69,10 +70,10 @@
       <slot />
     </div>
     <UModal
-      v-if="adding && !isDesktop"
+      v-if="addingByName && !isDesktop"
       :open="addOpen"
       :title="tv(ADD_TEXTS[addNoun!].add)"
-      :description="tv(ADD_TEXTS[addNoun!].label)"
+      :description="tv(FIELD_LABELS[addNoun as FieldAddNoun])"
       :close="false"
       :ui="{ content: 'top-4 translate-y-0', description: 'sr-only' }"
       :content="{ onOpenAutoFocus: focusPopupField, onCloseAutoFocus: restoreFocus }"
@@ -82,7 +83,7 @@
         <SidebarAddInput
           ref="popupField"
           popup
-          :noun="addNoun!"
+          :noun="addNoun as FieldAddNoun"
           :submit="addSubmit!"
           @added="closeAdd"
           @cancel="closeAdd"
@@ -97,10 +98,12 @@ import { browserStore } from '~/utils/browser-store'
 import { tv } from '~/utils/i18n'
 import {
   ADD_TEXTS,
+  FIELD_LABELS,
   readClosedSections,
   toggleSection,
   writeClosedSections,
   type AddNoun,
+  type FieldAddNoun,
 } from '~/utils/sidebar-sections'
 
 const props = defineProps<{
@@ -109,7 +112,10 @@ const props = defineProps<{
   addNoun?: AddNoun
   /** Adds the entry: gets the trimmed name, returns what is wrong or nothing (SidebarAddInput). */
   addSubmit?: (value: string) => string | undefined | Promise<string | undefined>
+  /** The plus opens the caller's dialog (`add`) instead of a field for a name. */
+  addDialog?: boolean
 }>()
+const emit = defineEmits<{ add: [plus: HTMLElement] }>()
 
 const headingId = useId()
 const bodyId = useId()
@@ -130,7 +136,12 @@ function toggle() {
 // ---- The plus -----------------------------------------------------------------------------------
 
 const isDesktop = useIsDesktop()
-const adding = computed(() => props.addNoun !== undefined && props.addSubmit !== undefined)
+const addingByName = computed(
+  () => props.addNoun !== undefined && props.addSubmit !== undefined && !props.addDialog,
+)
+const adding = computed(
+  () => props.addNoun !== undefined && (addingByName.value || props.addDialog === true),
+)
 const addOpen = ref(false)
 const plus = useTemplateRef<{ $el: HTMLElement }>('plus')
 const popupField = useTemplateRef<{ focus: () => void }>('popupField')
@@ -140,6 +151,11 @@ const popupOpen = computed(() => addOpen.value && !isDesktop.value)
 if (props.addNoun !== undefined) useBackDismiss(popupOpen, closeAdd)
 
 function toggleAdd() {
+  if (props.addDialog) {
+    if (!open.value) toggle()
+    if (plus.value) emit('add', plus.value.$el)
+    return
+  }
   if (addOpen.value) {
     closeAdd()
     return

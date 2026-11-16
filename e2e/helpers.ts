@@ -42,15 +42,24 @@ export async function press(locator: Locator): Promise<void> {
 }
 
 /**
- * Presses the plus of a sidebar section (`add` is its name, such as "Add view") and returns the
+ * Presses the plus of a sidebar section (`add` is its name, such as "Add category") and returns the
  * field that shows: under the heading on a large screen, in a pop-up on a small one. Enter in the
- * field adds, and the field closes when the entry was accepted.
+ * field adds, and the field closes when the entry was accepted. Views and filters have a dialog
+ * instead (`openAddDialog`).
  */
 export async function openAddField(page: Page, add: string, label: string): Promise<Locator> {
   await press(page.getByRole('button', { name: add, exact: true }).first())
   const field = page.getByLabel(label, { exact: true })
   await expect(field).toBeVisible()
   return field
+}
+
+/** Presses the plus of the views or the filters ("Add view", "Add filter"); returns its dialog. */
+export async function openAddDialog(page: Page, add: 'Add view' | 'Add filter'): Promise<Locator> {
+  await press(page.getByRole('button', { name: add, exact: true }).first())
+  const dialog = page.getByRole('dialog', { name: add, exact: true })
+  await expect(dialog).toBeVisible()
+  return dialog
 }
 
 /**

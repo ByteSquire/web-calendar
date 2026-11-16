@@ -97,6 +97,8 @@ export interface BuildCalendarsInput {
   prefs: readonly ApiCalendarPref[]
   /** Id of the signed-in user; set as `ownerId` of the CalDAV calendars (they are the user's own). */
   ownerId?: string
+  /** The name of the signed-in user: the `ownerName` of the calendars of their own. */
+  ownerName?: string
   /** The calendars of the external accounts, in the order of the accounts. Always read-only. */
   external?: readonly ExternalCollections[]
   /** Position of the first calendar in the whole list, for the palette (see `external`). */
@@ -117,7 +119,7 @@ export interface BuildCalendarsInput {
 function describeCollection(
   collection: DavCalendar,
   shared: ReadonlyMap<number, ApiSharedCalendar>,
-): { name: string; manage?: CalendarManage } {
+): { name: string; manage?: CalendarManage; owner?: string } {
   const segment = toDavPath(collection.url).split('/').filter(Boolean).pop() ?? ''
   let decoded = segment
   try {
@@ -140,9 +142,10 @@ function describeCollection(
     kind: calendar.kind,
     owner: calendar.owner,
   })
+  const owner = calendar.kind === 'personal' && calendar.owner ? { owner: calendar.owner } : {}
   return calendar.canManage && typeof calendar.groupId === 'number'
-    ? { name, manage: { kind: 'group', groupId: calendar.groupId, calendarId: id } }
-    : { name }
+    ? { name, manage: { kind: 'group', groupId: calendar.groupId, calendarId: id }, ...owner }
+    : { name, ...owner }
 }
 
 /**
@@ -178,7 +181,9 @@ export function buildCalendars(input: BuildCalendarsInput): Calendar[] {
   }
 
   for (const collection of input.collections) {
-    const { name, manage } = describeCollection(collection, shared)
+    const { name, manage, owner } = describeCollection(collection, shared)
+    // A calendar of the viewer's own is theirs; a share names its owner when it is a person's.
+    const ownerName = manage?.kind === 'own' ? input.ownerName : owner
     add(
       {
         id: davRef(collection.url),
@@ -189,6 +194,7 @@ export function buildCalendars(input: BuildCalendarsInput): Calendar[] {
         readOnly: collection.readOnly,
         ...(collection.freeBusyOnly ? { freeBusyOnly: true } : {}),
         ...(input.ownerId !== undefined ? { ownerId: input.ownerId } : {}),
+        ...(ownerName ? { ownerName } : {}),
       },
       collection.color,
     )

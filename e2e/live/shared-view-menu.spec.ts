@@ -45,9 +45,10 @@ async function reload(page: Page): Promise<void> {
 
 test('alice makes a view and shares it with everybody from its menu', async () => {
   await alice.getByRole('button', { name: 'Add view', exact: true }).click()
-  const field = alice.getByLabel('New view name', { exact: true })
-  await field.fill(SHARED)
-  await field.press('Enter')
+  const dialog = alice.getByRole('dialog', { name: 'Add view', exact: true })
+  await dialog.getByRole('textbox', { name: 'Name' }).fill(SHARED)
+  await dialog.getByRole('button', { name: 'Add view', exact: true }).click()
+  await expect(dialog).toBeHidden()
   await expect(viewButton(alice, SHARED)).toBeVisible()
   await expect(alice.locator('li').filter({ has: viewButton(alice, SHARED) })).not.toContainText(
     'Shared',
@@ -55,7 +56,8 @@ test('alice makes a view and shares it with everybody from its menu', async () =
 
   await actions(alice, SHARED).click()
   await expect(alice.getByRole('menuitem')).toHaveText([
-    'Rename',
+    'Edit',
+    'Update from selection',
     'Duplicate',
     'Share with everybody',
     'Delete',
@@ -99,7 +101,12 @@ test('bob copies it to his own views, and the copy is still there after a reload
   // the copy is his own: no badge, and the own-view menu
   await expect(bob.locator('li').filter({ has: viewButton(bob, COPY) })).not.toContainText('Shared')
   await actions(bob, COPY).click()
-  await expect(bob.getByRole('menuitem')).toHaveText(['Rename', 'Duplicate', 'Delete'])
+  await expect(bob.getByRole('menuitem')).toHaveText([
+    'Edit',
+    'Update from selection',
+    'Duplicate',
+    'Delete',
+  ])
   await bob.keyboard.press('Escape')
 })
 
@@ -111,9 +118,9 @@ test("alice does not see the copy: a view of bob's own is his alone", async () =
 
 test('bob renames his copy and the new name is kept', async () => {
   await actions(bob, COPY).click()
-  await bob.getByRole('menuitem', { name: 'Rename', exact: true }).click()
-  const dialog = bob.getByRole('dialog', { name: 'Rename view', exact: true })
-  await dialog.getByLabel('Name').fill(RENAMED)
+  await bob.getByRole('menuitem', { name: 'Edit', exact: true }).click()
+  const dialog = bob.getByRole('dialog', { name: `Edit view ${COPY}`, exact: true })
+  await dialog.getByRole('textbox', { name: 'Name' }).fill(RENAMED)
   await dialog.getByRole('button', { name: 'Save' }).click()
   await expect(viewButton(bob, RENAMED)).toBeVisible()
   await expect(viewButton(bob, COPY)).toHaveCount(0)

@@ -47,6 +47,7 @@ export function addBusyCalendars(data: MockData, busyDay: Temporal.PlainDate): M
     color,
     defaultVisible: true,
     ownerId: data.currentUser.id,
+    ownerName: data.currentUser.name,
   }))
   const events: CalendarEvent[] = BUSY_DAY.map(([calendar, title, from, to], index) => ({
     id: `evt-busy-${index}`,

@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import { scan } from './axe-scan'
-import { openApp, press } from './helpers'
+import { openAddDialog, openApp, press, switchView } from './helpers'
 
-// The menu at the end of each row of the sidebar's calendars, categories and filters (design §9).
+// The menu at the end of each row of the sidebar's calendars, categories and filters (design §9),
+// and the dialog that adds and edits a filter.
 // In demo mode everything is changed in the page only; the live specs cover the server. Team is one
 // of the person's own calendars (Rename, Colour, Delete); Personal is their default calendar (Rename,
 // Colour: it is kept); Engineering is somebody else's (Colour).
@@ -111,6 +112,10 @@ test('a filter is edited and deleted from its menu', async ({ page }) => {
 
   await choose(page, 'Actions for filter Work only', 'Edit')
   const edit = page.getByRole('dialog', { name: 'Edit filter Work only' })
+  // the dialog shows what the filter does
+  await expect(edit.getByRole('radio', { name: 'Category', exact: true })).toBeChecked()
+  await expect(edit.getByRole('radio', { name: 'Show only matching events' })).toBeChecked()
+  await expect(edit).toContainText('Shows only the events in the category Work.')
   await edit.getByRole('textbox', { name: 'Name' }).fill('Work things')
   await press(edit.getByRole('button', { name: 'Save' }))
   await expect(edit).toBeHidden()
@@ -120,6 +125,81 @@ test('a filter is edited and deleted from its menu', async ({ page }) => {
   const confirm = page.getByRole('dialog', { name: 'Delete "Work things"?' })
   await press(confirm.getByRole('button', { name: 'Delete' }))
   await expect(sidebar(page).getByText('Work things', { exact: true })).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('a filter is added in its dialog, switched on, and hides what it matches', async ({
+  page,
+}) => {
+  const { errors } = await openApp(page)
+  await switchView(page, 'Week')
+  const main = page.locator('[data-calendar-main]')
+  await expect(main.getByText('Vendor demo').first()).toBeVisible()
+  await showSidebar(page)
+
+  const dialog = await openAddDialog(page, 'Add filter')
+  await press(dialog.getByRole('radio', { name: 'Status', exact: true }))
+  await press(dialog.getByRole('radio', { name: 'Cancelled', exact: true }))
+  await press(dialog.getByRole('radio', { name: 'Hide matching events' }))
+  // the name follows what the filter looks for until one is typed
+  const name = dialog.getByRole('textbox', { name: 'Name' })
+  await expect(name).toHaveValue('Hide: Cancelled')
+  await expect(dialog).toContainText('Hides the events with the status Cancelled.')
+  await name.fill('No cancelled')
+  expect(await scan(page)).toEqual([])
+  await press(dialog.getByRole('button', { name: 'Add filter', exact: true }))
+  await expect(dialog).toBeHidden()
+
+  // a new filter is on at once
+  await expect(
+    sidebar(page).getByRole('switch', { name: 'No cancelled', exact: true }),
+  ).toBeChecked()
+  await expect(main.getByText('Vendor demo')).toHaveCount(0)
+  expect(errors).toEqual([])
+})
+
+test('a person filter takes several people from its list, and one typed in', async ({ page }) => {
+  const { errors } = await openApp(page)
+  await switchView(page, 'Week')
+  const main = page.locator('[data-calendar-main]')
+  await showSidebar(page)
+
+  const dialog = await openAddDialog(page, 'Add filter')
+  await press(dialog.getByRole('radio', { name: 'Person', exact: true }))
+  const people = dialog.getByRole('combobox', { name: 'People' })
+  // a search field, which Bitwarden never takes for a login
+  await expect(people).toHaveAttribute('type', 'search')
+  await press(people)
+  // the people the events and calendars name: Sam organised the 1:1, Alex owns Personal and Team
+  await press(page.getByRole('option', { name: /Sam Lee/ }))
+  await people.fill('Robin')
+  await press(page.getByRole('option', { name: /Robin Park/ }))
+  await people.fill('kim@example.org')
+  await press(page.getByRole('option', { name: /kim@example\.org/ }))
+  // what was typed becomes a tag, and the field is empty again
+  await expect(people).toHaveValue('')
+  await expect(dialog).toContainText(
+    'Shows only the events of Sam Lee, Robin Park, kim@example.org.',
+  )
+  const name = dialog.getByRole('textbox', { name: 'Name' })
+  await expect(name).toHaveValue('Sam Lee, Robin Park, kim@example.org')
+  // the list stays open for more people; Escape closes it, not the dialog
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('option')).toHaveCount(0)
+  await expect(dialog).toBeVisible()
+  await name.fill('Some people')
+  await press(dialog.getByRole('button', { name: 'Add filter', exact: true }))
+  await expect(dialog).toBeHidden()
+
+  // Sam's 1:1 is shown, Alex's own events are not
+  await expect(main.getByText('1:1 with Sam').first()).toBeAttached()
+  await expect(main.getByText('Standup')).toHaveCount(0)
+
+  // the dialog shows the people again
+  await choose(page, 'Actions for filter Some people', 'Edit')
+  const edit = page.getByRole('dialog', { name: 'Edit filter Some people' })
+  await expect(edit).toContainText('Sam Lee')
+  await expect(edit).toContainText('kim@example.org')
   expect(errors).toEqual([])
 })
 

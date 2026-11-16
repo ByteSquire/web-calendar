@@ -72,7 +72,13 @@ describe('categories', () => {
 })
 
 describe('filters', () => {
-  const filter: CalendarFilter = { id: '8', name: 'lunch', kind: 'text', value: 'lunch' }
+  const filter: CalendarFilter = {
+    id: '8',
+    name: 'lunch',
+    kind: 'text',
+    value: 'lunch',
+    mode: 'only',
+  }
 
   it('saves to /api/filters/<id> and returns the stored filter', async () => {
     const { api, hooks } = setup({
@@ -81,8 +87,9 @@ describe('filters', () => {
     const saved = await hooks.saveFilter!(filter)
     expect(api).toHaveBeenCalledWith('/api/filters/8', {
       method: 'PUT',
-      body: { name: 'lunch', kind: 'text', value: 'lunch' },
+      body: { name: 'lunch', kind: 'text', value: 'lunch', mode: 'only' },
     })
+    // A server without modes (before migration 014) answers without one: read as it was meant.
     expect(saved).toEqual(filter)
   })
 

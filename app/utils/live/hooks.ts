@@ -7,7 +7,15 @@ import { toCategories } from './categories'
 import { locale, t } from '../i18n'
 import { describeLoadError } from './errors'
 import { toFilters } from './views'
-import type { Category } from '../../../shared/types/calendar'
+import type { CalendarFilter, Category } from '../../../shared/types/calendar'
+
+/** The body of `POST` and `PUT /api/filters`. */
+const filterBody = (filter: CalendarFilter) => ({
+  name: filter.name,
+  kind: filter.kind,
+  value: filter.value,
+  mode: filter.mode,
+})
 
 export interface Timers {
   set: (callback: () => void, ms: number) => unknown
@@ -158,7 +166,7 @@ export function createLiveHooks(deps: LiveHooksDeps): LiveHooks {
     async persistFilter(filter) {
       const saved = await deps.api<ApiFilter>('/api/filters', {
         method: 'POST',
-        body: { name: filter.name, kind: filter.kind, value: filter.value },
+        body: filterBody(filter),
       })
       return toFilters([saved])[0]!
     },
@@ -175,7 +183,7 @@ export function createLiveHooks(deps: LiveHooksDeps): LiveHooks {
     async saveFilter(filter) {
       const saved = await deps.api<ApiFilter>(`/api/filters/${encodeURIComponent(filter.id)}`, {
         method: 'PUT',
-        body: { name: filter.name, kind: filter.kind, value: filter.value },
+        body: filterBody(filter),
       })
       return toFilters([saved])[0]!
     },
@@ -204,13 +212,9 @@ export function createLiveHooks(deps: LiveHooksDeps): LiveHooks {
         }
       }
     },
-    onPersistError(what, name, error) {
+    onPersistError(_what, name, error) {
       const reason = describeSaveError(error)
-      deps.notify(
-        what === 'category'
-          ? t('The category "{name}" could not be saved: {reason}.', { name, reason })
-          : t('The filter "{name}" could not be saved: {reason}.', { name, reason }),
-      )
+      deps.notify(t('The category "{name}" could not be saved: {reason}.', { name, reason }))
     },
   }
 }

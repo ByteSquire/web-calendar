@@ -12,7 +12,7 @@
     @keydown.esc="onEscape"
   >
     <UFormField
-      :label="tv(ADD_TEXTS[noun].label)"
+      :label="tv(FIELD_LABELS[noun])"
       :error="error"
       :ui="popup ? {} : { label: 'sr-only' }"
       class="flex-1"
@@ -51,11 +51,11 @@
 
 <script setup lang="ts">
 import { t, tv } from '~/utils/i18n'
-import { ADD_TEXTS, type AddNoun } from '~/utils/sidebar-sections'
+import { ADD_TEXTS, FIELD_LABELS, type FieldAddNoun } from '~/utils/sidebar-sections'
 
 const props = defineProps<{
   /** What is added: names the field for assistive technology. */
-  noun: AddNoun
+  noun: FieldAddNoun
   /** Receives the trimmed text. Returns an error message, or nothing when it was accepted. */
   submit: (value: string) => string | undefined | Promise<string | undefined>
   /** Shown in a pop-up: the label is visible and the buttons have words. */

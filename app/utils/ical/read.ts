@@ -13,7 +13,7 @@
 // - Only the occurrences that touch the requested range are built; a series that began years ago
 //   is not walked from its beginning (see read-recur.ts).
 import ICAL from 'ical.js'
-import type { EventStatus } from '../../../shared/types/calendar'
+import type { EventPerson, EventStatus } from '../../../shared/types/calendar'
 import {
   isValidTimeZone,
   resolveDisplayTimeZone,
@@ -63,6 +63,8 @@ interface Fields {
   location?: string
   status: EventStatus
   categoryNames: string[]
+  organizer?: EventPerson
+  creator?: EventPerson
   lastModified?: string
   bookingMarks?: BookingMarks
 }
@@ -283,6 +285,28 @@ function categoriesOf(vevent: ICAL.Component): string[] {
   return names
 }
 
+/** The longest name or address kept of a person; anything longer is cut. */
+const MAX_PERSON_TEXT = 200
+
+/**
+ * A person property (ORGANIZER, X-WEB-CALENDAR-CREATOR): the CN parameter as the name and a
+ * `mailto:` value as the address. Undefined when it names nobody.
+ */
+function personOf(vevent: ICAL.Component, name: string): EventPerson | undefined {
+  const property = vevent.getFirstProperty(name)
+  if (!property) return undefined
+  const cn = property.getParameter('cn')
+  const rawName = (Array.isArray(cn) ? cn[0] : cn) ?? ''
+  const value = property.getFirstValue()
+  const address = typeof value === 'string' ? value.trim() : ''
+  const email = /^mailto:/i.test(address) ? address.slice(7).trim() : ''
+  const person: EventPerson = {}
+  const text = typeof rawName === 'string' ? rawName.trim() : ''
+  if (text) person.name = text.slice(0, MAX_PERSON_TEXT)
+  if (email) person.email = email.slice(0, MAX_PERSON_TEXT)
+  return person.name || person.email ? person : undefined
+}
+
 function fieldsOf(vevent: ICAL.Component, reader: Reader, uid: string): Fields {
   const fields: Fields = {
     uid,
@@ -294,6 +318,10 @@ function fieldsOf(vevent: ICAL.Component, reader: Reader, uid: string): Fields {
   if (description !== undefined) fields.description = description
   const location = textOf(vevent, 'location')
   if (location !== undefined) fields.location = location
+  const organizer = personOf(vevent, 'organizer')
+  if (organizer) fields.organizer = organizer
+  const creator = personOf(vevent, 'x-web-calendar-creator')
+  if (creator) fields.creator = creator
   if (reader.options.trustBookingProperties) {
     const marks = parseBookingMarks(
       textOf(vevent, 'x-web-calendar-resource'),
@@ -337,6 +365,8 @@ function makeEvent(
   }
   if (fields.description !== undefined) event.description = fields.description
   if (fields.location !== undefined) event.location = fields.location
+  if (fields.organizer) event.organizer = { ...fields.organizer }
+  if (fields.creator) event.creator = { ...fields.creator }
   if (etag !== undefined) event.etag = etag
   if (fields.lastModified !== undefined) event.lastModified = fields.lastModified
   if (fields.bookingMarks) event.bookingMarks = { ...fields.bookingMarks }

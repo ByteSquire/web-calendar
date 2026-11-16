@@ -44,6 +44,8 @@ export interface WriteContext {
   orgTimeZone: string
   /** The clock for DTSTAMP, LAST-MODIFIED and UNTIL-less defaults; tests pin it. */
   now?: Date
+  /** The person who writes; a new event records them as its creator. */
+  creator?: { name?: string; email?: string }
 }
 
 export type RecurrenceFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY'

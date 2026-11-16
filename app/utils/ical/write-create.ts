@@ -1,5 +1,13 @@
 // A new event as iCalendar text (`createEventResource`, re-exported by write.ts).
-import { escapeText, makeProp, serializeDocument, type Comp, type Prop } from './write-lines'
+import {
+  escapeText,
+  makeProp,
+  paramText,
+  serializeDocument,
+  stripControl,
+  type Comp,
+  type Prop,
+} from './write-lines'
 import { t } from '../i18n'
 import {
   EditError,
@@ -144,6 +152,19 @@ function buildRule(
 }
 
 /**
+ * Who made the event, as `X-WEB-CALENDAR-CREATOR;CN=<name>:mailto:<address>` (the shape of an
+ * ORGANIZER, which is not written: it would make other apps treat the event as an invitation).
+ * Without an address the value is the name. Null when the context names nobody.
+ */
+function creatorProp(ctx: WriteContext): Prop | null {
+  const name = stripControl(ctx.creator?.name ?? '').trim()
+  const email = stripControl(ctx.creator?.email ?? '').trim()
+  if (!name && !email) return null
+  const params = name ? [`CN=${paramText(name)}`] : []
+  return makeProp('X-WEB-CALENDAR-CREATOR', params, email ? `mailto:${email}` : escapeText(name))
+}
+
+/**
  * A new event as a complete `.ics` resource with a fresh UID. Timed events carry `TZID=<display
  * zone>` and a generated VTIMEZONE (`Z` times when the display zone is UTC), all-day events use
  * dates; nothing is floating.
@@ -175,6 +196,8 @@ export function createEventResource(input: NewEventInput, ctx: WriteContext): Ne
   if (names.length) add(makeProp('CATEGORIES', [], names.map(escapeText).join(',')))
   if (input.description) add(makeProp('DESCRIPTION', [], escapeText(input.description)))
   if (input.location) add(makeProp('LOCATION', [], escapeText(input.location)))
+  const creator = creatorProp(ctx)
+  if (creator) add(creator)
 
   const calendar: Comp = { kind: 'comp', name: 'VCALENDAR', beginRaw: '', endRaw: '', children: [] }
   calendar.children.push(

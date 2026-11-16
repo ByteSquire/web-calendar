@@ -197,30 +197,35 @@ describe('SidebarContent without a server (mock data)', () => {
     render: () => h(UApp, null, { default: () => h(SidebarContent) }),
   })
 
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')
+
   async function addView(name: string) {
-    // The field is under the heading once the plus is pressed, and closes when a view is added.
-    if (!document.querySelector('input[placeholder="Add view"]')) {
+    // The plus opens the view dialog, which starts with the calendars switched on now.
+    if (!dialog()) {
       document.querySelector<HTMLButtonElement>('section button[aria-label="Add view"]')!.click()
     }
-    await vi.waitFor(() =>
-      expect(document.querySelector('input[placeholder="Add view"]')).not.toBeNull(),
-    )
-    const input = document.querySelector<HTMLInputElement>('input[placeholder="Add view"]')!
-    // The field waits while the last view is being added.
-    await vi.waitFor(() => expect(input.readOnly).toBe(false))
+    await vi.waitFor(() => expect(dialog()?.querySelector('input')).toBeTruthy())
+    // The first field is the name; the calendars follow.
+    const input = dialog()!.querySelector<HTMLInputElement>('input')!
     input.value = name
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    input.closest('form')!.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
+    dialog()!.querySelector<HTMLButtonElement>('button[type="submit"]')!.click()
   }
 
-  it("adds a view of the user's own from the selection, not a shared one", async () => {
+  it("adds a view of the user's own with the calendars on now, and selects it", async () => {
     mounted.push(await mountSuspended(Shell, { attachTo: document.body }))
-    const { views, visibleCalendarIds } = useCalendarState()
+    const { views, visibleCalendarIds, regularCalendars, selectedViewId } = useCalendarState()
+    // A view names no resource: those that are on are not part of it.
+    const regular = new Set(regularCalendars.value.map((calendar) => calendar.id))
+    const shown = visibleCalendarIds.value.filter((id) => regular.has(id))
     await addView('Mine')
     await vi.waitFor(() => expect(views.value.some((view) => view.name === 'Mine')).toBe(true))
     const created = views.value.find((view) => view.name === 'Mine')!
     expect(created.isAdmin).toBe(false)
-    expect(created.calendarIds).toEqual(visibleCalendarIds.value)
+    expect([...created.calendarIds].sort()).toEqual([...shown].sort())
+    // Selecting the new view shows what it groups.
+    expect(selectedViewId.value).toBe(created.id)
+    await vi.waitFor(() => expect(dialog()).toBeNull())
   })
 
   it('refuses a second own view with the same name, and says so', async () => {
@@ -228,14 +233,12 @@ describe('SidebarContent without a server (mock data)', () => {
     const { views } = useCalendarState()
     await addView('Mine')
     await vi.waitFor(() => expect(views.value.some((view) => view.name === 'Mine')).toBe(true))
-    // The field closes once the view is added.
-    await vi.waitFor(() =>
-      expect(document.querySelector('input[placeholder="Add view"]')).toBeNull(),
-    )
+    // The dialog closes once the view is added.
+    await vi.waitFor(() => expect(dialog()).toBeNull())
     const before = views.value.length
     await addView('Mine')
     await vi.waitFor(() =>
-      expect(document.body.textContent).toContain('A view with this name already exists.'),
+      expect(dialog()?.textContent).toContain('A view with this name already exists.'),
     )
     expect(views.value).toHaveLength(before)
   })

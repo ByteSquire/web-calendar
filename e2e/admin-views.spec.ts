@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { openAddField, openApp, press } from './helpers'
+import { openAddDialog, openApp, press } from './helpers'
 
 // The demo app has no server: the shared-view controls work on the local mock list.
 
@@ -7,6 +7,14 @@ import { openAddField, openApp, press } from './helpers'
 async function showSidebar(page: Page): Promise<void> {
   const open = page.getByRole('button', { name: 'Open sidebar' })
   if (await open.isVisible()) await press(open)
+}
+
+/** Adds an own view with the calendars switched on now. */
+async function addView(page: Page, name: string): Promise<void> {
+  const dialog = await openAddDialog(page, 'Add view')
+  await dialog.getByRole('textbox', { name: 'Name' }).fill(name)
+  await press(dialog.getByRole('button', { name: 'Add view', exact: true }))
+  await expect(dialog).toBeHidden()
 }
 test.describe('shared views', () => {
   test('marks the shared view and shares an own view with everybody from its menu', async ({
@@ -19,9 +27,7 @@ test.describe('shared views', () => {
     // there is one input for adding a view: a shared one is made by sharing an own view
     await expect(page.getByLabel('New shared view name')).toHaveCount(0)
 
-    const field = await openAddField(page, 'Add view', 'New view name')
-    await field.fill('Ops')
-    await field.press('Enter')
+    await addView(page, 'Ops')
     const row = page
       .locator('li')
       .filter({ has: page.getByRole('button', { name: 'Ops', exact: true }) })
@@ -29,7 +35,8 @@ test.describe('shared views', () => {
 
     await press(page.getByRole('button', { name: 'Actions for view Ops' }).first())
     await expect(page.getByRole('menuitem')).toHaveText([
-      'Rename',
+      'Edit',
+      'Update from selection',
       'Duplicate',
       'Share with everybody',
       'Delete',
@@ -41,7 +48,7 @@ test.describe('shared views', () => {
     await expect(row).toContainText('Shared')
     await press(page.getByRole('button', { name: 'Actions for view Ops' }).first())
     await expect(page.getByRole('menuitem')).toHaveText([
-      'Rename',
+      'Edit',
       'Update from selection',
       'Copy to my views',
       'Unshare',
@@ -57,7 +64,8 @@ test.describe('shared views', () => {
     await expect(row).not.toContainText('Shared')
     await press(page.getByRole('button', { name: 'Actions for view Ops' }).first())
     await expect(page.getByRole('menuitem')).toHaveText([
-      'Rename',
+      'Edit',
+      'Update from selection',
       'Duplicate',
       'Share with everybody',
       'Delete',
@@ -67,10 +75,7 @@ test.describe('shared views', () => {
   test('refuses to unshare a view while an own view has the same name', async ({ page }) => {
     await openApp(page)
     await showSidebar(page)
-    const field = await openAddField(page, 'Add view', 'New view name')
-    await field.fill('All staff')
-    await field.press('Enter')
-    await expect(field).toBeHidden()
+    await addView(page, 'All staff')
     await press(page.getByRole('button', { name: 'Actions for view All staff' }).first())
     await page.getByRole('menuitem', { name: 'Unshare', exact: true }).click()
     await expect(
@@ -83,9 +88,10 @@ test.describe('shared views', () => {
     await openApp(page)
     await showSidebar(page)
     await press(page.getByRole('button', { name: 'Actions for view All staff' }).first())
-    await press(page.getByRole('menuitem', { name: 'Rename' }))
-    const dialog = page.getByRole('dialog', { name: 'Rename shared view' })
-    await dialog.getByLabel('Name').fill('Everyone')
+    await press(page.getByRole('menuitem', { name: 'Edit' }))
+    const dialog = page.getByRole('dialog', { name: 'Edit shared view All staff' })
+    await expect(dialog).toContainText('Everybody sees this view.')
+    await dialog.getByRole('textbox', { name: 'Name' }).fill('Everyone')
     await press(dialog.getByRole('button', { name: 'Save' }))
     await expect(page.getByRole('button', { name: 'Everyone', exact: true }).first()).toBeVisible()
 

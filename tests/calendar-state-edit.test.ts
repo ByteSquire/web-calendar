@@ -26,12 +26,18 @@ const cat = (id: string, name: string, extra: Partial<Category> = {}): Category 
   ...extra,
 })
 
-const filter = (id: string, name: string, kind: CalendarFilter['kind'], value = name) => ({
-  id,
-  name,
-  kind,
-  value,
-})
+const filter = (
+  id: string,
+  name: string,
+  kind: CalendarFilter['kind'],
+  value = name,
+): CalendarFilter => ({ id, name, kind, value, mode: kind === 'status' ? 'hide' : 'only' })
+
+/** The filter's draft with some fields changed, as the filter dialog reports it. */
+const draftOf = (store: ReturnType<typeof setup>, id: string, change: Partial<CalendarFilter>) => {
+  const { name, kind, value, mode } = byId(store.filters.value, id)!
+  return { name, kind, value, mode, ...change }
+}
 
 const calendar = (id: string, extra: Partial<Calendar> = {}): Calendar => ({
   id,
@@ -173,36 +179,45 @@ describe('deleteCategory', () => {
 })
 
 describe('updateFilter', () => {
-  it('changes name and value of a text filter', async () => {
+  it('changes the name and the value, trimmed', async () => {
     const store = setup()
-    expect(await store.updateFilter('f1', ' dinner ')).toBe(true)
-    expect(byId(store.filters.value, 'f1')).toMatchObject({ name: 'dinner', value: 'dinner' })
+    const draft = draftOf(store, 'f1', { name: ' dinner ', value: ' soup ' })
+    expect(await store.updateFilter('f1', draft)).toBe(true)
+    expect(byId(store.filters.value, 'f1')).toMatchObject({ name: 'dinner', value: 'soup' })
   })
 
-  it('changes only the name of a category or status filter', async () => {
+  it('changes the kind and the mode', async () => {
     const store = setup()
-    await store.updateFilter('f2', 'Team')
-    await store.updateFilter('f3', 'Maybe')
-    expect(byId(store.filters.value, 'f2')).toMatchObject({ name: 'Team', value: 'cat-1' })
-    expect(byId(store.filters.value, 'f3')).toMatchObject({ name: 'Maybe', value: 'tentative' })
+    const draft = draftOf(store, 'f3', { kind: 'person', value: '["Sam","Bob"]', mode: 'only' })
+    expect(await store.updateFilter('f3', draft)).toBe(true)
+    expect(byId(store.filters.value, 'f3')).toEqual({
+      id: 'f3',
+      name: 'Tentative',
+      kind: 'person',
+      value: '["Sam","Bob"]',
+      mode: 'only',
+    })
   })
 
-  it('refuses empty and taken names, ignoring case', async () => {
+  it('refuses empty and taken names and empty values, ignoring case', async () => {
     const store = setup()
-    expect(await store.updateFilter('f1', ' ')).toBe(false)
-    expect(await store.updateFilter('f1', 'MEETINGS')).toBe(false)
-    expect(await store.updateFilter('nope', 'x')).toBe(false)
-    expect(byId(store.filters.value, 'f1')!.name).toBe('lunch')
+    expect(await store.updateFilter('f1', draftOf(store, 'f1', { name: ' ' }))).toBe(false)
+    expect(await store.updateFilter('f1', draftOf(store, 'f1', { name: 'MEETINGS' }))).toBe(false)
+    expect(await store.updateFilter('f1', draftOf(store, 'f1', { value: ' ' }))).toBe(false)
+    expect(await store.updateFilter('nope', draftOf(store, 'f1', { name: 'x' }))).toBe(false)
+    expect(byId(store.filters.value, 'f1')).toMatchObject({ name: 'lunch', value: 'lunch' })
   })
 
   it('uses what the hook returns and keeps the state when it rejects', async () => {
     const saveFilter = vi.fn(async (f: CalendarFilter) => ({ ...f, value: 'from server' }))
     const store = setup({ saveFilter })
-    await store.updateFilter('f1', 'dinner')
+    await store.updateFilter('f1', draftOf(store, 'f1', { name: 'dinner' }))
     expect(byId(store.filters.value, 'f1')).toMatchObject({ name: 'dinner', value: 'from server' })
 
     const failing = setup({ saveFilter: vi.fn().mockRejectedValue(new Error('down')) })
-    await expect(failing.updateFilter('f1', 'dinner')).rejects.toThrow('down')
+    await expect(
+      failing.updateFilter('f1', draftOf(failing, 'f1', { name: 'dinner' })),
+    ).rejects.toThrow('down')
     expect(byId(failing.filters.value, 'f1')!.name).toBe('lunch')
   })
 })
@@ -317,28 +332,31 @@ describe('savingIds', () => {
     expect(byId(store.categories.value, created.id)).toBeUndefined()
   })
 
-  it('holds a new filter until it resolves or rejects', async () => {
+  it('lists a new filter only once it is saved, and not when the save fails', async () => {
+    const brunch = { name: 'brunch', kind: 'text', value: 'brunch', mode: 'only' } as const
     const ok = deferred<CalendarFilter>()
     const store = setup({ persistFilter: () => ok.promise })
-    const created = store.addFilter('brunch')!
-    expect(store.savingIds.value).toEqual([created.id])
-    ok.resolve({ ...created, id: '55' })
-    await tick()
+    const adding = store.addFilter(brunch)
+    expect(store.filters.value.some((item) => item.name === 'brunch')).toBe(false)
     expect(store.savingIds.value).toEqual([])
+    ok.resolve({ ...brunch, id: '55' })
+    expect(await adding).toEqual({ ...brunch, id: '55' })
+    expect(byId(store.filters.value, '55')).toBeDefined()
+    expect(store.activeFilterIds.value).toEqual(['55'])
 
     const bad = deferred<CalendarFilter>()
-    const other = setup({ persistFilter: () => bad.promise, onPersistError: vi.fn() })
-    const failed = other.addFilter('brunch')!
-    expect(other.savingIds.value).toEqual([failed.id])
+    const other = setup({ persistFilter: () => bad.promise })
+    const failing = other.addFilter(brunch)
     bad.reject(new Error('down'))
-    await tick()
-    expect(other.savingIds.value).toEqual([])
+    await expect(failing).rejects.toThrow('down')
+    expect(other.filters.value.some((item) => item.name === 'brunch')).toBe(false)
+    expect(other.activeFilterIds.value).toEqual([])
   })
 
-  it('is empty without a backend', () => {
+  it('is empty without a backend', async () => {
     const store = setup()
     store.addCategory('Fresh')
-    store.addFilter('brunch')
+    await store.addFilter({ name: 'brunch', kind: 'text', value: 'brunch', mode: 'only' })
     expect(store.savingIds.value).toEqual([])
   })
 })

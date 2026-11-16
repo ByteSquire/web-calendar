@@ -45,6 +45,7 @@ const calendars: Calendar[] = [
     color: '#1d4ed8',
     defaultVisible: true,
     ownerId: currentUser.id,
+    ownerName: currentUser.name,
     // the person's default calendar: renamed, never deleted
     manage: { kind: 'own', default: true },
   },
@@ -55,6 +56,7 @@ const calendars: Calendar[] = [
     color: '#047857',
     defaultVisible: true,
     ownerId: currentUser.id,
+    ownerName: currentUser.name,
     manage: { kind: 'own' },
   },
   {
@@ -63,6 +65,7 @@ const calendars: Calendar[] = [
     type: 'caldav',
     color: '#6d28d9',
     defaultVisible: true,
+    ownerName: 'Robin Park',
   },
   {
     id: 'cal-sales',
@@ -170,14 +173,22 @@ const views: CalendarView[] = [
 ]
 
 const filters: CalendarFilter[] = [
-  { id: 'filter-work', name: 'Work only', kind: 'category', value: 'cat-work' },
+  { id: 'filter-work', name: 'Work only', kind: 'category', value: 'Work', mode: 'only' },
   {
     id: 'filter-hide-cancelled',
     name: 'Hide cancelled',
     kind: 'status',
     value: 'cancelled',
+    mode: 'hide',
   },
-  { id: 'filter-offsite', name: 'Offsite', kind: 'text', value: 'offsite' },
+  { id: 'filter-offsite', name: 'Offsite', kind: 'text', value: 'offsite', mode: 'only' },
+  {
+    id: 'filter-sam',
+    name: 'With Sam',
+    kind: 'person',
+    value: '["Sam Lee <sam@example.com>"]',
+    mode: 'only',
+  },
 ]
 
 function makeEvent(input: Omit<CalendarEvent, 'uid'>): CalendarEvent {
@@ -279,6 +290,7 @@ export function createMockData(today: Temporal.PlainDate = Temporal.Now.plainDat
       allDay: false,
       status: 'tentative',
       categoryIds: ['cat-meeting'],
+      organizer: { name: 'Sam Lee', email: 'sam@example.com' },
     }),
     makeEvent({
       id: 'evt-vendor-demo',

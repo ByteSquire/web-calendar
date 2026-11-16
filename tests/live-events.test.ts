@@ -404,8 +404,23 @@ describe('views and filters', () => {
   })
 
   it('maps filters', () => {
-    expect(toFilters([{ id: 3, name: 'Offsite', kind: 'text', value: 'offsite' }])).toEqual([
-      { id: '3', name: 'Offsite', kind: 'text', value: 'offsite' },
+    expect(
+      toFilters([
+        { id: 3, name: 'Offsite', kind: 'text', value: 'offsite', mode: 'hide' },
+        { id: 4, name: 'Sam', kind: 'person', value: 'sam@example.org', mode: 'only' },
+      ]),
+    ).toEqual([
+      { id: '3', name: 'Offsite', kind: 'text', value: 'offsite', mode: 'hide' },
+      { id: '4', name: 'Sam', kind: 'person', value: 'sam@example.org', mode: 'only' },
     ])
+  })
+
+  it('reads a filter without a mode (a server before migration 014) as it was meant then', () => {
+    expect(
+      toFilters([
+        { id: 3, name: 'Offsite', kind: 'text', value: 'offsite' },
+        { id: 5, name: 'No cancelled', kind: 'status', value: 'cancelled' },
+      ]).map((filter) => filter.mode),
+    ).toEqual(['only', 'hide'])
   })
 })

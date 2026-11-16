@@ -291,40 +291,35 @@ describe('the calendar state with hooks', () => {
     )
   })
 
-  it('adds a text filter, activates it, and swaps the id when saved', async () => {
-    const api = vi.fn(async () => ({ id: 8, name: 'Offsite x', kind: 'text', value: 'Offsite x' }))
+  const OFFSITE = { name: 'Offsite x', kind: 'person', value: '["Sam"]', mode: 'hide' } as const
+
+  it('saves a filter first, then lists it with the server’s id and switches it on', async () => {
+    const api = vi.fn(async () => ({ id: 8, ...OFFSITE }))
     const { store } = setup(api)
-    const filter = store.addFilter('Offsite x')!
-    expect(store.activeFilterIds.value).toEqual([filter.id])
-    expect(api.mock.calls[0]).toEqual([
-      '/api/filters',
-      { method: 'POST', body: { name: 'Offsite x', kind: 'text', value: 'Offsite x' } },
-    ])
-    await flush()
+    const filter = await store.addFilter(OFFSITE)
+    expect(api.mock.calls[0]).toEqual(['/api/filters', { method: 'POST', body: OFFSITE }])
+    expect(filter).toEqual({ id: '8', ...OFFSITE })
     expect(store.activeFilterIds.value).toEqual(['8'])
-    expect(store.filters.value.some((f) => f.id === '8')).toBe(true)
-    expect(store.filters.value.some((f) => f.id === filter.id)).toBe(false)
+    expect(store.filters.value.filter((f) => f.name === 'Offsite x')).toEqual([filter])
   })
 
-  it('rolls a refused filter back, inactive too', async () => {
+  it('adds nothing when the server refuses a filter, and rejects', async () => {
     const api = vi.fn(async () => Promise.reject({ statusCode: 400 }))
     const { notify, store } = setup(api)
     const before = store.filters.value.length
-    store.addFilter('Too long')
-    await flush()
+    await expect(store.addFilter(OFFSITE)).rejects.toEqual({ statusCode: 400 })
     expect(store.filters.value).toHaveLength(before)
     expect(store.activeFilterIds.value).toEqual([])
-    expect(notify).toHaveBeenCalledWith(
-      'The filter "Too long" could not be saved: request refused by the server.',
-    )
+    // the dialog that adds it says why; there is no toast as well
+    expect(notify).not.toHaveBeenCalled()
   })
 
-  it('still rejects empty and duplicate names without asking the server', () => {
+  it('still rejects empty and duplicate names without asking the server', async () => {
     const api = vi.fn(async () => ({}))
     const { store } = setup(api)
     expect(store.addCategory('  ')).toBeNull()
     expect(store.addCategory('work')).toBeNull() // "Work" exists in the data
-    expect(store.addFilter('')).toBeNull()
+    expect(await store.addFilter({ ...OFFSITE, name: '' })).toBeNull()
     expect(api).not.toHaveBeenCalled()
   })
 

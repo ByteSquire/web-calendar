@@ -23,7 +23,8 @@
           :data-section-id="id"
           :title="SECTION_TITLES.views"
           add-noun="view"
-          :add-submit="submitOwnView"
+          add-dialog
+          @add="startAddView"
         >
           <ul>
             <li v-for="view in views" :key="view.id">
@@ -32,7 +33,7 @@
                 :selected="view.id === selectedViewId"
                 :can-manage="isAdmin"
                 @select="toggleView(view.id)"
-                @rename="startRename(view)"
+                @edit="startEditView(view)"
                 @update="updateFromSelection(view)"
                 @delete="startDelete(view)"
                 @copy="copyView(view)"
@@ -132,13 +133,15 @@
           :data-section-id="id"
           :title="SECTION_TITLES.filters"
           add-noun="filter"
-          :add-submit="submitFilter"
+          add-dialog
+          @add="startAddFilter"
         >
           <ul>
             <li v-for="filter in filters" :key="filter.id" class="flex items-center gap-1">
               <SidebarToggleRow
                 class="min-w-0 flex-1"
                 :label="filter.name"
+                :icon="filterIcon(filter.kind)"
                 :model-value="activeFilterIds.includes(filter.id)"
                 @update:model-value="setFilterActive(filter.id, $event)"
               />
@@ -162,14 +165,20 @@
       />
     </template>
 
-    <AdminViewRenameModal
-      :open="renaming !== null"
-      :view-name="renaming?.name ?? ''"
-      :shared="renaming?.isAdmin ?? true"
+    <ViewDialog
+      :open="viewDialog !== null"
+      :mode="viewDialog?.view ? 'edit' : 'add'"
+      :shared="viewDialogShared"
+      :initial-name="viewDialog?.view?.name ?? ''"
+      :initial-ids="viewDialog?.view?.calendarIds ?? visibleCalendarIds"
+      :calendars="viewDialogCalendars"
+      :hidden-count="viewDialogHidden"
+      :taken-names="viewDialogTaken"
       :pending="pending"
       :error="dialogError"
-      @update:open="closeDialogs"
-      @save="saveRename"
+      :return-focus-to="viewDialog?.returnFocusTo ?? null"
+      @update:open="(open: boolean) => !open && closeViewDialog()"
+      @save="saveView"
     />
     <ConfirmDeleteDialog
       :open="deleting !== null"
@@ -213,13 +222,22 @@
       :mode="deleteTarget ? 'delete' : 'status'"
       @close="closeCategoryEvents"
     />
+    <FilterDialog
+      :open="filterDialog !== null"
+      :filter="filterDialog?.filter ?? null"
+      :filters="filters"
+      :categories="categories"
+      :known-people="knownFilterPeople"
+      :pending="itemPending"
+      :error="itemError"
+      :return-focus-to="filterDialog?.returnFocusTo ?? null"
+      @update:open="(open: boolean) => !open && closeItemDialogs()"
+      @save="saveFilter"
+    />
     <RenameDialog
       :open="itemRename !== null"
       :title="renameTitle"
       :description="renameDescription"
-      :label="
-        itemRename?.kind === 'filter' && itemRename.item.kind === 'text' ? t('Text') : undefined
-      "
       :value="itemRename?.item.name ?? ''"
       :pending="itemPending"
       :error="itemError"
@@ -262,8 +280,15 @@ import {
   updateSharedView,
   type AdminViewsApi,
 } from '~/utils/live/admin-views'
+import { filterIcon, knownPeople, type FilterDraft } from '~/utils/filters'
 import { N_, t } from '~/utils/i18n'
 import { SECTION_TITLES } from '~/utils/sidebar-sections'
+import {
+  chosenViewCalendarIds,
+  hiddenViewCalendarCount,
+  offeredViewCalendars,
+  takenViewNames,
+} from '~/utils/view-form'
 import { calendarNameProblem } from '~/utils/groups/model'
 import { describeLoadError } from '~/utils/live/errors'
 import { isLiveConfig } from '~/utils/live/seed'
@@ -300,6 +325,8 @@ const {
   views,
   selectedViewId,
   selectView,
+  calendars,
+  events,
   regularCalendars,
   calendarById,
   visibleCalendarIds,
@@ -359,7 +386,6 @@ const OWN = {
 const requestsFor = (view: CalendarView) => (view.isAdmin ? SHARED : OWN)
 
 const toast = useToast()
-const renaming = ref<CalendarView | null>(null)
 const deleting = ref<CalendarView | null>(null)
 const pending = ref(false)
 const dialogError = ref('')
@@ -390,13 +416,75 @@ async function createOwn(
 
 const ownNames = () => views.value.filter((view) => !view.isAdmin).map((view) => view.name)
 
-async function submitOwnView(name: string): Promise<string | undefined> {
-  if (ownNames().includes(name)) return t('A view with this name already exists.')
+// ---- The view dialog --------------------------------------------------------------------------
+// The plus of the views section adds a view, Edit in a view's menu changes one: its name and the
+// calendars it groups (ViewDialog). A new view starts with the calendars switched on now, and is
+// selected once it is made, so that it shows what it groups. Calendars of a view that the dialog
+// does not offer (the viewer cannot see them) stay in it.
+
+/** The view dialog: adding (`view` null) or changing a view, and where the focus goes after. */
+const viewDialog = ref<{
+  view: CalendarView | null
+  returnFocusTo: HTMLElement | null
+} | null>(null)
+const viewDialogShared = computed(() => viewDialog.value?.view?.isAdmin ?? false)
+const viewDialogCalendars = computed(() =>
+  offeredViewCalendars(regularCalendars.value, viewDialogShared.value),
+)
+const viewDialogHidden = computed(() => {
+  const view = viewDialog.value?.view
+  return view ? hiddenViewCalendarCount(view.calendarIds, viewDialogCalendars.value) : 0
+})
+const viewDialogTaken = computed(() =>
+  takenViewNames(views.value, viewDialogShared.value, viewDialog.value?.view?.id),
+)
+
+function startAddView(plus: HTMLElement) {
+  dialogError.value = ''
+  viewDialog.value = { view: null, returnFocusTo: plus }
+}
+
+function startEditView(view: CalendarView) {
+  dialogError.value = ''
+  viewDialog.value = { view, returnFocusTo: null }
+}
+
+function closeViewDialog() {
+  if (!pending.value) viewDialog.value = null
+}
+
+async function saveView(draft: { name: string; calendarIds: string[] }) {
+  const target = viewDialog.value
+  if (!target || pending.value) return
+  const view = target.view
+  pending.value = true
+  dialogError.value = ''
   try {
-    views.value = [...views.value, await createOwn(name, 'calendar', visibleCalendarIds.value)]
-    return undefined
+    if (!view) {
+      const created = await createOwn(draft.name, 'calendar', draft.calendarIds)
+      views.value = [...views.value, created]
+      selectView(created.id)
+    } else {
+      const requests = requestsFor(view)
+      const ids = chosenViewCalendarIds(
+        view.calendarIds,
+        viewDialogCalendars.value,
+        draft.calendarIds,
+      )
+      const body = requests.body(draft.name, view.icon, ids)
+      replaceView(
+        api
+          ? await requests.update(api, view.id, body)
+          : { ...view, name: draft.name, calendarIds: body.calendars.map((item) => item.ref) },
+      )
+      // A selected view shows its calendars as they are now.
+      if (selectedViewId.value === view.id) selectView(view.id)
+    }
+    viewDialog.value = null
   } catch (error) {
-    return describeOwnViewError(error)
+    dialogError.value = view ? requestsFor(view).describe(error) : describeOwnViewError(error)
+  } finally {
+    pending.value = false
   }
 }
 
@@ -526,25 +614,43 @@ async function unshareSharedView(view: CalendarView) {
   })
 }
 
+/**
+ * "Update from selection": the view groups the calendars switched on now (of those it can hold;
+ * calendars of it the viewer cannot see stay). Refused while none of them is on.
+ */
 async function updateFromSelection(view: CalendarView) {
-  try {
-    const body = sharedViewBody(view.name, view.icon, visibleCalendarIds.value)
-    const next = api
-      ? await updateSharedView(api, view.id, body)
-      : { ...view, calendarIds: body.calendars.map((calendar) => calendar.ref) }
-    replaceView(next)
+  const offered = offeredViewCalendars(regularCalendars.value, view.isAdmin)
+  const visible = new Set(visibleCalendarIds.value)
+  const chosen = offered.filter((calendar) => visible.has(calendar.id)).map((item) => item.id)
+  if (chosen.length === 0) {
     toast.add({
-      title: t('Updated shared view {name}', { name: view.name }),
+      title: t('Choose at least one calendar first.'),
+      color: 'error',
+      icon: 'i-lucide-x',
+    })
+    return
+  }
+  const requests = requestsFor(view)
+  try {
+    const body = requests.body(
+      view.name,
+      view.icon,
+      chosenViewCalendarIds(view.calendarIds, offered, chosen),
+    )
+    replaceView(
+      api
+        ? await requests.update(api, view.id, body)
+        : { ...view, calendarIds: body.calendars.map((calendar) => calendar.ref) },
+    )
+    toast.add({
+      title: view.isAdmin
+        ? t('Updated shared view {name}', { name: view.name })
+        : t('Updated view {name}', { name: view.name }),
       icon: 'i-lucide-check',
     })
   } catch (error) {
-    toast.add({ title: describeSharedViewError(error), color: 'error', icon: 'i-lucide-x' })
+    toast.add({ title: requests.describe(error), color: 'error', icon: 'i-lucide-x' })
   }
-}
-
-function startRename(view: CalendarView) {
-  dialogError.value = ''
-  renaming.value = view
 }
 
 function startDelete(view: CalendarView) {
@@ -553,26 +659,7 @@ function startDelete(view: CalendarView) {
 }
 
 function closeDialogs() {
-  renaming.value = null
   deleting.value = null
-}
-
-async function saveRename(name: string) {
-  const view = renaming.value
-  if (!view) return
-  pending.value = true
-  dialogError.value = ''
-  try {
-    // Renaming keeps the calendars the view has: the request repeats them.
-    const requests = requestsFor(view)
-    const body = requests.body(name, view.icon, view.calendarIds)
-    replaceView(api ? await requests.update(api, view.id, body) : { ...view, name })
-    closeDialogs()
-  } catch (error) {
-    dialogError.value = requestsFor(view).describe(error)
-  } finally {
-    pending.value = false
-  }
 }
 
 async function confirmDelete() {
@@ -644,10 +731,6 @@ function submitCategory(name: string) {
   return addCategory(name) ? undefined : t('A category with this name already exists.')
 }
 
-function submitFilter(text: string) {
-  return addFilter(text) ? undefined : t('A filter with this name already exists.')
-}
-
 // ---- The menus of calendars, categories and filters --------------------------------------------
 // Each row offers what the viewer may do with it (the server checks again): every calendar its
 // colour for the viewer, and "Edit calendar" where they may manage it, in a dialog right here (for
@@ -656,12 +739,12 @@ function submitFilter(text: string) {
 // (an admin changes everybody's on Admin › Calendars, not here); a category of their own, or a
 // shared one for an admin, Rename, Colour and Delete; every resource its colour for the viewer and,
 // for an admin, "Edit resource" (the dialog of Admin › Resources, right here); every filter (filters are always one's own)
-// Edit and Delete. A category that only events carry is a name, not a row: it offers Colour, which
-// saves it as a category of that colour (it has no row to rename or delete; renaming it would mean
+// Edit (the filter dialog: name, kind, value and mode) and Delete. A category that only events
+// carry is a name, not a row: it offers Colour, which saves it as a category of that colour (it has no row to rename or delete; renaming it would mean
 // changing the events). Where there is a calendar service, every category also offers "Turn into a
 // status…": its events get a status instead, and Delete takes the category off the events too (both
-// CategoryEventsDialog; without it a deleted category came back as a name its events carry). A new category or filter can be
-// changed once the server has saved it.
+// CategoryEventsDialog; without it a deleted category came back as a name its events carry). A new category can be
+// changed once the server has saved it; a new filter is listed only then.
 
 type Item =
   | { kind: 'calendar'; item: Calendar }
@@ -669,6 +752,20 @@ type Item =
   | { kind: 'filter'; item: CalendarFilter }
 
 const itemRename = ref<Item | null>(null)
+/** The filter dialog: adding (`filter` null) or changing a filter, and where the focus goes after. */
+const filterDialog = ref<{
+  filter: CalendarFilter | null
+  returnFocusTo: HTMLElement | null
+} | null>(null)
+/** The people the list of a person filter offers; worked out while the filter dialog is open. */
+const knownFilterPeople = computed(() =>
+  filterDialog.value
+    ? knownPeople(
+        events.value,
+        calendars.value.flatMap((calendar) => (calendar.ownerName ? [calendar.ownerName] : [])),
+      )
+    : [],
+)
 /** The category whose "Turn into a status" dialog is open, or whose delete dialog. */
 const statusTarget = ref<Category | null>(null)
 const deleteTarget = ref<Category | null>(null)
@@ -712,12 +809,37 @@ function closeItemDialogs() {
   itemRename.value = null
   itemDelete.value = null
   categoryColor.value = null
+  filterDialog.value = null
+}
+
+function startAddFilter(plus: HTMLElement) {
+  itemError.value = ''
+  filterDialog.value = { filter: null, returnFocusTo: plus }
+}
+
+function startEditFilter(filter: CalendarFilter) {
+  itemError.value = ''
+  filterDialog.value = { filter, returnFocusTo: null }
+}
+
+/** Adds the filter of the dialog (and switches it on) or saves the change. */
+async function saveFilter(draft: FilterDraft) {
+  const target = filterDialog.value
+  if (!target || itemPending.value) return
+  const filter = target.filter
+  await runItemChange(
+    async () => {
+      const done = filter ? await updateFilter(filter.id, draft) : (await addFilter(draft)) !== null
+      return done ? null : t('A filter with this name already exists.')
+    },
+    filter ? N_('change the filter') : N_('add the filter'),
+  )
 }
 
 /** Rename and Delete, made here while rendering so that the labels follow a change of language. */
 function renameAndDelete(item: Item, disabled = false) {
   const rename: DropdownMenuItem = {
-    label: item.kind === 'filter' ? t('Edit') : t('Rename'),
+    label: t('Rename'),
     icon: 'i-lucide-pencil',
     disabled,
     onSelect: () => startItemRename(item),
@@ -914,11 +1036,13 @@ function resourceItems(resource: CalendarResource): DropdownMenuItem[][] {
 }
 
 function filterItems(filter: CalendarFilter): DropdownMenuItem[][] {
-  const { rename, remove } = renameAndDelete(
-    { kind: 'filter', item: filter },
-    savingIds.value.includes(filter.id),
-  )
-  return [[rename], [remove]]
+  const { remove } = renameAndDelete({ kind: 'filter', item: filter })
+  const edit: DropdownMenuItem = {
+    label: t('Edit'),
+    icon: 'i-lucide-pencil',
+    onSelect: () => startEditFilter(filter),
+  }
+  return [[edit], [remove]]
 }
 
 const renameTitle = computed(() => {
@@ -926,8 +1050,7 @@ const renameTitle = computed(() => {
   if (!target) return ''
   const name = target.item.name
   if (target.kind === 'calendar') return t('Rename calendar {name}', { name })
-  if (target.kind === 'category') return t('Rename category {name}', { name })
-  return t('Edit filter {name}', { name })
+  return t('Rename category {name}', { name })
 })
 
 const renameDescription = computed(() => {
@@ -943,9 +1066,7 @@ const renameDescription = computed(() => {
       ? t('Everybody sees the new name. Events that have the old name keep it.')
       : t('Events that have the old name keep it.')
   }
-  return target.item.kind === 'text'
-    ? t('The filter shows the events whose title, place or notes contain this text.')
-    : undefined
+  return undefined
 })
 
 const deleteDetail = computed(() => {
@@ -1017,14 +1138,6 @@ async function saveItemRename(name: string) {
           ? null
           : t('A category with this name already exists.'),
       N_('rename the category'),
-    )
-  } else {
-    await runItemChange(
-      async () =>
-        (await updateFilter(target.item.id, name))
-          ? null
-          : t('A filter with this name already exists.'),
-      N_('change the filter'),
     )
   }
 }

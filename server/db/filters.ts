@@ -1,10 +1,12 @@
-// Saved filters (FR-5): a named text, category or status filter that belongs to one user.
+// Saved filters (FR-5): a named text, category, status or person filter that belongs to one user.
+// `mode` says whether it shows only the events it matches or hides them.
 import type { Database } from 'better-sqlite3'
 import { conflict } from '../utils/api/errors'
-import type { FilterKind, FilterRow } from './types'
+import type { FilterKind, FilterMode, FilterRow } from './types'
 
 export const MAX_FILTERS_PER_USER = 100
-export const FILTER_KINDS: readonly FilterKind[] = ['text', 'category', 'status']
+export const FILTER_KINDS: readonly FilterKind[] = ['text', 'category', 'status', 'person']
+export const FILTER_MODES: readonly FilterMode[] = ['only', 'hide']
 export const FILTER_STATUSES = ['confirmed', 'tentative', 'cancelled'] as const
 
 export interface FilterEntry {
@@ -12,13 +14,14 @@ export interface FilterEntry {
   name: string
   kind: FilterKind
   value: string
+  mode: FilterMode
 }
 
 /** A validated create or update body. */
 export type FilterInput = Omit<FilterEntry, 'id'>
 
 function toFilter(row: FilterRow): FilterEntry {
-  return { id: row.id, name: row.name, kind: row.kind, value: row.value }
+  return { id: row.id, name: row.name, kind: row.kind, value: row.value, mode: row.mode }
 }
 
 /** The user's own filters, oldest first. */
@@ -44,15 +47,15 @@ export function createFilter(db: Database, userId: number, input: FilterInput): 
       )
     }
     return db
-      .prepare<[number, string, string, string], FilterRow>(
-        'INSERT INTO filters (owner_id, name, kind, value) VALUES (?, ?, ?, ?) RETURNING *',
+      .prepare<[number, string, string, string, string], FilterRow>(
+        'INSERT INTO filters (owner_id, name, kind, value, mode) VALUES (?, ?, ?, ?, ?) RETURNING *',
       )
-      .get(userId, input.name, input.kind, input.value)!
+      .get(userId, input.name, input.kind, input.value, input.mode)!
   })
   return toFilter(create.immediate())
 }
 
-/** Replaces name, kind and value. Null when the user has no such filter. */
+/** Replaces name, kind, value and mode. Null when the user has no such filter. */
 export function updateFilter(
   db: Database,
   userId: number,
@@ -60,10 +63,10 @@ export function updateFilter(
   input: FilterInput,
 ): FilterEntry | null {
   const row = db
-    .prepare<[string, string, string, number, number], FilterRow>(
-      'UPDATE filters SET name = ?, kind = ?, value = ? WHERE id = ? AND owner_id = ? RETURNING *',
+    .prepare<[string, string, string, string, number, number], FilterRow>(
+      'UPDATE filters SET name = ?, kind = ?, value = ?, mode = ? WHERE id = ? AND owner_id = ? RETURNING *',
     )
-    .get(input.name, input.kind, input.value, id, userId)
+    .get(input.name, input.kind, input.value, input.mode, id, userId)
   return row ? toFilter(row) : null
 }
 

@@ -168,6 +168,30 @@ describe('buildCalendars', () => {
     ])
   })
 
+  it('names the owner of the viewer’s calendars and of a person’s share', () => {
+    const calendars = buildCalendars({
+      collections: [
+        collection('/caldav/u/def-calendar/', { displayName: 'Bob Builder' }),
+        collection('/caldav/u/shared-7/', { displayName: 'Personal Calendar', readOnly: true }),
+        collection('/caldav/u/shared-9/', { displayName: 'Team' }),
+      ],
+      subscriptions: [subscription(3)],
+      prefs: [],
+      ownerName: 'Bob Builder',
+      shared: [
+        { id: 7, name: 'Personal Calendar', kind: 'personal', owner: 'Alice Example' },
+        { id: 9, name: 'Team', kind: 'shared', owner: null },
+      ],
+    })
+    expect(calendars.map((c) => c.ownerName)).toEqual([
+      'Bob Builder',
+      'Alice Example',
+      // a group's calendar and a subscription belong to no person
+      undefined,
+      undefined,
+    ])
+  })
+
   it('keeps each calendar’s own colour beside the viewer’s choice', () => {
     const [chosen, plain] = buildCalendars({
       collections: [

@@ -102,7 +102,7 @@ describe('overflow menu', () => {
     await vi.waitFor(() => expect(document.querySelector('[role="menu"]')).not.toBeNull())
     expect(
       [...document.querySelectorAll('[role^="menuitem"]')].map((item) => item.textContent?.trim()),
-    ).toEqual(['Refresh', 'Settings', 'Dark mode', 'Category colours on events', 'Help'])
+    ).toEqual(['Refresh', 'Print', 'Settings', 'Dark mode', 'Category colours on events', 'Help'])
     expect(document.activeElement?.getAttribute('role')).toBe('menuitem')
 
     keydown(document.activeElement, 'Escape')

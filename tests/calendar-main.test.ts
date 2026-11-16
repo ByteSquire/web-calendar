@@ -131,6 +131,90 @@ describe('standard views', () => {
     })
   })
 
+  it('lists a week, a month or a year with the period buttons above the list', async () => {
+    const { viewType, listSpan, anchorDate } = useCalendarState()
+    anchorDate.value = Temporal.PlainDate.from('2026-10-28')
+    const periodButtons = () => [
+      ...document.querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Period"] button'),
+    ]
+    expect(periodButtons()).toHaveLength(0)
+
+    viewType.value = 'list'
+    await vi.waitFor(() => expect(calendarApi(app).view.type).toBe('listWeek'))
+    expect(periodButtons().map((item) => item.textContent?.trim())).toEqual([
+      'Week',
+      'Month',
+      'Year',
+      'Custom range',
+    ])
+    expect(periodButtons().map((item) => item.getAttribute('aria-pressed'))).toEqual([
+      'true',
+      'false',
+      'false',
+      'false',
+    ])
+
+    periodButtons()[2]!.click()
+    await vi.waitFor(() => expect(calendarApi(app).view.type).toBe('listYear'))
+    expect(listSpan.value).toBe('year')
+    expect(periodButtons()[2]!.getAttribute('aria-pressed')).toBe('true')
+
+    periodButtons()[1]!.click()
+    await vi.waitFor(() => expect(calendarApi(app).view.type).toBe('listMonth'))
+    const api = calendarApi(app)
+    expect(api.formatIso(api.getDate(), true)).toBe('2026-10-28')
+    listSpan.value = 'week'
+  })
+
+  it('lists a custom range entered in the date fields, and says what is wrong with one', async () => {
+    const { viewType, anchorDate, customDays } = useCalendarState()
+    anchorDate.value = Temporal.PlainDate.from('2026-10-28')
+    viewType.value = 'list'
+    await vi.waitFor(() => expect(calendarApi(app).view.type).toBe('listWeek'))
+    const button = (name: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+        (item) => item.textContent?.trim() === name,
+      )!
+    const field = (name: string) =>
+      document.querySelector<HTMLInputElement>(
+        `form[aria-label="Custom range"] input[name="${name}"]`,
+      )!
+    const type = (input: HTMLInputElement, value: string) => {
+      input.value = value
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+
+    button('Custom range').click()
+    await vi.waitFor(() => expect(calendarApi(app).view.type).toBe('listCustom'))
+    // It starts as the week that was shown.
+    expect(field('range-from').value).toBe('2026-10-26')
+    expect(field('range-to').value).toBe('2026-11-01')
+
+    type(field('range-from'), '2026-11-04')
+    type(field('range-to'), '2026-11-17')
+    button('Show').click()
+    await vi.waitFor(() => {
+      const view = calendarApi(app).view as unknown as { activeStart: Date; activeEnd: Date }
+      const api = calendarApi(app)
+      expect([api.formatIso(view.activeStart, true), api.formatIso(view.activeEnd, true)]).toEqual([
+        '2026-11-04',
+        '2026-11-18',
+      ])
+    })
+    expect(customDays.value).toBe(14)
+
+    type(field('range-to'), '2026-11-01')
+    button('Show').click()
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain(
+        'The end date must not be before the start date.',
+      ),
+    )
+    expect(field('range-to').getAttribute('aria-invalid')).toBe('true')
+    await vi.waitFor(() => expect(document.activeElement).toBe(field('range-to')))
+    expect(customDays.value).toBe(14)
+  })
+
   it('opens a day from the day number in the month view', async () => {
     const { viewType, anchorDate } = useCalendarState()
     anchorDate.value = Temporal.PlainDate.from('2026-10-15')
@@ -172,6 +256,35 @@ describe('standard views', () => {
     expect(dialog()!.textContent).toContain('09:00 – 09:15')
     expect(dialogButton('Edit')).toBeDefined()
     expect(dialogButton('Delete')).toBeDefined()
+  })
+})
+
+// Firefox copies the page for paper straight after `beforeprint`, before Vue or anything else
+// waiting for a microtask runs: what is printed has to be drawn while the event is dispatched.
+describe('printing', () => {
+  afterEach(() => {
+    window.dispatchEvent(new Event('afterprint'))
+    document.documentElement.classList.remove('dark', 'light')
+    useColorMode().preference = 'system'
+  })
+
+  it('draws the print layout with every entry and the light scheme during beforeprint', async () => {
+    useColorMode().preference = 'dark'
+    const calendarRoot = () => document.querySelector('[data-color-scheme]')
+    await vi.waitFor(() => expect(calendarRoot()?.getAttribute('data-color-scheme')).toBe('dark'))
+    // The colour mode module sets this class in the browser; its test stand-in does not.
+    document.documentElement.classList.add('dark')
+
+    window.dispatchEvent(new Event('beforeprint'))
+
+    // No await in between: this is what the browser prints.
+    expect(calendarRoot()?.getAttribute('data-color-scheme')).toBe('light')
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    expect(entries().length).toBeGreaterThan(0)
+    for (const entry of entries()) {
+      expect(entry.querySelector('.sr-only')?.textContent?.length).toBeGreaterThan(0)
+    }
+    expect(entryNamed('Standup')).toBeDefined()
   })
 })
 

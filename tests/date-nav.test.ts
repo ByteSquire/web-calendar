@@ -9,4 +9,9 @@ describe('dateStepLabel', () => {
     expect(dateStepLabel('next', 'month')).toBe('Next month')
     expect(dateStepLabel('next', 'year')).toBe('Next year')
   })
+
+  it('names the length of a custom range', () => {
+    expect(dateStepLabel('previous', 'custom', 10)).toBe('Previous 10 days')
+    expect(dateStepLabel('next', 'custom', 1)).toBe('Next day')
+  })
 })

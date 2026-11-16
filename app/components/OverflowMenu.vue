@@ -1,11 +1,12 @@
 <!--
   Overflow (⋮) menu (FR-25). Nuxt UI closes it on Escape and on a click outside, moves focus into
   the menu and returns it to the trigger. On the page of a calendar link (a visitor, no account):
-  only Dark mode, the language and Full screen. Signed in (live mode): the user, the time zone the times
-  are shown in, Refresh (FR-10), Settings, Groups, Calendars, People and Resources (admins only), Full
+  only Dark mode, the language, Print and Full screen. Signed in (live mode): the user, the time zone the times
+  are shown in, Refresh (FR-10), Print, Settings, Groups, Calendars, People and Resources (admins only), Full
   screen, Dark mode, Category colours on events (a dot per category on every entry, kept in this
   browser), Help and Sign out. Each item runs once per click or tap (utils/menu-select.ts). The demo mode
-  keeps the placeholder items of the mock-up. "Full screen" is only offered where the browser has
+  keeps the placeholder items of the mock-up. "Print" is only offered where a calendar is shown (the
+  calendar page and a link's page; composables/usePrinting.ts). "Full screen" is only offered where the browser has
   one for pages (not on iPhone Safari): on a phone it hides the address bar. "Dark mode" is a
   switch: it shows the scheme in use, which is the system's until it is flipped, and from then on
   on is dark and off is light. The menu stays open so the switch is seen to move. Once a scheme has
@@ -83,6 +84,8 @@ const fullscreen = useFullscreen()
 const colorMode = useColorMode()
 const adminFlag = useAdminFlag()
 const linkView = useCalendarLinkView()
+const route = useRoute()
+const { print } = usePrinting()
 
 /** The language, chosen in the menu (the Settings page is not there for a visitor of a link). */
 function languageItems(): DropdownMenuItem[] {
@@ -191,11 +194,18 @@ const items = computed<DropdownMenuItem[][]>(() => {
         },
       ]
     : []
+  // Where a calendar is shown: the calendar page and the page of a calendar link.
+  const printItems: DropdownMenuItem[] =
+    route.path === '/' || linkView.value
+      ? [{ label: t('Print'), icon: 'i-lucide-printer', onSelect: () => void print() }]
+      : []
   // The page of a calendar link: only the look of the page, for a visitor without an account.
   if (linkView.value) {
-    return [[darkMode, ...followSystem], languageItems(), fullScreenItems].filter(
-      (group) => group.length > 0,
-    )
+    return [
+      [darkMode, ...followSystem],
+      languageItems(),
+      [...printItems, ...fullScreenItems],
+    ].filter((group) => group.length > 0)
   }
   if (!live) {
     return [
@@ -205,6 +215,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
           icon: 'i-lucide-refresh-cw',
           onSelect: () => mockAction(t('Refresh')),
         },
+        ...printItems,
       ],
       [
         {
@@ -246,6 +257,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
         loading: loading.value,
         onSelect: () => void refresh(),
       },
+      ...printItems,
     ],
     [
       { label: t('Settings'), icon: 'i-lucide-settings', to: '/settings' },

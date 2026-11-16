@@ -31,12 +31,41 @@ export const VIEW_TYPE_LABELS = {
   list: N_('List'),
 } satisfies Record<ViewType, string>
 
-/** Time span one band of the split view covers. */
-export const SPLIT_SPANS = ['day', '5day', 'week', 'month'] as const
+/**
+ * Time span one band of the split view covers. `custom` is a range of dates the person enters
+ * (`customDays` days from the anchor date), shared with the list view.
+ */
+export const SPLIT_SPANS = ['day', '5day', 'week', 'month', 'custom'] as const
 export type SplitSpan = (typeof SPLIT_SPANS)[number]
 
+/**
+ * How the split view lays out its calendars: a row each with the dates across (FullCalendar's
+ * timeline), or a column each with a row per day (utils/split-columns.ts).
+ */
+export type SplitOrientation = 'rows' | 'columns'
+
+/** Time span the list view covers; `custom` as for the split view. */
+export const LIST_SPANS = ['week', 'month', 'year', 'custom'] as const
+export type ListSpan = (typeof LIST_SPANS)[number]
+
+/** Labels of the period buttons; the fixed periods are named like the view types. */
+export const SPAN_LABELS = {
+  day: N_('Day'),
+  '5day': N_('5 days'),
+  week: N_('Week'),
+  month: N_('Month'),
+  year: N_('Year'),
+  custom: N_('Custom range'),
+} satisfies Record<SplitSpan | ListSpan, string>
+
 /** The period a view type shows; navigation and the range label work on this. */
-export type RangeKind = 'day' | '5day' | 'week' | 'month' | 'year'
+export type RangeKind = 'day' | '5day' | 'week' | 'month' | 'year' | 'custom'
+
+/**
+ * Longest custom range, in days: a whole year, also a leap year. It bounds what is loaded at once
+ * and how wide the split view's timeline gets.
+ */
+export const MAX_CUSTOM_DAYS = 366
 
 /** Half-open range of dates: `start` is included, `end` is not. */
 export interface DateRange {
@@ -87,20 +116,33 @@ const CATEGORY_COLORS = [
 
 // ---- Date range and navigation ----
 
-export function rangeKindOf(viewType: ViewType, splitSpan: SplitSpan): RangeKind {
+export function rangeKindOf(
+  viewType: ViewType,
+  splitSpan: SplitSpan,
+  listSpan: ListSpan = 'week',
+): RangeKind {
   switch (viewType) {
     case 'split':
       return splitSpan
     case 'list':
-      return 'week'
+      return listSpan
     default:
       return viewType
   }
 }
 
-/** The dates a period shows around `anchor`. Weeks start on Monday. */
-export function visibleRangeFor(kind: RangeKind, anchor: Temporal.PlainDate): DateRange {
+/**
+ * The dates a period shows around `anchor`. Weeks start on Monday. A custom range starts at the
+ * anchor and is `customDays` long.
+ */
+export function visibleRangeFor(
+  kind: RangeKind,
+  anchor: Temporal.PlainDate,
+  customDays = 7,
+): DateRange {
   switch (kind) {
+    case 'custom':
+      return { start: anchor, end: anchor.add({ days: customDays }) }
     case 'day':
       return { start: anchor, end: anchor.add({ days: 1 }) }
     case '5day':
@@ -120,13 +162,19 @@ export function visibleRangeFor(kind: RangeKind, anchor: Temporal.PlainDate): Da
   }
 }
 
-/** Moves `anchor` one period forward (`1`) or back (`-1`). Month and year steps clamp the day. */
+/**
+ * Moves `anchor` one period forward (`1`) or back (`-1`). Month and year steps clamp the day; a
+ * custom range moves by its own length, so the next range starts the day after this one ends.
+ */
 export function stepAnchorDate(
   kind: RangeKind,
   anchor: Temporal.PlainDate,
   direction: 1 | -1,
+  customDays = 7,
 ): Temporal.PlainDate {
   switch (kind) {
+    case 'custom':
+      return anchor.add({ days: customDays * direction })
     case 'day':
       return anchor.add({ days: direction })
     case '5day':
@@ -144,7 +192,8 @@ export function stepAnchorDate(
 export function formatRangeLabel(kind: RangeKind, range: DateRange): string {
   const first = range.start
   const last = range.end.subtract({ days: 1 })
-  switch (kind) {
+  // A custom range of one day is named like a day.
+  switch (kind === 'custom' && first.equals(last) ? 'day' : kind) {
     case 'day':
       return t('{weekday}, {day} {month} {year}', {
         weekday: weekdayShort(first.dayOfWeek),
@@ -163,6 +212,38 @@ export function formatRangeLabel(kind: RangeKind, range: DateRange): string {
       if (first.month !== last.month) return `${dayMonth(first)} – ${dayMonth(last)} ${last.year}`
       return `${t('{day}', { day: first.day })} – ${dayMonth(last)} ${last.year}`
   }
+}
+
+export type CustomRangeCheck =
+  | { ok: true; first: Temporal.PlainDate; last: Temporal.PlainDate }
+  | { ok: false; field: 'from' | 'to'; message: string }
+
+function parseDate(value: string): Temporal.PlainDate | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  try {
+    return Temporal.PlainDate.from(value, { overflow: 'reject' })
+  } catch {
+    return null
+  }
+}
+
+/** Checks the dates of a custom range as entered (`YYYY-MM-DD`, both days included). */
+export function checkCustomRange(from: string, to: string): CustomRangeCheck {
+  const first = parseDate(from.trim())
+  if (!first) return { ok: false, field: 'from', message: t('Enter a start date.') }
+  const last = parseDate(to.trim())
+  if (!last) return { ok: false, field: 'to', message: t('Enter an end date.') }
+  if (Temporal.PlainDate.compare(last, first) < 0) {
+    return { ok: false, field: 'to', message: t('The end date must not be before the start date.') }
+  }
+  if (first.until(last).days + 1 > MAX_CUSTOM_DAYS) {
+    return {
+      ok: false,
+      field: 'to',
+      message: t('Choose at most {count} days.', { count: MAX_CUSTOM_DAYS }),
+    }
+  }
+  return { ok: true, first, last }
 }
 
 // ---- Events ----
@@ -413,6 +494,9 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   // Navigation
   const viewType = state<ViewType>('cal-view-type', () => 'week')
   const splitSpan = state<SplitSpan>('cal-split-span', () => 'week')
+  const listSpan = state<ListSpan>('cal-list-span', () => 'week')
+  const customDays = state<number>('cal-custom-days', () => 7)
+  const splitOrientation = state<SplitOrientation>('cal-split-orientation', () => 'rows')
   const anchorIso = state<string>('cal-anchor', () => options.today().toString())
 
   // Data
@@ -446,8 +530,10 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
       anchorIso.value = date.toString()
     },
   })
-  const rangeKind = computed(() => rangeKindOf(viewType.value, splitSpan.value))
-  const visibleRange = computed(() => visibleRangeFor(rangeKind.value, anchorDate.value))
+  const rangeKind = computed(() => rangeKindOf(viewType.value, splitSpan.value, listSpan.value))
+  const visibleRange = computed(() =>
+    visibleRangeFor(rangeKind.value, anchorDate.value, customDays.value),
+  )
   const rangeLabel = computed(() => formatRangeLabel(rangeKind.value, visibleRange.value))
 
   const calendarById = computed(() => new Map(calendars.value.map((item) => [item.id, item])))
@@ -487,15 +573,34 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   )
 
   function prev() {
-    anchorDate.value = stepAnchorDate(rangeKind.value, anchorDate.value, -1)
+    anchorDate.value = stepAnchorDate(rangeKind.value, anchorDate.value, -1, customDays.value)
   }
 
   function next() {
-    anchorDate.value = stepAnchorDate(rangeKind.value, anchorDate.value, 1)
+    anchorDate.value = stepAnchorDate(rangeKind.value, anchorDate.value, 1, customDays.value)
   }
 
   function today() {
     anchorDate.value = options.today()
+  }
+
+  /**
+   * Switches the split or the list view to a custom range. It starts as the period the view
+   * showed, so the person only changes the dates that differ.
+   */
+  function chooseCustomRange() {
+    if (rangeKind.value === 'custom') return
+    const { start, end } = visibleRange.value
+    customDays.value = Math.min(start.until(end).days, MAX_CUSTOM_DAYS)
+    anchorDate.value = start
+    if (viewType.value === 'split') splitSpan.value = 'custom'
+    else if (viewType.value === 'list') listSpan.value = 'custom'
+  }
+
+  /** Shows the dates `first` to `last` (both included) in the custom range; see `checkCustomRange`. */
+  function setCustomRange(first: Temporal.PlainDate, last: Temporal.PlainDate) {
+    customDays.value = first.until(last).days + 1
+    anchorDate.value = first
   }
 
   /** Selecting a view shows exactly its calendars; `null` clears it and restores the defaults. */
@@ -791,6 +896,11 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   return {
     viewType,
     splitSpan,
+    listSpan,
+    customDays,
+    splitOrientation,
+    chooseCustomRange,
+    setCustomRange,
     anchorDate,
     rangeKind,
     visibleRange,

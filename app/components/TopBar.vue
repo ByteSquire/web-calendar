@@ -6,9 +6,11 @@
   On the page of a calendar link (read-only) it has no sidebar toggle, no adding and names the
   calendar instead of the app. The root keeps the `top-bar` class the layout places and sizes. While data loads a thin progress
   line runs along its lower edge; it is positioned absolutely, so nothing moves when it appears.
+  On paper only a heading is left (`data-print-title`, main.css): the shown period, under the
+  calendar's name on the page of a link.
 -->
 <template>
-  <header class="top-bar">
+  <header class="top-bar" :data-print-title="printTitle">
     <div class="top-bar-nav">
       <UButton
         v-if="!linkView"
@@ -83,6 +85,11 @@ import { t } from '~/utils/i18n'
 const { sidebarOpen, toggleSidebar, openQuickAdd, openAddEvent, rangeLabel } = useCalendarState()
 const { loading } = useLiveStatus()
 const linkView = useCalendarLinkView()
+// The heading on paper (main.css draws it from the attribute, so the page has no second copy of
+// the period for assistive technology or a search to find).
+const printTitle = computed(() =>
+  linkView.value ? `${linkView.value.name}\n${rangeLabel.value}` : rangeLabel.value,
+)
 </script>
 
 <style scoped>

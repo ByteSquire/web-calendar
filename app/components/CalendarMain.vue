@@ -5,38 +5,27 @@
   Phase 1; events open the sheet (`selectEvent`), date cells open quick-add.
   Mapping and options live in utils/fullcalendar.ts; the colours of the theme in assets/css/main.css.
   With "Category colours on events" an entry shows a dot per category before its title.
+  For printing, the Premium adaptive plugin lays the calendar out for paper (composables/usePrinting.ts).
+  The entries' content is made by utils/entry-content.ts and not by a Vue slot, so it is there in
+  the same moment as the print layout.
+  The list view has period buttons above it (week, month, year: `listSpan`), like the split view.
 -->
 <template>
-  <div
-    ref="rootElement"
-    class="calendar-main h-full min-h-0"
-    :class="`calendar-view-${viewType}`"
-    data-calendar-main
-    tabindex="-1"
-    role="region"
-    :aria-label="t('Calendar, {range}', { range: rangeLabel })"
-    @pointerdown.capture="dateTap.start"
-    @click="dateTap.click"
-  >
-    <FullCalendar ref="calendar" :options="options">
-      <!-- Visible text is hidden from assistive technology; the label below names the entry. -->
-      <template #eventContent="arg">
-        <template v-if="!dotsOnly">
-          <div v-if="arg.timeText" :class="arg.timeClass" aria-hidden="true">
-            {{ arg.timeText }}
-          </div>
-          <div :class="[arg.titleClass, titleStyle(arg)]" aria-hidden="true">
-            <span
-              v-for="(color, index) in arg.event.extendedProps.categoryColors"
-              :key="index"
-              class="app-evt-tag"
-              :style="{ backgroundColor: color }"
-            />{{ arg.event.title }}
-          </div>
-        </template>
-        <span class="sr-only">{{ entryLabel(arg) }}</span>
-      </template>
-    </FullCalendar>
+  <div class="flex h-full min-h-0 flex-col">
+    <PeriodSwitcher v-if="viewType === 'list'" v-model="listSpan" :spans="LIST_SPANS" />
+    <div
+      ref="rootElement"
+      class="calendar-main min-h-0 flex-1"
+      :class="`calendar-view-${viewType}`"
+      data-calendar-main
+      tabindex="-1"
+      role="region"
+      :aria-label="t('Calendar, {range}', { range: rangeLabel })"
+      @pointerdown.capture="dateTap.start"
+      @click="dateTap.click"
+    >
+      <FullCalendar ref="calendar" :options="options" />
+    </div>
   </div>
 </template>
 
@@ -50,6 +39,7 @@ import enGbLocale from '@fullcalendar/vue3/locales/en-gb'
 import multiMonthPlugin from '@fullcalendar/vue3/multimonth'
 import classicTheme from '@fullcalendar/vue3/themes/classic'
 import timeGridPlugin from '@fullcalendar/vue3/timegrid'
+import adaptivePlugin from '@fullcalendar/vue3-scheduler/adaptive'
 import scrollGridPlugin from '@fullcalendar/vue3-scheduler/scrollgrid'
 import type {
   CalendarOptions,
@@ -57,6 +47,8 @@ import type {
   EventClickInfo,
   EventDisplayInfo,
 } from '@fullcalendar/vue3'
+import { LIST_SPANS } from '~/utils/calendar-state'
+import { calendarEntryContent } from '~/utils/entry-content'
 import { locale, t } from '~/utils/i18n'
 import {
   BASE_CALENDAR_OPTIONS,
@@ -80,11 +72,15 @@ const PLUGINS = [
   interactionPlugin,
   // `dayMinWidth` (narrow screens) needs it.
   scrollGridPlugin,
+  // The layout for paper while the page prints (composables/usePrinting.ts).
+  adaptivePlugin,
 ]
 
 const {
   viewType,
   splitSpan,
+  listSpan,
+  customDays,
   anchorDate,
   rangeLabel,
   visibleEvents,
@@ -118,6 +114,11 @@ onMounted(() => {
 
 onBeforeUnmount(() => resizeObserver?.disconnect())
 
+// Paper is as wide as a small window, but nothing on it can pan sideways: print the full layout,
+// whatever the screen's width.
+const { printing } = usePrinting()
+const layoutCompact = computed(() => compact.value && !printing.value)
+
 // Narrow screens pan the day columns sideways: give that scroller a tab stop.
 useKeyboardScrollers(rootElement)
 
@@ -137,7 +138,7 @@ const events = computed(() =>
 
 // View and date are read once: afterwards the watcher below moves the calendar. Putting them in
 // the options would reset the calendar on every navigation.
-const initialView = fullCalendarViewName(viewType.value, splitSpan.value)
+const initialView = fullCalendarViewName(viewType.value, splitSpan.value, listSpan.value)
 const initialDate = anchorDate.value.toString()
 
 // Month and day names, "all-day" and the other words of the grids follow the language.
@@ -146,7 +147,7 @@ const calendarLocale = computed(() => (locale.value === 'de' ? 'de' : 'en-gb'))
 const options = computed<CalendarOptions>(() => ({
   ...BASE_CALENDAR_OPTIONS,
   timeZone: timeZone.value,
-  ...calendarLayoutOptions(compact.value),
+  ...calendarLayoutOptions(layoutCompact.value, customDays.value),
   plugins: PLUGINS,
   locales: [enGbLocale, deLocale],
   locale: calendarLocale.value,
@@ -155,15 +156,38 @@ const options = computed<CalendarOptions>(() => ({
   colorScheme: scheme.value,
   eventDisplay: eventDisplayFor(viewType.value),
   events: events.value,
+  eventContent: dotsOnly.value
+    ? (arg: EventDisplayInfo) => calendarEntryContent(arg, true)
+    : (arg: EventDisplayInfo) => calendarEntryContent(arg, false),
   eventClick: onEventClick,
   dateClick: onDateClick,
   navLinkDayClick: onDayNumberClick,
 }))
 
+// What printing changes: the scheme and the layout. They are passed on in `beforeprint` and
+// `afterprint` themselves, as Firefox prints before the options above reach the calendar
+// (composables/usePrinting.ts).
+const PRINT_OPTION_NAMES = [
+  'colorScheme',
+  'events',
+  ...Object.keys(calendarLayoutOptions(false)),
+] as (keyof CalendarOptions)[]
+
+onPrintChange(() => {
+  const next = options.value
+  const changed = Object.fromEntries(PRINT_OPTION_NAMES.map((name) => [name, next[name]]))
+  calendar.value?.getApi().resetOptions(changed, PRINT_OPTION_NAMES)
+})
+
 // State -> calendar. `changeView` keeps FullCalendar's own date, so the date is set afterwards;
 // both run in one batch to render once.
 watch(
-  [() => fullCalendarViewName(viewType.value, splitSpan.value), () => anchorDate.value.toString()],
+  [
+    () => fullCalendarViewName(viewType.value, splitSpan.value, listSpan.value),
+    () => anchorDate.value.toString(),
+    // A new length of the custom range comes with the options; the view is drawn again for it.
+    customDays,
+  ],
   ([view, date]) => {
     const api = calendar.value?.getApi()
     if (!api) return
@@ -194,19 +218,5 @@ function onDateClick(info: DateClickInfo) {
   // The page of a calendar link is read-only: a click on a date adds nothing.
   if (linkView.value) return
   dateTap.hit(quickAddPresetForClick(info.dateStr, info.allDay))
-}
-
-function extendedProps(arg: EventDisplayInfo) {
-  return arg.event.extendedProps as Partial<EventExtendedProps>
-}
-
-function entryLabel(arg: EventDisplayInfo): string {
-  return extendedProps(arg).label ?? arg.event.title
-}
-
-function titleStyle(arg: EventDisplayInfo): string {
-  const kind = extendedProps(arg).kind
-  if (kind === 'cancelled') return 'line-through'
-  return kind === 'tentative' ? 'italic' : ''
 }
 </script>

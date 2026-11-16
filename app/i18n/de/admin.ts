@@ -125,6 +125,8 @@ export const admin: Readonly<Record<string, string>> = {
   'Next week': 'Nächste Woche',
   'Next month': 'Nächster Monat',
   'Next year': 'Nächstes Jahr',
+  'Previous day | Previous {count} days': 'Vorheriger Tag | Vorherige {count} Tage',
+  'Next day | Next {count} days': 'Nächster Tag | Nächste {count} Tage',
 
   // Sign-in errors
   'Sign-in is not set up': 'Anmeldung nicht eingerichtet',

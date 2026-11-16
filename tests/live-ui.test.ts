@@ -161,6 +161,7 @@ describe('overflow menu', () => {
     await open()
     expect(menuItems()).toEqual([
       'Refresh',
+      'Print',
       'Settings',
       'Groups',
       'Dark mode',
@@ -186,6 +187,7 @@ describe('overflow menu', () => {
     await open()
     expect(menuItems()).toEqual([
       'Refresh',
+      'Print',
       'Settings',
       'Groups',
       'Dark mode',
@@ -209,6 +211,7 @@ describe('overflow menu', () => {
     await open()
     expect(menuItems()).toEqual([
       'Refresh',
+      'Print',
       'Settings',
       'Dark mode',
       'Category colours on events',
@@ -240,6 +243,7 @@ describe('overflow menu', () => {
       await open()
       expect(menuItems()).toEqual([
         'Refresh',
+        'Print',
         'Settings',
         'Groups',
         'Full screen',
@@ -276,6 +280,64 @@ describe('overflow menu', () => {
       browserWithFullscreen(false)
       await open()
       expect(menuItems()).not.toContain('Full screen')
+    })
+  })
+
+  describe('print', () => {
+    const browserPrint = window.print
+
+    afterEach(() => {
+      window.dispatchEvent(new Event('afterprint'))
+      window.print = browserPrint
+      useColorMode().preference = 'system'
+    })
+
+    it('prints in the light scheme and puts the dark one back afterwards', async () => {
+      useColorMode().preference = 'dark'
+      const steps: string[] = []
+      // A browser sends both events from inside `window.print()`, with no update of Vue between.
+      window.print = vi.fn(() => {
+        window.dispatchEvent(new Event('beforeprint'))
+        const root = document.documentElement.classList
+        steps.push(`printed ${useColorMode().value}, dark class ${root.contains('dark')}`)
+        window.dispatchEvent(new Event('afterprint'))
+        steps.push(`after ${useColorMode().value}, dark class ${root.contains('dark')}`)
+      })
+      await open()
+      // The colour mode module sets this class in the browser; its test stand-in does not.
+      document.documentElement.classList.add('dark')
+
+      const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+        (candidate) => text(candidate) === 'Print',
+      )!
+      item.click()
+      await vi.waitFor(() => expect(window.print).toHaveBeenCalledTimes(1))
+      expect(steps).toEqual(['printed light, dark class false', 'after dark, dark class true'])
+      // Only the scheme in use changed for the paper, never the stored choice.
+      expect(useColorMode().preference).toBe('dark')
+      expect(useColorMode().forced).toBe(false)
+      document.documentElement.classList.remove('dark')
+    })
+
+    it('says so when the browser cannot print, and leaves the scheme as it was', async () => {
+      useColorMode().preference = 'dark'
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+      window.print = vi.fn(() => {
+        window.dispatchEvent(new Event('beforeprint'))
+        throw new Error('blocked')
+      })
+      await open()
+
+      const item = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+        (candidate) => text(candidate) === 'Print',
+      )!
+      item.click()
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain('Printing is not available'),
+      )
+      expect(consoleError).toHaveBeenCalled()
+      expect(useColorMode().value).toBe('dark')
+      consoleError.mockRestore()
     })
   })
 

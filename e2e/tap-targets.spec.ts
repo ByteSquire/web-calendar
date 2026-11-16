@@ -81,7 +81,8 @@ test.describe('split view', () => {
         events: measure('.split-timeline .split-event'),
       }
     })
-    expect(sizes.period).toHaveLength(4)
+    // Day, 5 days, Week, Month and Custom range.
+    expect(sizes.period).toHaveLength(5)
     expect(sizes.events.length).toBeGreaterThan(0)
     expect(sizes.period.filter((item) => item.h < 43.5 || item.w < 43.5)).toEqual([])
     expect(sizes.events.filter((item) => item.h < 43.5)).toEqual([])

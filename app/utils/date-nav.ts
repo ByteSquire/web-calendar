@@ -1,5 +1,5 @@
 import type { RangeKind } from './calendar-state'
-import { N_, tv } from './i18n'
+import { N_, tc, tv } from './i18n'
 
 const LABELS = {
   previous: {
@@ -16,9 +16,19 @@ const LABELS = {
     month: N_('Next month'),
     year: N_('Next year'),
   },
-} satisfies Record<'previous' | 'next', Record<RangeKind, string>>
+} satisfies Record<'previous' | 'next', Record<Exclude<RangeKind, 'custom'>, string>>
 
-/** Accessible name of the previous / next button, for example `Previous week`. */
-export function dateStepLabel(direction: 'previous' | 'next', kind: RangeKind): string {
-  return tv(LABELS[direction][kind])
+/**
+ * Accessible name of the previous / next button, for example `Previous week`. A custom range steps
+ * by its own length (`customDays`): `Previous 10 days`.
+ */
+export function dateStepLabel(
+  direction: 'previous' | 'next',
+  kind: RangeKind,
+  customDays = 7,
+): string {
+  if (kind !== 'custom') return tv(LABELS[direction][kind])
+  return direction === 'previous'
+    ? tc('Previous day | Previous {count} days', customDays)
+    : tc('Next day | Next {count} days', customDays)
 }

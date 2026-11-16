@@ -208,6 +208,7 @@ const SPLIT_VIEW_NAMES = {
   '5day': 'resourceTimeline5Day',
   week: 'resourceTimelineWeek',
   month: 'resourceTimelineMonth',
+  custom: 'resourceTimelineCustom',
 } satisfies Record<SplitSpan, string>
 
 /** The FullCalendar view that shows a split span. */
@@ -236,11 +237,12 @@ export interface SplitLayout {
 // their slot, so on a 360 px phone the layout trades sideways scrolling for readable day columns:
 // 100 to 110 px per day beside a 100 px label column leaves 260 px, so a week scrolls about two
 // and a half screens. A landscape phone (about 640 px) fits a week with narrower slots. The
-// month needs 28 to 31 slots, so its slots are narrow everywhere.
+// month needs 28 to 31 slots, so its slots are narrow everywhere; a custom range (up to a year)
+// is sized like it.
 const SLOT_MIN_WIDTH = {
-  phone: { day: 72, '5day': 110, week: 100, month: 44 },
-  compact: { day: 56, '5day': 64, week: 64, month: 40 },
-  desktop: { day: 64, '5day': 120, week: 110, month: 40 },
+  phone: { day: 72, '5day': 110, week: 100, month: 44, custom: 44 },
+  compact: { day: 56, '5day': 64, week: 64, month: 40, custom: 40 },
+  desktop: { day: 64, '5day': 120, week: 110, month: 40, custom: 40 },
 } satisfies Record<SplitLayoutTier, Record<SplitSpan, number>>
 
 const RESOURCE_COLUMNS_WIDTH = { phone: 100, compact: 100, desktop: 168 } satisfies Record<
@@ -262,6 +264,7 @@ const layoutsOf = (tier: SplitLayoutTier): Record<SplitSpan, SplitLayout> => ({
   '5day': buildLayout(tier, '5day'),
   week: buildLayout(tier, 'week'),
   month: buildLayout(tier, 'month'),
+  custom: buildLayout(tier, 'custom'),
 })
 
 const LAYOUTS: Record<SplitLayoutTier, Record<SplitSpan, SplitLayout>> = {
@@ -324,9 +327,11 @@ export function splitDayWindow(
  * day view trims the hours and labels them like the standard views (07:00); week, 5-day and month
  * show whole days under FullCalendar's own day labels. `slotHeaderFormat` formats every slot
  * header of a view, so it cannot be set for all views at once. FullCalendar has no built-in
- * five-day timeline, so that view is defined here.
+ * five-day timeline, so that view is defined here, and so is the custom range of `customDays`
+ * days. Both start on the anchor date: `dateAlignment` keeps FullCalendar from moving a range of
+ * whole weeks to a Monday.
  */
-export function splitViews(tier: SplitLayoutTier, dayWindow: SplitTimeWindow) {
+export function splitViews(tier: SplitLayoutTier, dayWindow: SplitTimeWindow, customDays = 7) {
   const sizing = (span: SplitSpan) => ({
     slotDuration: LAYOUTS[tier][span].slotDuration,
     slotMinWidth: LAYOUTS[tier][span].slotMinWidth,
@@ -336,6 +341,11 @@ export function splitViews(tier: SplitLayoutTier, dayWindow: SplitTimeWindow) {
       SPLIT_VIEW_NAMES[span],
       {
         ...(span === '5day' && { type: 'resourceTimeline', duration: { days: 5 } }),
+        ...(span === 'custom' && {
+          type: 'resourceTimeline',
+          duration: { days: customDays },
+          dateAlignment: 'day',
+        }),
         ...(span === 'day' && {
           ...dayWindow,
           slotHeaderFormat: BASE_CALENDAR_OPTIONS.slotHeaderFormat,

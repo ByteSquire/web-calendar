@@ -96,6 +96,22 @@ describe('view mapping', () => {
     expect(fullCalendarViewName('split')).toBe('timeGridWeek')
   })
 
+  it('maps the list view to the list of its span', () => {
+    expect(fullCalendarViewName('list', 'day', 'week')).toBe('listWeek')
+    expect(fullCalendarViewName('list', 'day', 'month')).toBe('listMonth')
+    expect(fullCalendarViewName('list', 'day', 'year')).toBe('listYear')
+    expect(fullCalendarViewName('list', 'day', 'custom')).toBe('listCustom')
+  })
+
+  it('defines the list of a custom range from the anchor date', () => {
+    const { views } = calendarLayoutOptions(false, 14)
+    expect(views?.listCustom).toEqual({
+      type: 'list',
+      duration: { days: 14 },
+      dateAlignment: 'day',
+    })
+  })
+
   it('covers every view type of the switcher', () => {
     for (const type of VIEW_TYPES.filter((item) => item !== 'split')) {
       expect(FULLCALENDAR_VIEW_NAMES[type as Exclude<ViewType, 'split'>]).toBeTruthy()

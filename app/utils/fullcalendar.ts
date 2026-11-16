@@ -5,7 +5,7 @@
 import { Temporal } from 'temporal-polyfill'
 import type { CalendarOptions, EventInput } from '@fullcalendar/vue3'
 import type { Calendar, CalendarEvent, Category } from '../../shared/types/calendar'
-import type { NewEventInput, SplitSpan, ViewType } from './calendar-state'
+import type { ListSpan, NewEventInput, SplitSpan, ViewType } from './calendar-state'
 import { BUSY_TITLE, eventAssistiveLabel } from './event-display'
 import { intlLocale, t, tc, tv } from './i18n'
 
@@ -20,9 +20,26 @@ export const FULLCALENDAR_VIEW_NAMES = {
   list: 'listWeek',
 } satisfies Record<Exclude<ViewType, 'split'>, string>
 
-/** The FullCalendar view for a view type. The split view maps like its span (`splitSpan`). */
-export function fullCalendarViewName(viewType: ViewType, splitSpan: SplitSpan = 'week'): string {
-  return FULLCALENDAR_VIEW_NAMES[viewType === 'split' ? splitSpan : viewType]
+const LIST_VIEW_NAMES = {
+  week: 'listWeek',
+  month: 'listMonth',
+  year: 'listYear',
+  custom: 'listCustom',
+} satisfies Record<ListSpan, string>
+
+/**
+ * The FullCalendar view for a view type. The split view maps like its span (`splitSpan`), the
+ * list view to the list of its span (`listSpan`).
+ */
+export function fullCalendarViewName(
+  viewType: ViewType,
+  splitSpan: SplitSpan = 'week',
+  listSpan: ListSpan = 'week',
+): string {
+  if (viewType === 'list') return LIST_VIEW_NAMES[listSpan]
+  if (viewType !== 'split') return FULLCALENDAR_VIEW_NAMES[viewType]
+  // The split view's own timeline draws a custom range; here it is the list of those dates.
+  return splitSpan === 'custom' ? LIST_VIEW_NAMES.custom : FULLCALENDAR_VIEW_NAMES[splitSpan]
 }
 
 /**
@@ -122,9 +139,11 @@ const DAY_MIN_WIDTH = 76
 
 /**
  * Options that depend on the width of the calendar: sizes for the time grids and the month grid,
- * and the view definitions (`timeGrid5Day` is the custom five-day view).
+ * and the view definitions (`timeGrid5Day` is the custom five-day view, `listCustom` the list of a
+ * custom range of `customDays` days from the anchor date; `dateAlignment` keeps FullCalendar from
+ * moving a range of whole weeks to a Monday).
  */
-export function calendarLayoutOptions(compact: boolean): CalendarOptions {
+export function calendarLayoutOptions(compact: boolean, customDays = 7): CalendarOptions {
   const panning = compact ? { dayMinWidth: DAY_MIN_WIDTH } : {}
   return {
     // Day columns narrower than this use the small text of the theme.
@@ -145,6 +164,7 @@ export function calendarLayoutOptions(compact: boolean): CalendarOptions {
         dayMaxEvents: true,
         displayEventTime: !compact,
       },
+      listCustom: { type: 'list', duration: { days: customDays }, dateAlignment: 'day' },
       multiMonthYear: {
         multiMonthMaxColumns: compact ? 1 : 3,
         dayMaxEvents: 2,

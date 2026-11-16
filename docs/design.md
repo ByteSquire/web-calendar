@@ -1493,7 +1493,21 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     dragging is not enough on its own (WCAG 2.5.7 asks for a way without dragging, and a keyboard
     or a screen reader cannot drag). It is the one new permanent element of this change; the
     alternatives (arrows on every heading, a hidden shortcut) cost more room or cannot be found.
-- **View-type switcher** (FR-22): **day, 5-day, week, month, year, split, list**.
+- **View-type switcher** (FR-22): **day, 5-day, week, month, year, split, list**. The split view
+  and the list view have period buttons above them (`PeriodSwitcher.vue`): Day, 5 days, Week and
+  Month for split, Week, Month and Year for the list (FullCalendar `listWeek`, `listMonth`,
+  `listYear`). The list of a month or a year is how a longer stretch is printed with every entry
+  readable. The date navigation then steps by that period, and data loads for it. Both also have
+  **Custom range**: it starts as the period shown and adds From and To date fields (native inputs)
+  and a Show button beside the buttons; Show or Enter applies the dates, both days included. The
+  dates are checked (`checkCustomRange`: both given, To not before From, at most 366 days, which
+  bounds what loads at once and how wide the timeline gets) and an error names the field and moves
+  the focus to it. Previous and next move the range by its own length ("Next 21 days"), Today
+  starts it today; the split and the list view share the range. In FullCalendar it is a view of
+  `customDays` days from the anchor date with `dateAlignment: 'day'` (`listCustom`,
+  `resourceTimelineCustom`), as a range of whole weeks would otherwise start on a Monday. The split
+  view shows one slot per day for it, also for a single day. The fields are part of the period
+  buttons, not a new control elsewhere; they are only there while Custom range is chosen.
 - **Date navigation** (FR-23): previous / **today** / next.
 - **Quick-add** (FR-24), **Add** and **overflow (`⋮`) menu** (FR-25). Quick add is lean: title,
   calendar, start and end (with "All day") and, on live data, the repeat rule. "Add" (the outline
@@ -1506,6 +1520,19 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   A failed save opens the region that holds the error before the focus goes to the field. The
   closed region is hidden, not removed, so nothing typed is lost. Two buttons because the dialogs
   differ in what they ask, not in who may use them; both are for everybody.
+- **Printing** — the browser's own Print command and "Print" in the `⋮` menu (beside Refresh; on the
+  page of a calendar link beside Full screen) print the calendar as it is shown: the view, the
+  period and the calendars chosen. The menu item is only there where a calendar is on screen
+  (`/` and a link page); it is an existing menu, not a new element, and it is the only way to
+  print on a phone, where the browser's command is hidden in a share menu. FullCalendar's Premium
+  adaptive plugin lays the calendar out for paper (no scrollers, all rows, a table instead of
+  absolute positions where a browser cannot print those); `main.css` hides the sidebar, the top
+  bar's controls, dialogs and toasts and lets the page run over as many sheets as it needs, with
+  the period (and on a link page the calendar's name) as the heading. The browser's own header
+  and footer (page title, address, date, page number) are left to the person, who can switch them
+  off in the print dialog; the page keeps the browser's margins. Paper is light: while it
+  prints, the page switches to the light scheme (the stored choice does not change) and the
+  calendar to its wide layout, since paper cannot pan sideways (`composables/usePrinting.ts`).
 - **Groups page (FR-15a)** — `/groups`, the overflow-menu entry "Groups" for everybody signed in (not
   in demo mode). It is one page and not an admin screen because the work is the members': they
   manage their group's calendars, and an admin-only page would have left them without a place.
@@ -1612,9 +1639,34 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   (`@fullcalendar/vue3-scheduler/resource-timeline`), each calendar a row with a sticky label. The
   state (`splitBands`) decides which rows exist, so empty bands are hidden there and not by
   FullCalendar. Fallback if a phone test rejects it: one instance per calendar, stacked, with a
-  shared date (it needs app-side empty-band hiding and has no sticky labels). Readable on a 360 px
-  phone with `slotMinWidth` 100–110 and a 100 px label column. Extending split to **all** view types is a **planned experiment**
-  (post-initial-release), not a requirement.
+  shared date (it needs app-side empty-band hiding and has no sticky labels).
+  - _Calendars as columns._ "Swap rows and columns" beside the period buttons (an icon below
+    1024 px, so the bar stays one row on a phone held sideways) turns the split view into a table
+    with a column per calendar and a row per day (`SplitColumns.vue`, `utils/split-columns.ts`,
+    state `splitOrientation`). FullCalendar has no such view: its timeline only runs dates across,
+    and its vertical resource views still put the days side by side. Why: a long range does not fit
+    a timeline's width, on screen or on paper (the browser cuts it at the page edge and never
+    continues sideways), while rows of days run down as many pages as needed and fewer calendars
+    give wider columns. An entry of one day is a card in its day's cell; one over several days is
+    a single block down its rows, so its length still shows; overlapping blocks get lanes side by
+    side, as many as the calendar needs in the range. A lane is only drawn on the days a block runs
+    through; on the other days the day's cell spans it (`colspan`), so a calendar is split only
+    where a block is, as in FullCalendar's own grids. The block is a piece in each of its rows (the
+    lane cells themselves, coloured, with the top edge where it begins and the bottom edge where
+    it ends), not one cell over several rows: Firefox ignores a percentage height inside a cell
+    when printing, and drops the rest of a cell that spans rows across a page break (found on
+    paper: an offsite of three days kept only its first day). It wears FullCalendar's classic theme: the classes come
+    from the theme plugin's documented class-name options (`dayCellClass`, `blockEventClass`,
+    `columnEventClass` ...; `utils/fc-theme.ts`), so cards, borders, today and the print rules
+    match the other views. The table scrolls inside itself with the calendar names and the dates
+    sticky; on paper the header repeats on every page, a day's row stays on one page and the
+    columns share the page width. A tap on an empty part of a day asks for a new all-day event in
+    that calendar, as a tap on the timeline does. Limits: a block that crosses a page break shows
+    its title once, at its start; a timed entry of one day is a card, not a block sized to its
+    hours. `e2e/split-columns.spec.ts` checks it on all projects (phones included: 44 px targets,
+    no sideways page scroll, sticky headers, the A4 width on paper, axe). Readable on a 360 px
+    phone with `slotMinWidth` 100–110 and a 100 px label column. Extending split to **all** view types is a **planned experiment**
+    (post-initial-release), not a requirement.
 
 - **PWA / "Add to Home Screen" (backlog, after the initial release).** The app shell scrolls
   internally, so the mobile browser's address bar stays visible while using the site. Stopgap, done:
@@ -1687,6 +1739,16 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   plugin `@fullcalendar/vue3-scheduler/scrollgrid` and the licence key; without them the page throws
   "Must import @fullcalendar/scrollgrid". Unit tests in happy-dom do not reach this path (no
   layout), so only a browser check caught it; the Playwright suite now covers it (§12).
+- **Print** — the Premium plugin `@fullcalendar/vue3-scheduler/adaptive` (licence key) switches a
+  calendar to its print layout on `window`'s `beforeprint` and back on `afterprint`; without it the
+  printout is the screen with its scrollers cut off. `eventPrintLayout` stays `auto` (Firefox gets
+  a plain stack of entries in the time grids). Firefox copies the page for paper straight after
+  `beforeprint`, before any microtask, so before Vue updates anything (found with Ctrl+P: the
+  entries came out as empty boxes). So nothing the printout needs may wait for Vue: the content of
+  entries and split view labels is made as DOM nodes for FullCalendar's content injection
+  (`utils/entry-content.ts`) instead of Vue slots, the root's scheme class is switched directly,
+  and each calendar passes its print options to FullCalendar inside `beforeprint` and its screen
+  options inside `afterprint` (`onPrintChange`). The menu item only calls `window.print()`.
 - **Keyboard access to scrollers** — the panning day columns and the resource timeline scroll sideways
   on narrow screens without a tab stop (axe: `scrollable-region-focusable`). `useKeyboardScrollers`
   gives such regions `tabindex="0"` after each render, and `EventSheet` does the same for its body. No
@@ -2293,6 +2355,10 @@ menu items and Edit and Delete only show a toast.
   page scroll, and a cut-off title opens in full in the entry sheet. At that density most titles
   of one-hour entries are cut off with an ellipsis in the Day span (an hour is about 60 px wide);
   the test does not judge that.
+- _A year of data:_ opening the demo with `?demo-load=year` adds about 170 entries all through the
+  current year (`app/data/mock-year.ts`): weekly, fortnightly, monthly and quarterly meetings,
+  holidays, trips of several days, long titles, tentative and cancelled entries. It is for looking
+  at long periods on screen and on paper; like the busy data it is mock data only.
 
 **Step 4 — Sidebar (FR-21)**
 

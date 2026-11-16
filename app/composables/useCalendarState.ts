@@ -13,18 +13,26 @@
  *   shown period; views keep it when the type changes. Assign it after a date click or when the
  *   calendar reports a new date.
  * - `prev() / next() / today()`: step `anchorDate` by one period of the current view: day 1 day,
- *   5day 5 days, week and list 7 days, month 1 month, year 1 year (the day is clamped, so
- *   31 Jan + 1 month = 28 Feb), split like its underlying span.
+ *   5day 5 days, week 7 days, month 1 month, year 1 year (the day is clamped, so
+ *   31 Jan + 1 month = 28 Feb), split and list like their span.
  * - `visibleRange: Ref<{ start, end }>`: PlainDates, `end` exclusive. day: the anchor; 5day:
- *   the anchor and the next 4 days; week and list: Monday to Monday (FullCalendar
- *   `firstDay: 1`; list is FullCalendar `listWeek`); month: 1st to the 1st of the next month (the
- *   grid also shows days of the adjacent months; FullCalendar fetches those itself); year:
- *   Jan 1 to Jan 1; split: the range of `splitSpan`.
+ *   the anchor and the next 4 days; week: Monday to Monday (FullCalendar `firstDay: 1`); month:
+ *   1st to the 1st of the next month (the grid also shows days of the adjacent months;
+ *   FullCalendar fetches those itself); year: Jan 1 to Jan 1; split: the range of `splitSpan`;
+ *   list: the range of `listSpan` (FullCalendar `listWeek`, `listMonth`, `listYear`).
  * - `rangeKind: Ref<'day'|'5day'|'week'|'month'|'year'>`: the period `visibleRange` covers.
  * - `rangeLabel: Ref<string>`: English title such as "Wed, 28 Oct 2026", "26 – 30 Oct 2026",
  *   "October 2026" or "2026".
- * - `splitSpan: Ref<'day'|'5day'|'week'|'month'>`: what one split band covers, default 'week'.
+ * - `splitSpan: Ref<'day'|'5day'|'week'|'month'|'custom'>`: what one split band covers, default 'week'.
  *   Only the split view uses it; the split view may change it.
+ * - `listSpan: Ref<'week'|'month'|'year'|'custom'>`: what the list view covers, default 'week'.
+ *   Only the list view uses it; its period buttons change it.
+ * - `splitOrientation: Ref<'rows'|'columns'>`: the split view's calendars as rows (the timeline,
+ *   default) or as columns with a row per day; its toggle beside the period buttons changes it.
+ * - Both spans may be 'custom': `customDays` days from `anchorDate` (shared by both views; prev
+ *   and next step by that length). `chooseCustomRange()` switches the current view to it, starting
+ *   as the period shown; `setCustomRange(first, last)` shows those dates, both included, after
+ *   `checkCustomRange` (utils/calendar-state.ts) accepted them.
  *
  * Reference data (in-memory copies of the mock data in demo mode; in live mode they start empty and
  * `useLiveCalendar()` fills them from the API and CalDAV, see composables/useLiveCalendar.ts)

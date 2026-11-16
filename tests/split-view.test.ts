@@ -300,6 +300,16 @@ describe('views', () => {
     expect(new Set(SPLIT_SPANS.map(splitViewName)).size).toBe(SPLIT_SPANS.length)
   })
 
+  it('defines the custom range from the anchor date with one slot per day', () => {
+    const views = splitViews('desktop', { slotMinTime: '07:00:00', slotMaxTime: '19:00:00' }, 21)
+    expect(views.resourceTimelineCustom).toMatchObject({
+      type: 'resourceTimeline',
+      duration: { days: 21 },
+      dateAlignment: 'day',
+      slotDuration: { days: 1 },
+    })
+  })
+
   it('defines the five-day view and sizes each view', () => {
     const views = splitViews('desktop', { slotMinTime: '07:00:00', slotMaxTime: '19:00:00' })
     expect(Object.keys(views).sort()).toEqual(SPLIT_SPANS.map(splitViewName).sort())
@@ -509,6 +519,7 @@ describe('SplitTimeline', () => {
         bands: bandsFor(anchor, span),
         date: anchor,
         span,
+        customDays: 7,
         scheme,
         timeZone: 'Europe/Berlin',
       },
@@ -589,6 +600,32 @@ describe('SplitTimeline', () => {
         })
       }
     }
+  })
+
+  it('shows a custom range from its first date, also one of whole weeks, and follows a new length', async () => {
+    const wrapper = mountTimeline('2026-10-28', 'week')
+    await flushPromises()
+    // A Wednesday and 14 days: FullCalendar would move a range of whole weeks to the Monday.
+    await wrapper.setProps({
+      bands: bandsFor('2026-10-28', 'week'),
+      date: '2026-10-28',
+      span: 'custom',
+      customDays: 14,
+    })
+    await vi.waitFor(() => {
+      expect(view(wrapper).type).toBe('resourceTimelineCustom')
+      expect([ymd(view(wrapper).activeStart), ymd(view(wrapper).activeEnd)]).toEqual([
+        '2026-10-28',
+        '2026-11-11',
+      ])
+    })
+    await wrapper.setProps({ customDays: 3 })
+    await vi.waitFor(() =>
+      expect([ymd(view(wrapper).activeStart), ymd(view(wrapper).activeEnd)]).toEqual([
+        '2026-10-28',
+        '2026-10-31',
+      ]),
+    )
   })
 
   it('shows the hours of a late event in the day view', async () => {

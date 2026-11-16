@@ -261,6 +261,14 @@
   border-color: var(--fc-event-contrast-color);
 }
 
+/* Paper leaves the fill out, and the text colour of the fill can be white: the edge takes the
+ * entry's colour instead. */
+@media print {
+  .app-evt.app-evt-tentative {
+    border-color: var(--fc-event-color);
+  }
+}
+
 .app-evt.app-evt-blocked {
   background-image: repeating-linear-gradient(
     135deg,
@@ -300,6 +308,67 @@
 /* The container takes focus when an entry it had focused is gone (event sheet closes); no ring. */
 .calendar-main:focus {
   outline: none;
+}
+
+/* Printing (composables/usePrinting.ts): FullCalendar lays the calendar out for paper, and of the
+ * page around it only a heading is left: the period shown, from the top bar's `data-print-title`.
+ * The shell lets the page grow, so the calendar runs on over as many sheets as it needs. Unlayered,
+ * to beat the utilities on the top bar and the split view. */
+@media print {
+  /* Dialogs, menus and messages are placed beside the app's root. */
+  body > :not(#__nuxt) {
+    display: none !important;
+  }
+
+  html,
+  body,
+  #__nuxt,
+  .app-shell {
+    height: auto;
+  }
+
+  .app-shell {
+    display: block;
+    overflow: visible;
+  }
+
+  .sidebar,
+  .top-bar > *,
+  .print-hidden {
+    display: none;
+  }
+
+  .top-bar {
+    display: block;
+    padding: 0 0 0.5rem;
+    background: none;
+    border: 0;
+  }
+
+  .top-bar::before {
+    content: attr(data-print-title);
+    white-space: pre-line;
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .main-area {
+    overflow: visible;
+  }
+
+  /* A flex column is not split across pages by every browser; a plain block is. */
+  .split-view {
+    display: block;
+    height: auto;
+  }
+
+  /* A list on paper has room for a whole title: it wraps instead of being cut off at the edge. */
+  .calendar-view-list .app-evt-title {
+    overflow: visible;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 /* Form controls: the ring of an input, select, checkbox or radio and the outline of a switch that

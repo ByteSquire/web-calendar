@@ -12,6 +12,10 @@
   The calendar column is a pane of its own beside the scrolling timeline, so labels stay in place
   when the timeline scrolls sideways. `height: 'auto'` lets the surrounding main area do the
   vertical scrolling, which also makes the date header sticky against it.
+
+  Printing (composables/usePrinting.ts): the labels and entries are made by utils/entry-content.ts
+  and not by Vue slots, and the light colours are passed on during `beforeprint`, so both are there
+  when Firefox takes its copy of the page.
 -->
 <template>
   <div
@@ -21,30 +25,7 @@
     @pointerdown.capture="dateTap.start"
     @click="dateTap.click"
   >
-    <FullCalendar ref="calendar" :options="options">
-      <template #resourceCellContent="{ resource }">
-        <span class="split-label" :title="resource.title">
-          <span
-            class="split-label__dot"
-            :style="{ backgroundColor: resource.extendedProps.color }"
-            aria-hidden="true"
-          />{{ resource.title }}
-        </span>
-      </template>
-      <template #eventContent="{ event, timeText, timeClass, titleClass }">
-        <div v-if="timeText" :class="timeClass">{{ timeText }}</div>
-        <div :class="[titleClass, 'split-event__title']">
-          <span
-            v-for="(color, index) in event.extendedProps.categoryColors"
-            :key="index"
-            class="app-evt-tag"
-            :style="{ backgroundColor: color }"
-            aria-hidden="true"
-          />{{ event.title }}
-        </div>
-        <span class="sr-only">, {{ timelineEventSrText(event.extendedProps) }}</span>
-      </template>
-    </FullCalendar>
+    <FullCalendar ref="calendar" :options="options" />
   </div>
 </template>
 
@@ -55,6 +36,7 @@ import interactionPlugin from '@fullcalendar/vue3/interaction'
 import deLocale from '@fullcalendar/vue3/locales/de'
 import enGbLocale from '@fullcalendar/vue3/locales/en-gb'
 import classicTheme from '@fullcalendar/vue3/themes/classic'
+import adaptivePlugin from '@fullcalendar/vue3-scheduler/adaptive'
 import resourceTimeline from '@fullcalendar/vue3-scheduler/resource-timeline'
 import { locale, t } from '~/utils/i18n'
 import type { NewEventInput, SplitBand, SplitSpan } from '~/utils/calendar-state'
@@ -70,16 +52,18 @@ import {
   splitLayoutTier,
   splitViewName,
   splitViews,
-  timelineEventSrText,
   toTimelineData,
   type SplitColorScheme,
 } from '~/utils/split-view'
+import { splitEntryContent, splitLabelContent } from '~/utils/entry-content'
 
 const props = defineProps<{
   bands: readonly SplitBand[]
   /** The selected date, `YYYY-MM-DD`. */
   date: string
   span: SplitSpan
+  /** Length of the custom range in days (`span` 'custom'). */
+  customDays: number
   scheme: SplitColorScheme
   /** The zone the events are in and the timeline shows (FR-29), an IANA name. */
   timeZone: string
@@ -128,7 +112,8 @@ const dayWindow = computed(() =>
   ),
 )
 
-const plugins = [classicTheme, resourceTimeline, interactionPlugin]
+// `adaptivePlugin`: the layout for paper while the page prints (composables/usePrinting.ts).
+const plugins = [classicTheme, resourceTimeline, interactionPlugin, adaptivePlugin]
 
 const options = computed<CalendarOptions>(() => ({
   plugins,
@@ -141,7 +126,7 @@ const options = computed<CalendarOptions>(() => ({
   colorScheme: props.scheme,
   initialView,
   initialDate,
-  views: splitViews(tier.value, dayWindow.value),
+  views: splitViews(tier.value, dayWindow.value, props.customDays),
   headerToolbar: false,
   firstDay: 1,
   height: 'auto',
@@ -153,6 +138,8 @@ const options = computed<CalendarOptions>(() => ({
   resourceOrder: 'sortIndex',
   resourceColumns: [{ field: 'title', headerContent: t('Calendar') }],
   resourceColumnsWidth: layout.value.resourceColumnsWidth,
+  resourceCellContent: splitLabelContent,
+  eventContent: splitEntryContent,
   // A tap target is at least 44 px wide, also for a short event.
   eventMinWidth: 44,
   eventClick: (info) => {
@@ -162,6 +149,20 @@ const options = computed<CalendarOptions>(() => ({
   dateClick: onDateClick,
 }))
 
+// Paper is light (composables/usePrinting.ts). The `scheme` prop follows only with the parent's
+// next update, after Firefox has taken its copy of the page, so the colours are passed on here.
+onPrintChange((printing) => {
+  const scheme = printing ? 'light' : props.scheme
+  const next = toTimelineData(props.bands, scheme, props.categoryById)
+  calendar.value
+    ?.getApi()
+    .resetOptions({ colorScheme: scheme, resources: next.resources, events: next.events }, [
+      'colorScheme',
+      'resources',
+      'events',
+    ])
+})
+
 function onDateClick(info: DateClickInfo) {
   dateTap.hit({
     ...quickAddPresetForClick(info.dateStr, info.allDay),
@@ -170,8 +171,10 @@ function onDateClick(info: DateClickInfo) {
   })
 }
 
+// The length of a custom range reaches FullCalendar through `views`; it is watched here too, so
+// the timeline is drawn again for it even when the span and the first date stay.
 watch(
-  () => [props.span, props.date] as const,
+  () => [props.span, props.date, props.customDays] as const,
   ([span, date]) => calendar.value?.getApi().changeView(splitViewName(span), date),
 )
 </script>
@@ -222,6 +225,14 @@ watch(
 
 .split-timeline .split-event--tentative {
   border: 2px dashed var(--fc-event-contrast-color);
+}
+
+/* Paper leaves the fill out, and the text colour of the fill can be white: the edge takes the
+ * entry's colour instead. */
+@media print {
+  .split-timeline .split-event.split-event--tentative {
+    border-color: var(--fc-event-color);
+  }
 }
 
 .split-timeline .split-event--cancelled .split-event__title {

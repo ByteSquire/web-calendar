@@ -8,7 +8,7 @@
       icon="i-lucide-chevron-left"
       color="neutral"
       variant="ghost"
-      :aria-label="dateStepLabel('previous', rangeKind)"
+      :aria-label="dateStepLabel('previous', rangeKind, customDays)"
       @click="prev"
     />
     <UButton :label="t('Today')" color="neutral" variant="outline" @click="today" />
@@ -16,7 +16,7 @@
       icon="i-lucide-chevron-right"
       color="neutral"
       variant="ghost"
-      :aria-label="dateStepLabel('next', rangeKind)"
+      :aria-label="dateStepLabel('next', rangeKind, customDays)"
       @click="next"
     />
     <!-- Below 1024 px the top bar shows the title in its first row instead. -->
@@ -34,5 +34,5 @@
 import { dateStepLabel } from '~/utils/date-nav'
 import { t } from '~/utils/i18n'
 
-const { rangeKind, rangeLabel, prev, next, today } = useCalendarState()
+const { rangeKind, rangeLabel, customDays, prev, next, today } = useCalendarState()
 </script>

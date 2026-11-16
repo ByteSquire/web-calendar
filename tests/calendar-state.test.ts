@@ -13,6 +13,7 @@ import {
   filterCalendarEvents,
   formatRangeLabel,
   rangeKindOf,
+  checkCustomRange,
   stepAnchorDate,
   VIEW_TYPES,
   VIEW_TYPE_LABELS,
@@ -88,8 +89,10 @@ describe('visible range', () => {
     expect(visibleRangeFor('week', date('2026-11-01')).start).toEqual(date('2026-10-26'))
   })
 
-  it('maps list to a week and split to its span', () => {
+  it('maps list and split to their spans, list to a week by default', () => {
     expect(rangeKindOf('list', 'month')).toBe('week')
+    expect(rangeKindOf('list', 'day', 'month')).toBe('month')
+    expect(rangeKindOf('list', 'day', 'year')).toBe('year')
     expect(rangeKindOf('split', 'day')).toBe('day')
     expect(rangeKindOf('split', 'week')).toBe('week')
     expect(rangeKindOf('year', 'week')).toBe('year')
@@ -424,6 +427,86 @@ describe('calendar state', () => {
     state.next()
     expect(text(state.anchorDate.value)).toBe('2026-11-29')
     expect(state.rangeLabel.value).toBe('November 2026')
+  })
+
+  it('steps the list view by its span and keeps it apart from the split view', () => {
+    const state = makeStore()
+    state.viewType.value = 'list'
+    expect(state.rangeLabel.value).toBe('26 Oct – 1 Nov 2026')
+    state.listSpan.value = 'year'
+    expect(text(state.visibleRange.value.start)).toBe('2026-01-01')
+    expect(text(state.visibleRange.value.end)).toBe('2027-01-01')
+    expect(state.rangeLabel.value).toBe('2026')
+    state.next()
+    expect(text(state.anchorDate.value)).toBe('2027-10-28')
+    state.listSpan.value = 'month'
+    expect(state.rangeLabel.value).toBe('October 2027')
+    expect(state.splitSpan.value).toBe('week')
+  })
+
+  it('starts a custom range as the period shown and moves it by its own length', () => {
+    const state = makeStore()
+    state.viewType.value = 'split'
+    state.splitSpan.value = 'month'
+    state.chooseCustomRange()
+    expect(state.splitSpan.value).toBe('custom')
+    expect(text(state.visibleRange.value.start)).toBe('2026-10-01')
+    expect(text(state.visibleRange.value.end)).toBe('2026-11-01')
+
+    state.setCustomRange(date('2026-11-03'), date('2026-11-12'))
+    expect(state.customDays.value).toBe(10)
+    expect(state.rangeKind.value).toBe('custom')
+    expect(state.rangeLabel.value).toBe('3 – 12 Nov 2026')
+    state.next()
+    expect(text(state.visibleRange.value.start)).toBe('2026-11-13')
+    expect(text(state.visibleRange.value.end)).toBe('2026-11-23')
+    state.prev()
+    state.prev()
+    expect(state.rangeLabel.value).toBe('24 Oct – 2 Nov 2026')
+    state.today()
+    expect(text(state.visibleRange.value.start)).toBe('2026-10-28')
+    expect(state.customDays.value).toBe(10)
+
+    // The list view shares the range.
+    state.viewType.value = 'list'
+    state.chooseCustomRange()
+    expect(state.listSpan.value).toBe('custom')
+    expect(text(state.visibleRange.value.start)).toBe('2026-10-26')
+    expect(state.customDays.value).toBe(7)
+
+    state.setCustomRange(date('2026-12-24'), date('2026-12-24'))
+    expect(state.rangeLabel.value).toBe('Thu, 24 Dec 2026')
+  })
+
+  it('checks the dates of a custom range', () => {
+    expect(checkCustomRange('2026-11-03', '2026-11-12')).toEqual({
+      ok: true,
+      first: date('2026-11-03'),
+      last: date('2026-11-12'),
+    })
+    expect(checkCustomRange('', '2026-11-12')).toEqual({
+      ok: false,
+      field: 'from',
+      message: 'Enter a start date.',
+    })
+    expect(checkCustomRange('2026-02-30', '2026-11-12')).toMatchObject({ ok: false, field: 'from' })
+    expect(checkCustomRange('2026-11-03', '')).toEqual({
+      ok: false,
+      field: 'to',
+      message: 'Enter an end date.',
+    })
+    expect(checkCustomRange('2026-11-03', '2026-11-02')).toEqual({
+      ok: false,
+      field: 'to',
+      message: 'The end date must not be before the start date.',
+    })
+    // A whole leap year fits, a day more does not.
+    expect(checkCustomRange('2028-01-01', '2028-12-31').ok).toBe(true)
+    expect(checkCustomRange('2028-01-01', '2029-01-01')).toEqual({
+      ok: false,
+      field: 'to',
+      message: 'Choose at most 366 days.',
+    })
   })
 
   it('returns to today', () => {

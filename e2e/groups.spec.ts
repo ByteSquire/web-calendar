@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
-import { TODAY, press, toast } from './helpers'
+import { TODAY, press, toast, waitOutToasts } from './helpers'
 
 // The groups pages: the list (/groups) and the page of one group (/groups/<id>). The app runs in
 // demo mode here, which serves the SPA without a login; `/api/**` is answered by a small stateful
@@ -349,7 +349,9 @@ test.describe('groups for a member who manages one', () => {
       color: '#1d4ed8',
     })
 
-    // Edit opens the dialog of the calendar, and the row follows what was saved there.
+    // Edit opens the dialog of the calendar, and the row follows what was saved there. On a small
+    // phone the toast covers the row until it runs out.
+    await waitOutToasts(page)
     await press(page.getByRole('button', { name: 'Edit Kitchen' }))
     const editor = page.getByRole('dialog', { name: 'Kitchen' })
     await expect(editor).toContainText('A calendar of the group staff.')
@@ -359,6 +361,7 @@ test.describe('groups for a member who manages one', () => {
     await expect(calendars.filter({ hasText: 'Kitchen plan' })).toHaveCount(1)
 
     // Delete is in that dialog, not on the row.
+    await waitOutToasts(page)
     await expect(page.getByRole('button', { name: 'Delete Kitchen plan' })).toHaveCount(0)
     await page.getByRole('dialog').getByRole('button', { name: 'Delete calendar' }).click()
     await page

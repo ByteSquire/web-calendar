@@ -138,3 +138,13 @@ export async function closeDialogs(page: Page): Promise<void> {
     await page.waitForTimeout(300)
   }
 }
+
+/**
+ * Lets the toasts that are open run out before the next press. A toast closes about 5 s after it
+ * appears; on a small phone it covers the bottom of the screen, where a dialog's buttons are, and
+ * a press under it would wait in vain. The clock (frozen by `setFixedTime`) is moved on for that.
+ */
+export async function waitOutToasts(page: Page): Promise<void> {
+  await page.clock.runFor(6_000)
+  await expect(page.locator('ol li [data-slot="title"]')).toHaveCount(0)
+}

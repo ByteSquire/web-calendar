@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
-import { TODAY, expectOpenFocus, isTouch, press, toast } from './helpers'
+import { TODAY, expectOpenFocus, isTouch, press, toast, waitOutToasts } from './helpers'
 
 // The settings screen (FR-31 app tokens, FR-7 iCal subscriptions, account). The app runs in demo
 // mode here, which serves the SPA without a login, and every `/api/**` call except the settings
@@ -750,6 +750,8 @@ test.describe('settings: iCal subscriptions', () => {
     await expect(dialog).toBeVisible()
     await expect(toast(page, rejected)).toBeVisible()
     await expect(subscriptionRow(page, 'Intranet')).toHaveCount(0)
+    // on a small phone the toast covers the dialog's buttons until it runs out
+    await waitOutToasts(page)
 
     // a duplicate is also about the address
     api.forced.set(
@@ -759,6 +761,7 @@ test.describe('settings: iCal subscriptions', () => {
     await url.fill('https://example.org/holidays.ics')
     await press(dialog.getByRole('button', { name: 'Add subscription' }))
     await expect(dialog.getByText('You already subscribed to this address.')).toBeVisible()
+    await waitOutToasts(page)
 
     // the limit and other failures are not about an input
     api.forced.set(

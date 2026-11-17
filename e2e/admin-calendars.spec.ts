@@ -206,7 +206,9 @@ async function openPage(page: Page, admin = true, openAccess = true) {
     if (!benign.test(error.message)) errors.push(error.message)
   })
   await page.route('**/api/**', (route) => api.handle(route))
-  await page.clock.setFixedTime(TODAY)
+  // A running clock from TODAY: with a frozen one (setFixedTime) a select in a dialog does not open
+  // on a mouse press (Reka UI times the press), which the access form's Level select needs.
+  await page.clock.install({ time: TODAY })
   await page.goto('/admin/access')
   if (admin && openAccess) {
     await press(page.getByRole('button', { name: 'Access for Team' }))

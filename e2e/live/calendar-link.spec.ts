@@ -192,7 +192,16 @@ test.beforeAll(async ({ browser }) => {
 })
 
 test.afterAll(async () => {
-  await radicale('DELETE', `${COLLECTION}/`)
+  // Through the app, which removes the calendar's row with the collection: deleted in Radicale
+  // alone, the row stays and the sharing reconcile reports the calendar missing on every run.
+  const href = `/caldav/${aliceSub()}/${COLLECTION}/`
+  const deleted = await api(
+    alice,
+    await bearerOf(alice),
+    'DELETE',
+    `/api/me/calendars?href=${encodeURIComponent(href)}`,
+  )
+  if (deleted.status !== 200) await radicale('DELETE', `${COLLECTION}/`)
   await alice.context().close()
   await visitor?.context().close()
 })

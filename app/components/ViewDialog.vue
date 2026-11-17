@@ -188,8 +188,11 @@ const description = computed(() =>
 )
 const submitLabel = computed(() => (props.mode === 'add' ? t('Add view') : t('Save')))
 
+// The calendars the view will hold: those chosen, and those kept that the viewer cannot see. A
+// copy of a shared view can hold only calendars its owner cannot see; it can still be renamed.
+const calendarCount = computed(() => chosen.value.length + props.hiddenCount)
 const problems = computed<ViewProblems>(() =>
-  submitted.value ? checkViewDraft(name.value, chosen.value.length, props.takenNames) : {},
+  submitted.value ? checkViewDraft(name.value, calendarCount.value, props.takenNames) : {},
 )
 
 watch(
@@ -226,7 +229,7 @@ function restoreFocus(event: Event) {
 async function onSubmit() {
   if (props.pending) return
   submitted.value = true
-  const found = checkViewDraft(name.value, chosen.value.length, props.takenNames)
+  const found = checkViewDraft(name.value, calendarCount.value, props.takenNames)
   if (found.name || found.calendars) {
     await nextTick()
     if (found.name) nameInput.value?.inputRef?.focus()

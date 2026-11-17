@@ -2,11 +2,12 @@
   The period buttons of the split and the list view: one toggle button per span, the chosen one
   pressed. The top bar's prev/today/next then step by that span. "Custom range" starts as the
   period shown and adds two date fields beside the buttons; "Show" (or Enter) shows the dates
-  entered, both days included, at most a year (`checkCustomRange`). Prev/next then move the range
+  entered, both days included (`checkCustomRange`), of any length; past `LONG_RANGE_DAYS` a toast
+  warns that it is long. Prev/next then move the range
   by its own length. Not printed (main.css): the heading on paper names the dates.
 -->
 <template>
-  <div class="print-hidden flex flex-wrap items-end gap-x-4 gap-y-2 px-3 py-2">
+  <div class="period-switcher print-hidden flex flex-wrap items-end gap-x-4 gap-y-2 px-3 py-2">
     <div class="flex flex-wrap items-center gap-2" role="group" :aria-label="t('Period')">
       <UButton
         v-for="span in spans"

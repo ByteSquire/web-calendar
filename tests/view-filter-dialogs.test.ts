@@ -92,6 +92,20 @@ describe('ViewDialog', () => {
     })
     expect(saved).toEqual([])
   })
+
+  it('renames a view that holds only calendars the viewer cannot see, which it keeps', async () => {
+    const { saved } = await mountOpen(ViewDialog, {
+      mode: 'edit',
+      initialName: 'Copy',
+      initialIds: ['gone'],
+      calendars,
+      hiddenCount: 1,
+    })
+    type(nameInput(), 'Mine')
+    buttonNamed('Save')!.click()
+    await vi.waitFor(() => expect(saved).toEqual([{ name: 'Mine', calendarIds: [] }]))
+    expect(text(dialog())).not.toContain('Choose at least one calendar.')
+  })
 })
 
 describe('FilterDialog', () => {

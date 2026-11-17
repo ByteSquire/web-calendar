@@ -1,3 +1,4 @@
+import { getResource } from '../db/resources'
 import { getDb } from '../utils/db'
 import { repairBlocks } from '../utils/resources/service'
 import { setBlockStore } from '../utils/resources/store'
@@ -12,8 +13,8 @@ const FIRST_REPAIR_DELAY_MS = 60_000
 const FIRST_RECONCILE_DELAY_MS = 90_000
 const RECONCILE_BACKOFF_MS = 30_000
 
-// Writes the availability blocks of resource bookings into Radicale as the `_resources` service
-// principal, and repairs the ones a failed write left behind. Off in demo mode and without Radicale.
+// Writes the availability blocks of resource bookings into their resource's calendar in Radicale,
+// as the `_resources` service principal, and repairs the ones a failed write left behind. Off in demo mode and without Radicale.
 export default defineNitroPlugin((nitroApp) => {
   if (import.meta.prerender) return
   const config = useRuntimeConfig()
@@ -21,7 +22,8 @@ export default defineNitroPlugin((nitroApp) => {
 
   let store: ReturnType<typeof createResourceBlockStore>
   try {
-    store = createResourceBlockStore()
+    // A resource's calendar is named after it; the sharing reconcile renames it later.
+    store = createResourceBlockStore({ nameOf: (id) => getResource(getDb(), id)?.name ?? null })
   } catch {
     console.error('[resources] NUXT_RADICALE_URL is not a URL; availability blocks are off')
     return

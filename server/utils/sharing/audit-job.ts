@@ -5,13 +5,14 @@ import { listAllCalendarAcl } from '../../db/calendar-acl'
 import { isValidSubject } from '../auth/subject'
 import { parseHomeListing } from './calendars'
 import { computeDesiredShares, type DesiredShare } from './desired'
+import { loadResourceRules } from './reconcile'
 import type { GroupMembership } from './membership'
 import { isShareName } from './names'
 import { isActingPrincipal, type RadicaleClient } from './radicale-client'
 import { SHARING_ACTOR, type SharingLogger, type SharingResult } from './types'
 
 // The nightly second opinion (security review §7.1): list each home as each user and compare the
-// shared collections with what calendar_acl says that user may see. It does not trust the
+// shared collections with what calendar_acl and resource_acl say that user may see. It does not trust the
 // reconcile's own bookkeeping: it looks at what each user actually gets.
 
 export interface AuditJobOptions {
@@ -19,7 +20,8 @@ export interface AuditJobOptions {
   client: RadicaleClient
   membership: GroupMembership
   log: SharingLogger
-  withAvailability?: boolean
+  /** Whether the calendars of the resources are shared (as in the reconcile). Default true. */
+  withResources?: boolean
 }
 
 export interface AuditJobSummary {
@@ -50,9 +52,11 @@ export function createConsistencyAudit(options: AuditJobOptions) {
         .map((row) => [row.id, row]),
     )
     const rows = listAllCalendarAcl(db)
-    const desired = computeDesiredShares(rows, calendars, {
-      withAvailability: options.withAvailability ?? true,
-    })
+    const desired = computeDesiredShares(
+      rows,
+      calendars,
+      (options.withResources ?? true) ? { resources: loadResourceRules(db) } : {},
+    )
     // A share counts as due only when every rule behind it is confirmed; a pending change is the
     // reconcile's business, not a difference.
     const pending = new Set<string>()

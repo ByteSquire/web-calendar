@@ -5,6 +5,7 @@ import type { Calendar, CalendarManage } from '../../../shared/types/calendar'
 import type { ExternalAccount } from '../../../shared/types/external'
 import type { DavCalendar } from '../caldav/types'
 import { ensureTrailingSlash, toDavPath } from '../caldav/urls'
+import { isResourceCollectionName } from '../../../shared/utils/resource-calendar-name'
 import { sharedCalendarId } from '../../../shared/utils/shared-calendar-name'
 import { DEFAULT_CALENDAR_SEGMENT } from '../../../shared/utils/default-calendar'
 import { calendarLabel } from '../calendar-label'
@@ -12,22 +13,17 @@ import type { ApiCalendarPref, ApiIcalSubscription, ApiSharedCalendar } from './
 import { normalizeHexColor, paletteColor } from './palette'
 
 /**
- * The collection every member of `web_calendar_users` finds in their home once the group file the
- * app writes lists them: the booked times of the resources, shared free/busy only (design §5, §8).
- * Third-party CalDAV clients may list it; the web app reads availability through its own API, so it
- * is no calendar of the sidebar, and a full read of it is refused by Radicale (403).
+ * True for the calendar of a resource in the viewer's home (`<home>/resource-<id>[-<group>]/`, or
+ * the old `resource-availability`), as a path or an absolute URL. The server shares each resource's
+ * calendar read-only with everyone who may see the resource, for calendar apps (design §5); the web
+ * app shows resources through its own API, so these are no calendars of the sidebar.
  */
-export const AVAILABILITY_COLLECTION = 'resource-availability'
-
-/** True for `<home>/resource-availability/`, as a path or an absolute URL. */
-export function isAvailabilityCollection(collectionUrl: string): boolean {
+export function isResourceCollection(collectionUrl: string): boolean {
   const path = toDavPath(collectionUrl.trim()).split(/[?#]/, 1)[0] ?? ''
   const segments = path.split('/').filter((segment) => segment !== '')
-  // `/caldav/<home>/resource-availability/`: the gateway prefix, the home, the collection.
+  // `/caldav/<home>/resource-5/`: the gateway prefix, the home, the collection.
   const last = segments.at(-1)
-  return (
-    segments.length >= 2 && last !== undefined && decodeSegment(last) === AVAILABILITY_COLLECTION
-  )
+  return segments.length >= 2 && last !== undefined && isResourceCollectionName(decodeSegment(last))
 }
 
 function decodeSegment(segment: string): string {

@@ -1,5 +1,5 @@
 import { sharedCalendarId } from '../../../shared/utils/shared-calendar-name'
-import { AVAILABILITY_SHARE_NAME } from './types'
+import { isResourceCollectionName } from '../../../shared/utils/resource-calendar-name'
 
 // How a shared calendar is named in a member's home. The gateway pre-check relies on it: the
 // calendar id in the name says which access rules apply, so no extra table is needed. The name
@@ -37,7 +37,7 @@ export function groupShareName(calendarId: number, group: string): string {
 
 /** A home collection the sharing writer created (so discovery and the audit job skip it). */
 export function isShareName(name: string): boolean {
-  return sharedCalendarId(name) !== null || name === AVAILABILITY_SHARE_NAME
+  return sharedCalendarId(name) !== null || isResourceCollectionName(name)
 }
 
 /** `/owner/cal/` for a stored collection path, or null when it is not a calendar path. */

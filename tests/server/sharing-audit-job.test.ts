@@ -86,6 +86,50 @@ describe('nightly consistency audit', () => {
     expect(logs.some((line) => line.includes('consistency audit'))).toBe(true)
   })
 
+  it("checks the calendars of the resources too, and a deactivated one's leftover share", async () => {
+    const resource = (name: string, active: number) => {
+      const id = Number(
+        db
+          .prepare("INSERT INTO resources (name, type, active) VALUES (?, 'room', ?)")
+          .run(name, active).lastInsertRowid,
+      )
+      db.prepare(
+        `INSERT INTO resource_acl (resource_id, principal_type, principal, "right")
+         VALUES (?, 'authenticated', NULL, 'book')`,
+      ).run(id)
+      return id
+    }
+    const room = resource('Room A', 1)
+    const van = resource('Van', 0)
+    const { client } = await applied()
+    expect(
+      radicale.shares.some(
+        (share) => share.pathOrToken === `/{user}/resource-${room}-web_calendar_users/`,
+      ),
+    ).toBe(true)
+    const job = createConsistencyAudit({ db, client, membership, log })
+    expect(await job.run()).toEqual({ ok: true, value: { usersChecked: 2, differences: [] } })
+
+    // What a deactivation would have left, had the reconcile not removed it.
+    radicale.shares.push({
+      owner: '_resources',
+      pathMapped: `/_resources/resource-${van}/`,
+      pathOrToken: `/{user}/resource-${van}-web_calendar_users/`,
+      user: ':web_calendar_users',
+      permissions: 'r',
+      enabled: true,
+      hidden: false,
+      accepted: true,
+    })
+    const result = await job.run()
+    expect(result.ok && result.value.differences).toEqual(
+      [
+        `${ALICE} sees resource-${van}-web_calendar_users without a rule`,
+        `${BOB} sees resource-${van}-web_calendar_users without a rule`,
+      ].sort(),
+    )
+  })
+
   it('reports a confirmed rule whose share the member does not see', async () => {
     const { client, id } = await applied()
     radicale.shares = radicale.shares.filter((share) => share.user !== BOB)

@@ -17,3 +17,19 @@ export function setAccessPorts(next: AccessPorts | undefined): void {
 export function getAccessPorts(): AccessPorts {
   return ports
 }
+
+/**
+ * Tells the sharing writer that rules, or what they depend on (a resource's name or state), changed.
+ * Called after the commit, so the reconcile reads what was saved. Never throws: the change is saved,
+ * and the periodic reconcile catches up if the request fails.
+ */
+export function notifyAclChanged(): void {
+  try {
+    ports.onAclChanged()
+  } catch (error) {
+    console.warn(
+      '[access] the reconcile request failed:',
+      error instanceof Error ? error.name : error,
+    )
+  }
+}

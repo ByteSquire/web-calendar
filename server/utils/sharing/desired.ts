@@ -1,17 +1,20 @@
 import { USERS_GROUP } from '../groups/config'
 import { isGroupName } from '../groups/htgroup'
-import type { CalendarAclRow, CalendarRow, Permission } from '../../db/types'
+import type {
+  CalendarAclRow,
+  CalendarRow,
+  Permission,
+  ResourceAclRow,
+  ResourceRow,
+} from '../../db/types'
+import { resourceCollection } from '../resources/block'
 import { groupShareName, splitCollectionPath, userShareName } from './names'
-import {
-  AVAILABILITY_PATH,
-  AVAILABILITY_SHARE_NAME,
-  RESOURCES_PRINCIPAL,
-  type RadicaleShare,
-} from './types'
+import { RESOURCES_PRINCIPAL, type RadicaleShare } from './types'
 import { isActingPrincipal } from './radicale-client'
 
-// What Radicale should hold, computed from calendar_acl alone (pure; the reconcile compares it with
-// Radicale's list). Closed permission table: `admin` and `public` never reach Radicale.
+// What Radicale should hold, computed from calendar_acl and resource_acl alone (pure; the reconcile
+// compares it with Radicale's list). Closed permission table: `admin` and `public` never reach
+// Radicale.
 
 export const PERMISSION_STRINGS = { free_busy: 'f', read: 'r', write: 'rw' } as const
 const RANK: Record<string, number> = { f: 1, r: 2, rw: 3 }
@@ -24,8 +27,10 @@ export interface DesiredShare {
   user: string
   permissions: string
   kind: 'user' | 'group'
-  /** Null for the built-in availability share. */
+  /** The calendar of the access page; null for the calendar of a resource. */
   calendarId: number | null
+  /** The resource whose calendar this shares; absent for the calendar of the access page. */
+  resourceId?: number
 }
 
 export type RowStatus =
@@ -61,20 +66,50 @@ export function normalizePermissions(permissions: string, isGroup: boolean): str
   return [...kept].sort().join('')
 }
 
-export function availabilityShare(): DesiredShare {
-  return {
-    owner: RESOURCES_PRINCIPAL,
-    pathMapped: AVAILABILITY_PATH,
-    pathOrToken: `/{user}/${AVAILABILITY_SHARE_NAME}/`,
-    user: `:${USERS_GROUP}`,
-    permissions: PERMISSION_STRINGS.free_busy,
-    kind: 'group',
-    calendarId: null,
+/**
+ * The shares of the resources' calendars (design §5): each active resource's calendar, read-only,
+ * to everyone its rules let see, book or manage it, as `resource-<id>` (a person) or
+ * `resource-<id>-<group>` (a group) in their home. A rule for everyone signed in reaches every
+ * person through `web_calendar_users`, so the other rules of that resource add nothing and give no
+ * second copy. A deactivated resource has no shares (it leaves the calendar apps as it leaves the
+ * web app); its calendar stays, so reactivating it brings everything back.
+ */
+export function resourceShares(
+  resources: readonly Pick<ResourceRow, 'id' | 'active'>[],
+  rules: readonly Pick<ResourceAclRow, 'resource_id' | 'principal_type' | 'principal'>[],
+): DesiredShare[] {
+  const shares: DesiredShare[] = []
+  for (const resource of resources) {
+    if (resource.active !== 1) continue
+    const own = rules.filter((rule) => rule.resource_id === resource.id)
+    const everyone = own.some((rule) => rule.principal_type === 'authenticated')
+    const targets = new Map<string, { user: string; kind: 'user' | 'group'; name: string }>()
+    for (const rule of everyone ? own.filter((r) => r.principal_type === 'authenticated') : own) {
+      const wanted = target(rule)
+      if (wanted === null || wanted === 'none') continue
+      targets.set(wanted.user, wanted)
+    }
+    for (const wanted of targets.values()) {
+      shares.push({
+        owner: RESOURCES_PRINCIPAL,
+        pathMapped: resourceCollection(resource.id),
+        pathOrToken:
+          wanted.kind === 'user'
+            ? `/${wanted.name}/resource-${resource.id}/`
+            : `/{user}/resource-${resource.id}-${wanted.name}/`,
+        user: wanted.user,
+        permissions: PERMISSION_STRINGS.read,
+        kind: wanted.kind,
+        calendarId: null,
+        resourceId: resource.id,
+      })
+    }
   }
+  return shares
 }
 
 function target(
-  row: CalendarAclRow,
+  row: Pick<CalendarAclRow, 'principal_type' | 'principal'>,
 ): { user: string; kind: 'user' | 'group'; name: string } | 'none' | null {
   switch (row.principal_type) {
     case 'user':
@@ -93,7 +128,13 @@ function target(
 export function computeDesiredShares(
   rows: readonly CalendarAclRow[],
   calendars: ReadonlyMap<number, CalendarRow>,
-  options: { withAvailability?: boolean } = {},
+  options: {
+    /** The resources and their rules, for the calendars of the resources (`resourceShares`). */
+    resources?: {
+      resources: readonly Pick<ResourceRow, 'id' | 'active'>[]
+      rules: readonly Pick<ResourceAclRow, 'resource_id' | 'principal_type' | 'principal'>[]
+    }
+  } = {},
 ): DesiredState {
   const merged = new Map<string, DesiredShare>()
   const statuses = new Map<number, RowStatus>()
@@ -141,9 +182,10 @@ export function computeDesiredShares(
     statuses.set(row.id, { kind: 'share', key })
   }
 
-  if (options.withAvailability) {
-    const share = availabilityShare()
-    merged.set(desiredKey(share), share)
+  if (options.resources) {
+    for (const share of resourceShares(options.resources.resources, options.resources.rules)) {
+      merged.set(desiredKey(share), share)
+    }
   }
   const shares = [...merged.values()].sort((a, b) =>
     desiredKey(a) < desiredKey(b) ? -1 : desiredKey(a) > desiredKey(b) ? 1 : 0,

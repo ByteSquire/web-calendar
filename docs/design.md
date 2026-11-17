@@ -350,18 +350,37 @@ they don't own" problem.
   authenticated user. Permissions live in a dedicated `resource_acl` table
   mirroring `calendar_acl` (`read`/`book`/`manage`), defaulting
   `authenticated → book`.
-- **Availability for third-party clients** is a **derived artifact**: a calendar
-  collection owned by the `_resources` service principal, shared to the resource's
-  `read` audience (default: the `web_calendar_users` group; managers may restrict
-  it). Approved blocks are written as `BUSY`; pending blocks as `BUSY-TENTATIVE`
-  (a VEVENT cannot carry that value, so a pending block has `STATUS:TENTATIVE` and an
-  approved one has no `STATUS`; free/busy derives the rest); declined/cancelled blocks are
-  removed. Blocks stay opaque (`SUMMARY:Reserved`,
-  `TRANSP:OPAQUE`, `CLASS:CONFIDENTIAL`, plus the back-reference id in the property
-  `X-WEB-CALENDAR-BLOCK:<block_ref>`; UID `<block_ref>@resources.web-calendar.invalid`;
-  `DTSTAMP` is the booking's `updated_at`, so the block is deterministic) — details come
-  from an API that checks the caller's access to the booking calendar first
-  (FR-18).
+- **Availability in calendar apps** is a **derived artifact** (revised 2026-11-17; before, all
+  blocks sat in one collection shared free/busy only, which calendar apps such as Thunderbird and
+  DAVx5 listed but could not sync, since Radicale allows `f` only a `free-busy-query`, and which
+  could not say which resource was taken). Each resource has its own calendar
+  `/_resources/resource-<id>/` of the `_resources` service principal, named after the resource
+  (renamed with it; the colour stays each person's own), shared **read** (`r`) to everyone the
+  resource's rules let see, book or manage it: `resource-<id>` in a person's home for a user rule,
+  `resource-<id>-<group>` for a group rule (Radicale maps one share onto a path, as for calendars),
+  and only `resource-<id>-web_calendar_users` when a rule names everyone signed in, which reaches
+  every person once. A block says **"Reserved by <requester>"** (the name the app shows: their name,
+  else their user name; "Reserved" when it knows neither), and **"Reserved by <requester>
+  (<group>)"** when the booking's event is in a group's calendar, known from the owner of the
+  calendar the stored path points to, never from a share's `-<group>` suffix. The text is English,
+  as it sits in Radicale once for every reader, and the names are escaped as iCalendar TEXT, so a
+  name cannot add a property. Approved blocks are plain busy; a pending one has
+  `STATUS:TENTATIVE`; declined and cancelled ones are removed. Nothing else of the booking is in a
+  block (`TRANSP:OPAQUE`, `CLASS:CONFIDENTIAL`, the back-reference `X-WEB-CALENDAR-BLOCK:<block_ref>`,
+  UID `<block_ref>@resources.web-calendar.invalid`, `DTSTAMP` the booking's `updated_at`, so the text
+  is the same for the same state and names). This shows who booked to everyone who may see the
+  resource, which the free/busy-only design kept back; the owner decided so. Details beyond that
+  come from an API that checks the caller's access to the booking calendar first (FR-18). The
+  gateway pre-check lets the resource's audience read `resource-<id>…` and nobody write; the web
+  app leaves these collections out of a person's calendars and reads availability through its API.
+  A deactivated resource leaves the calendar apps as it leaves the web app: its shares go and the
+  pre-check refuses reads, while its calendar and blocks stay (and stay current), so reactivating it
+  brings everything back. Built: `server/utils/resources/block.ts` and `block-label.ts`,
+  `shared/utils/resource-calendar-name.ts`, `syncResourceCollections` and the store in
+  `server/utils/sharing/block-store.ts`, `resourceShares` in `desired.ts`; the resource routes ask for
+  a reconcile after every change of a resource, its rules or its state. Tests:
+  `tests/server/resources-block.test.ts`, `sharing-block-store.test.ts`, the resource cases in
+  `sharing-reconcile.test.ts` and `sharing-gateway-precheck.test.ts`, and `e2e/live/resources.spec.ts`.
 - **Reconcile on move/delete.** Detection is ctag-gated (only when a calendar's
   ctag/sync-token changed) plus a soft "orphaned" state with retry before
   cancelling, and a manager queue for anything ambiguous; auto-cancel only when
@@ -370,12 +389,15 @@ they don't own" problem.
   requested"). Manager-mediated cancellation (never auto-cancel) stays available
   behind a flag that can be turned off later.
 - **Built (part 1, server side; unit tests pass).** No migration or stored block
-  state: the desired block follows from the booking status, so `syncBlock` is idempotent and
-  `repairBlocks` retries bookings ending within the last 24 h or later (at start and every
-  10 minutes, `server/plugins/resources.ts`; off in demo mode and without Radicale). The block is
-  written through `createResourceBlockStore()` of the sharing writer, as `_resources`, into
-  `/_resources/availability/<id>.ics`; the reconcile keeps that collection shared with `f` to
-  `web_calendar_users`, and members see it as `/<sub>/resource-availability/`. A store failure
+  state: the desired block follows from the booking status and the names, so `syncBlock` is
+  idempotent, and `repairBlocks` (at start and every 10 minutes, `server/plugins/resources.ts`; off
+  in demo mode and without Radicale) looks at every pending or approved booking, whenever it was, and
+  at declined or cancelled ones of the last 24 h. The store writes a block only when its text differs
+  from what this process last wrote, so a renamed person, group or resource is followed within ten
+  minutes and a restart writes each block once. The block is written through
+  `createResourceBlockStore()` of the sharing writer, as `_resources`, into
+  `/_resources/resource-<id>/<block_ref>.ics`, which it makes on the first block if the reconcile
+  has not yet (above). A store failure
   keeps the booking, is logged (error type only) and audited (`resource_booking.block_failed`).
   State change, audit entry and rights check are one transaction; the store call comes after.
   Rights: no right on the resource gives 404; `read` only gives 403 on booking; a booking is
@@ -943,8 +965,8 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
     rules are marked once their owner verified clean, rules of calendars missing in Radicale and
     invalid principals stay unapplied.
   - _Names in a member's home._ A user share is `/<sub>/shared-<calendarId>/`, a group share
-    `/{user}/shared-<calendarId>-<group>/`, the availability collection
-    `/{user}/resource-availability/`. The calendar id in the name is what the gateway pre-check
+    `/{user}/shared-<calendarId>-<group>/`, a resource's calendar `/<sub>/resource-<resourceId>/`
+    or `/{user}/resource-<resourceId>-<group>/` (§5). The id in the name is what the gateway pre-check
     looks up, so no extra table was needed; a member therefore cannot own a calendar named
     `shared-<digits>[-x]`.
   - _Calendars table._ Discovery fills `calendars` (personal for users' homes, shared for
@@ -952,8 +974,8 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
     mirrored.
   - _Gateway pre-check_ (defence in depth, `precheck.ts`, `membership.ts`): the root is allowed;
     one's own home is allowed, but `shared-<id>*` names need a rule that grants the caller (write
-    methods need `write`); `resource-availability` is read-only and open to any authenticated caller (it is the share of
-    `web_calendar_users`);
+    methods need `write`); `resource-<id>*` names are read-only and need the resource to be active
+    and a rule of it (any right) that names the caller, their group or everyone signed in;
     another principal's home itself is `403` and its calendars need a rule (found by
     `collection_path`); `COPY`/`MOVE` destinations are checked as well. For a group rule,
     membership comes from the htgroup file the app writes (the file Radicale reads), re-read when its
@@ -965,6 +987,21 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   - _Audit._ Actor `system:sharing-writer`; actions `sharing.removed_unknown`, `sharing.replaced`,
     `sharing.mismatch` (once per distinct set of differences), `sharing.failing` (five failed runs),
     `sharing.recovered`, `sharing.audit_mismatch`.
+- **"Busy times only" in calendar apps (decided 2026-11-17, not built yet).** A `free_busy` share is
+  listed by calendar apps but cannot be synced: `f` allows only a `free-busy-query`, and no common
+  app sends one for a calendar it shows. The gateway will answer the read requests on such a share
+  (listing, `calendar-query`, `calendar-multiget`, `sync-collection`, `GET`) itself, for a share
+  the pre-check granted: it reads the owner's events and returns a **stripped copy** of each,
+  built from an allow-list only (`UID`, `DTSTART`, `DTEND` or `DURATION`, `RRULE`, `RDATE`,
+  `EXDATE`, `RECURRENCE-ID`, `STATUS`, and the `VTIMEZONE`s they use) with `SUMMARY:Busy`;
+  transparent and cancelled events are left out, as free/busy leaves them out. It syncs like any
+  calendar (everything once, then changes; no time range; repeats stay rules; each event its own
+  block; tentative stays tentative). It shows a little more than free/busy (where events start and
+  end separately, and the repeat pattern) and nothing outside the allow-list: tests must prove that
+  no title, description, location, attendee, organizer, alarm, category, attachment, URL or `X-`
+  property gets through. Writes stay refused. The web app keeps its free/busy reading. Chosen over
+  building entries from the free/busy answer, which needs a time range and merges overlapping
+  events.
 - **Groups** — the app keeps the groups, writes Radicale's group file from them, and learns what the
   identity provider says about a person only from that person's own sign-in. It holds no service
   account at the provider and polls nothing. Three kinds of group exist (`groups.source`, §5): `app`
@@ -1206,8 +1243,8 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   `GET /api/admin/people/:id`; no e-mail address, no link secret. The admin badge is `users.is_admin`
   as of the last sign-in, labelled so, and decides nothing. Access is changed on the other pages.
 - **Admin › Resources** also deletes a resource (`DELETE /api/admin/resources/:id`) with its rules;
-  one with bookings of any state is refused (`409 has_bookings`), deactivating is the way then. A
-  resource has nothing of its own in Radicale. Offered: principal types person, group,
+  one with bookings of any state is refused (`409 has_bookings`), deactivating is the way then. Its
+  calendar in Radicale, empty then, goes with the reconcile the route asks for (§5). Offered: principal types person, group,
   everyone signed in; permissions `free_busy`, `read`, `write`. `admin` and `public` are refused
   (public visibility is the public view, FR-27; `admin` never reaches Radicale). A person must
   be a valid user id (§6) that exists in `users.oidc_sub`; the owner gets no rule; a group must be a

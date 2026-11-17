@@ -229,7 +229,7 @@ describe('booking reconcile: deleted event', () => {
     const summary = await run.run()
     expect(summary.cancelled).toBe(1)
     expect(getBooking(db, booking.id)!.status).toBe('cancelled')
-    expect(deletes).toEqual([blockPath(booking.block_ref)])
+    expect(deletes).toEqual([blockPath(booking.resource_id, booking.block_ref)])
     const rows = auditRows()
     expect(rows.map((row) => row.action)).toEqual([
       'resource_booking.orphaned',

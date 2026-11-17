@@ -145,6 +145,50 @@ describe('path pre-check', () => {
     expect(await check(stranger, { method: 'GET', upstreamPath: path })).toBe(false)
   })
 
+  it("lets only a resource's audience read its calendar, nobody write it, and nobody while it is deactivated", async () => {
+    const resource = (name: string) =>
+      Number(
+        db.prepare("INSERT INTO resources (name, type) VALUES (?, 'room')").run(name)
+          .lastInsertRowid,
+      )
+    const rule = (id: number, type: string, principal: string | null, right = 'read') =>
+      db
+        .prepare(
+          'INSERT INTO resource_acl (resource_id, principal_type, principal, "right") VALUES (?, ?, ?, ?)',
+        )
+        .run(id, type, principal, right)
+    const everyone = resource('Room A')
+    rule(everyone, 'authenticated', null, 'book')
+    const teamOnly = resource('Lab')
+    rule(teamOnly, 'group', 'team', 'manage')
+    const bobOnly = resource('Van')
+    rule(bobOnly, 'user', BOB)
+    const refusals: PathRefusal[] = []
+    const check = createPathPrecheck(db, membership, { onRefused: (r) => refusals.push(r) })
+    const reads = async (sub: string, name: string) =>
+      check(sub, { method: 'REPORT', upstreamPath: `/${sub}/${name}/` })
+
+    expect(await reads(ALICE, `resource-${everyone}`)).toBe(true)
+    expect(await reads(EVE, `resource-${teamOnly}-team`)).toBe(true)
+    expect(await reads(ALICE, `resource-${teamOnly}-team`)).toBe(false)
+    expect(await reads(BOB, `resource-${bobOnly}`)).toBe(true)
+    expect(await reads(EVE, `resource-${bobOnly}`)).toBe(false)
+    // nobody writes there, not even who manages it
+    for (const method of ['PUT', 'DELETE', 'PROPPATCH', 'MKCALENDAR']) {
+      expect(
+        await check(EVE, { method, upstreamPath: `/${EVE}/resource-${teamOnly}-team/x.ics` }),
+      ).toBe(false)
+    }
+    // a deactivated resource is seen by nobody
+    db.prepare('UPDATE resources SET active = 0 WHERE id = ?').run(everyone)
+    expect(await reads(ALICE, `resource-${everyone}`)).toBe(false)
+    // an id that is no resource, and a name that only looks like one, the owner's own
+    expect(await reads(ALICE, 'resource-999')).toBe(false)
+    expect(await reads(ALICE, 'resource-0')).toBe(true)
+    expect(refusals.every((r) => r.reason === 'resource' && r.calendarId === null)).toBe(true)
+    expect(refusals.filter((r) => r.write)).toHaveLength(4)
+  })
+
   it('grants an authenticated rule to anybody, without reading the group file', async () => {
     const everyone = Number(
       db

@@ -48,7 +48,7 @@ import type {
 import {
   buildCalendars,
   externalAccountIdOf,
-  isAvailabilityCollection,
+  isResourceCollection,
   isExternalRef,
   reconcileVisibleCalendars,
   subscriptionIdOf,
@@ -524,13 +524,13 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
   }
 
   /**
-   * The collections of the user's home that are calendars to show. The availability collection is
-   * left out (see `isAvailabilityCollection`): it is not the user's calendar, and counting it would
-   * also keep a user with no calendar of their own from getting the first one.
+   * The collections of the user's home that are calendars to show. The calendars of the resources
+   * are left out (see `isResourceCollection`): they are not the user's calendars, and counting them
+   * would also keep a user with no calendar of their own from getting the first one.
    */
   async function listOwnCalendars(): Promise<DavCalendar[]> {
     return (await deps.client.listCalendars()).filter(
-      (calendar) => !isAvailabilityCollection(calendar.url),
+      (calendar) => !isResourceCollection(calendar.url),
     )
   }
 

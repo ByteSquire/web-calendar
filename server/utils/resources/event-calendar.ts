@@ -3,11 +3,11 @@
 // pre-check decides who reaches the path; free/busy grants are narrowed away here, because
 // free/busy must not reveal who booked.
 import type { Database } from 'better-sqlite3'
+import { isResourceCollectionName } from '../../../shared/utils/resource-calendar-name'
 import { sharedCalendarId } from '../../../shared/utils/shared-calendar-name'
 import { USERS_GROUP } from '../groups/config'
 import { splitCollectionPath } from '../sharing/names'
 import { createPathPrecheck } from '../sharing/precheck'
-import { AVAILABILITY_SHARE_NAME } from '../sharing/types'
 import type { Actor } from './service'
 
 interface AclRow {
@@ -19,11 +19,11 @@ interface AclRow {
  * The `calendars.collection_path` a stored booking path stands for. Discovery never stores share
  * names, so `/<sub>/shared-<id>[-<group>]/` maps back to the calendar with that id (null if there
  * is none); any other path is its own. Null also for a path that is not a calendar path and for
- * the read-only availability share, which holds no events.
+ * the read-only calendars of the resources, which hold no events of anybody's.
  */
 export function canonicalCalendarPath(db: Database, storedPath: string): string | null {
   const parts = splitCollectionPath(storedPath)
-  if (!parts || parts.name === AVAILABILITY_SHARE_NAME) return null
+  if (!parts || isResourceCollectionName(parts.name)) return null
   const id = sharedCalendarId(parts.name)
   if (id === null) return storedPath
   const row = db

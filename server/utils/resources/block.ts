@@ -1,10 +1,14 @@
-// The availability block of a booking (design §5): an opaque busy entry that third-party clients
-// see in the derived `_resources` calendar. It carries the slot and a random back-reference and
-// nothing else: no title, no requester, no resource, and nothing of the booker's calendar.
+// The availability block of a booking (design §5): the entry that calendar apps see in the
+// resource's own calendar (`/_resources/resource-<id>/`, shared read to everyone who may see the
+// resource). It carries the slot, who booked ("Reserved by Alice", with the group when the
+// booking's event is in a group's calendar) and a random back-reference, and nothing else: no title
+// and nothing else of the booker's calendar. The text is English: it sits in Radicale once, the
+// same for every reader, like the "Reserved" it replaced.
+import { escapeText, foldLine } from '../../../app/utils/ical/write-lines'
 import type { BookingRow } from '../../db/types'
 
-/** The collection of the `_resources` service principal that holds every block. */
-export const AVAILABILITY_COLLECTION = '/_resources/availability/'
+/** The home of the `_resources` service principal, which holds the calendar of every resource. */
+export const RESOURCES_HOME = '/_resources/'
 
 const BLOCK_REF = /^[0-9a-f]{32}$/
 
@@ -15,12 +19,43 @@ export interface BlockStore {
   delete(path: string): Promise<void>
 }
 
-export type BlockSource = Pick<BookingRow, 'block_ref' | 'start_at' | 'end_at' | 'status'>
+export type BlockSource = Pick<
+  BookingRow,
+  'block_ref' | 'start_at' | 'end_at' | 'status' | 'resource_id'
+>
+
+/**
+ * Who a block names: the person who asked (null when the app knows no name for them), and the group
+ * whose calendar holds the event.
+ */
+export interface BlockLabel {
+  requester: string | null
+  group: string | null
+}
+
+function checkedResourceId(resourceId: number): number {
+  if (!Number.isSafeInteger(resourceId) || resourceId < 1) throw new Error('Invalid resource id')
+  return resourceId
+}
+
+/** The calendar collection of a resource in the `_resources` home. */
+export function resourceCollection(resourceId: number): string {
+  return `${RESOURCES_HOME}resource-${checkedResourceId(resourceId)}/`
+}
 
 /** Where the block of a booking lives. Throws for a `block_ref` that is not ours (a bug). */
-export function blockPath(blockRef: string): string {
+export function blockPath(resourceId: number, blockRef: string): string {
   if (!BLOCK_REF.test(blockRef)) throw new Error('Invalid block_ref')
-  return `${AVAILABILITY_COLLECTION}${blockRef}.ics`
+  return `${resourceCollection(resourceId)}${blockRef}.ics`
+}
+
+/**
+ * "Reserved by Alice", "Reserved by Alice (Team)" for an event in a group's calendar, "Reserved"
+ * when the person has no name in the app.
+ */
+export function blockSummary(label: BlockLabel): string {
+  const by = label.requester ? ` by ${label.requester}` : ''
+  return `Reserved${by}${label.group ? ` (${label.group})` : ''}`
 }
 
 const compact = (iso: string): string => iso.replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')
@@ -28,11 +63,14 @@ const compact = (iso: string): string => iso.replace(/[-:]/g, '').replace(/\.\d+
 /**
  * The `.ics` of the block, or null when there should be none (declined, cancelled). An approved
  * block is plain busy; a pending one has STATUS:TENTATIVE, which free-busy reports as
- * BUSY-TENTATIVE. DTSTAMP is the time of the booking's last change, so the text is the same on
- * every call for the same booking state.
+ * BUSY-TENTATIVE and calendar apps show as tentative. DTSTAMP is the time of the booking's last
+ * change, so the text is the same on every call for the same booking state and names. The names
+ * come from the identity provider: they are escaped as TEXT, so no line break or `;` can add a
+ * property.
  */
 export function buildAvailabilityBlock(
   booking: BlockSource & { updated_at: string },
+  label: BlockLabel,
 ): string | null {
   if (booking.status !== 'pending' && booking.status !== 'approved') return null
   const lines = [
@@ -44,7 +82,7 @@ export function buildAvailabilityBlock(
     `DTSTAMP:${compact(booking.updated_at)}`,
     `DTSTART:${compact(booking.start_at)}`,
     `DTEND:${compact(booking.end_at)}`,
-    'SUMMARY:Reserved',
+    foldLine(`SUMMARY:${escapeText(blockSummary(label))}`),
     'TRANSP:OPAQUE',
     'CLASS:CONFIDENTIAL',
     ...(booking.status === 'pending' ? ['STATUS:TENTATIVE'] : []),

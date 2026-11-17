@@ -10,7 +10,6 @@ import {
   getBooking,
   listBookingsByRequester,
   listBookingsByResource,
-  listBookingsInRange,
   transitionBooking,
   type BookingErrorCode,
   type BookingLimits,
@@ -19,6 +18,7 @@ import { getResource, listResources } from '../../db/resources'
 import { effectiveResourceRight } from '../../db/resource-acl'
 import type { BookingRow, ResourceRight, ResourceRow } from '../../db/types'
 import { blockPath, buildAvailabilityBlock, type BlockStore } from './block'
+import { createBlockLabels } from './block-label'
 import { eventCalendarReader } from './event-calendar'
 
 export interface Actor {
@@ -55,8 +55,22 @@ export interface NewBookingRequest {
 
 const RANK: Record<ResourceRight, number> = { read: 1, book: 2, manage: 3 }
 const SYSTEM_ACTOR = 'system:resources'
-/** A booking that ended earlier than this no longer needs its block repaired. */
+/**
+ * A declined or cancelled booking that ended earlier than this no longer needs its block removed
+ * again; a pending or approved one keeps its block, whenever it was.
+ */
 const REPAIR_WINDOW_MS = 24 * 60 * 60 * 1000
+
+const labelsByDb = new WeakMap<Database, ReturnType<typeof createBlockLabels>>()
+
+function labelsOf(db: Database): ReturnType<typeof createBlockLabels> {
+  let labels = labelsByDb.get(db)
+  if (!labels) {
+    labels = createBlockLabels(db)
+    labelsByDb.set(db, labels)
+  }
+  return labels
+}
 
 const fail = (code: ServiceErrorCode): { ok: false; code: ServiceErrorCode } => ({
   ok: false,
@@ -90,9 +104,9 @@ export async function syncBlock(
   options: { actorSub?: string; auditFailure?: boolean } = {},
 ): Promise<boolean> {
   const log = deps.log ?? ((message: string) => console.warn(message))
-  const ics = buildAvailabilityBlock(booking)
   try {
-    const path = blockPath(booking.block_ref)
+    const ics = buildAvailabilityBlock(booking, labelsOf(deps.db)(booking))
+    const path = blockPath(booking.resource_id, booking.block_ref)
     if (ics === null) await deps.store.delete(path)
     else await deps.store.put(path, ics)
     return true
@@ -114,15 +128,24 @@ export async function syncBlock(
 }
 
 /**
- * Makes the blocks of the bookings that may still matter match the database again (a scheduler
- * or a start-up hook calls this). Bookings that ended long ago are left alone.
+ * Makes the blocks match the database again (a scheduler or a start-up hook calls this): every
+ * pending or approved booking, whenever it was, so a resource's calendar keeps its history and a
+ * renamed person, group or resource is followed; declined and cancelled ones only while recent.
+ * The store writes a block only when its text changed since it last wrote it.
  */
 export async function repairBlocks(deps: ServiceDeps): Promise<{ synced: number; failed: number }> {
   const now = (deps.now ?? (() => new Date()))()
   const from = new Date(now.getTime() - REPAIR_WINDOW_MS).toISOString()
   let synced = 0
   let failed = 0
-  for (const booking of listBookingsInRange(deps.db, { from })) {
+  const bookings = deps.db
+    .prepare<[string], BookingRow>(
+      `SELECT * FROM calendar_bookings
+       WHERE status IN ('pending', 'approved') OR end_at >= ?
+       ORDER BY id`,
+    )
+    .all(from)
+  for (const booking of bookings) {
     // Failures are logged, not audited again on every run.
     if (await syncBlock(deps, booking, { auditFailure: false })) synced++
     else failed++

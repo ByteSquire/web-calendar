@@ -100,7 +100,6 @@ describe('sharing reconcile', () => {
         `${ALICE}|/${ALICE}/work/|${BOB}|/${BOB}/shared-${id}/|r`,
         `${ALICE}|/${ALICE}/work/|:team|/{user}/shared-${id}-team/|rw`,
         `${ALICE}|/${ALICE}/work/|:web_calendar_users|/{user}/shared-${id}-web_calendar_users/|f`,
-        '_resources|/_resources/availability/|:web_calendar_users|/{user}/resource-availability/|f',
       ].sort(),
     )
     // bob accepted his user share; nothing was shared for admin or public.
@@ -171,6 +170,65 @@ describe('sharing reconcile', () => {
     db.prepare('DELETE FROM calendar_acl').run()
     await job.run()
     expect(radicale.shares.some((s) => s.user === BOB)).toBe(false)
+  })
+
+  it('gives each resource its calendar, shared read to its audience, and none while deactivated', async () => {
+    const resource = (name: string) =>
+      Number(
+        db.prepare("INSERT INTO resources (name, type) VALUES (?, 'room')").run(name)
+          .lastInsertRowid,
+      )
+    const rule = (id: number, type: string, principal: string | null, right: string) =>
+      db
+        .prepare(
+          'INSERT INTO resource_acl (resource_id, principal_type, principal, "right") VALUES (?, ?, ?, ?)',
+        )
+        .run(id, type, principal, right)
+    const room = resource('Room A')
+    rule(room, 'authenticated', null, 'book')
+    rule(room, 'group', 'team', 'manage') // adds nothing: everyone has it already
+    const van = resource('Van')
+    rule(van, 'group', 'team', 'book')
+    rule(van, 'user', CAROL, 'read')
+    const lab = resource('Lab') // no rules: a calendar, no shares
+    // What the single availability share of all resources left behind.
+    radicale.calendars.set('_resources', new Set(['availability']))
+    radicale.shares.push({
+      owner: '_resources',
+      pathMapped: '/_resources/availability/',
+      pathOrToken: '/{user}/resource-availability/',
+      user: ':web_calendar_users',
+      permissions: 'fepu',
+      enabled: true,
+      hidden: false,
+      accepted: true,
+    })
+
+    const job = reconciler()
+    expect(await job.run()).toMatchObject({ ok: true, value: { differences: [] } })
+    expect([...radicale.calendars.get('_resources')!].sort()).toEqual(
+      [`resource-${lab}`, `resource-${room}`, `resource-${van}`].sort(),
+    )
+    expect(radicale.displayNames.get(`/_resources/resource-${van}/`)).toBe('Van')
+    expect(summary().filter((line) => line.startsWith('_resources|'))).toEqual(
+      [
+        `_resources|/_resources/resource-${room}/|:web_calendar_users|/{user}/resource-${room}-web_calendar_users/|r`,
+        `_resources|/_resources/resource-${van}/|:team|/{user}/resource-${van}-team/|r`,
+        `_resources|/_resources/resource-${van}/|${CAROL}|/${CAROL}/resource-${van}/|r`,
+      ].sort(),
+    )
+    expect(radicale.shares.find((s) => s.user === CAROL)?.accepted).toBe(true)
+
+    // Deactivated: its shares go, its calendar stays; a rename follows.
+    db.prepare("UPDATE resources SET active = 0, name = 'Van (old)' WHERE id = ?").run(van)
+    expect(await job.run()).toMatchObject({ ok: true, value: { differences: [] } })
+    expect(summary().some((line) => line.includes(`resource-${van}`))).toBe(false)
+    expect(radicale.calendars.get('_resources')!.has(`resource-${van}`)).toBe(true)
+    expect(radicale.displayNames.get(`/_resources/resource-${van}/`)).toBe('Van (old)')
+    // Reactivated: back.
+    db.prepare('UPDATE resources SET active = 1 WHERE id = ?').run(van)
+    await job.run()
+    expect(summary().filter((line) => line.includes(`resource-${van}`))).toHaveLength(2)
   })
 
   it('retries later and marks nothing when Radicale is unreachable', async () => {

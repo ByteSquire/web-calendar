@@ -1,11 +1,16 @@
 import type { Database } from 'better-sqlite3'
+import {
+  LEGACY_AVAILABILITY_NAME,
+  resourceCalendarId,
+} from '../../../shared/utils/resource-calendar-name'
 import { sharedCalendarId } from '../../../shared/utils/shared-calendar-name'
 import type { GroupMembership } from './membership'
-import { AVAILABILITY_SHARE_NAME } from './types'
 
 // The gateway's second opinion (security review §7.1): before a request reaches Radicale, SQLite
-// must say the caller owns the path or `calendar_acl` grants them something on it. Radicale stays
-// the enforcement point; this catches a drift between the two.
+// must say the caller owns the path or `calendar_acl` grants them something on it, and for the
+// calendar of a resource (`resource-<id>…` in their home) that the resource is active and
+// `resource_acl` lets them see it; nobody writes there. Radicale stays the enforcement point; this
+// catches a drift between the two.
 
 export interface PathCheckRequest {
   method: string
@@ -24,7 +29,8 @@ export interface PathRefusal {
   calendarId: number | null
   reason:
     | 'no-rule' // a calendar of the access page, but no rule gives the caller this access
-    | 'availability' // the free/busy availability share, which is read-only
+    | 'availability' // the old free/busy availability share, which is read-only
+    | 'resource' // a resource's calendar: written to, or the caller may not see the resource
     | 'other-home' // another principal's home: its root, or a collection the access page lacks
     | 'unreadable-path'
 }
@@ -62,6 +68,29 @@ export function createPathPrecheck(
     'SELECT id FROM calendars WHERE collection_path = ?',
   )
 
+  const resourceById = db.prepare<[number], { active: number }>(
+    'SELECT active FROM resources WHERE id = ?',
+  )
+  const resourceRules = db.prepare<[number], { principal_type: string; principal: string | null }>(
+    'SELECT principal_type, principal FROM resource_acl WHERE resource_id = ?',
+  )
+
+  /** Any right on an active resource (read, book or manage) lets a person see its calendar. */
+  async function seesResource(resourceId: number, sub: string): Promise<boolean> {
+    if (resourceById.get(resourceId)?.active !== 1) return false
+    let groups: ReadonlySet<string> | undefined
+    for (const row of resourceRules.all(resourceId)) {
+      if (row.principal_type === 'authenticated') return true
+      if (row.principal_type === 'user') {
+        if (row.principal === sub) return true
+      } else if (row.principal_type === 'group' && row.principal !== null) {
+        groups ??= await membership.groupsOf(sub)
+        if (groups.has(row.principal)) return true
+      }
+    }
+    return false
+  }
+
   async function granted(calendarId: number, sub: string, method: string): Promise<boolean> {
     const needsWrite = WRITE_METHODS.has(method)
     // The group file is read only when a group rule has to be looked at.
@@ -97,8 +126,14 @@ export function createPathPrecheck(
       if (id !== null) {
         return (await granted(id, sub, request.method)) || { calendarId: id, reason: 'no-rule' }
       }
-      // The free/busy share is for everyone who is authenticated, to read only.
-      if (collection === AVAILABILITY_SHARE_NAME && WRITE_METHODS.has(request.method)) {
+      // A resource's calendar: to read only, for the people who may see the resource.
+      const resourceId = resourceCalendarId(collection)
+      if (resourceId !== null) {
+        if (WRITE_METHODS.has(request.method)) return { calendarId: null, reason: 'resource' }
+        return (await seesResource(resourceId, sub)) || { calendarId: null, reason: 'resource' }
+      }
+      // The old free/busy share of all resources, until the reconcile has removed it: read only.
+      if (collection === LEGACY_AVAILABILITY_NAME && WRITE_METHODS.has(request.method)) {
         return { calendarId: null, reason: 'availability' }
       }
       return true
@@ -149,9 +184,13 @@ export function refusalLogger(
         ? `${refusal.method} refused before Radicale: no access rule gives the caller ${access} access to calendar ${refusal.calendarId}; if Radicale offers it to them, its shares and the access page differ (see the rules of calendar ${refusal.calendarId})`
         : refusal.reason === 'availability'
           ? `${refusal.method} refused before Radicale: the resource availability share is read-only`
-          : refusal.reason === 'other-home'
-            ? `${refusal.method} refused before Radicale: a path in another principal's home that no calendar of the access page is`
-            : `${refusal.method} refused before Radicale: the path cannot be decoded`
+          : refusal.reason === 'resource'
+            ? refusal.write
+              ? `${refusal.method} refused before Radicale: a resource's calendar is read-only`
+              : `${refusal.method} refused before Radicale: a resource's calendar the caller may not see (deactivated, or no rule of the resource); if Radicale offers it to them, its shares and the resource's rules differ`
+            : refusal.reason === 'other-home'
+              ? `${refusal.method} refused before Radicale: a path in another principal's home that no calendar of the access page is`
+              : `${refusal.method} refused before Radicale: the path cannot be decoded`
     log(message)
   }
 }

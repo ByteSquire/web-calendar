@@ -3,27 +3,27 @@ import type { Calendar } from '../shared/types/calendar'
 import type { DavCalendar } from '../app/utils/caldav/types'
 import type { ApiCalendarPref, ApiIcalSubscription } from '../app/utils/live/api-types'
 import {
-  AVAILABILITY_COLLECTION,
   buildCalendars,
   davRef,
-  isAvailabilityCollection,
+  isResourceCollection,
   reconcileVisibleCalendars,
   subscriptionIdOf,
 } from '../app/utils/live/calendars'
 import { colorForName, normalizeHexColor, PALETTE, paletteColor } from '../app/utils/live/palette'
 
-describe('isAvailabilityCollection', () => {
-  it('recognises the shared availability collection of a home, as a path or a URL', () => {
-    expect(AVAILABILITY_COLLECTION).toBe('resource-availability')
+describe('isResourceCollection', () => {
+  it("recognises a resource's calendar in a home, and the old availability share, as a path or a URL", () => {
     for (const url of [
-      '/caldav/189c6a24-f9cb-437b-8f58-b5cc8d7f909e/resource-availability/',
-      '/caldav/u/resource-availability',
-      'https://cal.example.org/caldav/u/resource-availability/',
-      ' /caldav/u/resource-availability/ ',
-      '/caldav/u/resource%2Davailability/',
-      '/caldav/u/resource-availability/?x=1',
+      '/caldav/189c6a24-f9cb-437b-8f58-b5cc8d7f909e/resource-5/',
+      '/caldav/u/resource-12-staff/',
+      '/caldav/u/resource-3',
+      'https://cal.example.org/caldav/u/resource-5/',
+      ' /caldav/u/resource-5/ ',
+      '/caldav/u/resource%2D5/',
+      '/caldav/u/resource-5/?x=1',
+      '/caldav/u/resource-availability/',
     ]) {
-      expect(isAvailabilityCollection(url), url).toBe(true)
+      expect(isResourceCollection(url), url).toBe(true)
     }
   })
 
@@ -31,14 +31,17 @@ describe('isAvailabilityCollection', () => {
     for (const url of [
       '/caldav/u/def-calendar/',
       '/caldav/u/shared-12/',
+      '/caldav/u/resource-0/',
+      '/caldav/u/resource-05/',
+      '/caldav/u/resource-/',
       '/caldav/u/resource-availability-2/',
-      '/caldav/u/my-resource-availability/',
-      '/caldav/u/resource-availability/sub/',
-      '/resource-availability/',
-      '/caldav/resource-availability/x.ics',
+      '/caldav/u/my-resource-5/',
+      '/caldav/u/resource-5/sub/',
+      '/resource-5/',
+      '/caldav/resource-5/x.ics',
       '',
     ]) {
-      expect(isAvailabilityCollection(url), url).toBe(false)
+      expect(isResourceCollection(url), url).toBe(false)
     }
   })
 })

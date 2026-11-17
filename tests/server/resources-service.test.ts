@@ -7,11 +7,7 @@ import { getBooking } from '../../server/db/bookings'
 import { addResourceAcl } from '../../server/db/resource-acl'
 import { createResource, deactivateResource } from '../../server/db/resources'
 import type { BookingRow, ResourceRow } from '../../server/db/types'
-import {
-  AVAILABILITY_COLLECTION,
-  blockPath,
-  type BlockStore,
-} from '../../server/utils/resources/block'
+import { blockPath, type BlockStore } from '../../server/utils/resources/block'
 import {
   acceptBooking,
   cancelBooking,
@@ -124,7 +120,7 @@ describe('requestBooking', () => {
       request_id: 'req-1',
     })
     expect(JSON.parse(entry!.details!)).toEqual({ bookingId: booking.id, resourceId: resource.id })
-    const ics = puts.get(blockPath(booking.block_ref))
+    const ics = puts.get(blockPath(resource.id, booking.block_ref))
     expect(ics).toContain('STATUS:TENTATIVE')
   })
 
@@ -268,10 +264,10 @@ describe('requestBooking', () => {
 })
 
 describe('the block', () => {
-  it('holds nothing but the slot, the opaque marks and the fixed text', async () => {
+  it('holds nothing but the slot, the opaque marks and who booked', async () => {
     const booking = await book(alice, slot(5))
     await acceptBooking(deps, manager, booking.id)
-    const ics = puts.get(`${AVAILABILITY_COLLECTION}${booking.block_ref}.ics`)!
+    const ics = puts.get(`/_resources/resource-${resource.id}/${booking.block_ref}.ics`)!
     const lines = ics.split('\r\n').filter(Boolean)
     const event = lines.slice(lines.indexOf('BEGIN:VEVENT') + 1, lines.indexOf('END:VEVENT'))
     expect(event.map((line) => line.split(':')[0]).sort()).toEqual(
@@ -286,9 +282,10 @@ describe('the block', () => {
         'X-WEB-CALENDAR-BLOCK',
       ].sort(),
     )
-    expect(event).toContain('SUMMARY:Reserved')
+    // alice has no name in the app, so her user name; her own calendar is no group's
+    expect(event).toContain('SUMMARY:Reserved by alice')
     expect(event).toContain('DTSTART:20261105T090000Z')
-    for (const secret of [booking.event_uid, 'Room 1', 'alice', 'sub-alice']) {
+    for (const secret of [booking.event_uid, 'Room 1', 'work', 'sub-alice']) {
       expect(ics).not.toContain(secret)
     }
     expect(ics).not.toContain('STATUS')
@@ -300,13 +297,15 @@ describe('the block', () => {
     await declineBooking(deps, manager, one.id)
     await cancelBooking(deps, alice, two.id)
     expect(puts.size).toBe(0)
-    expect(deletes.sort()).toEqual([blockPath(one.block_ref), blockPath(two.block_ref)].sort())
+    expect(deletes.sort()).toEqual(
+      [blockPath(resource.id, one.block_ref), blockPath(resource.id, two.block_ref)].sort(),
+    )
   })
 
   it('is rewritten as busy on approval', async () => {
     const booking = await book(alice, slot(5))
     await acceptBooking(deps, manager, booking.id)
-    expect(puts.get(blockPath(booking.block_ref))).not.toContain('TENTATIVE')
+    expect(puts.get(blockPath(resource.id, booking.block_ref))).not.toContain('TENTATIVE')
   })
 })
 
@@ -317,7 +316,7 @@ describe('who may change a booking', () => {
       expect(await run(deps, bob, booking.id)).toEqual({ ok: false, code: 'not_found' })
     }
     expect(deletes).toEqual([])
-    expect(puts.has(blockPath(booking.block_ref))).toBe(true)
+    expect(puts.has(blockPath(resource.id, booking.block_ref))).toBe(true)
     expect(getBooking(db, booking.id)?.status).toBe('pending')
   })
 
@@ -373,7 +372,7 @@ describe('accepting', () => {
     expect(result.ok && result.declined.map((b) => b.id)).toEqual([loser.id])
     expect(getBooking(db, loser.id)?.status).toBe('declined')
     expect(getBooking(db, apart.id)?.status).toBe('pending')
-    expect(puts.has(blockPath(loser.block_ref))).toBe(false)
+    expect(puts.has(blockPath(resource.id, loser.block_ref))).toBe(false)
     const declined = listAuditEntries(db, {}).find(
       (entry) => entry.action === 'resource_booking.declined',
     )
@@ -428,7 +427,7 @@ describe('a failing block store', () => {
     failing = false
     expect(await repairBlocks(deps)).toEqual({ synced: 2, failed: 0 })
     expect(await repairBlocks(deps)).toEqual({ synced: 2, failed: 0 })
-    expect([...puts.keys()]).toEqual([blockPath(booking.block_ref)])
+    expect([...puts.keys()]).toEqual([blockPath(resource.id, booking.block_ref)])
     expect(await syncBlock(deps, getBooking(db, booking.id)!)).toBe(true)
     expect(puts.size).toBe(1)
   })

@@ -43,10 +43,11 @@ export const RESOURCES_PRINCIPAL = '_resources'
  * they belong to no person and no group, and reach people through their access rules only.
  */
 export const ORGANIZATION_PRINCIPAL = '_organization'
-/** The collection of resource blocks, shared with `f` to everyone. */
-export const AVAILABILITY_PATH = '/_resources/availability/'
-/** The name under which a member sees the availability collection in their home. */
-export const AVAILABILITY_SHARE_NAME = 'resource-availability'
+/**
+ * The one collection of all resource blocks before each resource had its own (design §5); the
+ * reconcile deletes it. Its share was `resource-availability` (LEGACY_AVAILABILITY_NAME).
+ */
+export const LEGACY_AVAILABILITY_PATH = '/_resources/availability/'
 
 /** One Radicale map share as the API lists it. */
 export interface RadicaleShare {

@@ -1,13 +1,12 @@
 import type { Database } from 'better-sqlite3'
 import { recordAudit } from '../../db/audit-log'
 import { listAllCalendarAcl, markCalendarAclApplied } from '../../db/calendar-acl'
-import type { CalendarAclRow, CalendarRow } from '../../db/types'
+import type { CalendarAclRow, CalendarRow, ResourceAclRow, ResourceRow } from '../../db/types'
 import { isValidSubject } from '../auth/subject'
-import { ensureAvailabilityCollection } from './block-store'
+import { syncResourceCollections } from './block-store'
 import { discoverCalendars } from './calendars'
 import {
   actualKey,
-  availabilityShare,
   computeDesiredShares,
   desiredKey,
   sameShare,
@@ -26,8 +25,10 @@ import {
   type SharingFailure,
 } from './types'
 
-// Reconcile, do not patch (security review §7.1): desired shares from calendar_acl, Radicale's
-// actual list per owner, apply the difference, read again, compare, alarm on any difference.
+// Reconcile, do not patch (security review §7.1): desired shares from calendar_acl and
+// resource_acl, Radicale's actual list per owner, apply the difference, read again, compare, alarm
+// on any difference. The calendars of the resources are kept in line first (one per resource,
+// named after it), since a share needs its calendar.
 
 export interface ReconcileOptions {
   db: Database
@@ -36,8 +37,8 @@ export interface ReconcileOptions {
   /** Service principals whose calendars are mirrored as `shared`. */
   sharedOwners?: readonly string[]
   now?: () => Date
-  /** Whether to keep `/_resources/availability/` shared with `f`. Default true. */
-  withAvailability?: boolean
+  /** Whether to keep the calendars of the resources and their shares (design §5). Default true. */
+  withResources?: boolean
 }
 
 export interface ReconcileSummary {
@@ -112,6 +113,27 @@ interface CalendarRows {
   calendars: Map<number, CalendarRow>
 }
 
+type ResourceRows = {
+  resources: Pick<ResourceRow, 'id' | 'name' | 'active'>[]
+  rules: Pick<ResourceAclRow, 'resource_id' | 'principal_type' | 'principal'>[]
+}
+
+/** Every resource (deactivated ones keep their calendar, without shares) and every resource rule. */
+export function loadResourceRules(db: Database): ResourceRows {
+  return {
+    resources: db
+      .prepare<[], ResourceRows['resources'][number]>(
+        'SELECT id, name, active FROM resources ORDER BY id',
+      )
+      .all(),
+    rules: db
+      .prepare<[], ResourceRows['rules'][number]>(
+        'SELECT resource_id, principal_type, principal FROM resource_acl ORDER BY id',
+      )
+      .all(),
+  }
+}
+
 function loadRules(db: Database): CalendarRows {
   const calendars = new Map(
     db
@@ -126,7 +148,7 @@ export function createSharingReconciler(options: ReconcileOptions): SharingRecon
   const { db, client, log } = options
   const now = options.now ?? (() => new Date())
   const sharedOwners = options.sharedOwners ?? []
-  const withAvailability = options.withAvailability ?? true
+  const withResources = options.withResources ?? true
   const state: ReconcileState = {
     lastRunAt: null,
     lastSuccessAt: null,
@@ -167,7 +189,8 @@ export function createSharingReconciler(options: ReconcileOptions): SharingRecon
     const { listedOwners, existing } = discovery.value
 
     const { rows, calendars } = loadRules(db)
-    const desired = computeDesiredShares(rows, calendars, { withAvailability })
+    const resources = withResources ? loadResourceRules(db) : null
+    const desired = computeDesiredShares(rows, calendars, resources ? { resources } : {})
     const differences: string[] = [...desired.invalid]
     const failedShares = new Set<string>()
 
@@ -205,12 +228,16 @@ export function createSharingReconciler(options: ReconcileOptions): SharingRecon
     }
     const ownerList = [...owners].filter(isActingPrincipal).sort()
 
-    if (withAvailability) {
-      const ensured = await ensureAvailabilityCollection(client)
-      if (!ensured.ok) {
-        if (ensured.failure.kind === 'unreachable') return ensured
-        differences.push(`availability collection: ${ensured.failure.message}`)
-        failedShares.add(desiredKey(availabilityShare()))
+    if (resources) {
+      const collections = await syncResourceCollections(client, resources.resources)
+      if (!collections.ok) return collections
+      differences.push(...collections.value.problems)
+      // A share of a calendar that could not be made fails anyway; it is not verified either.
+      const failed = new Set(collections.value.failed)
+      for (const share of shares) {
+        if (share.resourceId !== undefined && failed.has(share.resourceId)) {
+          failedShares.add(desiredKey(share))
+        }
       }
     }
 

@@ -151,11 +151,14 @@ and client renders match.
   Not built yet: the public view. Spikes S1 to S6 and S8 to S10 are done; S7
   (real clients) is open (design §12). A test stack
   for the spikes is in `dev/spike-s1`.
-- Calendar apps such as Thunderbird list calendars they may only query for busy times: the
-  "Availability" calendar of the resources (shared with everyone) and calendars shared with you at
-  "Busy times only". They cannot sync them and show them as not available (Radicale refuses with
-  `403`); untick them when the app lists the calendars it found, or unsubscribe them. The web app
-  shows both.
+- Calendar apps such as Thunderbird list calendars shared with you at "Busy times only" but cannot
+  sync them and show them as not available (Radicale allows only a free/busy query there and refuses
+  the rest with `403`); untick them when the app lists the calendars it found, or unsubscribe them.
+  The web app shows them. A gateway answer that makes them sync as "Busy" entries is decided
+  (design §8) but not built yet. Resources are no longer affected: each has its own calendar that
+  calendar apps sync (design §5). The "Availability" calendar of v0.4.0 and earlier is removed by the
+  first reconcile; an app that had subscribed to it may keep a broken entry until it is removed
+  there (DAVx5 drops it at its next refresh, Thunderbird usually keeps it).
 
 ### Dependency versions (as of 2026-10-24)
 

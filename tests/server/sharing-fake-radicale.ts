@@ -27,6 +27,8 @@ export interface FakeRadicale {
   url: string
   /** owner -> calendar names */
   calendars: Map<string, Set<string>>
+  /** `/owner/name/` -> the display name it was made or renamed with (absent: the name) */
+  displayNames: Map<string, string>
   /** collection path -> object paths -> ics */
   objects: Map<string, string>
   shares: FakeShare[]
@@ -40,7 +42,18 @@ export interface FakeRadicale {
   close(): Promise<void>
 }
 
-function xml(owner: string, rows: { name: string; calendar: boolean }[]): string {
+const displayNameIn = (body: string): string | undefined =>
+  /<(?:\w+:)?displayname>([^<]*)<\/(?:\w+:)?displayname>/
+    .exec(body)?.[1]
+    ?.replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+
+function xml(
+  owner: string,
+  rows: { name: string; calendar: boolean; displayName?: string }[],
+): string {
   const item = (href: string, calendar: boolean, name?: string) =>
     `<ns0:response><ns0:href>${href}</ns0:href><ns0:propstat><ns0:prop>` +
     (name ? `<ns0:displayname>${name}</ns0:displayname>` : '') +
@@ -52,7 +65,9 @@ function xml(owner: string, rows: { name: string; calendar: boolean }[]): string
     '<?xml version="1.0" encoding="utf-8"?><ns0:multistatus xmlns:ns0="DAV:" xmlns:ns1="urn:ietf:params:xml:ns:caldav">' +
     item(home, false) +
     rows
-      .map((row) => item(`${home}${encodeURIComponent(row.name)}/`, row.calendar, row.name))
+      .map((row) =>
+        item(`${home}${encodeURIComponent(row.name)}/`, row.calendar, row.displayName ?? row.name),
+      )
       .join('') +
     '</ns0:multistatus>'
   )
@@ -62,6 +77,7 @@ export async function startFakeRadicale(): Promise<FakeRadicale> {
   const fake: FakeRadicale = {
     url: '',
     calendars: new Map(),
+    displayNames: new Map(),
     objects: new Map(),
     shares: [],
     groups: new Map(),
@@ -164,7 +180,11 @@ export async function startFakeRadicale(): Promise<FakeRadicale> {
       }
       if (home !== user) return { status: 403, text: '' }
       if (!fake.calendars.has(home)) fake.calendars.set(home, new Set())
-      const rows = [...fake.calendars.get(home)!].map((name) => ({ name, calendar: true }))
+      const rows = [...fake.calendars.get(home)!].map((name) => ({
+        name,
+        calendar: true,
+        displayName: fake.displayNames.get(`/${home}/${name}/`),
+      }))
       for (const name of visibleNames(user)) rows.push({ name, calendar: true })
       return { status: 207, text: xml(home, rows) }
     }
@@ -173,7 +193,19 @@ export async function startFakeRadicale(): Promise<FakeRadicale> {
       if (!fake.calendars.has(home!)) fake.calendars.set(home!, new Set())
       if (fake.calendars.get(home!)!.has(name!)) return { status: 409, text: '' }
       fake.calendars.get(home!)!.add(name!)
+      const shown = displayNameIn(body)
+      if (shown !== undefined) fake.displayNames.set(`/${home}/${name}/`, shown)
       return { status: 201, text: '' }
+    }
+    if (method === 'PROPPATCH') {
+      const [home, name] = parts
+      if (!fake.calendars.get(home!)?.has(name!)) return { status: 404, text: '' }
+      const shown = displayNameIn(body)
+      if (shown !== undefined) fake.displayNames.set(`/${home}/${name}/`, shown)
+      return {
+        status: 207,
+        text: '<multistatus xmlns="DAV:"><response><propstat><status>HTTP/1.1 200 OK</status></propstat></response></multistatus>',
+      }
     }
     if (method === 'PUT') {
       if (!fake.calendars.get(parts[0]!)?.has(parts[1]!)) return { status: 409, text: '' }
@@ -182,6 +214,16 @@ export async function startFakeRadicale(): Promise<FakeRadicale> {
       return { status: existed ? 204 : 201, text: '' }
     }
     if (method === 'DELETE') {
+      // A whole collection, `/owner/name/`, with its objects.
+      if (parts.length === 2 && path.endsWith('/')) {
+        const [home, name] = parts
+        if (!fake.calendars.get(home!)?.delete(name!)) return { status: 404, text: '' }
+        fake.displayNames.delete(path)
+        for (const object of [...fake.objects.keys()]) {
+          if (object.startsWith(path)) fake.objects.delete(object)
+        }
+        return { status: 204, text: '' }
+      }
       return fake.objects.delete(path) ? { status: 204, text: '' } : { status: 404, text: '' }
     }
     return { status: 405, text: '' }

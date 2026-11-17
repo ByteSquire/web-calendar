@@ -505,6 +505,7 @@ describe('calendar state', () => {
       ok: true,
       first: date('2026-11-03'),
       last: date('2026-11-12'),
+      days: 10,
     })
     expect(checkCustomRange('', '2026-11-12')).toEqual({
       ok: false,
@@ -522,13 +523,9 @@ describe('calendar state', () => {
       field: 'to',
       message: 'The end date must not be before the start date.',
     })
-    // A whole leap year fits, a day more does not.
-    expect(checkCustomRange('2028-01-01', '2028-12-31').ok).toBe(true)
-    expect(checkCustomRange('2028-01-01', '2029-01-01')).toEqual({
-      ok: false,
-      field: 'to',
-      message: 'Choose at most 366 days.',
-    })
+    // There is no upper limit; the length is counted with both days, leap days too.
+    expect(checkCustomRange('2028-01-01', '2028-12-31')).toMatchObject({ ok: true, days: 366 })
+    expect(checkCustomRange('2026-01-01', '2030-12-31')).toMatchObject({ ok: true, days: 1826 })
   })
 
   it('returns to today', () => {

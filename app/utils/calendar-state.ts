@@ -63,10 +63,11 @@ export const SPAN_LABELS = {
 export type RangeKind = 'day' | '5day' | 'week' | 'month' | 'year' | 'custom'
 
 /**
- * Longest custom range, in days: a whole year, also a leap year. It bounds what is loaded at once
- * and how wide the split view's timeline gets.
+ * A custom range of more days than this is shown, with a warning (PeriodSwitcher.vue): everything in
+ * it is loaded at once, and the split view gets as many slots, the swapped one as many rows, and a
+ * printout as many pages. There is no upper limit.
  */
-export const MAX_CUSTOM_DAYS = 366
+export const LONG_RANGE_DAYS = 722
 
 /** Half-open range of dates: `start` is included, `end` is not. */
 export interface DateRange {
@@ -220,7 +221,7 @@ export function formatRangeLabel(kind: RangeKind, range: DateRange): string {
 }
 
 export type CustomRangeCheck =
-  | { ok: true; first: Temporal.PlainDate; last: Temporal.PlainDate }
+  | { ok: true; first: Temporal.PlainDate; last: Temporal.PlainDate; days: number }
   | { ok: false; field: 'from' | 'to'; message: string }
 
 function parseDate(value: string): Temporal.PlainDate | null {
@@ -241,14 +242,7 @@ export function checkCustomRange(from: string, to: string): CustomRangeCheck {
   if (Temporal.PlainDate.compare(last, first) < 0) {
     return { ok: false, field: 'to', message: t('The end date must not be before the start date.') }
   }
-  if (first.until(last).days + 1 > MAX_CUSTOM_DAYS) {
-    return {
-      ok: false,
-      field: 'to',
-      message: t('Choose at most {count} days.', { count: MAX_CUSTOM_DAYS }),
-    }
-  }
-  return { ok: true, first, last }
+  return { ok: true, first, last, days: first.until(last).days + 1 }
 }
 
 // ---- Events ----
@@ -597,7 +591,7 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   function chooseCustomRange() {
     if (rangeKind.value === 'custom') return
     const { start, end } = visibleRange.value
-    customDays.value = Math.min(start.until(end).days, MAX_CUSTOM_DAYS)
+    customDays.value = start.until(end).days
     anchorDate.value = start
     if (viewType.value === 'split') splitSpan.value = 'custom'
     else if (viewType.value === 'list') listSpan.value = 'custom'

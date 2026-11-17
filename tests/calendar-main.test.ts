@@ -215,6 +215,43 @@ describe('standard views', () => {
     expect(customDays.value).toBe(14)
   })
 
+  it('shows a range of any length, and warns about one of more than 722 days', async () => {
+    const { viewType, customDays } = useCalendarState()
+    viewType.value = 'list'
+    await vi.waitFor(() => expect(calendarApi(app).view.type).toBe('listWeek'))
+    const button = (name: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+        (item) => item.textContent?.trim() === name,
+      )!
+    const field = (name: string) =>
+      document.querySelector<HTMLInputElement>(
+        `form[aria-label="Custom range"] input[name="${name}"]`,
+      )!
+    const type = (input: HTMLInputElement, value: string) => {
+      input.value = value
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const warned = () => document.body.textContent?.includes('Long range') ?? false
+    button('Custom range').click()
+    await vi.waitFor(() => expect(calendarApi(app).view.type).toBe('listCustom'))
+
+    // 722 days, from 1 Jan 2026 to 23 Dec 2027: shown without a word.
+    type(field('range-from'), '2026-01-01')
+    type(field('range-to'), '2027-12-23')
+    button('Show').click()
+    await vi.waitFor(() => expect(customDays.value).toBe(722))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(warned()).toBe(false)
+
+    // A day more: shown as well, with the warning that names its length.
+    type(field('range-to'), '2027-12-24')
+    button('Show').click()
+    await vi.waitFor(() => expect(customDays.value).toBe(723))
+    await vi.waitFor(() => expect(warned()).toBe(true))
+    expect(document.body.textContent).toContain('723 days can take a while to load')
+    expect(field('range-to').getAttribute('aria-invalid')).not.toBe('true')
+  })
+
   it('opens a day from the day number in the month view', async () => {
     const { viewType, anchorDate } = useCalendarState()
     anchorDate.value = Temporal.PlainDate.from('2026-10-15')

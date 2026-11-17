@@ -40,13 +40,14 @@
 </template>
 
 <script setup lang="ts" generic="Span extends keyof typeof SPAN_LABELS">
-import { SPAN_LABELS, checkCustomRange } from '~/utils/calendar-state'
+import { LONG_RANGE_DAYS, SPAN_LABELS, checkCustomRange } from '~/utils/calendar-state'
 import { t, tv } from '~/utils/i18n'
 
 defineProps<{ spans: readonly Span[] }>()
 const model = defineModel<Span>({ required: true })
 
 const { visibleRange, chooseCustomRange, setCustomRange } = useCalendarState()
+const toast = useToast()
 
 function choose(span: Span) {
   // The custom range starts as the period shown, and the state sets the span itself.
@@ -80,6 +81,18 @@ async function show() {
   errors.to = undefined
   if (result.ok) {
     setCustomRange(result.first, result.last)
+    // Shown all the same; the person learns why it is slow and long (LONG_RANGE_DAYS).
+    if (result.days > LONG_RANGE_DAYS) {
+      toast.add({
+        title: t('Long range'),
+        description: t(
+          '{count} days can take a while to load, and make the view and its printout very long.',
+          { count: result.days },
+        ),
+        icon: 'i-lucide-triangle-alert',
+        color: 'warning',
+      })
+    }
     return
   }
   errors[result.field] = result.message

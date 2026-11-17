@@ -1591,9 +1591,11 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   readable. The date navigation then steps by that period, and data loads for it. Both also have
   **Custom range**: it starts as the period shown and adds From and To date fields (native inputs)
   and a Show button beside the buttons; Show or Enter applies the dates, both days included. The
-  dates are checked (`checkCustomRange`: both given, To not before From, at most 366 days, which
-  bounds what loads at once and how wide the timeline gets) and an error names the field and moves
-  the focus to it. Previous and next move the range by its own length ("Next 21 days"), Today
+  dates are checked (`checkCustomRange`: both given, To not before From) and an error names the field
+  and moves the focus to it. There is no upper limit (it was a year until 2026-11-17): a range of
+  more than 722 days (`LONG_RANGE_DAYS`) is shown with a warning toast, since all of it loads at once
+  and the timeline, the swapped table and a printout get as long. The server sets no limit either: a
+  CalDAV app can already ask the gateway for any time range. Previous and next move the range by its own length ("Next 21 days"), Today
   starts it today; the split and the list view share the range. In FullCalendar it is a view of
   `customDays` days from the anchor date with `dateAlignment: 'day'` (`listCustom`,
   `resourceTimelineCustom`), as a range of whole weeks would otherwise start on a Monday. The split

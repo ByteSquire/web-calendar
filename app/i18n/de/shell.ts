@@ -23,7 +23,9 @@ export const shell: Readonly<Record<string, string>> = {
   Date: 'Datum',
   From: 'Von',
   To: 'Bis',
-  'Choose at most {count} days.': 'Wähle höchstens {count} Tage.',
+  'Long range': 'Langer Zeitraum',
+  '{count} days can take a while to load, and make the view and its printout very long.':
+    '{count} Tage können eine Weile zum Laden brauchen und machen die Ansicht und ihren Ausdruck sehr lang.',
   Calendars: 'Kalender',
   'Calendar, {range}': 'Kalender, {range}',
   'Split view, {range}': 'Aufgeteilte Ansicht, {range}',

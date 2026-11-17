@@ -3,6 +3,7 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 import Database from 'better-sqlite3'
 import { scan } from '../axe-scan'
 import { APP_ORIGIN, newAppContext, openSignedIn } from './session'
+import { toast } from '../helpers'
 
 // Calendar links with the real stack (design S8 setup): alice makes a password-protected "Can view"
 // link to one of her calendars on the Settings page and sees its address and, when asked, its
@@ -216,7 +217,7 @@ test('alice makes a link to her calendar on the Settings page and sees its addre
   await expect(field).toBeVisible()
   address = await field.inputValue()
   expect(address).toMatch(new RegExp(`^${APP_ORIGIN}/link/[A-Za-z0-9_-]{43}$`))
-  await expect(alice.getByText(`Link “${LABEL}” created.`, { exact: false })).toBeVisible()
+  await expect(toast(alice, `Link “${LABEL}” created.`)).toBeVisible()
   const { violations } = await new AxeBuilder({ page: alice })
     .include('[role="dialog"]')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -329,7 +330,7 @@ test('when alice removes the link the visitor loses it at once', async () => {
     .getByRole('button', { name: 'Remove link' })
     .click()
   await expect(alice.getByRole('dialog')).toHaveCount(0)
-  await expect(alice.getByText(`Link “${LABEL}” removed.`)).toBeVisible()
+  await expect(toast(alice, `Link “${LABEL}” removed.`)).toBeVisible()
   // the next read of the open page fails, and the page says why
   await visitor.reload()
   await expect(

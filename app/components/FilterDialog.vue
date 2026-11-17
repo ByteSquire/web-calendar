@@ -192,7 +192,13 @@ import {
 import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { NOT_FOR_PASSWORD_MANAGERS } from '~/utils/password-managers'
 import { t, tv } from '~/utils/i18n'
-import type { CalendarFilter, Category, FilterKind, FilterMode } from '../../shared/types/calendar'
+import type {
+  CalendarFilter,
+  Category,
+  EventStatus,
+  FilterKind,
+  FilterMode,
+} from '../../shared/types/calendar'
 
 const props = withDefaults(
   defineProps<{
@@ -247,7 +253,7 @@ const kind = ref<FilterKind>('text')
 const mode = ref<FilterMode>('only')
 // One value per kind, so going to another kind and back keeps what was entered; the people of a
 // person filter are a list.
-const values = reactive<Record<Exclude<FilterKind, 'person'>, string>>({
+const values = reactive<{ text: string; category: string; status: EventStatus | undefined }>({
   text: '',
   category: '',
   status: 'cancelled',
@@ -312,7 +318,7 @@ const peopleItems = computed(() => {
 })
 
 const value = computed(() =>
-  kind.value === 'person' ? peopleValue(people.value) : values[kind.value],
+  kind.value === 'person' ? peopleValue(people.value) : (values[kind.value] ?? ''),
 )
 const draft = computed<FilterDraft>(() => ({
   name: name.value,
@@ -361,7 +367,10 @@ watch(
     kind.value = filter.kind
     mode.value = filter.mode
     if (filter.kind === 'person') people.value = filterPeople(filter.value)
-    else {
+    else if (filter.kind === 'status') {
+      // A status the app does not know (an old row) leaves the choice empty: saving then asks for one.
+      values.status = EVENT_STATUSES.find((item) => item === filter.value)
+    } else {
       values[filter.kind] = filter.kind === 'category' ? categoryValue(filter.value) : filter.value
     }
     name.value = filter.name

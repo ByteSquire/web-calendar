@@ -158,4 +158,46 @@ describe('FilterDialog', () => {
       ]),
     )
   })
+
+  it('opens a status filter with its status chosen, and asks for one it does not know', async () => {
+    const known: CalendarFilter = {
+      id: '1',
+      name: 'No tentative',
+      kind: 'status',
+      value: 'tentative',
+      mode: 'hide',
+    }
+    await mountOpen(FilterDialog, { filter: known, filters: [known] })
+    await vi.waitFor(() =>
+      expect(radioNamed('Tentative')?.getAttribute('aria-checked')).toBe('true'),
+    )
+    app?.unmount()
+    document.body.innerHTML = ''
+
+    // An old row with a status the app does not know: nothing is chosen, so it is not changed
+    // silently, and saving asks for a status.
+    const odd: CalendarFilter = {
+      id: '2',
+      name: 'Odd',
+      kind: 'status',
+      value: 'x-done',
+      mode: 'hide',
+    }
+    const { saved } = await mountOpen(FilterDialog, { filter: odd, filters: [odd] })
+    await vi.waitFor(() => expect(radioNamed('Cancelled')).not.toBeNull())
+    for (const label of ['Confirmed', 'Tentative', 'Cancelled']) {
+      expect(radioNamed(label)?.getAttribute('aria-checked'), label).not.toBe('true')
+    }
+    buttonNamed('Save')!.click()
+    await vi.waitFor(() => expect(text(dialog())).toContain('Choose a status.'))
+    expect(saved).toEqual([])
+    radioNamed('Cancelled')!.click()
+    await vi.waitFor(() =>
+      expect(radioNamed('Cancelled')?.getAttribute('aria-checked')).toBe('true'),
+    )
+    buttonNamed('Save')!.click()
+    await vi.waitFor(() =>
+      expect(saved).toEqual([{ name: 'Odd', kind: 'status', value: 'cancelled', mode: 'hide' }]),
+    )
+  })
 })

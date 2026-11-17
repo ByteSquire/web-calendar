@@ -92,7 +92,7 @@ function expectHealthy(database: Database.Database): void {
 }
 
 describe('the migrations that were released', () => {
-  it.each(['v0.1.0', 'v0.2.0', 'v0.2.1', 'v0.3.0'])('are unchanged: %s', (tag) => {
+  it.each(['v0.1.0', 'v0.2.0', 'v0.2.1', 'v0.3.0', 'v0.4.0'])('are unchanged: %s', (tag) => {
     // A migration that a database has applied is never edited (the runner goes by name and would not
     // run it again): a change is a new migration. Compare byte for byte with what was released.
     const files = readdirSync(released(tag)).filter((name) => name !== 'data.sql')
@@ -106,7 +106,7 @@ describe('the migrations that were released', () => {
 
   it('are all there, and no number is used twice', () => {
     const names = current().map((migration) => migration.name)
-    for (const migration of frozen('v0.1.0', 'v0.2.0', 'v0.2.1', 'v0.3.0')) {
+    for (const migration of frozen('v0.1.0', 'v0.2.0', 'v0.2.1', 'v0.3.0', 'v0.4.0')) {
       expect(names).toContain(migration.name)
     }
     const numbers = names.map((name) => name.slice(0, 3))
@@ -297,5 +297,28 @@ describe('updating from v0.3.0 (001 to 013)', () => {
     ])
     expect(isGroupManager(db, 3, 'sub-bob')).toBe(true)
     expect(isGroupManager(db, 2, 'sub-bob')).toBe(false)
+  })
+})
+
+describe('updating from v0.4.0 (001 to 014)', () => {
+  it('finds nothing to do, keeps every row, and the code reads the filter modes', () => {
+    leftBy('v0.1.0', 'v0.2.0', 'v0.2.1', 'v0.3.0', 'v0.4.0')
+    db = openDatabase(path)
+    const before = snapshot(db)
+    expect(appliedMigrations(db)).toHaveLength(13)
+
+    // A later release adds its migrations here, like the tests above.
+    expect(upgradeDatabase(db, path, current())).toEqual({ applied: [], backup: null })
+    expectKept(before, db)
+    expectHealthy(db)
+
+    // alice hides Sam's entries; bob shows only what mentions offsites
+    expect(listFilters(db, 1).map((filter) => [filter.name, filter.kind, filter.mode])).toEqual([
+      ['Standups', 'text', 'only'],
+      ['Not Sam', 'person', 'hide'],
+    ])
+    expect(listFilters(db, 2).map((filter) => [filter.name, filter.kind, filter.mode])).toEqual([
+      ['Offsites', 'text', 'only'],
+    ])
   })
 })

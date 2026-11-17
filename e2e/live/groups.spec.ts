@@ -369,7 +369,8 @@ test('alice imports it, and bob is a member when he opens the page, and in the g
   // The group is read-only for its members: no member controls, only the note.
   await bob.getByRole('link', { name: `Open ${IDP_GROUP}` }).click()
   await expect(bob.locator('[data-imported-note]')).toBeVisible()
-  await expect(bob.getByRole('button', { name: 'Add', exact: true })).toHaveCount(0)
+  // (in the page: the top bar's Add, for a new event, is on every page)
+  await expect(bob.locator('main').getByRole('button', { name: 'Add', exact: true })).toHaveCount(0)
 })
 
 test('alice stops importing it, and the group is gone from the app and from the file', async () => {

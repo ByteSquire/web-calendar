@@ -94,22 +94,31 @@ test.afterAll(async () => {
 })
 
 const area = () => page.locator('[data-calendar-main]')
-const section = () => page.getByRole('region', { name: 'Import a calendar file' })
-const fileField = () => section().getByLabel('Calendar file', { exact: true })
+// By CSS, not by role: an open dialog hides the page from assistive technology.
+const section = () => page.locator('section[aria-labelledby="settings-import"]')
+const chooseButton = () => section().getByRole('button', { name: 'Choose file…' })
+/** The dialog the chosen file opens: preview, calendar, progress and result. */
+const dialog = () => page.getByRole('dialog', { name: 'Import a calendar file' })
 
-/** Picks the file the way a person does: through the file field, with the keyboard-reachable input. */
+/** Picks the file the way a person does: "Choose file…" and the browser's file picker. */
 async function chooseFile(): Promise<void> {
-  await fileField().setInputFiles({
+  const chooser = page.waitForEvent('filechooser')
+  await chooseButton().click()
+  await (
+    await chooser
+  ).setFiles({
     name: 'e2e-import.ics',
     mimeType: 'text/calendar',
     buffer: Buffer.from(FILE),
   })
+  await expect(dialog()).toBeVisible()
 }
 
-/** WCAG 2.1 A and AA inside the section. */
+/** WCAG 2.1 A and AA inside the section, and in the dialog while it is open. */
 async function scanSection(): Promise<string[]> {
+  const open = (await dialog().count()) > 0
   const { violations } = await new AxeBuilder({ page })
-    .include('section[aria-labelledby="settings-import"]')
+    .include(open ? '[role="dialog"]' : 'section[aria-labelledby="settings-import"]')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
   return violations.map(
@@ -142,38 +151,43 @@ async function expectTargetsAtLeast44(scope: Locator): Promise<void> {
   expect(small).toEqual([])
 }
 
-test('Settings has the import section, with a labelled file field', async () => {
+test('Settings has the import section, with "Choose file…"', async () => {
   await page.goto('/settings')
   await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
   await expect(section().getByRole('heading', { level: 2 })).toHaveText('Import a calendar file')
-  await expect(fileField()).toBeVisible()
-  await expect(section()).toContainText('up to 5 MB and 2000 events')
+  await expect(page.getByRole('region', { name: 'Import a calendar file' })).toBeVisible()
+  await expect(chooseButton()).toBeVisible()
+  await expect(chooseButton()).toHaveAccessibleDescription(/up to 5 MB and 2000 events/)
   expect(await scanSection()).toEqual([])
   await expectTargetsAtLeast44(section())
 })
 
-test('shows what the file holds before anything is written', async () => {
+test('shows what the file holds before anything is written, in a dialog', async () => {
+  const before = await section().innerText()
   await chooseFile()
-  await expect(section().getByRole('status')).toHaveText('File read: 2 events can be imported.')
-  await expect(section()).toContainText('E2E import file')
-  await expect(section().getByText(SINGLE, { exact: true })).toBeVisible()
-  await expect(section().getByText(SERIES, { exact: true })).toBeVisible()
+  await expect(dialog().getByRole('status')).toHaveText('File read: 2 events can be imported.')
+  await expect(dialog()).toContainText('E2E import file')
+  await expect(dialog().getByText(SINGLE, { exact: true })).toBeVisible()
+  await expect(dialog().getByText(SERIES, { exact: true })).toBeVisible()
   // The to-do is counted and explained, not imported.
-  await expect(section().getByText('1 to-do (only events are imported)')).toBeVisible()
+  await expect(dialog().getByText('1 to-do (only events are imported)')).toBeVisible()
   // The first calendar the person may write to is chosen, as in the quick-add dialog.
-  await expect(section().getByLabel('Import into')).toContainText(/\S/)
-  await expect(section().getByRole('button', { name: 'Import 2 events' })).toBeEnabled()
+  await expect(dialog().getByLabel('Import into')).toContainText(/\S/)
+  await expect(dialog().getByRole('button', { name: 'Import 2 events' })).toBeEnabled()
+  // The section itself did not change.
+  expect(await section().innerText()).toBe(before)
   expect(await scanSection()).toEqual([])
-  await expectTargetsAtLeast44(section())
+  await expectTargetsAtLeast44(dialog())
 })
 
 test('imports the events and says what happened', async () => {
-  await section().getByRole('button', { name: 'Import 2 events' }).click()
-  await expect(section().getByRole('heading', { level: 3, name: 'Import finished' })).toBeFocused()
-  await expect(section().getByRole('status')).toHaveText('Imported 2 events.')
+  await dialog().getByRole('button', { name: 'Import 2 events' }).click()
+  await expect(dialog().getByRole('heading', { level: 3, name: 'Import finished' })).toBeFocused()
+  await expect(dialog().getByRole('status')).toHaveText('Imported 2 events.')
   expect(await scanSection()).toEqual([])
-  await section().getByRole('button', { name: 'Done' }).click()
-  await expect(fileField()).toBeFocused()
+  await dialog().getByRole('button', { name: 'Done' }).click()
+  await expect(dialog()).toBeHidden()
+  await expect(chooseButton()).toBeFocused()
 })
 
 test('shows the events in the calendar without a reload, the changed occurrence a week later', async () => {
@@ -188,12 +202,13 @@ test('shows the events in the calendar without a reload, the changed occurrence 
 test('finds everything already there when the file is imported again', async () => {
   await page.goto('/settings')
   await chooseFile()
-  await section().getByRole('button', { name: 'Import 2 events' }).click()
-  await expect(section().getByRole('status')).toHaveText(
+  await dialog().getByRole('button', { name: 'Import 2 events' }).click()
+  await expect(dialog().getByRole('status')).toHaveText(
     'Nothing was imported. 2 events were already in the calendar.',
   )
   expect(await scanSection()).toEqual([])
-  await section().getByRole('button', { name: 'Done' }).click()
+  await dialog().getByRole('button', { name: 'Done' }).click()
+  await expect(dialog()).toBeHidden()
   // A copy would survive the deletions below.
   await page.getByRole('link', { name: 'Back to calendar' }).click()
   await expect(area().getByText(SINGLE).first()).toBeVisible()
@@ -270,21 +285,22 @@ test('imports into a new calendar: it is made, filled and listed in the sidebar'
   test.setTimeout(90_000)
   await page.goto('/settings')
   await chooseFile()
-  await expect(section().getByRole('status')).toHaveText('File read: 2 events can be imported.')
-  await section().getByLabel('Import into').click()
+  await expect(dialog().getByRole('status')).toHaveText('File read: 2 events can be imported.')
+  await dialog().getByLabel('Import into').click()
   await page.getByRole('option', { name: 'New calendar…' }).click()
   // The list has closed (it hides the rest of the page from assistive technology while it is open).
   await expect(page.getByRole('option')).toHaveCount(0)
   // The name starts as the calendar name of the file.
-  const name = section().getByLabel('Name of the new calendar')
+  const name = dialog().getByLabel('Name of the new calendar')
   await expect(name).toHaveValue('E2E import file')
   await name.fill(NEW_CALENDAR)
   expect(await scanSection()).toEqual([])
-  await section().getByRole('button', { name: 'Import 2 events' }).click()
-  await expect(section().getByRole('heading', { level: 3, name: 'Import finished' })).toBeFocused()
-  await expect(section()).toContainText(`The calendar “${NEW_CALENDAR}” was created.`)
-  await expect(section().getByRole('status')).toHaveText('Imported 2 events.')
-  await section().getByRole('button', { name: 'Done' }).click()
+  await dialog().getByRole('button', { name: 'Import 2 events' }).click()
+  await expect(dialog().getByRole('heading', { level: 3, name: 'Import finished' })).toBeFocused()
+  await expect(dialog()).toContainText(`The calendar “${NEW_CALENDAR}” was created.`)
+  await expect(dialog().getByRole('status')).toHaveText('Imported 2 events.')
+  await dialog().getByRole('button', { name: 'Done' }).click()
+  await expect(dialog()).toBeHidden()
 
   await page.getByRole('link', { name: 'Back to calendar' }).click()
   await expect(page.getByText(NEW_CALENDAR, { exact: true }).first()).toBeVisible()

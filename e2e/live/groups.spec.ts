@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import Database from 'better-sqlite3'
 import { readFileSync, writeFileSync } from 'node:fs'
+import { toast } from '../helpers'
 import { openSignedIn } from './session'
 
 // Groups and their calendars with the real stack (design §8 "Groups"): alice (an administrator)
@@ -120,9 +121,10 @@ async function openGroupsPage(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Groups', level: 1 })).toBeVisible()
 }
 
+/** Follows "Open" on the list to the page of the group. */
 async function openGroup(page: Page): Promise<void> {
-  await page.getByRole('button', { name: `Open ${GROUP}` }).click()
-  await expect(page.getByRole('heading', { name: GROUP, level: 2 })).toBeVisible()
+  await page.getByRole('link', { name: `Open ${GROUP}` }).click()
+  await expect(page.getByRole('heading', { name: GROUP, level: 1 })).toBeVisible()
 }
 
 test.beforeAll(async ({ browser }) => {
@@ -145,20 +147,23 @@ test.afterAll(async () => {
 
 test('alice creates the group and puts bob in it', async () => {
   await openGroupsPage(alice)
-  await alice.getByLabel('Group name').fill(GROUP)
-  await alice.getByRole('button', { name: 'Create group' }).click()
+  await alice.getByRole('button', { name: 'New group' }).click()
+  const create = alice.getByRole('dialog', { name: 'New group' })
+  await create.getByLabel('Group name').fill(GROUP)
+  await create.getByRole('button', { name: 'Create group' }).click()
+  await expect(create).toBeHidden()
   await expect(alice.locator('[data-group]').filter({ hasText: GROUP })).toBeVisible()
 
   await openGroup(alice)
   await choose(alice, 'Person', /\(bob\)/)
+  // Added at once: there is nothing to save afterwards.
   await alice
     .locator('form')
     .filter({ hasText: 'Add a member' })
     .getByRole('button', { name: 'Add', exact: true })
     .click()
-  await alice.getByRole('button', { name: 'Save members' }).click()
-  await expect(alice.getByRole('button', { name: 'Save members' })).toHaveCount(0)
-  await expect(alice.getByText('Members of').first()).toBeVisible()
+  await expect(toast(alice, `was added to ${GROUP}.`)).toBeVisible()
+  await expect(alice.locator('[data-group-member]').filter({ hasText: '(bob)' })).toBeVisible()
   // bob manages the group's calendars: only an administrator names a manager.
   await alice
     .getByRole('button', { name: new RegExp(`^Make manager of ${GROUP}: .*\\(bob\\)$`) })
@@ -173,19 +178,20 @@ test('bob sees the group he manages, without the controls of an administrator', 
   await expect(bob.locator('[data-group]').filter({ hasText: GROUP })).toContainText(
     'You manage this group',
   )
-  await expect(bob.getByRole('button', { name: 'Create group' })).toHaveCount(0)
+  await expect(bob.getByRole('button', { name: 'New group' })).toHaveCount(0)
   await openGroup(bob)
-  await expect(bob.getByRole('button', { name: 'Save members' })).toHaveCount(0)
   // a manager is not removed by another manager, nor named by one
   await expect(bob.getByRole('button', { name: /^Remove .*\(bob\) from/ })).toHaveCount(0)
   await expect(bob.getByRole('button', { name: /^Make / })).toHaveCount(0)
 })
 
 test('bob, a manager, makes a calendar for the group and shares it with alice to read', async () => {
-  const create = bob.locator('form').filter({ hasText: 'New calendar' })
+  await bob.getByRole('button', { name: 'New calendar' }).click()
+  const create = bob.getByRole('dialog', { name: 'New calendar' })
   await create.getByLabel('Name').fill(CALENDAR)
-  // The form's own button: the sidebar has an "Add calendar" plus of its own, for personal calendars.
+  // The dialog's own button: the sidebar has an "Add calendar" plus of its own, for personal calendars.
   await create.getByRole('button', { name: 'Add calendar' }).click()
+  await expect(create).toBeHidden()
   const calendars = bob.locator('[data-group-calendar]')
   await expect(calendars.filter({ hasText: CALENDAR })).toBeVisible()
 
@@ -252,7 +258,7 @@ test('bob, its manager, edits it from "Edit calendar" in his sidebar, staying in
   )
   await editor.getByRole('button', { name: 'Save changes' }).click()
   expect((await saved).status()).toBe(200)
-  await expect(editor).toContainText(`${CALENDAR} was saved.`)
+  await expect(toast(bob, `${CALENDAR} was saved.`)).toBeVisible()
   await editor.getByRole('button', { name: 'Close', exact: true }).last().click()
   await expect(editor).toBeHidden()
   await expect(bob.locator('[data-calendar-main]')).toBeVisible()
@@ -287,8 +293,16 @@ test('bob changes the share of alice to "Can edit" and alice can write', async (
 test('deleting the calendar and the group removes them from every home', async () => {
   // Radicale drops the shares on the next sharing run, which can take a minute.
   test.setTimeout(150_000)
-  await bob.getByRole('button', { name: `Delete ${CALENDAR}` }).click()
-  await bob.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+  // Delete is in the dialog of the calendar, which Edit on its row opens.
+  await bob.getByRole('button', { name: `Edit ${CALENDAR}` }).click()
+  await bob
+    .getByRole('dialog', { name: CALENDAR })
+    .getByRole('button', { name: 'Delete calendar' })
+    .click()
+  await bob
+    .getByRole('dialog', { name: `Delete "${CALENDAR}"?` })
+    .getByRole('button', { name: 'Delete' })
+    .click()
   await expect(bob.locator('[data-group-calendar]').filter({ hasText: CALENDAR })).toHaveCount(0)
   await waitForEntry(bobSub, false)
   await waitForEntry(aliceSub, false)
@@ -353,9 +367,9 @@ test('alice imports it, and bob is a member when he opens the page, and in the g
   expect(groupFileLine('web_calendar_users')).toContain(aliceSub)
 
   // The group is read-only for its members: no member controls, only the note.
-  await bob.getByRole('button', { name: `Open ${IDP_GROUP}` }).click()
+  await bob.getByRole('link', { name: `Open ${IDP_GROUP}` }).click()
   await expect(bob.locator('[data-imported-note]')).toBeVisible()
-  await expect(bob.getByRole('button', { name: 'Save members' })).toHaveCount(0)
+  await expect(bob.getByRole('button', { name: 'Add', exact: true })).toHaveCount(0)
 })
 
 test('alice stops importing it, and the group is gone from the app and from the file', async () => {

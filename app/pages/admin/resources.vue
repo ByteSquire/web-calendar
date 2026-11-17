@@ -1,12 +1,20 @@
 <!--
-  Resources administration, admins only: add, change, deactivate and delete resources (rooms, cars,
-  equipment) and say who may see, book and manage each. A resource with bookings, past ones
-  included, is not deleted (the server refuses it); deactivating it stops new bookings instead. The page checks `/api/me` and sends
-  everybody else back to the calendar; that is only tidiness, the admin routes refuse non-admins
-  themselves. Administrators are not managers by default, so the rules of a new resource must name
-  somebody with "Can manage" or nobody can accept a request. Every rule change sends the complete
-  rule list. After each change the calendar data is reloaded so the sidebar and the booking form
-  show it. `?open=<id>` (from "Edit resource" in the sidebar) opens that resource's dialog.
+  Resources administration, admins only: the resources (rooms, cars, equipment), each with Edit and
+  Access and an "Inactive" badge where it applies. "New resource" opens a dialog with the form; a
+  new resource is listed, a toast says that everyone signed in can book it, and its dialog opens on
+  "Access", since choosing who manages it comes next (administrators are not managers by default,
+  so nobody could accept a request). A refusal keeps the new-resource dialog open with the field
+  messages and the reason (and a toast). Changing, deactivating, reactivating and deleting a
+  resource, and its rules, happen in its dialog, the same one "Edit resource" in the sidebar opens;
+  the page follows its `saved` and `deleted`. Focus returns to what opened a dialog; when that is
+  gone (the form of a new resource, a deleted row) it goes to the Edit button of the resource that
+  was open, else to "New resource". A resource with bookings, past ones included, is not deleted
+  (the server refuses it); deactivating it stops new bookings instead. Only a failed load is told
+  on the page, with Retry, so nothing above the list comes and goes. The page checks `/api/me` and
+  sends everybody else back to the calendar; that is only tidiness, the admin routes refuse
+  non-admins themselves. After each change the calendar data is reloaded so the sidebar and the
+  booking form show it. `?open=<id>` (from "Edit resource" in the sidebar) opens that resource's
+  dialog.
 -->
 <template>
   <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 sm:p-6">
@@ -31,17 +39,19 @@
     />
 
     <template v-else-if="admin">
-      <p>
-        {{
-          t(
-            'Rooms, cars and equipment that people can book. Deactivated resources take no new bookings; existing bookings stay.',
-          )
-        }}
-      </p>
+      <p>{{ t('Rooms, cars and equipment that people can book.') }}</p>
 
       <SettingsErrorAlert v-if="loadError" :message="loadError" retryable @retry="start()" />
-      <SettingsErrorAlert v-if="problem" :message="problem" />
-      <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
+
+      <div class="flex flex-wrap items-end gap-3">
+        <UButton
+          ref="newButton"
+          :label="t('New resource')"
+          icon="i-lucide-plus"
+          :disabled="!loaded"
+          @click="openCreate"
+        />
+      </div>
 
       <p v-if="loaded && resources.length === 0" data-resource-none class="text-toned">
         {{ t('There are no resources yet.') }}
@@ -68,11 +78,11 @@
           <div class="flex flex-wrap gap-2">
             <UButton
               :aria-label="t('Edit {name}', { name: resource.name })"
+              :data-edit-resource="resource.id"
               icon="i-lucide-pencil"
               :label="t('Edit')"
               color="neutral"
               variant="outline"
-              :disabled="saving"
               @click="openDialog(resource, 'details')"
             />
             <UButton
@@ -81,30 +91,7 @@
               :label="t('Access')"
               color="neutral"
               variant="outline"
-              :disabled="saving"
               @click="openDialog(resource, 'access')"
-            />
-            <UButton
-              :aria-label="
-                resource.active
-                  ? t('Deactivate {name}', { name: resource.name })
-                  : t('Reactivate {name}', { name: resource.name })
-              "
-              :icon="resource.active ? 'i-lucide-pause' : 'i-lucide-play'"
-              :label="resource.active ? t('Deactivate') : t('Reactivate')"
-              color="neutral"
-              variant="outline"
-              :disabled="saving"
-              @click="setActive(resource, !resource.active)"
-            />
-            <UButton
-              :aria-label="t('Delete {name}', { name: resource.name })"
-              icon="i-lucide-trash-2"
-              :label="t('Delete')"
-              color="neutral"
-              variant="outline"
-              :disabled="saving"
-              @click="askDelete(resource)"
             />
           </div>
         </li>
@@ -116,26 +103,33 @@
         :resource="dialog"
         :users="users"
         :groups="groups"
+        :focus-fallback="focusAfterDialog"
         @close="dialog = null"
-        @saved="onSaved"
+        @saved="replaceResource"
+        @deleted="removeResource"
       />
 
-      <ConfirmDeleteDialog
-        :open="deleting !== null"
-        :event-title="deleting?.name ?? ''"
-        :detail="
-          t(
-            'The resource and the rules of who may use it are deleted. A resource with bookings cannot be deleted; deactivate it instead.',
-          )
-        "
-        :pending="saving"
-        :error="deleteError"
-        :return-focus-to="false"
-        @update:open="(open) => (open ? undefined : saving ? undefined : (deleting = null))"
-        @confirm="confirmDelete"
-      />
-
-      <AdminResourceForm v-if="loaded" :errors="createErrors" :busy="saving" :save="create" />
+      <UModal
+        :open="createOpen"
+        :title="t('New resource')"
+        :description="t('Everyone signed in can book a new resource. Next, choose who manages it.')"
+        :content="{ onOpenAutoFocus: focusCreateForm, onCloseAutoFocus: restoreAfterCreate }"
+        @update:open="(open) => (open ? undefined : creating ? undefined : (createOpen = false))"
+      >
+        <template #body>
+          <div class="flex flex-col gap-4">
+            <AdminResourceForm
+              ref="createForm"
+              :errors="createErrors"
+              :busy="creating"
+              cancellable
+              :save="create"
+              @cancel="createOpen = false"
+            />
+            <SettingsErrorAlert v-if="createProblem" :message="createProblem" />
+          </div>
+        </template>
+      </UModal>
     </template>
   </div>
 </template>
@@ -151,8 +145,10 @@ import {
   type AdminResource,
   type toBody,
 } from '~/utils/admin/resources'
+import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { N_, t, tc } from '~/utils/i18n'
 import { describeError } from '~/utils/settings/api-errors'
+import { createFocusReturn } from '~/utils/settings/focus-return'
 
 useHead({ title: () => t('Resources') })
 
@@ -163,6 +159,7 @@ const route = useRoute()
 const { admin, ensure } = useAdminFlag()
 const api = useAuthFetch()
 const status = useLiveStatus()
+const notify = useNotify()
 
 const checking = ref(true)
 const loaded = ref(false)
@@ -171,16 +168,21 @@ const resources = ref<AdminResource[]>([])
 const users = ref<AccessUser[]>([])
 /** The groups a rule can name (the Groups page's); empty when they could not be loaded. */
 const groups = ref<{ name: string }[]>([])
-const saving = ref(false)
-const problem = ref<string | null>(null)
-const notice = ref('')
+// The dialog of a new resource: open, sending, and what the server refused last time.
+const createOpen = ref(false)
+const creating = ref(false)
+const createProblem = ref<string | null>(null)
 const createErrors = ref<Record<string, string>>({})
 // The resource that is open in the dialog, and which of its two tabs is shown.
 const dialog = ref<AdminResource | null>(null)
 const tab = ref<'details' | 'access'>('details')
-// The resource whose delete is being confirmed, and why the last try failed.
-const deleting = ref<AdminResource | null>(null)
-const deleteError = ref('')
+const newButton = useTemplateRef<{ $el: HTMLElement }>('newButton')
+const createForm = useTemplateRef<{ focusFirst: () => void }>('createForm')
+// The dialog of "New resource" gives focus back to its button, unless a new resource's dialog took
+// over; the resource whose dialog was open last, for where focus goes after it.
+const createFocus = createFocusReturn(() => newButton.value?.$el)
+let handedOver = false
+let lastOpenId: number | null = null
 function summary(resource: AdminResource): string {
   return [
     typeLabel(resource.type),
@@ -221,24 +223,63 @@ async function start() {
 
 onMounted(start)
 
-/** Runs one change; the calendar data is reloaded when it worked. */
-async function run(
-  job: () => Promise<string>,
-): Promise<{ ok: boolean; fields: Record<string, string> }> {
-  if (saving.value) return { ok: false, fields: {} }
-  saving.value = true
-  problem.value = null
-  notice.value = ''
+function openCreate() {
+  createFocus.remember()
+  handedOver = false
+  // A new dialog starts clean: nothing of the last refusal is shown.
+  createProblem.value = null
+  createErrors.value = {}
+  createOpen.value = true
+}
+
+function focusCreateForm(event: Event) {
+  if (keepFocusOffControlsOnTouch(event)) return
+  event.preventDefault()
+  createForm.value?.focusFirst()
+}
+
+function restoreAfterCreate(event: Event) {
+  // The new resource's dialog has the focus now; it hands it on when it closes.
+  if (handedOver) event.preventDefault()
+  else createFocus.restore(event)
+}
+
+/** After a resource's dialog, when what opened it is gone: its Edit button, else "New resource". */
+function focusAfterDialog(): HTMLElement | null | undefined {
+  const edit =
+    lastOpenId === null
+      ? null
+      : document.querySelector<HTMLElement>(`[data-edit-resource="${lastOpenId}"]`)
+  return edit ?? newButton.value?.$el
+}
+
+async function create(body: Body): Promise<boolean> {
+  if (creating.value) return false
+  creating.value = true
+  createProblem.value = null
   try {
-    notice.value = await job()
+    const saved = await api<AdminResource>('/api/admin/resources', { method: 'POST', body })
+    resources.value = [...resources.value, saved].sort((a, b) => a.name.localeCompare(b.name))
+    createErrors.value = {}
+    handedOver = true
+    createOpen.value = false
+    notify.done(
+      t('{name} was added. Everyone signed in can book it; choose who manages it.', {
+        name: saved.name,
+      }),
+    )
     void status.refresh({ external: false })
-    return { ok: true, fields: {} }
+    // Who manages it is what comes next.
+    openDialog(saved, 'access')
+    return true
   } catch (cause) {
     const failure = describeResourceProblem(cause)
-    problem.value = failure.message
-    return { ok: false, fields: failure.fields }
+    createErrors.value = failure.fields
+    createProblem.value = failure.message
+    notify.failed(failure.message)
+    return false
   } finally {
-    saving.value = false
+    creating.value = false
   }
 }
 
@@ -247,65 +288,13 @@ function replaceResource(saved: AdminResource) {
   if (dialog.value?.id === saved.id) dialog.value = saved
 }
 
-async function create(body: Body): Promise<boolean> {
-  const result = await run(async () => {
-    const saved = await api<AdminResource>('/api/admin/resources', { method: 'POST', body })
-    resources.value = [...resources.value, saved].sort((a, b) => a.name.localeCompare(b.name))
-    return t('{name} was added. Everyone signed in can book it; choose who manages it.', {
-      name: saved.name,
-    })
-  })
-  createErrors.value = result.fields
-  return result.ok
-}
-
-async function setActive(resource: AdminResource, active: boolean) {
-  await run(async () => {
-    const saved = await api<AdminResource>(
-      active
-        ? `/api/admin/resources/${resource.id}`
-        : `/api/admin/resources/${resource.id}/deactivate`,
-      { method: active ? 'PUT' : 'POST', ...(active ? { body: { active: true } } : {}) },
-    )
-    replaceResource(saved)
-    return active
-      ? t('{name} is active again.', { name: saved.name })
-      : t('{name} is deactivated.', { name: saved.name })
-  })
-}
-
-function askDelete(resource: AdminResource) {
-  deleteError.value = ''
-  deleting.value = resource
-}
-
-async function confirmDelete() {
-  const target = deleting.value
-  if (!target) return
-  const result = await run(async () => {
-    await api(`/api/admin/resources/${target.id}`, { method: 'DELETE' })
-    resources.value = resources.value.filter((item) => item.id !== target.id)
-    return t('{name} was deleted.', { name: target.name })
-  })
-  if (result.ok) {
-    deleting.value = null
-  } else {
-    // The reason belongs in the dialog, not behind it.
-    deleteError.value = problem.value ?? ''
-    problem.value = null
-  }
+function removeResource(id: number) {
+  resources.value = resources.value.filter((item) => item.id !== id)
 }
 
 function openDialog(resource: AdminResource, which: 'details' | 'access') {
-  problem.value = null
-  notice.value = ''
+  lastOpenId = resource.id
   dialog.value = resource
   tab.value = which
-}
-
-function onSaved(saved: AdminResource, message: string) {
-  replaceResource(saved)
-  notice.value = message
-  void status.refresh({ external: false })
 }
 </script>

@@ -2,11 +2,14 @@
   One calendar, admins only, in a dialog with two tabs, as for a resource: "Details" renames it,
   changes its own colour (everybody sees it who has not picked their own) and deletes it (after
   asking; a person's default calendar and a resource's calendar are not deleted here); "Who has
-  access" shows the links to it (FR-26a) and its access rules, whether the calendar server has each
-  rule yet, and adds and removes them (every change sends the complete rule list). Used on Admin ›
-  Calendars and from "Edit calendar" in the sidebar's menu of a calendar, so an admin changes a
-  calendar where they are. It works on the list of `access`, so the page that holds it follows each
-  change; after each change the calendar view is reloaded. The admin routes check the caller.
+  access" shows the links to it (FR-26a), then under "People and groups" the owner, its access
+  rules with whether the calendar server has each rule yet, and the row that adds one (every change
+  sends the complete rule list). Used on Admin › Calendars and from "Edit calendar" in the
+  sidebar's menu of a calendar, so an admin changes a calendar where they are. What a change came
+  to is a toast; a failure is also told where it happened (in the form, the delete question, or
+  below the rules), and nothing of it is left when the dialog closes. Focus returns to what opened
+  it, else to `focusFallback`. It works on the list of `access`, so the page that holds it follows
+  each change; after each change the calendar view is reloaded. The admin routes check the caller.
 -->
 <template>
   <UModal
@@ -14,11 +17,11 @@
     :title="calendar ? calendarLabel(calendar) : ''"
     :description="t('Change the calendar, or choose who may see or change it.')"
     :ui="{ content: 'sm:max-w-2xl', title: 'wrap-anywhere' }"
+    :content="{ onCloseAutoFocus: focusReturn.restore }"
     @update:open="(open) => (open ? undefined : close())"
   >
     <template #body>
       <div v-if="calendar" class="flex flex-col gap-4">
-        <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
         <UTabs
           :model-value="tab"
           :items="tabItems"
@@ -109,7 +112,6 @@
                   )
                 }}
               </p>
-              <SettingsErrorAlert v-if="problem" :message="problem" />
               <AdminAccessRuleList
                 :rules="calendar.rules"
                 :calendar-name="calendar.name"
@@ -124,16 +126,18 @@
                   )
                 }}
               </p>
+              <SettingsErrorAlert v-if="problem" :message="problem" />
+              <AdminAccessAddForm
+                :key="calendar.id"
+                class="mt-1"
+                :users="access.users.data.value ?? []"
+                :groups="access.groups.data.value ?? []"
+                :busy="saving"
+                :levels="ACCESS_LEVELS"
+                default-level="read"
+                :save="add"
+              />
             </section>
-            <AdminAccessAddForm
-              class="mt-4"
-              :users="access.users.data.value ?? []"
-              :groups="access.groups.data.value ?? []"
-              :busy="saving"
-              :levels="ACCESS_LEVELS"
-              default-level="read"
-              :save="add"
-            />
           </template>
         </UTabs>
       </div>
@@ -157,7 +161,7 @@
     :detail="deleting ? deleteDetail(deleting) : ''"
     :pending="saving"
     :error="deleteError"
-    :return-focus-to="false"
+    :return-focus-to="deleteFocus"
     @update:open="(open) => (open ? undefined : closeDelete())"
     @confirm="confirmDelete"
   />
@@ -179,6 +183,7 @@ import {
 } from '~/utils/admin/access'
 import { N_, t, tc } from '~/utils/i18n'
 import { describeError } from '~/utils/settings/api-errors'
+import { createFocusReturn } from '~/utils/settings/focus-return'
 
 const props = defineProps<{
   /** The calendars, people and groups of the access administration, and its changes. */
@@ -186,22 +191,24 @@ const props = defineProps<{
   /** The calendar that is open, by id, so it follows the list; null for none. */
   calendarId: number | null
   tab: 'details' | 'access'
-  /** What the last change came to, shown in the dialog (a page may set it on opening). */
-  notice: string
+  /** Where focus goes when the element that opened the dialog is gone (looked up on closing). */
+  focusFallback?: () => HTMLElement | null | undefined
 }>()
 const emit = defineEmits<{
   close: []
   'update:tab': [tab: 'details' | 'access']
-  'update:notice': [notice: string]
-  /** The calendar was deleted; the words for it, for whoever shows them now. */
-  deleted: [message: string]
 }>()
 
 const status = useLiveStatus()
+const notify = useNotify()
+const focusReturn = createFocusReturn(() => props.focusFallback?.())
 const saving = ref(false)
 const problem = ref<string | null>(null)
 const deleting = ref<AccessCalendar | null>(null)
 const deleteError = ref('')
+// Where the question sends focus when it closes: nowhere while this dialog is under it; after a
+// delete, where this dialog would (both close, and the last one to go decides).
+const deleteFocus = ref<HTMLElement | false | null>(false)
 
 const tabItems = computed(() => [
   { label: t('Details'), value: 'details', slot: 'details' },
@@ -216,15 +223,16 @@ const pendingCount = computed(
   () => calendar.value?.rules.filter((rule) => !rule.applied).length ?? 0,
 )
 
-// Another calendar: no problem of the last one is shown.
+// Another calendar, or closed: nothing of the last one is shown.
 watch(
   () => props.calendarId,
-  () => {
+  (id) => {
+    if (id !== null) focusReturn.remember()
     problem.value = null
+    deleting.value = null
+    deleteError.value = ''
   },
 )
-
-const setNotice = (text: string) => emit('update:notice', text)
 
 function deleteDetail(target: AccessCalendar): string {
   if (ownerKindOf(target) === 'people') {
@@ -243,18 +251,22 @@ function close() {
   if (!saving.value) emit('close')
 }
 
-/** Runs one change of the calendar; the calendar view is reloaded when it worked. */
+/**
+ * Runs one change of the calendar and toasts what it came to; the calendar view is reloaded when it
+ * worked. A failure is returned too, for the place where it happened.
+ */
 async function run(job: () => Promise<string>, action: string): Promise<true | string> {
   if (saving.value) return t('Another change is still being saved. Try again in a moment.')
   saving.value = true
   problem.value = null
-  setNotice('')
   try {
-    setNotice(await job())
+    notify.done(await job())
     void status.refresh({ external: false })
     return true
   } catch (cause) {
-    return describeError(cause, action)
+    const message = describeError(cause, action)
+    notify.failed(message)
+    return message
   } finally {
     saving.value = false
   }
@@ -271,6 +283,7 @@ function saveDetails(body: CalendarFormBody): Promise<true | string> {
 
 function askDelete() {
   deleteError.value = ''
+  deleteFocus.value = false
   deleting.value = calendar.value
 }
 
@@ -287,8 +300,10 @@ async function confirmDelete() {
     return message
   }, N_('delete the calendar'))
   if (answer === true) {
+    // The row of the calendar is gone once the page has drawn the list again.
+    await nextTick()
+    deleteFocus.value = props.focusFallback?.() ?? null
     deleting.value = null
-    emit('deleted', message)
     emit('close')
   } else {
     deleteError.value = answer
@@ -307,11 +322,14 @@ async function change(rules: AccessRuleInput[], done: string): Promise<boolean> 
   if (!target || saving.value) return false
   saving.value = true
   problem.value = null
-  setNotice('')
   const result = await props.access.saveRules(target.id, rules, labelOf)
   saving.value = false
-  if (result.ok) setNotice(done)
-  else problem.value = result.message
+  if (result.ok) {
+    notify.done(done)
+  } else {
+    problem.value = result.message
+    notify.failed(result.message)
+  }
   return result.ok
 }
 

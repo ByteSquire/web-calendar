@@ -1,9 +1,10 @@
 <!--
-  The form of an external CalDAV account (FR-8), for adding and for changing one. It checks the
-  input itself first (utils/external/validation.ts) and shows what the server rejected next to the
-  input it is about; a server message disappears as soon as that input is edited, because the
-  message is about the value that was sent. The password never stays in the form: it is cleared the
-  moment it is reported. The parent does the request.
+  The form of an external CalDAV account (FR-8), for adding and for changing one, in the dialog of
+  ExternalAccountsSection; each opening gets a fresh form. It checks the input itself first
+  (utils/external/validation.ts) and shows what the server rejected next to the input it is about;
+  a server message disappears as soon as that input is edited, because the message is about the
+  value that was sent. The password never stays in the form: it is cleared the moment it is
+  reported. The parent does the request.
 -->
 <template>
   <form novalidate class="flex flex-col gap-4" @submit.prevent="onSubmit">
@@ -252,21 +253,7 @@ function focusFirst() {
   nameInput.value?.inputRef?.focus()
 }
 
-/** Back to an empty form for the next account. */
-function reset() {
-  name.value = ''
-  url.value = ''
-  authMode.value = 'none'
-  username.value = ''
-  password.value = ''
-  remember.value = false
-  color.value = ''
-  submitted.value = false
-  judged.value = null
-  passwordJudged.value = false
-}
-
-defineExpose({ focusFirst, reset })
+defineExpose({ focusFirst })
 
 async function onSubmit() {
   if (props.busy) return

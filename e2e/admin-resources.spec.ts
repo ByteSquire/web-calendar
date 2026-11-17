@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
-import { TODAY } from './helpers'
+import { TODAY, settledDialogs, toast } from './helpers'
 
 // The resources administration page. The app runs in demo mode here, which serves the SPA without
 // a login; `/api/me` and `/api/admin/resources` are answered by a small stateful stand-in for the
@@ -93,6 +93,10 @@ class MockResources {
       Object.assign(target, body)
       return route.fulfill({ json: target })
     }
+    if (target && method === 'DELETE') {
+      this.resources = this.resources.filter((item) => item !== target)
+      return route.fulfill({ json: {} })
+    }
     const deactivate = /^\/api\/admin\/resources\/(\d+)\/deactivate$/.exec(path)
     const found = this.resources.find((item) => item.id === Number(deactivate?.[1]))
     if (found && method === 'POST') {
@@ -126,25 +130,66 @@ async function openPage(page: Page, admin = true) {
 }
 
 test.describe('resources administration', () => {
-  test('lists active and inactive resources and adds one', async ({ page }) => {
+  test('lists active and inactive resources and adds one in a dialog', async ({ page }) => {
     const api = await openPage(page)
     await expect(page.getByRole('heading', { name: 'Resources', level: 1 })).toBeVisible()
     await expect(page.locator('[data-resource]')).toHaveCount(2)
     await expect(page.locator('[data-resource]').nth(1)).toContainText('Inactive')
-    await page.getByRole('main').getByLabel('Name').fill('Projector')
-    await page.getByRole('button', { name: 'Add resource' }).click()
+    // a row has Edit and Access only; no form below the list
+    await expect(page.locator('[data-resource]').first().getByRole('button')).toHaveText([
+      'Edit',
+      'Access',
+    ])
+    await expect(page.getByRole('main').getByRole('form')).toHaveCount(0)
+    await page.getByRole('button', { name: 'New resource' }).click()
+    const create = page.getByRole('dialog', { name: 'New resource' })
+    await create.getByLabel('Name').fill('Projector')
+    await create.getByRole('button', { name: 'Add resource' }).click()
     await expect(page.locator('[data-resource]')).toHaveCount(3)
     expect(api.calls.find((call) => call.method === 'POST')?.body).toMatchObject({
       name: 'Projector',
       type: 'room',
       capacity: null,
     })
+    await expect(toast(page, 'Projector was added.')).toBeVisible()
+    // who manages it comes next: its dialog opens on Access
+    await expect(create).toBeHidden()
+    const dialog = page.getByRole('dialog', { name: 'Projector' })
+    await expect(dialog.getByRole('tab', { name: 'Access' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    )
+    await expect(dialog.locator('[data-resource-rule]')).toHaveCount(2)
   })
 
-  test('deactivates a resource', async ({ page }) => {
+  test('deactivates a resource in its dialog, which stays open', async ({ page }) => {
     await openPage(page)
-    await page.getByRole('button', { name: 'Deactivate Board room' }).click()
+    await page.getByRole('button', { name: 'Edit Board room' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Board room' })
+    await expect(dialog).toContainText('Deactivated resources take no new bookings')
+    await dialog.getByRole('button', { name: 'Deactivate Board room' }).click()
     await expect(page.locator('[data-resource]').first()).toContainText('Inactive')
+    await expect(toast(page, 'Board room is deactivated.')).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Reactivate Board room' })).toBeVisible()
+    await expect(dialog).toContainText('This resource is deactivated')
+  })
+
+  test('deletes a resource from its dialog after asking', async ({ page }) => {
+    const api = await openPage(page)
+    await page.getByRole('button', { name: 'Edit Old van' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Old van' })
+    await dialog.getByRole('button', { name: 'Delete resource' }).click()
+    const confirm = page.getByRole('dialog', { name: 'Delete "Old van"?' })
+    await expect(confirm).toContainText('A resource with bookings cannot be deleted')
+    expect(api.calls.filter((call) => call.method === 'DELETE')).toEqual([])
+    await confirm.getByRole('button', { name: 'Delete', exact: true }).click()
+    await expect(page.locator('[data-resource]')).toHaveCount(1)
+    await expect(confirm).toBeHidden()
+    await expect(dialog).toBeHidden()
+    await expect(toast(page, 'Old van was deleted.')).toBeVisible()
+    expect(api.calls.filter((call) => call.method === 'DELETE').map((call) => call.path)).toEqual([
+      '/api/admin/resources/2',
+    ])
   })
 
   test('edits a resource and its access in one dialog, with tabs to switch', async ({ page }) => {
@@ -170,6 +215,7 @@ test.describe('resources administration', () => {
     // Saved: the dialog closes, as the one of an event does, and the list shows the new name.
     await expect(dialog).toBeHidden()
     await expect(page.locator('[data-resource]').first()).toContainText('Large room')
+    await expect(toast(page, 'Large room was saved.')).toBeVisible()
     expect(api.calls.find((call) => call.method === 'PUT')?.body).toMatchObject({
       name: 'Large room',
     })
@@ -201,10 +247,30 @@ test.describe('resources administration', () => {
     await openPage(page)
     await page.getByRole('button', { name: 'Edit Board room' }).click()
     const dialog = page.getByRole('dialog', { name: 'Board room' })
+    // measured once the dialog has finished zooming in
+    await expect(dialog).toBeVisible()
+    await settledDialogs(page)
+    for (const control of [
+      dialog.getByRole('button', { name: 'Deactivate Board room' }),
+      dialog.getByRole('button', { name: 'Delete resource' }),
+    ]) {
+      expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(43.5)
+    }
     for (const name of ['Resource', 'Access']) {
       await dialog.getByRole('tab', { name }).click()
       const box = await dialog.getByRole('tab', { name }).boundingBox()
       expect(box!.height).toBeGreaterThanOrEqual(43.5)
+      if (name === 'Access') {
+        await expect(dialog.locator('[data-resource-rule]')).toHaveCount(2)
+        const add = dialog.getByRole('form', { name: 'Add access' })
+        for (const control of [
+          add.getByRole('button', { name: /^Who/ }),
+          add.getByRole('combobox', { name: 'Level' }),
+          add.getByRole('button', { name: 'Add', exact: true }),
+        ]) {
+          expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(43.5)
+        }
+      }
       await expect(dialog.getByRole('tabpanel')).toBeVisible()
       // The colours of the tabs change with a short transition; the scan waits for its end.
       await page.waitForTimeout(500)
@@ -229,5 +295,17 @@ test.describe('resources administration', () => {
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze()
     expect(violations.map((violation) => violation.id)).toEqual([])
+
+    // nor with the dialog of a new resource open
+    await page.getByRole('button', { name: 'New resource' }).click()
+    const create = page.getByRole('dialog', { name: 'New resource' })
+    await expect(create.getByLabel('Name')).toBeVisible()
+    // scanned once the dialog has faded in
+    await settledDialogs(page)
+    const inDialog = await new AxeBuilder({ page })
+      .include('[role="dialog"]')
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+      .analyze()
+    expect(inDialog.violations.map((violation) => violation.id)).toEqual([])
   })
 })

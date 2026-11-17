@@ -2,8 +2,10 @@
   Who else sees a group calendar, in a dialog: the owning group is listed first, fixed, with what
   it may do (it cannot be removed here). Each other share can be removed; adding a person or a
   group picks one of the people who signed in once or one of the groups the page lists, with "Can
-  view" or "Can edit". Saving sends the complete list. The dialog stays open while saving fails,
-  so the person can see the reason and try again. Focus returns to the button that opened it.
+  view" or "Can edit"; when the people offered are not everybody, it says so there. Saving sends the
+  complete list. The dialog stays open while saving fails, so the person can see the reason and try
+  again. Each opening starts from what the calendar has now. Focus returns to the button that
+  opened it.
 -->
 <template>
   <UModal
@@ -106,6 +108,14 @@
               }}</template>
             </USelectMenu>
           </UFormField>
+          <p v-if="peopleTruncated" class="text-sm text-toned">
+            {{
+              t(
+                'Not everybody is offered when you add members or share: the list shows the first {count} people, sorted by name.',
+                { count: people.length },
+              )
+            }}
+          </p>
           <UFormField v-else :label="t('Group')" :error="problem" required>
             <USelectMenu
               v-model="group"
@@ -182,6 +192,8 @@ const props = defineProps<{
   groupName: string
   groups: readonly GroupSummary[]
   people: readonly GroupPerson[]
+  /** More people signed in than `people` holds (the server cuts the list). */
+  peopleTruncated?: boolean
   busy: boolean
   /** Saves the complete list of extra shares; true when it worked, else the words for the failure. */
   save: (shares: CalendarShare[]) => Promise<true | string>

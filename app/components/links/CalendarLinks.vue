@@ -1,144 +1,39 @@
 <!--
   The links of a calendar (FR-26a): on the access page, every link to the chosen calendar (admins);
-  in Settings, the person's own links. A "Create link" button at the top opens the form: a label,
-  the access level of a share ("Busy times only" or "Can view") and the password visitors enter.
-  Each link opens to its address and its password. The password stays hidden until "Show password"
-  is pressed; it is then asked from the server (each time is in the audit log) and kept in this
-  component only, until it is hidden again, the link is closed or the component goes away (the
-  access page renders one per calendar). A new link opens at once with its password hidden; the
-  password typed for it is kept so that showing or copying it needs no call. In Settings, a
-  calendar the person sees as busy times only offers "Busy times only" alone: "Can view" is
-  disabled with a sentence why (the server refuses it too).
+  in Settings, the person's own links. The heading row has "Create link", which opens a dialog with
+  the form: a label, the access level of a share ("Busy times only" or "Can view") and the password
+  visitors enter. A row shows the calendar's colour, the label, a summary and "Details", nothing of
+  the password. "Details" opens a dialog with the address (with Copy), the password, the dates and
+  "Remove link" (asked first). The password stays hidden until "Show the password of …" is
+  pressed; it is then asked from the server (each time is in the audit log) and kept in this
+  component only, until it is hidden again, the dialog closes or the component goes away (the
+  access page renders one per calendar). After a link is made, the same dialog turns into its
+  details, with the password typed for it kept so that showing or copying it needs no call. What
+  happened (created, removed) is told in a toast, so the list never moves; a failed request is
+  told in the dialog and in a toast. In Settings, a calendar the person sees as busy times only
+  offers "Busy times only" alone: "Can view" is disabled with a sentence why (the server refuses
+  it too).
 -->
 <template>
   <div class="flex flex-col gap-3">
-    <div class="flex flex-wrap items-center justify-between gap-2">
+    <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <component
         :is="titleTag ?? 'h3'"
         :id="ids.heading"
         ref="heading"
         tabindex="-1"
-        class="font-semibold focus:outline-none"
+        :class="[titleTag === 'h2' ? 'text-lg' : '', 'font-semibold focus:outline-none']"
       >
         {{ title }}
       </component>
       <UButton
-        v-if="!formOpen"
-        ref="createToggle"
         :label="t('Create link')"
         icon="i-lucide-plus"
-        color="neutral"
-        variant="outline"
+        aria-haspopup="dialog"
         @click="openForm"
       />
     </div>
     <slot />
-
-    <form
-      v-if="formOpen"
-      ref="form"
-      novalidate
-      class="flex flex-col gap-3 rounded-md border border-default p-3"
-      :aria-label="t('New link')"
-      :aria-busy="creating"
-      @submit.prevent="create"
-    >
-      <UFormField
-        v-if="calendarItems"
-        :label="t('Calendar')"
-        name="link-calendar"
-        required
-        :error="calendarError"
-        :ui="FIELD_UI"
-      >
-        <USelect
-          v-model="calendarHref"
-          :items="calendarChoices"
-          :placeholder="t('Choose a calendar')"
-          class="w-full"
-          :ui="SELECT_UI"
-        />
-      </UFormField>
-      <UFormField
-        :label="t('Label')"
-        name="link-label"
-        :help="t('Who is the link for? Optional; the calendar name if empty.')"
-        :error="labelError"
-        :ui="FIELD_UI"
-      >
-        <UInput v-model="label" autocomplete="off" class="w-full" />
-      </UFormField>
-      <UFormField
-        name="link-level"
-        :help="
-          busyOnly
-            ? t(
-                'You see this calendar as busy times only, so a link to it can show busy times only.',
-              )
-            : undefined
-        "
-        :error="levelError"
-        :ui="FIELD_UI"
-      >
-        <URadioGroup
-          v-model="level"
-          :legend="t('Access level')"
-          :items="levelItems"
-          :ui="RADIO_UI"
-          orientation="vertical"
-        />
-      </UFormField>
-      <UFormField
-        :label="t('Password')"
-        name="link-password"
-        required
-        :help="
-          t('At least {min} characters. Visitors need it to open the link.', {
-            min: MIN_LINK_PASSWORD_LENGTH,
-          })
-        "
-        :error="passwordError"
-        :ui="FIELD_UI"
-      >
-        <div class="flex gap-2">
-          <UInput
-            ref="passwordInput"
-            v-model="password"
-            :type="showTyped ? 'text' : 'password'"
-            autocomplete="new-password"
-            class="min-w-0 flex-1"
-          />
-          <UButton
-            :icon="showTyped ? 'i-lucide-eye-off' : 'i-lucide-eye'"
-            color="neutral"
-            variant="outline"
-            square
-            class="min-h-11 min-w-11 justify-center"
-            :aria-label="t('Show password')"
-            :aria-pressed="showTyped"
-            @click="showTyped = !showTyped"
-          />
-        </div>
-      </UFormField>
-      <SettingsErrorAlert v-if="createAlert" :message="createAlert" />
-      <div class="flex flex-wrap gap-2">
-        <UButton
-          type="submit"
-          :label="creating ? t('Creating…') : t('Create link')"
-          icon="i-lucide-link"
-          :aria-busy="creating"
-        />
-        <UButton
-          :label="t('Cancel')"
-          color="neutral"
-          variant="outline"
-          :disabled="creating"
-          @click="closeForm"
-        />
-      </div>
-    </form>
-
-    <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
 
     <SettingsErrorAlert
       v-if="links.error.value"
@@ -152,149 +47,25 @@
           v-for="link in list"
           :key="link.id"
           data-calendar-link
-          class="flex flex-col gap-3 rounded-md border border-default p-3"
+          class="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-default p-3"
         >
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <span
-              class="size-3 shrink-0 rounded-full"
-              :style="{ backgroundColor: link.calendarColor ?? 'var(--ui-text-muted)' }"
-              aria-hidden="true"
-            />
-            <div class="min-w-0 flex-1 basis-48">
-              <p
-                :id="rowId(link.id, 'name')"
-                tabindex="-1"
-                class="font-medium wrap-anywhere focus:outline-none"
-              >
-                {{ link.label }}
-              </p>
-              <p class="text-sm text-toned wrap-anywhere">{{ summaryOf(link) }}</p>
-            </div>
-            <UButton
-              :label="t('Details')"
-              :trailing-icon="
-                openRows.has(link.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
-              "
-              color="neutral"
-              variant="outline"
-              :aria-label="t('Details of {label}', { label: link.label })"
-              :aria-expanded="openRows.has(link.id)"
-              :aria-controls="rowId(link.id, 'details')"
-              @click="toggleRow(link)"
-            />
-            <UButton
-              :label="t('Remove')"
-              icon="i-lucide-trash-2"
-              color="neutral"
-              variant="outline"
-              :aria-label="t('Remove link {label}', { label: link.label })"
-              :class="ERROR_TEXT"
-              @click="askRemove(link)"
-            />
+          <span
+            class="size-3 shrink-0 rounded-full"
+            :style="{ backgroundColor: link.calendarColor ?? 'var(--ui-text-muted)' }"
+            aria-hidden="true"
+          />
+          <div class="min-w-0 flex-1 basis-48">
+            <p class="font-medium wrap-anywhere">{{ link.label }}</p>
+            <p class="text-sm text-toned wrap-anywhere">{{ summaryOf(link) }}</p>
           </div>
-
-          <div
-            v-if="openRows.has(link.id)"
-            :id="rowId(link.id, 'details')"
-            class="flex flex-col gap-2"
-          >
-            <dl
-              class="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-y-2"
-            >
-              <template v-if="link.slug && !unavailable.has(link.id)">
-                <dt class="text-sm font-medium">{{ t('Address') }}</dt>
-                <dd class="flex gap-2">
-                  <UInput
-                    :id="rowId(link.id, 'address')"
-                    :model-value="addressOf(link)"
-                    readonly
-                    autocomplete="off"
-                    spellcheck="false"
-                    class="min-w-0 flex-1"
-                    :aria-label="t('Address of {label}', { label: link.label })"
-                    :ui="{ base: 'font-mono' }"
-                    @focus="selectAll"
-                  />
-                  <UButton
-                    icon="i-lucide-copy"
-                    color="neutral"
-                    variant="outline"
-                    square
-                    class="min-h-11 min-w-11 justify-center"
-                    :aria-label="t('Copy the address of {label}', { label: link.label })"
-                    @click="copyAddress(link)"
-                  />
-                </dd>
-                <dt class="text-sm font-medium">{{ t('Password') }}</dt>
-                <dd class="flex gap-2">
-                  <UInput
-                    v-if="shownRows.has(link.id)"
-                    :id="rowId(link.id, 'password')"
-                    :model-value="passwords.get(link.id)"
-                    readonly
-                    autocomplete="off"
-                    spellcheck="false"
-                    class="min-w-0 flex-1"
-                    :aria-label="t('Password of {label}', { label: link.label })"
-                    :ui="{ base: 'font-mono' }"
-                    @focus="selectAll"
-                  />
-                  <span v-else class="flex min-h-11 min-w-0 flex-1 items-center px-2.5 font-mono">
-                    <span aria-hidden="true">••••••••••••</span>
-                    <span class="sr-only">{{ t('Hidden') }}</span>
-                  </span>
-                  <UButton
-                    :icon="shownRows.has(link.id) ? 'i-lucide-eye-off' : 'i-lucide-eye'"
-                    color="neutral"
-                    variant="outline"
-                    square
-                    class="min-h-11 min-w-11 justify-center"
-                    :aria-label="t('Show the password of {label}', { label: link.label })"
-                    :aria-pressed="shownRows.has(link.id)"
-                    :aria-busy="revealing.has(link.id)"
-                    @click="togglePassword(link)"
-                  />
-                  <UButton
-                    icon="i-lucide-copy"
-                    color="neutral"
-                    variant="outline"
-                    square
-                    class="min-h-11 min-w-11 justify-center"
-                    :aria-label="t('Copy the password of {label}', { label: link.label })"
-                    :aria-busy="revealing.has(link.id)"
-                    @click="copyPassword(link)"
-                  />
-                </dd>
-              </template>
-              <dt class="text-sm font-medium">{{ t('Created') }}</dt>
-              <dd class="text-sm">
-                <time :datetime="link.createdAt">{{
-                  formatDateTime(link.createdAt, displayZone)
-                }}</time>
-              </dd>
-              <dt class="text-sm font-medium">{{ t('Last opened') }}</dt>
-              <dd class="text-sm">
-                <time v-if="link.lastUsedAt" :datetime="link.lastUsedAt">{{
-                  formatDateTime(link.lastUsedAt, displayZone)
-                }}</time>
-                <template v-else>{{ t('Never') }}</template>
-              </dd>
-            </dl>
-            <p v-if="!link.slug || unavailable.has(link.id)" class="text-sm">
-              {{
-                t(
-                  'The address and the password of this link cannot be shown. Remove it and create a new one if you need them.',
-                )
-              }}
-            </p>
-            <SettingsErrorAlert
-              v-if="rowProblems.get(link.id)"
-              :message="rowProblems.get(link.id)!"
-            />
-            <p role="status" aria-live="polite" class="min-h-5 text-sm">
-              {{ rowNotices.get(link.id) }}
-            </p>
-          </div>
+          <UButton
+            :label="t('Details')"
+            color="neutral"
+            variant="outline"
+            aria-haspopup="dialog"
+            :aria-label="t('Details of {label}', { label: link.label })"
+            @click="openDetails(link)"
+          />
         </li>
       </ul>
       <p v-else class="text-toned">{{ emptyText }}</p>
@@ -303,6 +74,236 @@
       <span class="sr-only">{{ t('Loading calendar links') }}</span>
       <USkeleton class="h-16 w-full" aria-hidden="true" />
     </div>
+
+    <!-- The form of a new link, then (after creating it) the details of a link. -->
+    <UModal
+      :open="mode !== null"
+      :title="shownHeader.title"
+      :description="shownHeader.description"
+      :content="{ onOpenAutoFocus: focusFirst, onCloseAutoFocus: dialogFocus.restore }"
+      :ui="{ title: 'wrap-anywhere', description: 'wrap-anywhere' }"
+      @update:open="(open: boolean) => !open && closeDialog()"
+    >
+      <template #body>
+        <form
+          v-if="mode === 'create'"
+          :id="ids.form"
+          ref="form"
+          novalidate
+          class="flex flex-col gap-3"
+          :aria-busy="creating"
+          @submit.prevent="create"
+        >
+          <UFormField
+            v-if="calendarItems"
+            :label="t('Calendar')"
+            name="link-calendar"
+            required
+            :error="calendarError"
+            :ui="FIELD_UI"
+          >
+            <USelect
+              v-model="calendarHref"
+              :items="calendarChoices"
+              :placeholder="t('Choose a calendar')"
+              class="w-full"
+              :ui="SELECT_UI"
+            />
+          </UFormField>
+          <UFormField
+            :label="t('Label')"
+            name="link-label"
+            :help="t('Who is the link for? Optional; the calendar name if empty.')"
+            :error="labelError"
+            :ui="FIELD_UI"
+          >
+            <UInput v-model="label" autocomplete="off" class="w-full" />
+          </UFormField>
+          <UFormField
+            name="link-level"
+            :help="
+              busyOnly
+                ? t(
+                    'You see this calendar as busy times only, so a link to it can show busy times only.',
+                  )
+                : undefined
+            "
+            :error="levelError"
+            :ui="FIELD_UI"
+          >
+            <URadioGroup
+              v-model="level"
+              :legend="t('Access level')"
+              :items="levelItems"
+              :ui="RADIO_UI"
+              orientation="vertical"
+            />
+          </UFormField>
+          <UFormField
+            :label="t('Password')"
+            name="link-password"
+            required
+            :help="
+              t('At least {min} characters. Visitors need it to open the link.', {
+                min: MIN_LINK_PASSWORD_LENGTH,
+              })
+            "
+            :error="passwordError"
+            :ui="FIELD_UI"
+          >
+            <div class="flex gap-2">
+              <UInput
+                ref="passwordInput"
+                v-model="password"
+                :type="showTyped ? 'text' : 'password'"
+                autocomplete="new-password"
+                class="min-w-0 flex-1"
+              />
+              <UButton
+                :icon="showTyped ? 'i-lucide-eye-off' : 'i-lucide-eye'"
+                color="neutral"
+                variant="outline"
+                square
+                class="min-h-11 min-w-11 justify-center"
+                :aria-label="t('Show password')"
+                :aria-pressed="showTyped"
+                @click="showTyped = !showTyped"
+              />
+            </div>
+          </UFormField>
+          <SettingsErrorAlert v-if="createAlert" :message="createAlert" />
+        </form>
+
+        <div v-else-if="mode === 'details' && current" class="flex flex-col gap-3">
+          <dl
+            class="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center sm:gap-y-2"
+          >
+            <template v-if="current.slug && !unavailable.has(current.id)">
+              <dt class="text-sm font-medium">{{ t('Address') }}</dt>
+              <dd class="flex gap-2">
+                <UInput
+                  :id="ids.address"
+                  :model-value="addressOf(current)"
+                  readonly
+                  autocomplete="off"
+                  spellcheck="false"
+                  class="min-w-0 flex-1"
+                  :aria-label="t('Address of {label}', { label: current.label })"
+                  :ui="{ base: 'font-mono' }"
+                  @focus="selectAll"
+                />
+                <UButton
+                  icon="i-lucide-copy"
+                  color="neutral"
+                  variant="outline"
+                  square
+                  class="min-h-11 min-w-11 justify-center"
+                  :aria-label="t('Copy the address of {label}', { label: current.label })"
+                  @click="copyAddress(current)"
+                />
+              </dd>
+              <dt class="text-sm font-medium">{{ t('Password') }}</dt>
+              <dd class="flex gap-2">
+                <UInput
+                  v-if="shown"
+                  :id="ids.password"
+                  :model-value="knownPassword ?? ''"
+                  readonly
+                  autocomplete="off"
+                  spellcheck="false"
+                  class="min-w-0 flex-1"
+                  :aria-label="t('Password of {label}', { label: current.label })"
+                  :ui="{ base: 'font-mono' }"
+                  @focus="selectAll"
+                />
+                <span v-else class="flex min-h-11 min-w-0 flex-1 items-center px-2.5 font-mono">
+                  <span aria-hidden="true">••••••••••••</span>
+                  <span class="sr-only">{{ t('Hidden') }}</span>
+                </span>
+                <UButton
+                  :icon="shown ? 'i-lucide-eye-off' : 'i-lucide-eye'"
+                  color="neutral"
+                  variant="outline"
+                  square
+                  class="min-h-11 min-w-11 justify-center"
+                  :aria-label="t('Show the password of {label}', { label: current.label })"
+                  :aria-pressed="shown"
+                  :aria-busy="revealing"
+                  @click="togglePassword(current)"
+                />
+                <UButton
+                  icon="i-lucide-copy"
+                  color="neutral"
+                  variant="outline"
+                  square
+                  class="min-h-11 min-w-11 justify-center"
+                  :aria-label="t('Copy the password of {label}', { label: current.label })"
+                  :aria-busy="revealing"
+                  @click="copyPassword(current)"
+                />
+              </dd>
+            </template>
+            <dt class="text-sm font-medium">{{ t('Created') }}</dt>
+            <dd class="text-sm">
+              <time :datetime="current.createdAt">{{
+                formatDateTime(current.createdAt, displayZone)
+              }}</time>
+            </dd>
+            <dt class="text-sm font-medium">{{ t('Last opened') }}</dt>
+            <dd class="text-sm">
+              <time v-if="current.lastUsedAt" :datetime="current.lastUsedAt">{{
+                formatDateTime(current.lastUsedAt, displayZone)
+              }}</time>
+              <template v-else>{{ t('Never') }}</template>
+            </dd>
+          </dl>
+          <p v-if="!current.slug || unavailable.has(current.id)" class="text-sm">
+            {{
+              t(
+                'The address and the password of this link cannot be shown. Remove it and create a new one if you need them.',
+              )
+            }}
+          </p>
+          <SettingsErrorAlert v-if="problem" :message="problem" />
+          <!-- Present from the start and only its text changes, so screen readers announce it. -->
+          <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ copyNotice }}</p>
+        </div>
+      </template>
+
+      <template #footer>
+        <div v-if="mode === 'create'" class="flex w-full flex-wrap justify-end gap-2">
+          <UButton
+            :label="t('Cancel')"
+            color="neutral"
+            variant="outline"
+            :disabled="creating"
+            @click="closeDialog"
+          />
+          <UButton
+            type="submit"
+            :form="ids.form"
+            :label="creating ? t('Creating…') : t('Create link')"
+            icon="i-lucide-link"
+            :aria-busy="creating"
+          />
+        </div>
+        <div
+          v-else-if="mode === 'details' && current"
+          class="flex w-full flex-wrap justify-between gap-2"
+        >
+          <UButton
+            :label="t('Remove link')"
+            icon="i-lucide-trash-2"
+            color="neutral"
+            variant="outline"
+            :aria-label="t('Remove link {label}', { label: current.label })"
+            :class="ERROR_TEXT"
+            @click="askRemove(current)"
+          />
+          <UButton ref="closeButton" :label="t('Done')" @click="closeDialog" />
+        </div>
+      </template>
+    </UModal>
 
     <SettingsConfirmModal
       :open="removeTarget !== null"
@@ -323,9 +324,11 @@
 <script setup lang="ts">
 import { useAuthFetch } from '~/composables/useAuthFetch'
 import { levelLabel } from '~/utils/admin/access'
+import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { principalLabel } from '~/utils/principal-label'
 import { N_, t, tv } from '~/utils/i18n'
 import { describeError, parseApiError } from '~/utils/settings/api-errors'
+import { createFocusReturn } from '~/utils/settings/focus-return'
 import { formatDateTime } from '~/utils/settings/format'
 import {
   LINK_LEVELS,
@@ -345,6 +348,8 @@ import { ERROR_TEXT, FIELD_UI } from '~/utils/settings/ui'
 const props = defineProps<{
   title: string
   titleTag?: 'h2' | 'h3'
+  /** The id of the heading, for a section around it that is named by it. */
+  headingId?: string
   /** The links of this calendar of the access page (admins). Without it: the caller's own links. */
   calendarId?: number
   /** Its name, for the sentence of an empty list. */
@@ -358,15 +363,17 @@ const RADIO_UI = { item: 'min-h-11 items-center' }
 const SELECT_UI = { base: 'min-h-11', item: 'min-h-11 items-center' }
 
 const api = useAuthFetch()
+const notify = useNotify()
 const displayZone = useDisplayTimeZone()
 const origin = useRequestURL().origin
 const endpoints = linkEndpoints(props.calendarId)
 const forCalendar = props.calendarId !== undefined
 const base = useId()
-const ids = { heading: `${base}-heading` }
-
-function rowId(id: number, part: string): string {
-  return `${base}-${id}-${part}`
+const ids = {
+  heading: props.headingId ?? `${base}-heading`,
+  form: `${base}-form`,
+  address: `${base}-address`,
+  password: `${base}-password`,
 }
 
 const links = createResource(
@@ -377,10 +384,9 @@ onMounted(() => links.reload())
 const list = computed(() => links.data.value?.links ?? [])
 
 const heading = useTemplateRef<HTMLElement>('heading')
-const createToggle = useTemplateRef<{ $el: HTMLElement }>('createToggle')
 const form = useTemplateRef<HTMLFormElement>('form')
 const passwordInput = useTemplateRef<{ inputRef: HTMLInputElement | null }>('passwordInput')
-const notice = ref('')
+const closeButton = useTemplateRef<{ $el: HTMLElement }>('closeButton')
 
 const emptyText = computed(() =>
   forCalendar
@@ -423,9 +429,63 @@ function selectAll(event: FocusEvent) {
   if (event.target instanceof HTMLInputElement) event.target.select()
 }
 
+// ---- The dialog -----------------------------------------------------------------------------------
+
+/** What the dialog shows: the form of a new link or the details of `current`; null: closed. */
+const mode = ref<'create' | 'details' | null>(null)
+const current = ref<CalendarLinkItem | null>(null)
+const dialogFocus = createFocusReturn(() => heading.value)
+
+const header = computed(() =>
+  mode.value === 'details' && current.value
+    ? { title: current.value.label, description: summaryOf(current.value) }
+    : {
+        title: t('New link'),
+        description: t('Visitors open the link with the password you choose here.'),
+      },
+)
+// Kept while the dialog fades out, when what it showed is gone already.
+const shownHeader = ref(header.value)
+watch(header, (value) => {
+  if (mode.value !== null) shownHeader.value = value
+})
+
+function openDialog(next: 'create' | 'details', link: CalendarLinkItem | null) {
+  dialogFocus.remember()
+  current.value = link
+  mode.value = next
+  shownHeader.value = header.value
+}
+
+function closeDialog() {
+  // A request in flight cannot be taken back: stay open until it has answered.
+  if (creating.value) return
+  mode.value = null
+  current.value = null
+  resetForm()
+  forget()
+}
+
+/** The first field of the form; the address of a link (or Done, when it has none). */
+function focusFirst(event: Event) {
+  if (keepFocusOffControlsOnTouch(event)) return
+  event.preventDefault()
+  focusInDialog()
+}
+
+function focusInDialog() {
+  if (mode.value === 'create') {
+    // The calendar's drop-down in Settings, the label on the access page.
+    form.value?.querySelector<HTMLElement>('button, input')?.focus()
+    return
+  }
+  const address = document.getElementById(ids.address)
+  if (address) address.focus()
+  else closeButton.value?.$el.focus()
+}
+
 // ---- Making a link ------------------------------------------------------------------------------
 
-const formOpen = ref(false)
 const calendarHref = ref<string | undefined>(undefined)
 const label = ref('')
 const level = ref<string>('read')
@@ -476,27 +536,15 @@ function resetForm() {
   createAlert.value = null
 }
 
-async function openForm() {
+function openForm() {
   resetForm()
-  notice.value = ''
-  formOpen.value = true
-  await nextTick()
-  // The first field: the calendar's drop-down in Settings, the label on the access page.
-  form.value?.querySelector<HTMLElement>('button, input')?.focus()
-}
-
-async function closeForm() {
-  formOpen.value = false
-  resetForm()
-  await nextTick()
-  createToggle.value?.$el.focus()
+  openDialog('create', null)
 }
 
 async function create() {
   if (creating.value) return
   submitted.value = true
   createAlert.value = null
-  notice.value = ''
   if (calendarError.value || labelError.value || passwordError.value) return
   creating.value = true
   const typed = password.value
@@ -510,22 +558,27 @@ async function create() {
         password: typed,
       },
     })
-    links.update((current) => ({ links: [link, ...current.links] }))
-    // Opened, with the password hidden; the one just typed is kept so Show needs no call.
-    passwords.set(link.id, typed)
-    openRows.add(link.id)
-    formOpen.value = false
-    resetForm()
-    notice.value = t(
-      'Link “{label}” created. Send the address and the password, ideally by different routes.',
-      { label: link.label },
+    links.update((value) => ({ links: [link, ...value.links] }))
+    notify.done(
+      t('Link “{label}” created. Send the address and the password, ideally by different routes.', {
+        label: link.label,
+      }),
     )
+    // The dialog turns into the link's details, with the password hidden; the one just typed is
+    // kept so Show and Copy need no call.
+    resetForm()
+    forget()
+    knownPassword.value = typed
+    current.value = link
+    mode.value = 'details'
     await nextTick()
-    document.getElementById(rowId(link.id, 'name'))?.focus()
+    focusInDialog()
   } catch (cause) {
     const failure = describeLinkCreateError(cause)
     serverErrors.value = failure.byField
     createAlert.value = failure.alert ?? null
+    const summary = failure.alert ?? Object.values(failure.byField)[0]
+    if (summary) notify.failed(summary)
     await nextTick()
     if (failure.byField.password) passwordInput.value?.inputRef?.focus()
   } finally {
@@ -535,108 +588,110 @@ async function create() {
 
 // ---- Address and password of a link -------------------------------------------------------------
 
-const openRows = reactive(new Set<number>())
-/** The passwords this component has, by link: shown ones and the one of a link just made. */
-const passwords = reactive(new Map<number, string>())
-const shownRows = reactive(new Set<number>())
-const revealing = reactive(new Set<number>())
-const unavailable = reactive(new Set<number>())
-const rowProblems = reactive(new Map<number, string>())
-const rowNotices = reactive(new Map<number, string>())
-
-function forget(id: number) {
-  passwords.delete(id)
-  shownRows.delete(id)
+function openDetails(link: CalendarLinkItem) {
+  forget()
+  openDialog('details', link)
 }
 
-function toggleRow(link: CalendarLinkItem) {
-  if (openRows.has(link.id)) {
-    openRows.delete(link.id)
-    forget(link.id)
-    rowProblems.delete(link.id)
-    rowNotices.delete(link.id)
-  } else {
-    openRows.add(link.id)
-  }
+/** The password of the open link this component has: the shown one, or the one just typed. */
+const knownPassword = ref<string | null>(null)
+const shown = ref(false)
+const revealing = ref(false)
+/** Links whose address and password the server cannot give. */
+const unavailable = reactive(new Set<number>())
+const problem = ref<string | null>(null)
+const copyNotice = ref('')
+
+function forget() {
+  knownPassword.value = null
+  shown.value = false
+  problem.value = null
+  copyNotice.value = ''
+}
+
+/** The dialog still shows this link: an answer for one that was closed meanwhile is dropped. */
+function stillOpen(link: CalendarLinkItem): boolean {
+  return mode.value === 'details' && current.value?.id === link.id
 }
 
 /** The password of the link: kept here, or asked from the server. Null when there is none. */
 async function passwordOf(link: CalendarLinkItem): Promise<string | null> {
-  const kept = passwords.get(link.id)
-  if (kept !== undefined) return kept
-  if (revealing.has(link.id)) return null
-  revealing.add(link.id)
-  rowProblems.delete(link.id)
+  if (knownPassword.value !== null) return knownPassword.value
+  if (revealing.value) return null
+  revealing.value = true
+  problem.value = null
   try {
     const { password: value } = await api<{ password: string }>(endpoints.reveal(link.id), {
       method: 'POST',
     })
-    return value
+    return stillOpen(link) ? value : null
   } catch (cause) {
+    if (!stillOpen(link)) return null
     const failure = describeRevealError(cause)
     if (failure.kind === 'not_available') unavailable.add(link.id)
     else if (failure.kind === 'gone') {
-      dropLink(link, t('This link no longer exists.'))
-      void nextTick(() => heading.value?.focus())
-    } else rowProblems.set(link.id, failure.message)
+      dropLink(link)
+      notify.failed(t('This link no longer exists.'))
+      closeDialog()
+    } else {
+      problem.value = failure.message
+      notify.failed(failure.message)
+    }
     return null
   } finally {
-    revealing.delete(link.id)
+    revealing.value = false
   }
 }
 
 async function togglePassword(link: CalendarLinkItem) {
-  rowNotices.delete(link.id)
-  if (shownRows.has(link.id)) {
-    forget(link.id)
+  copyNotice.value = ''
+  if (shown.value) {
+    forget()
     return
   }
   const value = await passwordOf(link)
-  if (value === null || !openRows.has(link.id)) return
-  passwords.set(link.id, value)
-  shownRows.add(link.id)
+  if (value === null || !stillOpen(link)) return
+  knownPassword.value = value
+  shown.value = true
 }
 
-async function copyText(link: CalendarLinkItem, value: string, field: 'address' | 'password') {
-  rowNotices.delete(link.id)
+async function copyText(value: string, field: 'address' | 'password') {
+  copyNotice.value = ''
   await nextTick()
   try {
     await navigator.clipboard.writeText(value)
-    rowNotices.set(link.id, t('Copied to the clipboard.'))
+    copyNotice.value = t('Copied to the clipboard.')
   } catch {
     // Selected in its field, for Ctrl+C.
     if (field === 'password') {
-      passwords.set(link.id, value)
-      shownRows.add(link.id)
+      knownPassword.value = value
+      shown.value = true
     }
     await nextTick()
-    const input = document.getElementById(rowId(link.id, field))
+    const input = document.getElementById(field === 'address' ? ids.address : ids.password)
     if (input instanceof HTMLInputElement) {
       input.focus()
       input.select()
     }
-    rowNotices.set(
-      link.id,
+    copyNotice.value =
       field === 'address'
         ? t('Could not copy automatically. The address is selected: press Ctrl+C to copy it.')
-        : t('Could not copy automatically. The password is selected: press Ctrl+C to copy it.'),
-    )
+        : t('Could not copy automatically. The password is selected: press Ctrl+C to copy it.')
   }
 }
 
 function copyAddress(link: CalendarLinkItem) {
   const address = addressOf(link)
-  if (address) void copyText(link, address, 'address')
+  if (address) void copyText(address, 'address')
 }
 
 async function copyPassword(link: CalendarLinkItem) {
   const value = await passwordOf(link)
-  if (value !== null && openRows.has(link.id)) await copyText(link, value, 'password')
+  if (value !== null && stillOpen(link)) await copyText(value, 'password')
 }
 
 onBeforeUnmount(() => {
-  passwords.clear()
-  shownRows.clear()
+  forget()
 })
 
 // ---- Removing a link ----------------------------------------------------------------------------
@@ -652,14 +707,9 @@ function askRemove(link: CalendarLinkItem) {
   removeTarget.value = link
 }
 
-function dropLink(link: CalendarLinkItem, message: string) {
-  links.update((current) => ({ links: current.links.filter((item) => item.id !== link.id) }))
-  openRows.delete(link.id)
-  forget(link.id)
+function dropLink(link: CalendarLinkItem) {
+  links.update((value) => ({ links: value.links.filter((item) => item.id !== link.id) }))
   unavailable.delete(link.id)
-  rowProblems.delete(link.id)
-  rowNotices.delete(link.id)
-  notice.value = message
 }
 
 async function remove() {
@@ -672,12 +722,16 @@ async function remove() {
   } catch (cause) {
     if (parseApiError(cause).kind !== 'not-found') {
       removeError.value = describeError(cause, N_('remove the link'))
+      notify.failed(removeError.value)
       removing.value = false
       return
     }
   }
-  dropLink(target, t('Link “{label}” removed.', { label: target.label }))
+  dropLink(target)
+  notify.done(t('Link “{label}” removed.', { label: target.label }))
   removeTarget.value = null
   removing.value = false
+  // The details of a link that is gone have nothing left to show.
+  if (current.value?.id === target.id) closeDialog()
 }
 </script>

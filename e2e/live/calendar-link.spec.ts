@@ -203,32 +203,42 @@ test('alice makes a link to her calendar on the Settings page and sees its addre
     .filter({ has: alice.getByRole('heading', { name: 'Calendar links' }) })
   await expect(section).toBeVisible()
   await section.getByRole('button', { name: 'Create link' }).click()
-  await section.getByRole('combobox', { name: /^Calendar/ }).click()
+  const form = alice.getByRole('dialog', { name: 'New link' })
+  await form.getByRole('combobox', { name: /^Calendar/ }).click()
   await alice.getByRole('option', { name: CALENDAR }).click()
-  await section.getByRole('textbox', { name: /^Label/ }).fill(LABEL)
-  await expect(section.getByRole('radio', { name: /^Can view/ })).toBeChecked()
-  await section.getByRole('textbox', { name: /^Password/ }).fill(PASSWORD)
-  await section.getByRole('button', { name: 'Create link' }).click()
-  const field = section.getByRole('textbox', { name: `Address of ${LABEL}` })
+  await form.getByRole('textbox', { name: /^Label/ }).fill(LABEL)
+  await expect(form.getByRole('radio', { name: /^Can view/ })).toBeChecked()
+  await form.getByRole('textbox', { name: /^Password/ }).fill(PASSWORD)
+  await form.getByRole('button', { name: 'Create link' }).click()
+  // the dialog turns into the details of the new link
+  const details = alice.getByRole('dialog', { name: LABEL, exact: true })
+  const field = details.getByRole('textbox', { name: `Address of ${LABEL}` })
   await expect(field).toBeVisible()
   address = await field.inputValue()
   expect(address).toMatch(new RegExp(`^${APP_ORIGIN}/link/[A-Za-z0-9_-]{43}$`))
-  await expect(section).not.toContainText(PASSWORD)
+  await expect(alice.getByText(`Link “${LABEL}” created.`, { exact: false })).toBeVisible()
   const { violations } = await new AxeBuilder({ page: alice })
-    .include('section:has(#settings-links)')
+    .include('[role="dialog"]')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
   expect(violations.map((violation) => violation.id)).toEqual([])
+  await details.getByRole('button', { name: 'Done' }).click()
+  await expect(details).toBeHidden()
+  // the row shows nothing of the password
+  await expect(section).not.toContainText(PASSWORD)
+  await expect(section).not.toContainText('Hidden')
   // after a reload the address is still there, and the password is asked of the server
   await alice.reload()
   await section.getByRole('button', { name: `Details of ${LABEL}` }).click()
-  await expect(section.getByRole('textbox', { name: `Address of ${LABEL}` })).toHaveValue(address)
+  await expect(details.getByRole('textbox', { name: `Address of ${LABEL}` })).toHaveValue(address)
   const reveal = alice.waitForResponse((response) => response.url().endsWith('/reveal'))
-  await section.getByRole('button', { name: `Show the password of ${LABEL}` }).click()
+  await details.getByRole('button', { name: `Show the password of ${LABEL}` }).click()
   expect((await reveal).status()).toBe(200)
-  await expect(section.getByRole('textbox', { name: `Password of ${LABEL}` })).toHaveValue(PASSWORD)
-  await section.getByRole('button', { name: `Show the password of ${LABEL}` }).click()
-  await expect(section.getByRole('textbox', { name: `Password of ${LABEL}` })).toHaveCount(0)
+  await expect(details.getByRole('textbox', { name: `Password of ${LABEL}` })).toHaveValue(PASSWORD)
+  await details.getByRole('button', { name: `Show the password of ${LABEL}` }).click()
+  await expect(details.getByRole('textbox', { name: `Password of ${LABEL}` })).toHaveCount(0)
+  await details.getByRole('button', { name: 'Done' }).click()
+  await expect(details).toBeHidden()
 })
 
 test('a visitor is asked for the password and refused with a wrong one', async ({ browser }) => {
@@ -312,8 +322,13 @@ test('the page asks nothing of the identity provider, and works while it is down
 
 test('when alice removes the link the visitor loses it at once', async () => {
   await alice.reload()
+  await alice.getByRole('button', { name: `Details of ${LABEL}` }).click()
   await alice.getByRole('button', { name: `Remove link ${LABEL}` }).click()
-  await alice.getByRole('dialog').getByRole('button', { name: 'Remove link' }).click()
+  await alice
+    .getByRole('dialog', { name: `Remove the link “${LABEL}”?` })
+    .getByRole('button', { name: 'Remove link' })
+    .click()
+  await expect(alice.getByRole('dialog')).toHaveCount(0)
   await expect(alice.getByText(`Link “${LABEL}” removed.`)).toBeVisible()
   // the next read of the open page fails, and the page says why
   await visitor.reload()
@@ -435,22 +450,23 @@ test.describe('a link to a calendar shared with its maker', () => {
     await expect(links).toContainText('in Settings')
 
     await alice.getByRole('button', { name: 'Create link' }).click()
-    const form = alice.getByRole('form', { name: 'New link' })
+    const form = alice.getByRole('dialog', { name: 'New link' })
     await form.getByRole('textbox', { name: /^Label/ }).fill(ADMIN_LABEL)
     await form.getByRole('radio', { name: /^Busy times only/ }).click()
     await form.getByRole('textbox', { name: /^Password/ }).fill(ADMIN_PASSWORD)
     await form.getByRole('button', { name: 'Create link' }).click()
-    const field = alice.getByRole('textbox', { name: `Address of ${ADMIN_LABEL}` })
+    // the dialog turns into the details of the new link, over the access dialog
+    const details = alice.getByRole('dialog', { name: ADMIN_LABEL, exact: true })
+    const field = details.getByRole('textbox', { name: `Address of ${ADMIN_LABEL}` })
     await expect(field).toBeVisible()
     adminAddress = await field.inputValue()
     expect(adminAddress).toMatch(new RegExp(`^${APP_ORIGIN}/link/[A-Za-z0-9_-]{43}$`))
-    await expect(links.getByRole('listitem').filter({ hasText: ADMIN_LABEL })).toContainText(
-      'Busy times only',
-    )
     // hidden until shown; the one just typed needs no call
-    await expect(alice.getByRole('textbox', { name: `Password of ${ADMIN_LABEL}` })).toHaveCount(0)
-    await alice.getByRole('button', { name: `Show the password of ${ADMIN_LABEL}` }).click()
-    await expect(alice.getByRole('textbox', { name: `Password of ${ADMIN_LABEL}` })).toHaveValue(
+    await expect(details.getByRole('textbox', { name: `Password of ${ADMIN_LABEL}` })).toHaveCount(
+      0,
+    )
+    await details.getByRole('button', { name: `Show the password of ${ADMIN_LABEL}` }).click()
+    await expect(details.getByRole('textbox', { name: `Password of ${ADMIN_LABEL}` })).toHaveValue(
       ADMIN_PASSWORD,
     )
     const { violations } = await new AxeBuilder({ page: alice })
@@ -458,6 +474,11 @@ test.describe('a link to a calendar shared with its maker', () => {
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze()
     expect(violations.map((violation) => violation.id)).toEqual([])
+    await details.getByRole('button', { name: 'Done' }).click()
+    await expect(details).toBeHidden()
+    await expect(links.getByRole('listitem').filter({ hasText: ADMIN_LABEL })).toContainText(
+      'Busy times only',
+    )
   })
 
   test('a visitor of the access-page link sees busy blocks only', async () => {
@@ -565,14 +586,16 @@ test.describe('a link to a calendar shared with its maker', () => {
       .locator('section')
       .filter({ has: alice.getByRole('heading', { name: 'Calendar links' }) })
     await section.getByRole('button', { name: 'Create link' }).click()
-    await section.getByRole('combobox', { name: /^Calendar/ }).click()
+    const form = alice.getByRole('dialog', { name: 'New link' })
+    await form.getByRole('combobox', { name: /^Calendar/ }).click()
     await alice.getByRole('option', { name: SHARED }).click()
-    await expect(section.getByRole('radio', { name: /^Can view/ })).toBeDisabled()
-    await expect(section.getByRole('radio', { name: /^Busy times only/ })).toBeChecked()
-    await expect(section).toContainText(
+    await expect(form.getByRole('radio', { name: /^Can view/ })).toBeDisabled()
+    await expect(form.getByRole('radio', { name: /^Busy times only/ })).toBeChecked()
+    await expect(form).toContainText(
       'You see this calendar as busy times only, so a link to it can show busy times only.',
     )
-    await section.getByRole('button', { name: 'Cancel' }).click()
+    await form.getByRole('button', { name: 'Cancel' }).click()
+    await expect(form).toBeHidden()
   })
 })
 

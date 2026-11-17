@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openApp, press } from './helpers'
+import { openApp, press, toast } from './helpers'
 
 // The booking requests page in demo mode: local mock rows, no API calls.
 test.describe('resource bookings (demo)', () => {
@@ -17,7 +17,7 @@ test.describe('resource bookings (demo)', () => {
     await expect(page.locator('[data-overlap]').first()).toBeVisible()
     await press(page.getByRole('button', { name: /^Accept Priya Nair/ }))
     await expect(page.locator('[data-request]')).toHaveCount(0)
-    await expect(page.locator('[data-bookings-notice]')).toContainText('1 overlapping request')
+    await expect(toast(page, /1 overlapping request/)).toBeVisible()
     expect(api).toEqual([])
   })
 

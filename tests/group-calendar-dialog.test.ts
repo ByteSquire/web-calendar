@@ -1,8 +1,8 @@
 // @vitest-environment nuxt
 // The dialog of a group calendar (from "Edit calendar" in the sidebar) inside a real Nuxt UI app,
 // with a fake API behind `useAuthFetch`: what it loads and shows, what a change of the name and
-// colour sends, the share dialog over it, the delete after asking, and what a person who may not
-// change the calendar sees.
+// colour sends (and tells the parent, with a toast), the share dialog over it, the delete after
+// asking, and what a person who may not change the calendar sees.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 import { clearNuxtState } from '#app'
@@ -21,6 +21,7 @@ vi.mock('~/composables/useAuthFetch', () => ({
 const target = ref<{ groupId: number; calendarId: number; name: string } | null>(null)
 const closed = vi.fn()
 const deleted = vi.fn()
+const saved = vi.fn()
 const Shell = defineComponent({
   render: () =>
     h(UApp, null, {
@@ -32,6 +33,7 @@ const Shell = defineComponent({
             target.value = null
           },
           onDeleted: deleted,
+          onSaved: saved,
         }),
     }),
 })
@@ -46,6 +48,7 @@ beforeEach(() => {
   failSave = null
   closed.mockClear()
   deleted.mockClear()
+  saved.mockClear()
   detail = {
     id: 3,
     name: 'staff',
@@ -120,7 +123,7 @@ describe('the dialog of a group calendar', () => {
     expect(button(/^Delete calendar$/)).toBeDefined()
   })
 
-  it('saves the name and colour, and says so in the dialog', async () => {
+  it('saves the name and colour, says so in a toast and tells the parent', async () => {
     await open()
     const name = dialog()!.querySelector<HTMLInputElement>('input[autocomplete="off"]')!
     name.value = 'Rota 2'
@@ -132,6 +135,9 @@ describe('the dialog of a group calendar', () => {
       body: { name: 'Rota 2', color: '#047857' },
     })
     await vi.waitFor(() => expect(text(document.body)).toContain('Rota 2 was saved.'))
+    // Not inside the dialog: a toast, so nothing in the dialog moves.
+    expect(text(dialog('Rota 2'))).not.toContain('Rota 2 was saved.')
+    expect(saved).toHaveBeenCalledWith(expect.objectContaining({ id: 7, name: 'Rota 2' }))
     expect(closed).not.toHaveBeenCalled()
   })
 
@@ -139,8 +145,13 @@ describe('the dialog of a group calendar', () => {
     failSave = { statusCode: 403, data: { statusCode: 403, message: 'Forbidden' } }
     await open()
     button(/^Save changes$/)!.click()
-    await vi.waitFor(() => expect(text(document.body)).toContain('Could not save the calendar.'))
+    await vi.waitFor(() =>
+      expect(text(dialog()?.querySelector('[role="alert"]'))).toContain(
+        'Could not save the calendar.',
+      ),
+    )
     expect(closed).not.toHaveBeenCalled()
+    expect(saved).not.toHaveBeenCalled()
   })
 
   it('opens the share dialog over it', async () => {

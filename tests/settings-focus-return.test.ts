@@ -41,6 +41,15 @@ describe('createFocusReturn', () => {
     expect(document.activeElement).toBe(heading)
   })
 
+  it('uses the fallback when the element was disabled meanwhile (an "add" button at its limit)', () => {
+    const { opener, heading, back, close } = setup()
+    opener.focus()
+    back.remember()
+    ;(opener as HTMLButtonElement).disabled = true
+    close()
+    expect(document.activeElement).toBe(heading)
+  })
+
   it('uses the fallback when nothing had focus, as after a tap in Safari (the body is active)', () => {
     const { heading, back, close } = setup()
     expect(document.activeElement).toBe(document.body)

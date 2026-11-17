@@ -197,11 +197,9 @@
     <template v-if="live">
       <AdminCalendarDialog
         v-model:tab="editCalendarTab"
-        v-model:notice="editCalendarNotice"
         :access="adminAccess"
         :calendar-id="editCalendarId"
         @close="editCalendarId = null"
-        @deleted="(message: string) => toast.add({ title: message, icon: 'i-lucide-check' })"
       />
       <GroupsCalendarDialog
         :target="editGroupCalendar"
@@ -214,7 +212,7 @@
         :users="resourceUsers"
         :groups="resourceGroups"
         @close="editResource = null"
-        @saved="(_saved, message: string) => toast.add({ title: message, icon: 'i-lucide-check' })"
+        @saved="(saved: AdminResource) => (editResource = saved)"
       />
     </template>
     <CategoryEventsDialog
@@ -903,7 +901,8 @@ function editCalendarItem(calendar: Calendar): DropdownMenuItem[] {
 
 // ---- The admin dialogs, opened in place --------------------------------------------------------
 // "Edit calendar" and "Edit resource" open the dialogs of Admin › Calendars and Admin › Resources
-// over the calendar, so an admin does not leave it. What they show is loaded when one is opened.
+// over the calendar, so an admin does not leave it. What they show is loaded when one is opened; the
+// dialogs toast what their changes came to themselves.
 
 const adminAccess = useAdminAccess()
 /** The group calendar whose dialog is open, for a manager of its group. */
@@ -911,7 +910,6 @@ const editGroupCalendar = ref<{ groupId: number; calendarId: number; name: strin
 const fetchApi = useAuthFetch()
 const editCalendarId = ref<number | null>(null)
 const editCalendarTab = ref<'details' | 'access'>('details')
-const editCalendarNotice = ref('')
 const editResource = ref<AdminResource | null>(null)
 const editResourceTab = ref<'details' | 'access'>('details')
 const resourceUsers = ref<AccessUser[]>([])
@@ -941,7 +939,6 @@ async function openCalendarEditor(server: { id: number } | { path: string }) {
     notFoundYet(t('This calendar is not known to the server yet. Try again in a few minutes.'))
     return
   }
-  editCalendarNotice.value = ''
   editCalendarTab.value = 'details'
   editCalendarId.value = found.id
 }

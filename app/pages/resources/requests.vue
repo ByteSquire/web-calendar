@@ -4,7 +4,8 @@
   which declines the others. Everybody sees their own bookings and can cancel them. Nobody is sent
   away: the sidebar links this page for everybody, and a person with nothing to decide and no
   booking sees that, instead of being thrown back to the calendar. The routes check the rights
-  themselves. Demo mode keeps the rows in local state.
+  themselves. Demo mode keeps the rows in local state. What a decision came to is a toast; a
+  failure is also shown in the row it was about, not at the end of a long page.
 -->
 <template>
   <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 sm:p-6">
@@ -74,6 +75,7 @@
               <UIcon name="i-lucide-layers" class="mt-0.5 size-4 shrink-0" />
               <span>{{ overlapText(row) }}</span>
             </p>
+            <FormAlert :message="problemFor(row)" class="empty:hidden" />
             <div class="flex flex-wrap gap-2">
               <UButton
                 :label="t('Accept')"
@@ -110,12 +112,15 @@
             data-mine
             class="flex flex-col gap-2 rounded-lg border border-default p-3 sm:flex-row sm:items-center sm:justify-between"
           >
-            <div>
-              <p class="font-medium">{{ row.resourceName }}</p>
-              <p>{{ slotText(row) }}</p>
-              <p class="text-toned">
-                {{ row.status === 'pending' ? t('Waiting for approval') : t('Approved') }}
-              </p>
+            <div class="flex min-w-0 flex-col gap-2">
+              <div>
+                <p class="font-medium">{{ row.resourceName }}</p>
+                <p>{{ slotText(row) }}</p>
+                <p class="text-toned">
+                  {{ row.status === 'pending' ? t('Waiting for approval') : t('Approved') }}
+                </p>
+              </div>
+              <FormAlert :message="problemFor(row)" class="empty:hidden" />
             </div>
             <UButton
               :label="t('Cancel booking')"
@@ -136,11 +141,6 @@
         </ul>
       </section>
     </template>
-
-    <p role="status" aria-live="polite" data-bookings-notice class="min-h-5 text-sm">
-      {{ notice }}
-    </p>
-    <FormAlert :message="problem" />
   </div>
 </template>
 
@@ -154,10 +154,12 @@ useHead({ title: () => t('Resource bookings') })
 
 const zone = useDisplayTimeZone()
 const bookings = useResourceBookings()
+const notify = useNotify()
 const busy = ref(false)
-const notice = ref('')
-const problem = ref('')
+// Why the last decision failed, shown in the row it was about (and as a toast).
+const problem = ref<{ id: BookingRow['id']; message: string } | null>(null)
 
+const problemFor = (row: BookingRow) => (problem.value?.id === row.id ? problem.value.message : '')
 const slotText = (row: BookingRow) => formatSlot(row.start, row.end, zone.value)
 
 function overlapText(row: BookingRow): string {
@@ -196,11 +198,14 @@ onMounted(start)
 async function decide(row: BookingRow, action: 'accept' | 'decline' | 'cancel') {
   if (busy.value) return
   busy.value = true
-  notice.value = ''
-  problem.value = ''
+  problem.value = null
   const result = await bookings[action](row)
   busy.value = false
-  if (result.ok) notice.value = result.message
-  else problem.value = result.message
+  if (result.ok) {
+    notify.done(result.message)
+  } else {
+    problem.value = { id: row.id, message: result.message }
+    notify.failed(result.message)
+  }
 }
 </script>

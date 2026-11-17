@@ -6,15 +6,7 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { UApp, USelectMenu } from '#components'
 import SettingsPage from '~/pages/settings.vue'
 import { useServerConfigState } from '~/composables/useServerConfigState'
-import {
-  FakeBackend,
-  alerts,
-  field,
-  reply,
-  requireButton,
-  subscription,
-  token,
-} from './settings-helpers'
+import { FakeBackend, alerts, reply, requireButton, subscription, token } from './settings-helpers'
 
 const state = vi.hoisted(() => ({ backend: null as FakeBackend | null }))
 vi.mock('~/composables/useAuthFetch', async () =>
@@ -195,7 +187,7 @@ describe('demo mode', () => {
 })
 
 describe('when the API fails', () => {
-  it('renders, shows an alert with Retry per section and keeps the forms usable', async () => {
+  it('renders, shows an alert with Retry per section and keeps adding possible', async () => {
     configure({ demo: true })
     backend.override = () => reply.error(401, 'Unauthorized')
     await mountPage()
@@ -211,9 +203,8 @@ describe('when the API fails', () => {
       'App tokens',
       'iCal subscriptions',
     ])
-    // the tokens form works as far as the client can tell
-    expect(requireButton('Create token').disabled).toBe(false)
-    expect(field('Label')).toBeDefined()
+    // creating a token and adding a subscription work as far as the client can tell
+    expect(requireButton('New token').disabled).toBe(false)
     expect(requireButton('Add subscription').disabled).toBe(false)
     expect(document.body.textContent).toContain('Nothing is saved in demo mode')
   })

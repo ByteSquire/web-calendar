@@ -17,8 +17,8 @@ import {
   reply,
   requireButton,
   rows,
-  statusText,
   subscription,
+  toasts,
   type,
 } from './settings-helpers'
 
@@ -27,8 +27,8 @@ vi.mock('~/composables/useAuthFetch', async () =>
   (await import('./settings-helpers')).authFetchModule(state)(),
 )
 
-// The subscription section inside a real Nuxt UI app: list, add form, edit and delete dialogs and
-// the check button.
+// The subscription section inside a real Nuxt UI app: list, the dialog that adds or changes one,
+// the delete dialog and the check button.
 const Shell = defineComponent({
   render: () => h(UApp, null, { default: () => h(SubscriptionsSection) }),
 })
@@ -46,7 +46,18 @@ async function mountSection(setup?: (backend: FakeBackend) => void) {
 const sourcesVersion = () => useState<number>('calendar-sources-version', () => 0).value
 const nameInput = (root: ParentNode = document) => field('Name', root)
 const urlInput = (root: ParentNode = document) => field('Address of the .ics file', root)
-const addButton = () => requireButton(/^(Add subscription|Saving…)$/)
+/** "Add subscription" beside the heading. */
+const addButton = () => requireButton('Add subscription', document.querySelector('section')!)
+/** The submit button of the dialog. */
+const submitButton = () => requireButton(/^(Add subscription|Saving…)$/, dialog()!)
+
+/** "Add subscription", from the keyboard: the dialog opens with the focus in the name. */
+async function openAdd() {
+  addButton().focus()
+  addButton().click()
+  await vi.waitFor(() => expect(dialog()?.querySelector('form')).toBeTruthy())
+  await vi.waitFor(() => expect(document.activeElement).toBe(nameInput(dialog()!)))
+}
 const colorRadios = (root: ParentNode = document) => [
   ...root.querySelectorAll<HTMLInputElement>('input[type="radio"]'),
 ]
@@ -125,8 +136,8 @@ describe('the list', () => {
     app = await mountSuspended(Shell, { attachTo: document.body })
     await vi.waitFor(() => expect(alerts()).toHaveLength(1))
     expect(alerts()[0]!.textContent).toContain('Could not load your calendar subscriptions.')
-    // the add form is still there and no skeleton is left
-    expect(addButton()).toBeDefined()
+    // adding still works and no skeleton is left
+    expect(addButton().disabled).toBe(false)
     expect(document.querySelector('.animate-pulse')).toBeNull()
 
     backend.override = null
@@ -137,7 +148,10 @@ describe('the list', () => {
 })
 
 describe('the colour picker', () => {
-  beforeEach(() => mountSection())
+  beforeEach(async () => {
+    await mountSection()
+    await openAdd()
+  })
 
   it('is a radio group named Colour with a named choice for each palette colour', () => {
     const group = document.querySelector('fieldset')!
@@ -167,14 +181,27 @@ describe('the colour picker', () => {
 })
 
 describe('adding a subscription', () => {
-  beforeEach(() => mountSection())
+  beforeEach(async () => {
+    await mountSection()
+    await openAdd()
+  })
 
-  it('sends name, address and colour, adds the row, resets the form and tells the calendar', async () => {
+  it('opens a dialog from the button beside the heading; the section has no form', async () => {
+    expect(addButton().getAttribute('aria-haspopup')).toBe('dialog')
+    expect(document.querySelector('section form')).toBeNull()
+    expect(dialog()!.textContent).toContain('Add subscription')
+    requireButton('Cancel', dialog()!).click()
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(document.activeElement).toBe(addButton())
+    expect(backend.callsTo('POST', '/api/ical-subscriptions')).toHaveLength(0)
+  })
+
+  it('sends name, address and colour, adds the row, closes, tells the calendar and starts empty again', async () => {
     expect(sourcesVersion()).toBe(0)
     type(nameInput(), '  Holidays  ')
     type(urlInput(), ' webcal://example.org/holidays.ics ')
     colorRadios()[1]!.click()
-    addButton().click()
+    submitButton().click()
 
     await vi.waitFor(() => expect(rows('Your calendar subscriptions')).toHaveLength(1))
     expect(backend.callsTo('POST', '/api/ical-subscriptions')[0]!.body).toEqual({
@@ -183,7 +210,11 @@ describe('adding a subscription', () => {
       color: COLOR_PALETTE[1]!.value,
     })
     expect(sourcesVersion()).toBe(1)
-    expect(statusText()).toContain('Subscription “Holidays” added.')
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(toasts()).toContain('Subscription “Holidays” added.')
+    expect(document.activeElement).toBe(addButton())
+
+    await openAdd()
     expect(nameInput().value).toBe('')
     expect(urlInput().value).toBe('')
     expect(colorRadios()[0]!.checked).toBe(true)
@@ -191,7 +222,7 @@ describe('adding a subscription', () => {
   })
 
   it('checks the input before asking the server', async () => {
-    addButton().click()
+    submitButton().click()
     await vi.waitFor(() =>
       expect(errorTexts()).toEqual([
         'Enter a name for the calendar.',
@@ -202,6 +233,8 @@ describe('adding a subscription', () => {
     expect(sourcesVersion()).toBe(0)
     expect(nameInput().getAttribute('aria-invalid')).toBe('true')
     expect(document.activeElement).toBe(nameInput())
+    // a check of the input is told at the input only, not in a toast
+    expect(toasts()).toEqual([])
 
     type(nameInput(), 'Holidays')
     type(urlInput(), 'ftp://example.org/a.ics')
@@ -231,10 +264,13 @@ describe('adding a subscription', () => {
     backend.override = (call) => (call.method === 'POST' ? answer : undefined)
     type(nameInput(), 'Holidays')
     type(urlInput(), 'https://example.org/holidays.ics')
-    addButton().click()
+    submitButton().click()
     await vi.waitFor(() => expect(errorTexts()).toEqual([message]))
     expect(urlInput().getAttribute('aria-invalid')).toBe('true')
     expect(document.activeElement).toBe(urlInput())
+    // in the dialog, which stays open, and in a toast
+    expect(dialog()).not.toBeNull()
+    await vi.waitFor(() => expect(toasts()).toContain(message))
     // nothing was added and the calendar was not told
     expect(rows('Your calendar subscriptions')).toHaveLength(0)
     expect(sourcesVersion()).toBe(0)
@@ -255,7 +291,7 @@ describe('adding a subscription', () => {
         : undefined
     type(nameInput(), 'Holidays')
     type(urlInput(), 'https://example.org/holidays.ics')
-    addButton().click()
+    submitButton().click()
     await vi.waitFor(() =>
       expect(errorTexts()).toEqual([
         'The name must have at most 80 characters.',
@@ -274,13 +310,15 @@ describe('adding a subscription', () => {
         : undefined
     type(nameInput(), 'Holidays')
     type(urlInput(), 'https://example.org/holidays.ics')
-    addButton().click()
+    submitButton().click()
     await vi.waitFor(() => expect(alerts()).toHaveLength(1))
-    expect(alerts()[0]!.textContent).toContain('At most 50 calendar subscriptions')
+    expect(dialog()!.querySelector('[role="alert"]')!.textContent).toContain(
+      'At most 50 calendar subscriptions',
+    )
     expect(errorTexts()).toEqual([])
 
     backend.override = (call) => (call.method === 'POST' ? reply.error(502, 'bad') : undefined)
-    addButton().click()
+    submitButton().click()
     await vi.waitFor(() =>
       expect(alerts()[0]?.textContent).toContain(
         'Could not add the subscription. The server answered with an error (HTTP 502).',
@@ -327,7 +365,7 @@ describe('changing a subscription', () => {
     })
     expect(rowOf('Public holidays')).toBeDefined()
     expect(sourcesVersion()).toBe(1)
-    expect(statusText()).toContain('Subscription “Public holidays” saved.')
+    await vi.waitFor(() => expect(toasts()).toContain('Subscription “Public holidays” saved.'))
     expect(document.activeElement).toBe(requireButton('Edit Public holidays'))
   })
 
@@ -403,6 +441,7 @@ describe('changing a subscription', () => {
     )
     expect(dialog()).not.toBeNull()
     expect(document.activeElement).toBe(urlInput(dialog()!))
+    await vi.waitFor(() => expect(toasts()).toContain('You already subscribed to this address.'))
     expect(sourcesVersion()).toBe(0)
   })
 })
@@ -443,7 +482,7 @@ describe('deleting a subscription', () => {
     expect(backend.callsTo('DELETE', '/api/ical-subscriptions/1')).toHaveLength(1)
     expect(rows('Your calendar subscriptions')).toHaveLength(1)
     expect(sourcesVersion()).toBe(1)
-    expect(statusText()).toContain('Subscription “Holidays” deleted.')
+    await vi.waitFor(() => expect(toasts()).toContain('Subscription “Holidays” deleted.'))
     expect(document.activeElement?.textContent?.trim()).toBe('iCal subscriptions')
   })
 
@@ -476,6 +515,14 @@ describe('the Check button', () => {
       ]
     }),
   )
+
+  it('keeps a line for the result in each row from the start, so a result does not move it', async () => {
+    for (const name of ['Holidays', 'Sports']) {
+      const line = rowOf(name).querySelector('[role="status"]')!
+      expect(line.textContent?.trim()).toBe('')
+      expect(line.className).toContain('min-h-5')
+    }
+  })
 
   it('reports that it works, with the number of events and the size', async () => {
     backend.documents.set(1, ICS(12))

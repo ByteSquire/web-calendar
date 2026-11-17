@@ -1,18 +1,35 @@
 <!--
-  Importing an .ics file into one of the person's own calendars (FR-7, FR-9). The browser reads the
-  file and splits it into events (utils/ical/split.ts, utils/import/), shows what it holds, and
-  "Import" writes one resource per event through the session's CalDAV client; the app's own API is
-  not involved. The file is untrusted: what is shown from it (name, titles) went through
-  `displayText` and is only ever bound as text. Events already in the calendar are left alone. The person may choose "New calendar…"
-  instead of one of theirs: the calendar is then made (MKCALENDAR in their home) when Import is pressed.
-  After events were written `calendar-sources-version` is bumped, which makes the calendar view
-  load again. Not drawn in demo mode and wherever there is no calendar service to write to.
+  Importing an .ics file into one of the person's own calendars (FR-7, FR-9). The section holds the
+  explanation and "Choose file…", which opens the browser's file picker (a native file input,
+  hidden: the button is the way to it). The chosen file opens one dialog for the whole job: the
+  browser reads the file and splits it into events (utils/ical/split.ts, utils/import/) and the
+  dialog shows what it holds, the calendar to import into, the progress and then the result (with
+  "Import again" while something is left to do). "Import" writes one resource per event through the
+  session's CalDAV client; the app's own API is not involved. The file is untrusted: what is shown
+  from it (name, titles) went through `displayText` and is only ever bound as text. Events already
+  in the calendar are left alone. The person may choose "New calendar…" instead of one of theirs:
+  the calendar is then made (MKCALENDAR in their home) when Import is pressed. A running import can
+  be cancelled ("Cancel import") but the dialog cannot be closed meanwhile; closing it afterwards
+  puts everything back as it was, with the file input emptied. A failed run is told in the dialog
+  and in a toast. After events were written `calendar-sources-version` is bumped, which makes the
+  calendar view load again. Not drawn in demo mode and wherever there is no calendar service to
+  write to.
 -->
 <template>
   <section v-if="available" aria-labelledby="settings-import" class="flex flex-col gap-4">
-    <h2 id="settings-import" ref="heading" tabindex="-1" class="text-lg font-semibold">
-      {{ t('Import a calendar file') }}
-    </h2>
+    <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <h2 id="settings-import" ref="heading" tabindex="-1" class="text-lg font-semibold">
+        {{ t('Import a calendar file') }}
+      </h2>
+      <UButton
+        ref="chooseButton"
+        :label="t('Choose file…')"
+        icon="i-lucide-file-up"
+        aria-haspopup="dialog"
+        aria-describedby="settings-import-limits"
+        @click="chooseFile"
+      />
+    </div>
     <p>
       <template
         v-for="(part, i) in tparts(
@@ -24,199 +41,241 @@
         <template v-else>{{ part.text }}</template>
       </template>
     </p>
+    <p id="settings-import-limits" class="text-sm text-toned">
+      {{
+        t('An .ics file of up to {size} and {max} events.', {
+          size: formatBytes(MAX_FILE_BYTES),
+          max: MAX_EVENTS,
+        })
+      }}
+    </p>
+    <!-- "Choose file…" is the way to it; the input itself is out of sight and out of the tab order. -->
+    <input
+      ref="fileInput"
+      type="file"
+      accept=".ics,.ical,.icalendar,.ifb,text/calendar"
+      class="sr-only"
+      tabindex="-1"
+      aria-hidden="true"
+      :aria-label="t('Calendar file')"
+      @change="onFile"
+    />
 
-    <div
-      v-if="report"
-      role="group"
-      aria-labelledby="settings-import-result"
-      class="flex flex-col gap-3 rounded-lg border border-default p-4"
+    <UModal
+      :open="dialogOpen"
+      :title="t('Import a calendar file')"
+      :description="t('See what the file holds, then choose the calendar for its events.')"
+      :content="{ onOpenAutoFocus: focusOnOpen, onCloseAutoFocus: dialogFocus.restore }"
+      :ui="{ title: 'wrap-anywhere', description: 'wrap-anywhere' }"
+      @update:open="(open: boolean) => !open && closeDialog()"
     >
-      <h3 id="settings-import-result" ref="resultHeading" tabindex="-1" class="font-semibold">
-        {{ resultTitle }}
-      </h3>
-      <p v-if="createdTarget">
-        {{ t('The calendar “{name}” was created.', { name: createdTarget.name }) }}
-      </p>
-      <p>{{ summary }}</p>
-      <SettingsErrorAlert v-if="report.stopped" :message="report.stopped" />
-      <template v-if="problems.length > 0">
-        <p class="font-medium">{{ t('Events that could not be imported') }}</p>
-        <ul
-          :aria-label="t('Events that could not be imported')"
-          class="flex flex-col gap-1 text-sm"
-        >
-          <li v-for="(item, index) in shownProblems" :key="index" class="wrap-anywhere">
-            <span class="font-medium">{{ item.title }}</span
-            >: {{ item.message }}
-          </li>
-          <li v-if="problems.length > shownProblems.length" class="text-toned">
-            {{ t('… and {count} more', { count: problems.length - shownProblems.length }) }}
-          </li>
-        </ul>
-      </template>
-      <p v-if="incomplete" class="text-sm text-toned">
-        {{
-          t(
-            'You can import the file again: events that are already in the calendar are left alone.',
-          )
-        }}
-      </p>
-      <div class="flex flex-wrap gap-2">
-        <UButton
-          v-if="incomplete"
-          :label="t('Import again')"
-          color="neutral"
-          @click="importAgain"
-        />
-        <UButton :label="t('Done')" :color="incomplete ? 'neutral' : 'primary'" @click="finish" />
-      </div>
-    </div>
+      <template #body>
+        <div class="flex flex-col gap-3" :aria-busy="busy || phase === 'reading'">
+          <SettingsErrorAlert v-if="fileError" :message="fileError" />
 
-    <!-- Hidden, not removed, while the result is shown: "Import again" needs the chosen file. -->
-    <div v-show="!report" class="flex flex-col gap-4">
-      <UFormField
-        :label="t('Calendar file')"
-        name="import-file"
-        :help="
-          t('An .ics file of up to {size} and {max} events.', {
-            size: formatBytes(MAX_FILE_BYTES),
-            max: MAX_EVENTS,
-          })
-        "
-        :error="fileError || undefined"
-        :ui="FIELD_UI"
-      >
-        <!-- Announced when it appears; only given while there is an error, so there is no gap. -->
-        <template v-if="fileError" #error="{ error }">
-          <span role="alert">{{ error }}</span>
-        </template>
-        <UInput
-          ref="fileInput"
-          type="file"
-          accept=".ics,.ical,.icalendar,.ifb,text/calendar"
-          :disabled="importing"
-          class="w-full"
-          @change="onFile"
-        />
-      </UFormField>
-
-      <div
-        v-if="plan"
-        class="flex flex-col gap-3 rounded-lg border border-default p-4"
-        :aria-busy="importing"
-      >
-        <p class="font-semibold wrap-anywhere">{{ plan.preview.fileName }}</p>
-        <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
-          <template v-if="plan.preview.calendarName">
-            <dt class="text-toned">{{ t('Calendar name') }}</dt>
-            <dd class="wrap-anywhere">{{ plan.preview.calendarName }}</dd>
-          </template>
-          <dt class="text-toned">{{ t('Events') }}</dt>
-          <dd>{{ plan.preview.events }}</dd>
-          <template v-if="plan.preview.skippedCount > 0">
-            <dt class="text-toned">{{ t('Not imported') }}</dt>
-            <dd>{{ plan.preview.skippedCount }}</dd>
-          </template>
-        </dl>
-        <ul
-          v-if="plan.preview.sample.length > 0"
-          :aria-label="t('The first events in the file')"
-          class="list-disc pl-5 text-sm"
-        >
-          <li v-for="(title, index) in plan.preview.sample" :key="index" class="wrap-anywhere">
-            {{ title }}
-          </li>
-          <li v-if="plan.preview.events > plan.preview.sample.length" class="list-none text-toned">
-            {{
-              t('… and {count} more', {
-                count: plan.preview.events - plan.preview.sample.length,
-              })
-            }}
-          </li>
-        </ul>
-        <ul
-          v-if="plan.preview.skipped.length > 0"
-          :aria-label="t('What is not imported')"
-          class="list-disc pl-5 text-sm"
-        >
-          <li v-for="group in plan.preview.skipped" :key="group.text">{{ group.text }}</li>
-        </ul>
-
-        <template v-if="plan.preview.events > 0">
-          <UFormField :label="t('Import into')" name="import-calendar" required>
-            <USelect
-              v-model="calendarId"
-              :items="calendarItems"
-              :placeholder="t('Choose a calendar')"
-              :disabled="busy || createdTarget !== null"
-              class="w-full"
-              :ui="SELECT_UI"
-            >
-              <template #leading>
-                <UIcon
-                  v-if="calendarId === NEW_CALENDAR"
-                  name="i-lucide-plus"
-                  class="size-4"
-                  aria-hidden="true"
-                />
-                <span
-                  v-else-if="selectedCalendar"
-                  class="size-3 rounded-full"
-                  :style="{ backgroundColor: selectedCalendar.color }"
-                  aria-hidden="true"
-                />
-              </template>
-              <template #item-leading="{ item }">
-                <UIcon
-                  v-if="item.value === NEW_CALENDAR"
-                  name="i-lucide-plus"
-                  class="size-4 shrink-0"
-                  aria-hidden="true"
-                />
-                <span
-                  v-else
-                  class="size-3 shrink-0 rounded-full"
-                  :style="{ backgroundColor: item.color }"
-                  aria-hidden="true"
-                />
-              </template>
-            </USelect>
-          </UFormField>
-          <!-- A new calendar is made in the person's own home when "Import" is pressed. -->
-          <UFormField
-            v-if="calendarId === NEW_CALENDAR"
-            :label="t('Name of the new calendar')"
-            name="import-new-calendar"
-            :error="newNameError || undefined"
-            :ui="FIELD_UI"
-            required
+          <div
+            v-if="report"
+            role="group"
+            aria-labelledby="settings-import-result"
+            class="flex flex-col gap-3"
           >
-            <template v-if="newNameError" #error="{ error }">
-              <span role="alert">{{ error }}</span>
+            <h3 id="settings-import-result" ref="resultHeading" tabindex="-1" class="font-semibold">
+              {{ resultTitle }}
+            </h3>
+            <p v-if="createdTarget">
+              {{ t('The calendar “{name}” was created.', { name: createdTarget.name }) }}
+            </p>
+            <p>{{ summary }}</p>
+            <SettingsErrorAlert v-if="report.stopped" :message="report.stopped" />
+            <template v-if="problems.length > 0">
+              <p class="font-medium">{{ t('Events that could not be imported') }}</p>
+              <ul
+                :aria-label="t('Events that could not be imported')"
+                class="flex flex-col gap-1 text-sm"
+              >
+                <li v-for="(item, index) in shownProblems" :key="index" class="wrap-anywhere">
+                  <span class="font-medium">{{ item.title }}</span
+                  >: {{ item.message }}
+                </li>
+                <li v-if="problems.length > shownProblems.length" class="text-toned">
+                  {{ t('… and {count} more', { count: problems.length - shownProblems.length }) }}
+                </li>
+              </ul>
             </template>
-            <UInput
-              v-model="newName"
-              :maxlength="CALENDAR_NAME_MAX"
-              autocomplete="off"
-              :disabled="busy || createdTarget !== null"
-              class="w-full"
-            />
-          </UFormField>
-
-          <div v-if="importing" class="flex flex-col gap-1">
-            <progress
-              :value="progress.done"
-              :max="progress.total"
-              :aria-label="t('Import progress')"
-              class="h-2 w-full accent-(--ui-primary)"
-            />
-            <p class="text-sm text-toned" aria-hidden="true">
-              {{ t('{done} of {total}', { done: progress.done, total: progress.total }) }}
+            <p v-if="incomplete" class="text-sm text-toned">
+              {{
+                t(
+                  'You can import the file again: events that are already in the calendar are left alone.',
+                )
+              }}
             </p>
           </div>
 
-          <div class="flex flex-wrap gap-2">
+          <template v-else-if="plan">
+            <p class="font-semibold wrap-anywhere">{{ plan.preview.fileName }}</p>
+            <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1">
+              <template v-if="plan.preview.calendarName">
+                <dt class="text-toned">{{ t('Calendar name') }}</dt>
+                <dd class="wrap-anywhere">{{ plan.preview.calendarName }}</dd>
+              </template>
+              <dt class="text-toned">{{ t('Events') }}</dt>
+              <dd>{{ plan.preview.events }}</dd>
+              <template v-if="plan.preview.skippedCount > 0">
+                <dt class="text-toned">{{ t('Not imported') }}</dt>
+                <dd>{{ plan.preview.skippedCount }}</dd>
+              </template>
+            </dl>
+            <ul
+              v-if="plan.preview.sample.length > 0"
+              :aria-label="t('The first events in the file')"
+              class="list-disc pl-5 text-sm"
+            >
+              <li v-for="(title, index) in plan.preview.sample" :key="index" class="wrap-anywhere">
+                {{ title }}
+              </li>
+              <li
+                v-if="plan.preview.events > plan.preview.sample.length"
+                class="list-none text-toned"
+              >
+                {{
+                  t('… and {count} more', {
+                    count: plan.preview.events - plan.preview.sample.length,
+                  })
+                }}
+              </li>
+            </ul>
+            <ul
+              v-if="plan.preview.skipped.length > 0"
+              :aria-label="t('What is not imported')"
+              class="list-disc pl-5 text-sm"
+            >
+              <li v-for="group in plan.preview.skipped" :key="group.text">{{ group.text }}</li>
+            </ul>
+
+            <template v-if="plan.preview.events > 0">
+              <UFormField :label="t('Import into')" name="import-calendar" required>
+                <USelect
+                  v-model="calendarId"
+                  :items="calendarItems"
+                  :placeholder="t('Choose a calendar')"
+                  :disabled="busy || createdTarget !== null"
+                  class="w-full"
+                  :ui="SELECT_UI"
+                >
+                  <template #leading>
+                    <UIcon
+                      v-if="calendarId === NEW_CALENDAR"
+                      name="i-lucide-plus"
+                      class="size-4"
+                      aria-hidden="true"
+                    />
+                    <span
+                      v-else-if="selectedCalendar"
+                      class="size-3 rounded-full"
+                      :style="{ backgroundColor: selectedCalendar.color }"
+                      aria-hidden="true"
+                    />
+                  </template>
+                  <template #item-leading="{ item }">
+                    <UIcon
+                      v-if="item.value === NEW_CALENDAR"
+                      name="i-lucide-plus"
+                      class="size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span
+                      v-else
+                      class="size-3 shrink-0 rounded-full"
+                      :style="{ backgroundColor: item.color }"
+                      aria-hidden="true"
+                    />
+                  </template>
+                </USelect>
+              </UFormField>
+              <!-- A new calendar is made in the person's own home when "Import" is pressed. -->
+              <UFormField
+                v-if="calendarId === NEW_CALENDAR"
+                :label="t('Name of the new calendar')"
+                name="import-new-calendar"
+                :error="newNameError || undefined"
+                :ui="FIELD_UI"
+                required
+              >
+                <template v-if="newNameError" #error="{ error }">
+                  <span role="alert">{{ error }}</span>
+                </template>
+                <UInput
+                  v-model="newName"
+                  :maxlength="CALENDAR_NAME_MAX"
+                  autocomplete="off"
+                  :disabled="busy || createdTarget !== null"
+                  class="w-full"
+                />
+              </UFormField>
+
+              <div v-if="importing" class="flex flex-col gap-1">
+                <progress
+                  :value="progress.done"
+                  :max="progress.total"
+                  :aria-label="t('Import progress')"
+                  class="h-2 w-full accent-(--ui-primary)"
+                />
+                <p class="text-sm text-toned" aria-hidden="true">
+                  {{ t('{done} of {total}', { done: progress.done, total: progress.total }) }}
+                </p>
+              </div>
+            </template>
+          </template>
+
+          <!-- Present from the start and only its text changes, so screen readers announce it. -->
+          <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full flex-wrap justify-end gap-2">
+          <template v-if="report">
             <UButton
+              v-if="incomplete"
+              :label="t('Import again')"
+              color="neutral"
+              variant="outline"
+              @click="importAgain"
+            />
+            <UButton
+              :label="t('Done')"
+              :color="incomplete ? 'neutral' : 'primary'"
+              @click="closeDialog"
+            />
+          </template>
+          <template v-else>
+            <UButton
+              v-if="fileError"
+              :label="t('Choose another file…')"
+              icon="i-lucide-file-up"
+              color="neutral"
+              variant="outline"
+              @click="chooseFile"
+            />
+            <UButton
+              v-if="importing"
+              ref="cancelButton"
+              :label="t('Cancel import')"
+              color="neutral"
+              variant="outline"
+              @click="cancelImport"
+            />
+            <UButton
+              v-else
+              ref="closeButton"
+              :label="t('Cancel')"
+              color="neutral"
+              variant="outline"
+              :disabled="creating"
+              @click="closeDialog"
+            />
+            <UButton
+              v-if="canOffer && plan"
               ref="importButton"
               :label="
                 creating
@@ -230,21 +289,10 @@
               :aria-busy="busy"
               @click="startImport"
             />
-            <UButton
-              v-if="importing"
-              ref="cancelButton"
-              :label="t('Cancel import')"
-              color="neutral"
-              variant="outline"
-              @click="cancelImport"
-            />
-          </div>
-        </template>
-      </div>
-    </div>
-
-    <!-- Present from the start and only its text changes, so screen readers announce it. -->
-    <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
+          </template>
+        </div>
+      </template>
+    </UModal>
   </section>
 </template>
 
@@ -261,12 +309,14 @@ import { runImport, type ImportReport } from '~/utils/import/run'
 import { calendarNameProblem, GROUP_LIMITS } from '~/utils/groups/model'
 import { describeLoadError } from '~/utils/live/errors'
 import { isLiveConfig } from '~/utils/live/seed'
+import { keepFocusOffControlsOnTouch } from '~/utils/focus'
+import { createFocusReturn } from '~/utils/settings/focus-return'
 import { formatBytes } from '~/utils/settings/format'
 import { FIELD_UI } from '~/utils/settings/ui'
 import { toDavPath } from '~/utils/caldav/urls'
 import { writableCalendars } from '~/utils/writes/rules'
 
-type Phase = 'empty' | 'ready' | 'importing' | 'done'
+type Phase = 'empty' | 'reading' | 'ready' | 'importing' | 'done'
 
 /** How many events that could not be imported are listed; the rest is counted. */
 const MAX_LISTED = 100
@@ -276,6 +326,7 @@ const NEW_CALENDAR = '__new_calendar__'
 const CALENDAR_NAME_MAX = GROUP_LIMITS.calendarName
 
 const caldav = useCalDav()
+const notify = useNotify()
 const config = useServerConfigState()
 const { calendars } = useCalendarState()
 const { loading } = useLiveStatus()
@@ -286,10 +337,12 @@ const sourcesVersion = useCalendarSourcesVersion()
 const available = computed(() => isLiveConfig(config.value) && caldav !== null)
 
 const heading = useTemplateRef<HTMLElement>('heading')
+const chooseButton = useTemplateRef<{ $el: HTMLElement }>('chooseButton')
 const resultHeading = useTemplateRef<HTMLElement>('resultHeading')
-const fileInput = useTemplateRef<{ inputRef: HTMLInputElement | null }>('fileInput')
+const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const importButton = useTemplateRef<{ $el: HTMLElement }>('importButton')
 const cancelButton = useTemplateRef<{ $el: HTMLElement }>('cancelButton')
+const closeButton = useTemplateRef<{ $el: HTMLElement }>('closeButton')
 
 const phase = ref<Phase>('empty')
 const plan = ref<ImportPlan | null>(null)
@@ -301,6 +354,9 @@ const importing = computed(() => phase.value === 'importing')
 const creating = ref(false)
 // Making the calendar and filling it are one job for the controls.
 const busy = computed(() => importing.value || creating.value)
+
+const dialogOpen = ref(false)
+const dialogFocus = createFocusReturn(() => chooseButton.value?.$el ?? heading.value)
 
 // ---- The calendar to import into ---------------------------------------------------------------
 
@@ -341,6 +397,9 @@ watch(newName, () => (newNameError.value = ''))
 /** The calendar this run made, so that "Import again" fills it instead of making another. */
 const createdTarget = ref<{ href: string; name: string } | null>(null)
 
+/** The file has events to import: the dialog offers Import. */
+const canOffer = computed(() => !fileError.value && (plan.value?.preview.events ?? 0) > 0)
+
 const canImport = computed(
   () =>
     phase.value === 'ready' &&
@@ -353,23 +412,39 @@ const canImport = computed(
 // Counts the choices: the answer for a file that was replaced meanwhile is dropped.
 let choice = 0
 
+/** Opens the browser's file picker; the input is emptied first, so the same file counts again. */
+function chooseFile() {
+  const input = fileInput.value
+  if (!input || busy.value) return
+  input.value = ''
+  input.click()
+}
+
 async function onFile(event: Event) {
   const file = event.target instanceof HTMLInputElement ? event.target.files?.[0] : undefined
+  // The picker was closed without a file: nothing changes.
+  if (!file || busy.value) return
   const mine = ++choice
+  if (!dialogOpen.value) {
+    dialogFocus.remember()
+    dialogOpen.value = true
+  }
+  report.value = null
   plan.value = null
-  phase.value = 'empty'
+  phase.value = 'reading'
   fileError.value = ''
-  notice.value = ''
   createdTarget.value = null
   newNameError.value = ''
-  if (!file) return
-
   notice.value = t('Reading the file…')
+
   const result = await prepareImport(file)
-  if (mine !== choice) return
+  if (mine !== choice || !dialogOpen.value) return
   if (!result.ok) {
+    phase.value = 'empty'
     fileError.value = result.message
     notice.value = ''
+    await nextTick()
+    closeButton.value?.$el.focus()
     return
   }
   plan.value = result.plan
@@ -386,6 +461,33 @@ async function onFile(event: Event) {
           count,
         )
       : t('File read: it has no events to import.')
+  await nextTick()
+  ;(importButton.value ?? closeButton.value)?.$el.focus()
+}
+
+/** Into the dialog: Import when the file is read already, else Cancel. */
+function focusOnOpen(event: Event) {
+  if (keepFocusOffControlsOnTouch(event)) return
+  event.preventDefault()
+  ;(importButton.value ?? closeButton.value)?.$el.focus()
+}
+
+/** Back to the start: no file, no preview, no result. Not while a run cannot be stopped. */
+function closeDialog() {
+  if (busy.value) return
+  choice++
+  dialogOpen.value = false
+  report.value = null
+  plan.value = null
+  phase.value = 'empty'
+  fileError.value = ''
+  notice.value = ''
+  createdTarget.value = null
+  newNameError.value = ''
+  const first = choosable.value[0]?.id
+  calendarId.value = first ?? NEW_CALENDAR
+  newByDefault = first === undefined
+  if (fileInput.value) fileInput.value.value = ''
 }
 
 // ---- Importing ------------------------------------------------------------------------------------
@@ -422,6 +524,7 @@ async function targetHref(): Promise<string | null> {
     newNameError.value = t('The calendar could not be created: {problem}', {
       problem: describeLoadError(error),
     })
+    notify.failed(newNameError.value)
     notice.value = ''
     return null
   } finally {
@@ -460,12 +563,14 @@ async function startImport() {
     controller = null
     phase.value = 'ready'
     notice.value = t('The import could not be run. Try again.')
+    notify.failed(notice.value)
     return
   }
   controller = null
   report.value = result
   phase.value = 'done'
   notice.value = summarize(result)
+  if (result.stopped) notify.failed(result.stopped)
   // Events that were interrupted or failed with an unclear answer may have been saved.
   if (result.created + result.interrupted + result.failed > 0) {
     caldav.reader.invalidate(calendarHref)
@@ -506,23 +611,5 @@ async function importAgain() {
   notice.value = ''
   await nextTick()
   importButton.value?.$el.focus()
-}
-
-async function finish() {
-  report.value = null
-  plan.value = null
-  phase.value = 'empty'
-  fileError.value = ''
-  notice.value = ''
-  createdTarget.value = null
-  newNameError.value = ''
-  const first = choosable.value[0]?.id
-  calendarId.value = first ?? NEW_CALENDAR
-  newByDefault = first === undefined
-  const input = fileInput.value?.inputRef
-  if (input) input.value = ''
-  await nextTick()
-  if (input) input.focus()
-  else heading.value?.focus()
 }
 </script>

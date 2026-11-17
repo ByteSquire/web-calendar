@@ -1,37 +1,34 @@
 <!--
-  Adds a rule for a person (picked from the people who signed in once), a group (picked from the
-  groups of the Groups page, made here or imported, like the share dialog of a group calendar) or
-  everyone signed in, with a plain description of each level. Adding someone who has a
-  rule already changes their level. The parent saves and says whether it worked; only then are the
-  inputs cleared.
+  Adds a rule in one row: "Who" is one searchable list of everyone signed in, the groups of the
+  Groups page (made here or imported, like the share dialog of a group calendar) and the people who
+  signed in once, each with an icon of its kind and groups named "Group …"; "Level" is a select
+  whose explanation of the chosen level stays under it (only its words change); then "Add". The row
+  wraps on a small screen. Adding someone who has a rule already changes their level. The parent
+  saves and says whether it worked; only then is "Who" cleared (the level stays for the next one).
+  A missing choice is told on the field and nothing is sent.
 -->
 <template>
   <form
-    class="flex flex-col gap-4"
+    class="flex flex-wrap items-start gap-3"
     novalidate
-    aria-labelledby="access-add-heading"
+    :aria-label="t('Add access')"
     :aria-busy="busy"
     @submit.prevent="submit"
   >
-    <h2 id="access-add-heading" class="text-lg font-semibold">{{ t('Add access') }}</h2>
-
-    <URadioGroup
-      v-model="type"
-      :legend="t('Give access to')"
-      :items="whoItems"
-      :ui="RADIO_UI"
-      orientation="vertical"
-    />
-
-    <UFormField v-if="type === 'user'" :label="t('Person')" :error="problem" required>
+    <UFormField :label="t('Who')" :error="problem" required class="min-w-0 flex-1 basis-56">
       <USelectMenu
-        v-model="person"
-        :items="personItems"
+        v-model="who"
+        :items="whoItems"
         value-key="value"
-        :search-input="SEARCH_PEOPLE"
-        :placeholder="t('Choose a person')"
-        class="w-full max-w-md"
-        :ui="{ base: 'min-h-11', item: 'min-h-11 items-center' }"
+        :icon="chosenIcon"
+        :search-input="SEARCH"
+        :placeholder="t('Choose a person or group')"
+        class="w-full"
+        :ui="{
+          base: 'min-h-11',
+          item: 'min-h-11 items-center',
+          placeholder: 'truncate text-toned',
+        }"
       >
         <template #empty>{{
           t('Nobody matches. People appear here after they signed in once.')
@@ -39,38 +36,17 @@
       </USelectMenu>
     </UFormField>
 
-    <UFormField v-else-if="type === 'group'" :label="t('Group')" :error="problem" required>
-      <USelectMenu
-        v-model="group"
-        :items="groupItems"
-        value-key="value"
-        :search-input="SEARCH_GROUPS"
-        :placeholder="t('Choose a group')"
-        class="w-full max-w-md"
-        :ui="{
-          base: 'min-h-11',
-          item: 'min-h-11 items-center',
-          placeholder: 'truncate text-toned',
-        }"
-      >
-        <template #empty>{{ t('No group matches.') }}</template>
-      </USelectMenu>
+    <UFormField
+      :label="t('Level')"
+      :help="chosenLevel ? tv(chosenLevel.help) : undefined"
+      class="min-w-0 flex-1 basis-48"
+    >
+      <USelect v-model="levelModel" :items="levelItems" class="w-full" :ui="SELECT_UI" />
     </UFormField>
 
-    <p v-else class="text-toned">
-      {{ t('Everyone who can sign in to this calendar app gets this access.') }}
-    </p>
-
-    <URadioGroup
-      v-model="levelModel"
-      :legend="t('Access level')"
-      :items="levelItems"
-      :ui="RADIO_UI"
-      orientation="vertical"
-    />
-
-    <div>
-      <UButton type="submit" :label="t('Add access')" icon="i-lucide-plus" :loading="busy" />
+    <!-- Level with the fields, below their labels; on a phone it wraps under them. -->
+    <div class="pt-6">
+      <UButton type="submit" :label="t('Add')" icon="i-lucide-plus" :loading="busy" />
     </div>
   </form>
 </template>
@@ -78,12 +54,7 @@
 <script setup lang="ts" generic="P extends string">
 import type { Ref } from 'vue'
 import { t, tv } from '~/utils/i18n'
-import {
-  PRINCIPAL_CHOICES,
-  userLabel,
-  type AccessPrincipalType,
-  type AccessUser,
-} from '~/utils/admin/access'
+import { userLabel, type AccessPrincipalType, type AccessUser } from '~/utils/admin/access'
 
 const props = defineProps<{
   users: readonly AccessUser[]
@@ -102,34 +73,47 @@ const props = defineProps<{
 }>()
 
 // The search field is named; a placeholder is no name for assistive technology.
-const SEARCH_PEOPLE = computed(() => ({
-  placeholder: t('Search people'),
-  'aria-label': t('Search people'),
+const SEARCH = computed(() => ({
+  placeholder: t('Search people and groups'),
+  'aria-label': t('Search people and groups'),
 }))
-const SEARCH_GROUPS = computed(() => ({
-  placeholder: t('Search groups'),
-  'aria-label': t('Search groups'),
-}))
-// 44 px rows for the radio buttons (design §9).
-const RADIO_UI = { item: 'min-h-11 items-center' }
+// 44 px for the select and its options (design §9).
+const SELECT_UI = { base: 'min-h-11', item: 'min-h-11 items-center' }
+const ICONS: Record<AccessPrincipalType, string> = {
+  user: 'i-lucide-user',
+  group: 'i-lucide-users',
+  authenticated: 'i-lucide-globe',
+}
+const EVERYONE = 'authenticated'
 
-const type = ref<AccessPrincipalType>('user')
-const person = ref<string | undefined>(undefined)
-const group = ref<string | undefined>(undefined)
+// One value per choice: `authenticated`, `group:<name>` or `user:<sub>`.
+const who = ref<string | undefined>(undefined)
 const permission = ref(props.defaultLevel) as Ref<P>
 const problem = ref<string | undefined>(undefined)
 
+// Three groups with a line between them: everyone, the groups, the people.
 const whoItems = computed(() =>
-  PRINCIPAL_CHOICES.map((choice) => ({ ...choice, label: tv(choice.label) })),
+  [
+    [{ value: EVERYONE, label: t('Everyone signed in'), icon: ICONS.authenticated }],
+    props.groups.map((item) => ({
+      value: `group:${item.name}`,
+      label: t('Group {name}', { name: item.name }),
+      icon: ICONS.group,
+    })),
+    props.users.map((user) => ({
+      value: `user:${user.sub}`,
+      label: userLabel(user),
+      icon: ICONS.user,
+    })),
+  ].filter((group) => group.length > 0),
 )
-// Nuxt UI types the radio group by its items; a plain string keeps that simple while the saved rule
+const chosenIcon = computed(() =>
+  who.value === undefined ? undefined : ICONS[parse(who.value).principalType],
+)
+// Nuxt UI types the select by its items; a plain string keeps that simple while the saved rule
 // keeps the caller's own level type `P`.
 const levelItems = computed(() =>
-  props.levels.map((level) => ({
-    value: level.value as string,
-    label: tv(level.label),
-    description: tv(level.help),
-  })),
+  props.levels.map((level) => ({ value: level.value as string, label: tv(level.label) })),
 )
 const levelModel = computed<string>({
   get: () => permission.value,
@@ -137,52 +121,54 @@ const levelModel = computed<string>({
     permission.value = value as P
   },
 })
-const personItems = computed(() =>
-  props.users.map((user) => ({ value: user.sub, label: userLabel(user) })),
-)
-const groupItems = computed(() =>
-  props.groups.map((item) => ({ value: item.name, label: item.name })),
-)
+const chosenLevel = computed(() => props.levels.find((level) => level.value === permission.value))
 
-watch(type, () => {
+watch(who, () => {
   problem.value = undefined
 })
 
+function parse(value: string): { principalType: AccessPrincipalType; principal: string | null } {
+  if (value.startsWith('group:')) return { principalType: 'group', principal: value.slice(6) }
+  if (value.startsWith('user:')) return { principalType: 'user', principal: value.slice(5) }
+  return { principalType: 'authenticated', principal: null }
+}
+
+/** Who the choice names, and in which words, while the lists still have it. */
+function chosen(): {
+  principalType: AccessPrincipalType
+  principal: string | null
+  label: string
+} | null {
+  if (who.value === undefined) return null
+  const { principalType, principal } = parse(who.value)
+  if (principalType === 'authenticated') {
+    return who.value === EVERYONE
+      ? { principalType, principal, label: t('Everyone signed in') }
+      : null
+  }
+  if (principalType === 'group') {
+    const name = props.groups.find((item) => item.name === principal)?.name
+    return name ? { principalType, principal: name, label: name } : null
+  }
+  const user = props.users.find((item) => item.sub === principal)
+  return user ? { principalType, principal: user.sub, label: userLabel(user) } : null
+}
+
 async function submit() {
   problem.value = undefined
-  if (type.value === 'user') {
-    const chosen = props.users.find((user) => user.sub === person.value)
-    if (!chosen) {
-      problem.value = t('Choose a person.')
-      return
-    }
-    if (
-      await props.save(
-        { principalType: 'user', principal: chosen.sub, permission: permission.value },
-        userLabel(chosen),
-      )
-    ) {
-      person.value = undefined
-    }
-  } else if (type.value === 'group') {
-    const name = props.groups.find((item) => item.name === group.value)?.name
-    if (!name) {
-      problem.value = t('Choose a group.')
-      return
-    }
-    if (
-      await props.save(
-        { principalType: 'group', principal: name, permission: permission.value },
-        name,
-      )
-    ) {
-      group.value = undefined
-    }
-  } else {
-    await props.save(
-      { principalType: 'authenticated', principal: null, permission: permission.value },
-      t('Everyone signed in'),
-    )
+  const target = chosen()
+  if (!target) {
+    problem.value = t('Choose who gets access.')
+    return
   }
+  const saved = await props.save(
+    {
+      principalType: target.principalType,
+      principal: target.principal,
+      permission: permission.value,
+    },
+    target.label,
+  )
+  if (saved) who.value = undefined
 }
 </script>

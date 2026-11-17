@@ -1,10 +1,16 @@
 <!--
   One resource, admins only, in a dialog with two tabs, as for an event: "Resource" changes its
-  name, type, place, size and description, "Access" says who may see, book and manage it (every
-  rule change sends the complete list). The rules are loaded when the access tab is shown first.
-  Used on Admin › Resources and from "Edit resource" in the sidebar's menu of a resource, so an
-  admin changes a resource where they are. Saving the details closes the dialog, as an event's does;
-  a change of the rules keeps it open. After each change the calendar data is reloaded so the
+  name, type, place, size and description, deactivates or reactivates it (with what that means) and
+  deletes it after asking (the server refuses a resource with bookings: deactivate it then);
+  "Access" says who may see, book and manage it (every rule change sends the complete list). The
+  rules are loaded when the access tab is shown first. Used on Admin › Resources and from "Edit
+  resource" in the sidebar's menu of a resource, so an admin changes a resource where they are; the
+  holder follows through `saved` and `deleted`. Saving the details closes the dialog, as an event's
+  does; deactivating, reactivating and a change of the rules keep it open. What a change came to is
+  a toast, here and nowhere else, so it comes once wherever the dialog is; a failure is also told
+  where it happened (below the form, in the activity part, below the rules, in the delete question).
+  Nothing of it is left when the dialog closes or shows another resource. Focus returns to what
+  opened it, else to `focusFallback`. After each change the calendar data is reloaded so the
   sidebar and the booking form show it. The admin routes check the caller themselves.
 -->
 <template>
@@ -13,12 +19,11 @@
     :title="resource?.name ?? ''"
     :description="t('Change the resource, or choose who may use it.')"
     :ui="{ content: 'sm:max-w-2xl' }"
+    :content="{ onCloseAutoFocus: focusReturn.restore }"
     @update:open="(open) => (open ? undefined : close())"
   >
     <template #body>
       <div v-if="resource" class="flex flex-col gap-4">
-        <SettingsErrorAlert v-if="problem" :message="problem" />
-        <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
         <UTabs
           :model-value="tab"
           :items="tabItems"
@@ -28,15 +33,71 @@
           @update:model-value="(value) => emit('update:tab', value as 'details' | 'access')"
         >
           <template #details>
-            <AdminResourceForm
-              :key="resource.id"
-              :initial="draftOf(resource)"
-              :errors="fieldErrors"
-              :busy="saving"
-              cancellable
-              :save="saveEdit"
-              @cancel="close"
-            />
+            <div class="flex flex-col gap-6">
+              <div class="flex flex-col gap-4">
+                <AdminResourceForm
+                  :key="resource.id"
+                  :initial="draftOf(resource)"
+                  :errors="fieldErrors"
+                  :busy="saving"
+                  cancellable
+                  :save="saveEdit"
+                  @cancel="close"
+                />
+                <SettingsErrorAlert v-if="problem?.at === 'details'" :message="problem.message" />
+              </div>
+              <section
+                aria-labelledby="resource-active-heading"
+                class="flex flex-col gap-2 border-t border-default pt-4"
+              >
+                <h3 id="resource-active-heading" class="font-semibold">
+                  {{ resource.active ? t('Deactivate resource') : t('Reactivate resource') }}
+                </h3>
+                <p class="text-sm text-toned" data-resource-activity>
+                  {{
+                    resource.active
+                      ? t('Deactivated resources take no new bookings; existing bookings stay.')
+                      : t(
+                          'This resource is deactivated: it takes no new bookings; existing bookings stay.',
+                        )
+                  }}
+                </p>
+                <UButton
+                  :aria-label="
+                    resource.active
+                      ? t('Deactivate {name}', { name: resource.name })
+                      : t('Reactivate {name}', { name: resource.name })
+                  "
+                  :icon="resource.active ? 'i-lucide-pause' : 'i-lucide-play'"
+                  :label="resource.active ? t('Deactivate') : t('Reactivate')"
+                  color="neutral"
+                  variant="outline"
+                  class="self-start"
+                  :loading="activating"
+                  :disabled="saving"
+                  @click="setActive(!resource.active)"
+                />
+                <SettingsErrorAlert v-if="problem?.at === 'active'" :message="problem.message" />
+              </section>
+              <section
+                aria-labelledby="resource-delete-heading"
+                class="flex flex-col gap-2 border-t border-default pt-4"
+              >
+                <h3 id="resource-delete-heading" class="font-semibold">
+                  {{ t('Delete resource') }}
+                </h3>
+                <p class="text-sm text-toned">{{ deleteDetail }}</p>
+                <UButton
+                  :label="t('Delete resource')"
+                  icon="i-lucide-trash-2"
+                  color="error"
+                  variant="outline"
+                  class="self-start"
+                  :disabled="saving"
+                  @click="askDelete"
+                />
+              </section>
+            </div>
           </template>
           <template #access>
             <section aria-labelledby="resource-rules-heading" class="flex flex-col gap-3">
@@ -63,8 +124,11 @@
                   )
                 }}
               </p>
+              <SettingsErrorAlert v-if="problem?.at === 'rules'" :message="problem.message" />
               <AdminAccessAddForm
                 v-if="rules !== null"
+                :key="resource.id"
+                class="mt-1"
                 :users="users"
                 :groups="groups"
                 :busy="saving"
@@ -89,6 +153,17 @@
       </div>
     </template>
   </UModal>
+
+  <ConfirmDeleteDialog
+    :open="deleting !== null"
+    :event-title="deleting?.name ?? ''"
+    :detail="deleteDetail"
+    :pending="saving"
+    :error="deleteError"
+    :return-focus-to="deleteFocus"
+    @update:open="(open) => (open ? undefined : closeDelete())"
+    @confirm="confirmDelete"
+  />
 </template>
 
 <script setup lang="ts">
@@ -108,6 +183,7 @@ import {
 } from '~/utils/admin/resources'
 import { N_, t, tv } from '~/utils/i18n'
 import { describeError } from '~/utils/settings/api-errors'
+import { createFocusReturn } from '~/utils/settings/focus-return'
 
 type Body = NonNullable<ReturnType<typeof toBody>>
 
@@ -118,24 +194,43 @@ const props = defineProps<{
   users: readonly AccessUser[]
   /** The groups a rule can name (the Groups page's). */
   groups: readonly { name: string }[]
+  /** Where focus goes when the element that opened the dialog is gone (looked up on closing). */
+  focusFallback?: () => HTMLElement | null | undefined
 }>()
 const emit = defineEmits<{
   close: []
   'update:tab': [tab: 'details' | 'access']
-  /** The resource as the server saved it, and the words for it. */
-  saved: [resource: AdminResource, message: string]
+  /** The resource as the server saved it (its details, or deactivated or reactivated). */
+  saved: [resource: AdminResource]
+  /** The resource was deleted. */
+  deleted: [id: number]
 }>()
+
+const deleteDetail = computed(() =>
+  t(
+    'The resource and the rules of who may use it are deleted. A resource with bookings cannot be deleted; deactivate it instead.',
+  ),
+)
 
 const api = useAuthFetch()
 const status = useLiveStatus()
+const notify = useNotify()
+const focusReturn = createFocusReturn(() => props.focusFallback?.())
 const saving = ref(false)
-const problem = ref<string | null>(null)
-const notice = ref('')
+const activating = ref(false)
+// The last failed change and where it is told: below the form, the activity part or the rules.
+const problem = ref<{ at: 'details' | 'active' | 'rules'; message: string } | null>(null)
 const fieldErrors = ref<Record<string, string>>({})
 // The rules of the resource that is open; null until they are loaded.
 const rules = ref<ResourceRule[] | null>(null)
 const rulesFor = ref<number | null>(null)
 const rulesError = ref<string | null>(null)
+// The resource whose delete is being confirmed, and why the last try failed.
+const deleting = ref<AdminResource | null>(null)
+const deleteError = ref('')
+// Where the question sends focus when it closes: nowhere while this dialog is under it; after a
+// delete, where this dialog would (both close, and the last one to go decides).
+const deleteFocus = ref<HTMLElement | false | null>(false)
 
 const tabItems = computed(() => [
   { label: t('Resource'), value: 'details', slot: 'details' },
@@ -151,16 +246,18 @@ function labelOf(rule: ResourceRule): string {
   return known ? userLabel(known) : t('This person')
 }
 
-// Another resource: nothing of the last one is shown.
+// Another resource, or closed: nothing of the last one is shown.
 watch(
   () => props.resource?.id,
-  () => {
+  (id) => {
+    if (id !== undefined) focusReturn.remember()
     problem.value = null
-    notice.value = ''
     fieldErrors.value = {}
     rules.value = null
     rulesFor.value = null
     rulesError.value = null
+    deleting.value = null
+    deleteError.value = ''
   },
 )
 
@@ -189,22 +286,27 @@ async function loadRules(id: number) {
   }
 }
 
-/** Runs one change; the calendar data is reloaded when it worked. */
+/**
+ * Runs one change and toasts what it came to; the calendar data is reloaded when it worked. A
+ * failure is toasted and kept for the place `at` where it happened.
+ */
 async function run(
+  at: 'details' | 'active' | 'rules' | 'delete',
   job: () => Promise<string>,
-): Promise<{ ok: boolean; fields: Record<string, string> }> {
-  if (saving.value) return { ok: false, fields: {} }
+): Promise<{ ok: boolean; message: string; fields: Record<string, string> }> {
+  if (saving.value) return { ok: false, message: '', fields: {} }
   saving.value = true
   problem.value = null
-  notice.value = ''
   try {
-    notice.value = await job()
+    notify.done(await job())
     void status.refresh({ external: false })
-    return { ok: true, fields: {} }
+    return { ok: true, message: '', fields: {} }
   } catch (cause) {
     const failure = describeResourceProblem(cause)
-    problem.value = failure.message
-    return { ok: false, fields: failure.fields }
+    notify.failed(failure.message)
+    // The delete question shows its own failure.
+    if (at !== 'delete') problem.value = { at, message: failure.message }
+    return { ok: false, ...failure }
   } finally {
     saving.value = false
   }
@@ -214,7 +316,7 @@ async function saveEdit(body: Body): Promise<boolean> {
   const target = props.resource
   if (!target) return false
   const answer: { saved?: AdminResource } = {}
-  const result = await run(async () => {
+  const result = await run('details', async () => {
     const saved = await api<AdminResource>(`/api/admin/resources/${target.id}`, {
       method: 'PUT',
       body,
@@ -225,16 +327,64 @@ async function saveEdit(body: Body): Promise<boolean> {
   fieldErrors.value = result.fields
   // As the dialog of an event does, it closes when the change is saved.
   if (result.ok && answer.saved) {
-    emit('saved', answer.saved, notice.value)
+    emit('saved', answer.saved)
     emit('close')
   }
   return result.ok
 }
 
+/** Deactivates or reactivates the resource (`PUT` with `active: true`); the dialog stays open. */
+async function setActive(active: boolean) {
+  const target = props.resource
+  if (!target) return
+  activating.value = true
+  await run('active', async () => {
+    const saved = await api<AdminResource>(
+      active ? `/api/admin/resources/${target.id}` : `/api/admin/resources/${target.id}/deactivate`,
+      { method: active ? 'PUT' : 'POST', ...(active ? { body: { active: true } } : {}) },
+    )
+    emit('saved', saved)
+    return active
+      ? t('{name} is active again.', { name: saved.name })
+      : t('{name} is deactivated.', { name: saved.name })
+  })
+  activating.value = false
+}
+
+function askDelete() {
+  deleteError.value = ''
+  deleteFocus.value = false
+  deleting.value = props.resource
+}
+
+function closeDelete() {
+  if (!saving.value) deleting.value = null
+}
+
+async function confirmDelete() {
+  const target = deleting.value
+  if (!target) return
+  const result = await run('delete', async () => {
+    await api(`/api/admin/resources/${target.id}`, { method: 'DELETE' })
+    return t('{name} was deleted.', { name: target.name })
+  })
+  if (result.ok) {
+    emit('deleted', target.id)
+    // The row of the resource is gone once the page has drawn the list again.
+    await nextTick()
+    deleteFocus.value = props.focusFallback?.() ?? null
+    deleting.value = null
+    emit('close')
+  } else {
+    // The reason belongs in the question, not behind it.
+    deleteError.value = result.message
+  }
+}
+
 async function saveRules(next: ResourceRule[], done: string): Promise<boolean> {
   const target = props.resource
   if (!target) return false
-  const result = await run(async () => {
+  const result = await run('rules', async () => {
     const saved = await api<{ rules: ResourceRule[] }>(`/api/admin/resources/${target.id}/acl`, {
       method: 'PUT',
       body: { rules: next },

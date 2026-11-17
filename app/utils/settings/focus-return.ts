@@ -1,7 +1,7 @@
 // Focus for dialogs without a trigger element (utils/focus.ts explains why): remember what had
 // focus when the dialog opened and put it back when the dialog closes. When that element is gone
-// (the row it belonged to was removed) the fallback takes it, so keyboard users do not land on
-// the page body.
+// (the row it belonged to was removed) or disabled (an "add" button at its limit now) the fallback
+// takes it, so keyboard users do not land on the page body.
 import { pickFocusTarget } from '../focus'
 
 export interface FocusReturn {
@@ -27,7 +27,8 @@ export function createFocusReturn(fallback: () => HTMLElement | null | undefined
     },
     restore(event) {
       event.preventDefault()
-      const target = pickFocusTarget(opener, fallback())
+      const usable = opener && !(opener as HTMLButtonElement).disabled ? opener : null
+      const target = pickFocusTarget(usable, fallback())
       opener = null
       target?.focus()
     },

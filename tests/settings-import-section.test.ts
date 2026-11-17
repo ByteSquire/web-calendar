@@ -122,21 +122,27 @@ const caldav = {
 
 const text = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, ' ').trim() ?? ''
 const section = () => document.getElementById('settings-import')?.closest('section') ?? null
+/** The dialog a chosen file opens: the preview, the choice of calendar, the progress, the result. */
+const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')
 const fileInput = () => document.querySelector<HTMLInputElement>('input[type="file"]')!
-const buttons = () => [...(section()?.querySelectorAll('button') ?? [])]
+const chooseButton = () =>
+  [...(section()?.querySelectorAll('button') ?? [])].find(
+    (item) => text(item) === 'Choose file…',
+  ) as HTMLButtonElement
+const buttons = () => [...(dialog()?.querySelectorAll('button') ?? [])]
 const button = (name: RegExp | string) =>
   buttons().find((item) =>
     typeof name === 'string' ? text(item) === name : name.test(text(item)),
   ) as HTMLButtonElement | undefined
 const newNameInput = () =>
-  section()?.querySelector<HTMLInputElement>('input[name="import-new-calendar"]') ??
-  [...(section()?.querySelectorAll<HTMLInputElement>('input:not([type="file"])') ?? [])][0] ??
+  dialog()?.querySelector<HTMLInputElement>('input[name="import-new-calendar"]') ??
+  [...(dialog()?.querySelectorAll<HTMLInputElement>('input') ?? [])][0] ??
   null
-const status = () => text(section()?.querySelector('[role="status"]'))
-/** The terms and descriptions of the section's lists, by term. */
+const status = () => text(dialog()?.querySelector('[role="status"]'))
+/** The terms and descriptions of the dialog's lists, by term. */
 const details = () =>
   new Map(
-    [...(section()?.querySelectorAll('dt') ?? [])].map((term) => [
+    [...(dialog()?.querySelectorAll('dt') ?? [])].map((term) => [
       text(term),
       text(term.nextElementSibling),
     ]),
@@ -205,8 +211,12 @@ async function mountSection(list: Calendar[] = calendars) {
   seedCalendars(list)
 }
 
-/** Picks a file the way the browser's file dialog does: the input's list changes, `change` fires. */
+/**
+ * Picks a file the way the browser's file dialog does after "Choose file…": the focus is on that
+ * button, the input's list changes, `change` fires.
+ */
 function choose(content: string, name = 'team.ics', type = 'text/calendar') {
+  if (!dialog()) chooseButton().focus()
   const file = new File([content], name, { type })
   Object.defineProperty(fileInput(), 'files', { value: [file], configurable: true })
   fileInput().dispatchEvent(new Event('change', { bubbles: true }))
@@ -238,7 +248,7 @@ describe('where it is shown', () => {
     expect(section()).toBeNull()
   })
 
-  it('is a labelled section with a heading that can take the focus, a file field and a status', async () => {
+  it('is a labelled section with a heading that can take the focus and "Choose file…"', async () => {
     await mountSection()
     const heading = document.getElementById('settings-import')!
     expect(heading.tagName).toBe('H2')
@@ -246,24 +256,43 @@ describe('where it is shown', () => {
     expect(heading.getAttribute('tabindex')).toBe('-1')
     expect(section()?.getAttribute('aria-labelledby')).toBe('settings-import')
 
-    const label = [...document.querySelectorAll('label')].find((item) =>
-      text(item).startsWith('Calendar file'),
-    )
-    expect(label?.getAttribute('for')).toBe(fileInput().id)
+    // The button is the way to the file input, which is out of sight and out of the tab order.
+    const choose = chooseButton()
+    expect(choose.getAttribute('aria-haspopup')).toBe('dialog')
+    const limits = document.getElementById(choose.getAttribute('aria-describedby')!)
+    expect(text(limits)).toContain('up to 5 MB and 2000 events')
     expect(fileInput().accept).toContain('.ics')
-    expect(text(section())).toContain('up to 5 MB and 2000 events')
-    const live = section()!.querySelector('[role="status"]')!
-    expect(live.getAttribute('aria-live')).toBe('polite')
-    // No result and no preview before a file is chosen.
-    expect(buttons()).toEqual([])
+    expect(fileInput().getAttribute('tabindex')).toBe('-1')
+    expect(fileInput().getAttribute('aria-hidden')).toBe('true')
+    const opened = vi.spyOn(fileInput(), 'click').mockImplementation(() => {})
+    choose.click()
+    expect(opened).toHaveBeenCalledTimes(1)
+    // No dialog before a file is chosen.
+    expect(dialog()).toBeNull()
   })
 
-  it('does not mark the file field invalid before anything went wrong', async () => {
+  it('does not change when a file is chosen: the file opens a dialog', async () => {
     await mountSection()
-    // An empty message passed to the field made Nuxt UI draw it red and set aria-invalid.
-    expect(fileInput().getAttribute('aria-invalid')).not.toBe('true')
+    const before = text(section())
     await chooseAndRead(fixture('import-mixed.ics'))
-    expect(fileInput().getAttribute('aria-invalid')).not.toBe('true')
+    expect(text(section())).toBe(before)
+    expect(dialog()!.getAttribute('aria-labelledby')).toBeTruthy()
+    expect(text(dialog())).toContain('Import a calendar file')
+    const live = dialog()!.querySelector('[role="status"]')!
+    expect(live.getAttribute('aria-live')).toBe('polite')
+  })
+
+  it('goes back to the start when the dialog is closed, with the file input emptied', async () => {
+    await mountSection()
+    await chooseAndRead(fixture('import-recurring-overrides.ics'))
+    button('Cancel')!.click()
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(fileInput().value).toBe('')
+    expect(service.puts).toEqual([])
+    await vi.waitFor(() => expect(document.activeElement).toBe(chooseButton()))
+    // a new choice starts afresh
+    await chooseAndRead(fixture('import-mixed.ics'), 'projects.ics')
+    expect(text(dialog())).toContain('projects.ics')
   })
 })
 
@@ -271,7 +300,7 @@ describe('choosing a file', () => {
   it('shows what it holds: name, calendar name, events, titles and what is left out', async () => {
     await mountSection()
     await chooseAndRead(fixture('import-mixed.ics'), 'projects.ics')
-    const card = text(section())
+    const card = text(dialog())
     expect(card).toContain('projects.ics')
     expect(details()).toEqual(
       new Map([
@@ -298,9 +327,9 @@ describe('choosing a file', () => {
   it('offers the calendars the person may write to, the first one chosen', async () => {
     await mountSection()
     await chooseAndRead(fixture('import-recurring-overrides.ics'))
-    const select = section()!.querySelector<HTMLElement>('[role="combobox"]')!
+    const select = dialog()!.querySelector<HTMLElement>('[role="combobox"]')!
     expect(text(select)).toBe('Work')
-    const label = [...section()!.querySelectorAll('label')].find((item) =>
+    const label = [...dialog()!.querySelectorAll('label')].find((item) =>
       text(item).startsWith('Import into'),
     )
     expect(label).toBeDefined()
@@ -309,8 +338,8 @@ describe('choosing a file', () => {
   it('offers "New calendar…" after the calendars, and has no name field while a calendar is chosen', async () => {
     await mountSection()
     await chooseAndRead(fixture('import-recurring-overrides.ics'))
-    expect(section()!.querySelector('input[name="import-new-calendar"]')).toBeNull()
-    const select = section()!.querySelector<HTMLElement>('[role="combobox"]')!
+    expect(dialog()!.querySelector('input[name="import-new-calendar"]')).toBeNull()
+    const select = dialog()!.querySelector<HTMLElement>('[role="combobox"]')!
     select.click()
     await vi.waitFor(() => expect(document.querySelectorAll('[role="option"]').length).toBe(2))
     expect([...document.querySelectorAll('[role="option"]')].map((item) => text(item))).toEqual([
@@ -323,7 +352,7 @@ describe('choosing a file', () => {
     // A read-only share and a subscription: neither takes events, but a new calendar can.
     await mountSection(calendars.slice(1))
     await chooseAndRead(fixture('import-recurring-overrides.ics'))
-    expect(text(section())).not.toContain('None of your calendars can take new events.')
+    expect(text(dialog())).not.toContain('None of your calendars can take new events.')
     await vi.waitFor(() => expect(newNameInput()).not.toBeNull())
     expect(button('Import 2 events')?.disabled).toBe(false)
     // The name starts as the calendar name of the file.
@@ -336,33 +365,37 @@ describe('choosing a file', () => {
     Object.defineProperty(big, 'size', { value: MAX_FILE_BYTES + 1 })
     Object.defineProperty(fileInput(), 'files', { value: [big], configurable: true })
     fileInput().dispatchEvent(new Event('change', { bubbles: true }))
-    await vi.waitFor(() => expect(text(section())).toContain('The file is too large (5 MB)'))
+    await vi.waitFor(() => expect(text(dialog())).toContain('The file is too large (5 MB)'))
     // Announced to screen readers when it appears.
-    expect(text(section()?.querySelector('[role="alert"]'))).toContain('The file is too large')
+    expect(text(dialog()?.querySelector('[role="alert"]'))).toContain('The file is too large')
     expect(button(/^Import/)).toBeUndefined()
     expect(status()).toBe('')
+    // Another file can be chosen from the dialog.
+    const opened = vi.spyOn(fileInput(), 'click').mockImplementation(() => {})
+    button('Choose another file…')!.click()
+    expect(opened).toHaveBeenCalledTimes(1)
 
     choose(fixture('garbage.ics'), 'page.ics')
     await vi.waitFor(() =>
-      expect(text(section())).toContain('This is not an iCalendar (.ics) file.'),
+      expect(text(dialog())).toContain('This is not an iCalendar (.ics) file.'),
     )
-    expect(text(section())).not.toContain('too large')
+    expect(text(dialog())).not.toContain('too large')
 
     choose('x', 'photo.png', 'image/png')
     await vi.waitFor(() =>
-      expect(text(section())).toContain('This does not look like a calendar file.'),
+      expect(text(dialog())).toContain('This does not look like a calendar file.'),
     )
   })
 
   it('clears an old message and an old preview when another file is chosen', async () => {
     await mountSection()
     choose(fixture('garbage.ics'), 'page.ics')
-    await vi.waitFor(() => expect(text(section())).toContain('This is not an iCalendar'))
+    await vi.waitFor(() => expect(text(dialog())).toContain('This is not an iCalendar'))
     await chooseAndRead(fixture('import-recurring-overrides.ics'), 'good.ics')
-    expect(text(section())).not.toContain('This is not an iCalendar')
+    expect(text(dialog())).not.toContain('This is not an iCalendar')
     choose(fixture('garbage.ics'), 'page.ics')
-    await vi.waitFor(() => expect(text(section())).toContain('This is not an iCalendar'))
-    expect(text(section())).not.toContain('Events 2')
+    await vi.waitFor(() => expect(text(dialog())).toContain('This is not an iCalendar'))
+    expect(text(dialog())).not.toContain('Events 2')
     expect(button(/^Import/)).toBeUndefined()
   })
 
@@ -390,12 +423,12 @@ describe('importing into a new calendar', () => {
     await chooseNew('Holidays 2027')
     const before = sourcesVersion()
     button('Import 2 events')!.click()
-    await vi.waitFor(() => expect(text(section())).toContain('Import finished'))
+    await vi.waitFor(() => expect(text(dialog())).toContain('Import finished'))
     expect(service.made).toEqual([{ displayName: 'Holidays 2027' }])
     expect(service.puts).toHaveLength(2)
     for (const put of service.puts)
       expect(put.url).toMatch(/^\/caldav\/alice\/0a1b2c3d\/[0-9a-f]{32}\.ics$/)
-    expect(text(section())).toContain('The calendar “Holidays 2027” was created.')
+    expect(text(dialog())).toContain('The calendar “Holidays 2027” was created.')
     // Once for the new calendar, once for its events.
     expect(sourcesVersion()).toBe(before + 2)
     expect(service.invalidated).toEqual([NEW_HREF])
@@ -404,18 +437,18 @@ describe('importing into a new calendar', () => {
   it('refuses an empty or too long name before anything is made, and says why at the field', async () => {
     await chooseNew('   ')
     button('Import 2 events')!.click()
-    await vi.waitFor(() => expect(section()!.querySelector('[role="alert"]')).not.toBeNull())
-    expect(text(section()!.querySelector('[role="alert"]'))).toContain('Enter a name.')
+    await vi.waitFor(() => expect(dialog()!.querySelector('[role="alert"]')).not.toBeNull())
+    expect(text(dialog()!.querySelector('[role="alert"]'))).toContain('Enter a name.')
     expect(service.made).toEqual([])
     expect(service.puts).toEqual([])
     const input = newNameInput()!
     // The field stops typing at 100 characters; a longer value set by a script is still refused.
     input.value = 'x'.repeat(101)
     input.dispatchEvent(new Event('input', { bubbles: true }))
-    await vi.waitFor(() => expect(section()!.querySelector('[role="alert"]')).toBeNull())
+    await vi.waitFor(() => expect(dialog()!.querySelector('[role="alert"]')).toBeNull())
     button('Import 2 events')!.click()
     await vi.waitFor(() =>
-      expect(text(section()!.querySelector('[role="alert"]'))).toContain('at most 100'),
+      expect(text(dialog()!.querySelector('[role="alert"]'))).toContain('at most 100'),
     )
     expect(service.made).toEqual([])
     expect(service.puts).toEqual([])
@@ -425,12 +458,12 @@ describe('importing into a new calendar', () => {
     await chooseNew('Holidays')
     service.makeFails = new DavError('forbidden', 'no')
     button('Import 2 events')!.click()
-    await vi.waitFor(() => expect(text(section())).toContain('The calendar could not be created'))
+    await vi.waitFor(() => expect(text(dialog())).toContain('The calendar could not be created'))
     expect(service.puts).toEqual([])
-    expect(text(section())).not.toContain('Import finished')
+    expect(text(dialog())).not.toContain('Import finished')
     service.makeFails = null
     button('Import 2 events')!.click()
-    await vi.waitFor(() => expect(text(section())).toContain('Import finished'))
+    await vi.waitFor(() => expect(text(dialog())).toContain('Import finished'))
     expect(service.made).toHaveLength(1)
   })
 
@@ -439,7 +472,7 @@ describe('importing into a new calendar', () => {
     service.fail = (_put, index) =>
       index === 0 ? new DavError('rejected', 'no', { status: 500 }) : null
     button('Import 2 events')!.click()
-    await vi.waitFor(() => expect(text(section())).toContain('Import again'))
+    await vi.waitFor(() => expect(text(dialog())).toContain('Import again'))
     service.fail = () => null
     button('Import again')!.click()
     await vi.waitFor(() => expect(button('Import 2 events')).toBeDefined())
@@ -473,14 +506,14 @@ describe('text from the file', () => {
   it('is drawn as text: no element, no script, no reordering characters', async () => {
     await mountSection()
     await chooseAndRead(hostile, '<b>evil</b>.ics')
-    expect(section()?.querySelector('img, script, b')).toBeNull()
+    expect(dialog()?.querySelector('img, script, b')).toBeNull()
     expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined()
-    const card = text(section())
+    const card = text(dialog())
     expect(card).toContain('<b>evil</b>.ics')
     expect(card).toContain('<script>window.__pwned = 1</script>')
     expect(card).toContain('<img src=x onerror="window.__pwned = 2"> Click')
     expect(card).toContain('Ab cd Second')
-    expect(section()?.textContent).not.toContain(String.fromCodePoint(0x202e))
+    expect(dialog()?.textContent).not.toContain(String.fromCodePoint(0x202e))
   })
 
   it('stays text in the list of events that failed', async () => {
@@ -488,9 +521,9 @@ describe('text from the file', () => {
     await mountSection()
     await chooseAndRead(hostile)
     button(/^Import 2 events$/)!.click()
-    await vi.waitFor(() => expect(text(section())).toContain('Import finished'))
-    expect(section()?.querySelector('img, script')).toBeNull()
-    expect(text(section())).toContain(
+    await vi.waitFor(() => expect(text(dialog())).toContain('Import finished'))
+    expect(dialog()?.querySelector('img, script')).toBeNull()
+    expect(text(dialog())).toContain(
       '<img src=x onerror="window.__pwned = 2"> Click: The calendar service did not accept this event.',
     )
   })
@@ -503,33 +536,35 @@ describe('importing', () => {
     await chooseAndRead(fixture('import-recurring-overrides.ics'))
     button('Import 2 events')!.click()
 
-    await vi.waitFor(() => expect(text(section())).toContain('Import finished'))
+    await vi.waitFor(() => expect(text(dialog())).toContain('Import finished'))
     expect(service.puts).toHaveLength(2)
     for (const put of service.puts) {
       expect(put.url).toMatch(/^\/caldav\/alice\/work\/[0-9a-f]{32}\.ics$/)
       expect(put.create).toBe(true)
     }
-    expect(text(section())).toContain('Imported 2 events.')
+    expect(text(dialog())).toContain('Imported 2 events.')
     expect(status()).toBe('Imported 2 events.')
     // The calendar view loads again, without the reader's short-lived copy.
     expect(sourcesVersion()).toBe(before + 1)
     expect(service.invalidated).toEqual([WORK_HREF])
     // The result has the focus, and the preview is out of the way.
     expect(document.activeElement).toBe(document.getElementById('settings-import-result'))
-    expect(fileInput().closest('[style*="display: none"]')).not.toBeNull()
+    expect(dialog()!.querySelector('[role="combobox"]')).toBeNull()
   })
 
-  it('runs again after "Done" with a clean slate and the focus on the file field', async () => {
+  it('runs again after "Done" with a clean slate and the focus on "Choose file…"', async () => {
     await mountSection()
     await chooseAndRead(fixture('import-recurring-overrides.ics'))
     button('Import 2 events')!.click()
     await vi.waitFor(() => expect(button('Done')).toBeDefined())
     button('Done')!.click()
-    await vi.waitFor(() => expect(document.activeElement).toBe(fileInput()))
-    expect(status()).toBe('')
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    await vi.waitFor(() => expect(document.activeElement).toBe(chooseButton()))
+    expect(fileInput().value).toBe('')
     expect(text(section())).not.toContain('Import finished')
-    expect(button('Done')).toBeUndefined()
-    expect(button(/^Import \d/)).toBeUndefined()
+    await chooseAndRead(fixture('import-recurring-overrides.ics'))
+    expect(status()).toBe('File read: 2 events can be imported.')
+    expect(text(dialog())).not.toContain('Import finished')
   })
 
   it('counts what was already there, and does not reload when nothing was written', async () => {
@@ -538,7 +573,7 @@ describe('importing', () => {
     const before = sourcesVersion()
     await chooseAndRead(fixture('import-recurring-overrides.ics'))
     button('Import 2 events')!.click()
-    await vi.waitFor(() => expect(text(section())).toContain('Import finished'))
+    await vi.waitFor(() => expect(text(dialog())).toContain('Import finished'))
     expect(status()).toBe('Nothing was imported. 2 events were already in the calendar.')
     expect(sourcesVersion()).toBe(before)
     expect(service.invalidated).toEqual([])
@@ -553,10 +588,10 @@ describe('importing', () => {
     const before = sourcesVersion()
     await chooseAndRead(fixture('import-recurring-overrides.ics'))
     button('Import 2 events')!.click()
-    await vi.waitFor(() => expect(text(section())).toContain('Import finished'))
+    await vi.waitFor(() => expect(text(dialog())).toContain('Import finished'))
 
     expect(status()).toBe('Imported 1 event. 1 event could not be imported.')
-    const failed = section()!.querySelectorAll(
+    const failed = dialog()!.querySelectorAll(
       'ul[aria-label="Events that could not be imported"] li',
     )
     expect(failed).toHaveLength(1)
@@ -565,13 +600,13 @@ describe('importing', () => {
     )
     // One event was written: the calendar is loaded again.
     expect(sourcesVersion()).toBe(before + 1)
-    expect(text(section())).toContain('events that are already in the calendar are left alone')
+    expect(text(dialog())).toContain('events that are already in the calendar are left alone')
 
     // "Import again" goes back to the file's preview, with the focus on the button.
     button('Import again')!.click()
     await vi.waitFor(() => expect(button('Import 2 events')).toBeDefined())
     await vi.waitFor(() => expect(document.activeElement).toBe(button('Import 2 events')))
-    expect(text(section())).toContain('team.ics')
+    expect(text(dialog())).toContain('team.ics')
   })
 
   it('shows why the run stopped, in an alert', async () => {
@@ -579,8 +614,8 @@ describe('importing', () => {
     await mountSection()
     await chooseAndRead(fixture('import-recurring-overrides.ics'))
     button('Import 2 events')!.click()
-    await vi.waitFor(() => expect(text(section())).toContain('Import stopped'))
-    expect(text(section()?.querySelector('[role="alert"]'))).toContain(
+    await vi.waitFor(() => expect(text(dialog())).toContain('Import stopped'))
+    expect(text(dialog()?.querySelector('[role="alert"]'))).toContain(
       'Your sign-in expired. Sign in again.',
     )
   })
@@ -603,18 +638,23 @@ describe('importing', () => {
     button('Import 12 events')!.click()
 
     await vi.waitFor(() => expect(service.puts).toHaveLength(4))
-    const progress = section()!.querySelector<HTMLProgressElement>('progress')!
+    const progress = dialog()!.querySelector<HTMLProgressElement>('progress')!
     expect(progress.getAttribute('aria-label')).toBe('Import progress')
     expect(progress.outerHTML).toMatch(/max="12"/)
     expect(status()).toBe('Importing 12 events…')
     expect(button('Importing…')?.disabled).toBe(true)
-    expect(fileInput().disabled).toBe(true)
     await vi.waitFor(() => expect(document.activeElement).toBe(button('Cancel import')))
+    // The dialog cannot be closed while the run is going; Cancel import is the way out.
+    button('Cancel import')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    )
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    expect(dialog()).not.toBeNull()
 
     button('Cancel import')!.click()
     await vi.waitFor(() => expect(status()).toBe('Cancelling…'))
     release()
-    await vi.waitFor(() => expect(text(section())).toContain('Import cancelled'))
+    await vi.waitFor(() => expect(text(dialog())).toContain('Import cancelled'))
     expect(service.puts).toHaveLength(4)
     // The four that were being sent are not claimed to be unsaved.
     expect(status()).toBe(

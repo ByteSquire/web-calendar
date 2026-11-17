@@ -96,12 +96,6 @@ export const ACCESS_LEVELS: readonly { value: AccessPermission; label: string; h
   },
 ]
 
-export const PRINCIPAL_CHOICES: readonly { value: AccessPrincipalType; label: string }[] = [
-  { value: 'user', label: N_('A person') },
-  { value: 'group', label: N_('A group') },
-  { value: 'authenticated', label: N_('Everyone signed in') },
-]
-
 export function levelLabel(permission: AccessPermission): string {
   const label = ACCESS_LEVELS.find((level) => level.value === permission)?.label
   return label ? tv(label) : permission

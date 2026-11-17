@@ -5,8 +5,8 @@ export const groups: Readonly<Record<string, string>> = {
   'Not everybody is offered when you add members or share: the list shows the first {count} people, sorted by name.':
     'Beim Hinzufügen von Mitgliedern und beim Teilen wird nicht jede Person angeboten: Die Liste zeigt die ersten {count} Personen, nach Namen sortiert.',
   'Loading groups': 'Gruppen werden geladen',
-  'There are no groups yet. Create the first one below.':
-    'Es gibt noch keine Gruppen. Lege unten die erste an.',
+  'There are no groups yet. Create the first one with “New group”.':
+    'Es gibt noch keine Gruppen. Lege die erste mit „Neue Gruppe“ an.',
   'You are not in a group yet. Ask an administrator to add you.':
     'Du bist noch in keiner Gruppe. Bitte einen Administrator, dich hinzuzufügen.',
   '{count} member | {count} members': '{count} Mitglied | {count} Mitglieder',
@@ -25,10 +25,15 @@ export const groups: Readonly<Record<string, string>> = {
   '{name} was deleted.': '{name} wurde gelöscht.',
   'This group no longer exists. Reload the page.':
     'Diese Gruppe gibt es nicht mehr. Lade die Seite neu.',
-  'Members of {name} were saved.': 'Mitglieder von {name} wurden gespeichert.',
+
+  // The page of one group
+  'Back to groups': 'Zurück zu den Gruppen',
+  'Group not found': 'Gruppe nicht gefunden',
+  'This group does not exist, or you are not one of its members.':
+    'Diese Gruppe gibt es nicht, oder du bist nicht Mitglied.',
 
   // Create a group (admins)
-  'Create a group': 'Gruppe anlegen',
+  'New group': 'Neue Gruppe',
   'Members of a group can create and share its calendars. Its members are chosen here; groups from your identity provider cannot be changed here.':
     'Mitglieder einer Gruppe können deren Kalender anlegen und teilen. Die Mitglieder wählst du hier aus; Gruppen aus deinem Identitätsanbieter lassen sich hier nicht ändern.',
   'Letters, digits, dots, dashes and underscores. It cannot be changed later.':
@@ -72,9 +77,12 @@ export const groups: Readonly<Record<string, string>> = {
   '{name} is not imported any more.': '{name} wird nicht mehr importiert.',
   'This group has no members yet.': 'Diese Gruppe hat noch keine Mitglieder.',
   'Remove {name} from {group}': '{name} aus {group} entfernen',
+  'Remove {name} from {group}?': '{name} aus {group} entfernen?',
+  'They no longer see the calendars of the group or what is shared with it.':
+    'Die Person sieht die Kalender der Gruppe und das, was mit ihr geteilt ist, nicht mehr.',
+  '{name} was added to {group}.': '{name} wurde zu {group} hinzugefügt.',
+  '{name} was removed from {group}.': '{name} wurde aus {group} entfernt.',
   'Add a member': 'Mitglied hinzufügen',
-  'Save members': 'Mitglieder speichern',
-  'Undo changes': 'Änderungen verwerfen',
 
   // Calendars of a group
   'This group has no calendars yet.': 'Diese Gruppe hat noch keine Kalender.',
@@ -113,15 +121,14 @@ export const groups: Readonly<Record<string, string>> = {
     'Kalender dieser Gruppe. Alle in der Gruppe können sie nutzen; ihre Verwaltenden erstellen und teilen sie, und die Personen und Gruppen, mit denen sie geteilt werden, können ihre Termine sehen oder ändern.',
   'Groups share calendars. Open a group to see its members and calendars. Its managers create calendars and share them with people or other groups.':
     'Gruppen teilen Kalender. Öffne eine Gruppe, um ihre Mitglieder und Kalender zu sehen. Ihre Verwaltenden erstellen Kalender und teilen sie mit Personen oder anderen Gruppen.',
-  'Save or undo the changes to the members before you change the managers.':
-    'Speichere die Änderungen an den Mitgliedern oder mache sie rückgängig, bevor du die Verwaltenden änderst.',
   Manager: 'Verwaltung',
   'Remove as manager of {group}: {name}': 'Als Verwaltung entfernen ({group}): {name}',
   'Make manager of {group}: {name}': 'Zur Verwaltung machen ({group}): {name}',
   'Remove as manager': 'Als Verwaltung entfernen',
   'Make manager': 'Zur Verwaltung machen',
   'You manage this group': 'Du verwaltest diese Gruppe',
-  'Managers of {name} were saved.': 'Die Verwaltung von {name} wurde gespeichert.',
+  '{name} manages {group} now.': '{name} verwaltet jetzt {group}.',
+  '{name} no longer manages {group}.': '{name} verwaltet {group} nicht mehr.',
 
   // The dialog of a group calendar, from the sidebar
   'A calendar of the group {group}.': 'Ein Kalender der Gruppe {group}.',

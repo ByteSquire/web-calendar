@@ -6,7 +6,8 @@
   Why a section of its own (docs/design.md §9, AGENTS.md "UI"): no other screen knows the groups of
   the identity provider, and an admin chooses among them here and nowhere else. The Groups page is
   the existing place; the section is shown to admins only. The parent runs the import and asks
-  before stopping one (stopping removes the group's members and the rules that name it).
+  before stopping one (stopping removes the group's members and the rules that name it). A failed
+  import is shown at its row (`rowError`), besides the parent's toast.
 -->
 <template>
   <section aria-labelledby="oidc-groups-heading" class="flex flex-col gap-3" data-oidc-groups>
@@ -66,6 +67,11 @@
           :disabled="busy || candidate.blocked !== null"
           @click="emit('import', candidate)"
         />
+        <SettingsErrorAlert
+          v-if="rowError?.id === candidate.id"
+          :message="rowError.message"
+          class="basis-full"
+        />
       </li>
     </ul>
 
@@ -87,6 +93,8 @@ defineProps<{
   /** The words for a failed load, or null. */
   error: string | null
   busy: boolean
+  /** Why the last import of a candidate (by its id) failed; shown at its row. */
+  rowError?: { id: string; message: string } | null
 }>()
 
 const emit = defineEmits<{

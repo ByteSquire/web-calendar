@@ -3,14 +3,49 @@
   call other servers, so this app's server passes each request on; it keeps the account's address
   and name but never the password. For an account with a login the server seals the password, and
   this browser keeps the sealed text (in memory, or on the device when the person asks): see
-  utils/external/seals.ts. "Check connection" runs the same discovery the calendar view runs.
+  utils/external/seals.ts. "Add account", beside the heading, and "Edit" on a row open the same
+  dialog with ExternalAccountForm; it closes when the server has taken the change and stays open
+  with the reason when not. At the limit the button is disabled; the sentence beside it, there
+  from the start, says how many accounts there are and why. What happened is told in a toast and a
+  failed request also in the dialog, so the list never moves. "Check connection" runs the same
+  discovery the calendar view runs and reports in the row, on the status line it always has.
   Every change bumps `calendar-sources-version`, which the calendar view watches to load again.
 -->
 <template>
   <section aria-labelledby="settings-external" class="flex flex-col gap-4">
-    <h2 id="settings-external" ref="heading" tabindex="-1" class="text-lg font-semibold">
-      {{ t('External CalDAV accounts') }}
-    </h2>
+    <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <h2 id="settings-external" ref="heading" tabindex="-1" class="text-lg font-semibold">
+        {{ t('External CalDAV accounts') }}
+      </h2>
+      <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
+        <p v-if="list" id="settings-external-limit" class="text-sm text-toned">
+          <UIcon
+            v-if="limitReached"
+            name="i-lucide-info"
+            class="mr-1 inline size-4 align-text-bottom"
+          />
+          {{
+            limitReached
+              ? t(
+                  'You have reached the limit of {max} external accounts. Delete one to add another.',
+                  { max: MAX_EXTERNAL_ACCOUNTS },
+                )
+              : t('{used} of {max} external accounts.', {
+                  used: list.accounts.length,
+                  max: MAX_EXTERNAL_ACCOUNTS,
+                })
+          }}
+        </p>
+        <UButton
+          :label="t('Add account')"
+          icon="i-lucide-plus"
+          aria-haspopup="dialog"
+          :disabled="limitReached"
+          :aria-describedby="list ? 'settings-external-limit' : undefined"
+          @click="askAdd"
+        />
+      </div>
+    </div>
     <p>
       {{
         t(
@@ -29,31 +64,6 @@
         <template v-else>{{ part.text }}</template>
       </template>
     </p>
-
-    <div class="flex flex-col gap-3 rounded-lg border border-default p-4">
-      <h3 class="font-semibold">{{ t('Add an account') }}</h3>
-      <p v-if="limitReached" id="settings-external-limit" class="text-sm font-medium">
-        <UIcon name="i-lucide-info" class="mr-1 inline size-4 align-text-bottom" />
-        {{
-          t('You have reached the limit of {max} external accounts. Delete one to add another.', {
-            max: MAX_EXTERNAL_ACCOUNTS,
-          })
-        }}
-      </p>
-      <template v-else>
-        <SettingsErrorAlert v-if="addAlert" :message="addAlert" />
-        <SettingsExternalAccountForm
-          ref="addForm"
-          :submit-label="t('Add account')"
-          :busy="adding"
-          :logins-enabled="loginsEnabled"
-          :server-errors="addErrors"
-          @submit="addAccount"
-        />
-      </template>
-    </div>
-
-    <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
 
     <SettingsErrorAlert
       v-if="accounts.error.value"
@@ -107,7 +117,7 @@
           <p
             role="status"
             aria-live="polite"
-            class="flex items-start gap-1.5 text-sm"
+            class="flex min-h-5 items-start gap-1.5 text-sm"
             :class="STATUS_CLASS[statusOf(account).state]"
           >
             <UIcon
@@ -172,33 +182,32 @@
       <USkeleton v-for="row in 2" :key="row" class="h-32 w-full" aria-hidden="true" />
     </div>
 
+    <!-- Adding (no account) and changing one. -->
     <UModal
-      :open="editTarget !== null"
-      :title="t('Edit account')"
-      :description="
-        t('Change the name, address, login or colour of {name}', { name: shownEditName })
-      "
-      :content="{ onOpenAutoFocus: focusEditForm, onCloseAutoFocus: editFocus.restore }"
+      :open="formOpen"
+      :title="shownForm.title"
+      :description="shownForm.description"
+      :content="{ onOpenAutoFocus: focusForm, onCloseAutoFocus: formFocus.restore }"
       :ui="{ title: 'wrap-anywhere', description: 'wrap-anywhere' }"
-      @update:open="closeEdit"
+      @update:open="closeForm"
     >
       <template #body>
         <div class="flex flex-col gap-4">
-          <SettingsErrorAlert v-if="editAlert" :message="editAlert" />
-          <!-- Keyed: each account gets a fresh form, with its own values. -->
+          <SettingsErrorAlert v-if="formAlert" :message="formAlert" />
+          <!-- Keyed: each opening gets a fresh form, with its own values. -->
           <SettingsExternalAccountForm
-            v-if="editTarget"
-            :key="editTarget.id"
-            ref="editForm"
-            :submit-label="t('Save changes')"
+            v-if="formOpen"
+            :key="formKey"
+            ref="form"
+            :submit-label="editTarget ? t('Save changes') : t('Add account')"
             cancelable
-            :account="editTarget"
+            :account="editTarget ?? undefined"
             :busy="saving"
             :logins-enabled="loginsEnabled"
-            :remembered="seals.isRemembered(editTarget.id)"
-            :server-errors="editErrors"
+            :remembered="editTarget ? seals.isRemembered(editTarget.id) : false"
+            :server-errors="formErrors"
             @submit="saveAccount"
-            @cancel="closeEdit(false)"
+            @cancel="closeForm(false)"
           />
         </div>
       </template>
@@ -260,7 +269,6 @@ interface Status {
 }
 interface FormHandle {
   focusFirst: () => void
-  reset: () => void
 }
 
 const STATUS_CLASS: Record<StatusState, string> = {
@@ -277,6 +285,7 @@ const STATUS_ICON: Record<StatusState, string> = {
 }
 
 const { api, seals, source } = useExternalAccess()
+const notify = useNotify()
 const { errors, passwordFor } = useLiveStatus()
 const { calendars } = useCalendarState()
 // The calendar view reloads its sources when this changes (the live data loader watches it).
@@ -295,99 +304,112 @@ const loginsEnabled = computed(() => list.value?.loginsEnabled ?? true)
 const limitReached = computed(() => (list.value?.accounts.length ?? 0) >= MAX_EXTERNAL_ACCOUNTS)
 
 const heading = useTemplateRef<HTMLElement>('heading')
-const addForm = useTemplateRef<FormHandle>('addForm')
-const editForm = useTemplateRef<FormHandle>('editForm')
-const notice = ref('')
+const form = useTemplateRef<FormHandle>('form')
 
 function sourcesChanged() {
   sourcesVersion.value++
 }
 
-// ---- Adding ----------------------------------------------------------------------------------
+// ---- Adding and changing ---------------------------------------------------------------------
 
-const adding = ref(false)
-const addErrors = ref<Record<string, string>>()
-const addAlert = ref<string | null>(null)
+const formOpen = ref(false)
+/** The account being changed; null while adding. */
+const editTarget = ref<ExternalAccount | null>(null)
+/** Each opening gets a fresh form. */
+const formKey = ref(0)
+const saving = ref(false)
+const formErrors = ref<Record<string, string>>()
+const formAlert = ref<string | null>(null)
+const formFocus = createFocusReturn(() => heading.value)
+// Kept while the dialog fades out.
+const shownForm = ref({ title: '', description: '' })
 
-async function addAccount(input: ExternalFormInput) {
-  if (adding.value) return
-  adding.value = true
-  addErrors.value = undefined
-  addAlert.value = null
-  notice.value = ''
-  try {
-    const result = await api.create(toCreateBody(input))
-    const kept = keepResult(seals, result, input.remember)
-    accounts.update((current) => ({ ...current, accounts: [...current.accounts, result.account] }))
-    sourcesChanged()
-    addForm.value?.reset()
-    notice.value =
-      t('Account “{name}” added.', { name: result.account.name }) +
-      rememberNote(input.remember && seals.has(result.account.id), kept)
-  } catch (cause) {
-    // Not logged: the error holds the request, and the request holds the password.
-    const failure = describeExternalSaveError(cause, N_('add the account'))
-    addErrors.value = failure.byField
-    addAlert.value = failure.alert ?? null
-  } finally {
-    adding.value = false
-  }
+function openForm(account: ExternalAccount | null) {
+  formFocus.remember()
+  formErrors.value = undefined
+  formAlert.value = null
+  editTarget.value = account
+  formKey.value++
+  shownForm.value = account
+    ? {
+        title: t('Edit account'),
+        description: t('Change the name, address, login or colour of {name}', {
+          name: account.name,
+        }),
+      }
+    : {
+        title: t('Add account'),
+        description: t('Enter the address of the server and, if it asks for one, the login.'),
+      }
+  formOpen.value = true
 }
 
-// ---- Changing --------------------------------------------------------------------------------
-
-const editTarget = ref<ExternalAccount | null>(null)
-// Keeps the name while the dialog fades out.
-const shownEditName = ref('')
-const saving = ref(false)
-const editErrors = ref<Record<string, string>>()
-const editAlert = ref<string | null>(null)
-const editFocus = createFocusReturn(() => heading.value)
+function askAdd() {
+  if (!limitReached.value) openForm(null)
+}
 
 function askEdit(account: ExternalAccount) {
-  editFocus.remember()
-  editErrors.value = undefined
-  editAlert.value = null
-  shownEditName.value = account.name
-  editTarget.value = account
+  openForm(account)
 }
 
-function closeEdit(open: boolean) {
+function closeForm(open: boolean) {
   if (open || saving.value) return
+  formOpen.value = false
   editTarget.value = null
 }
 
-function focusEditForm(event: Event) {
+function focusForm(event: Event) {
   if (keepFocusOffControlsOnTouch(event)) return
   event.preventDefault()
-  editForm.value?.focusFirst()
+  form.value?.focusFirst()
 }
 
 async function saveAccount(input: ExternalFormInput) {
+  if (saving.value) return
   const target = editTarget.value
-  if (!target || saving.value) return
   saving.value = true
-  editErrors.value = undefined
-  editAlert.value = null
+  formErrors.value = undefined
+  formAlert.value = null
   try {
-    const result = await api.update(target.id, toUpdateBody(input))
-    const kept = keepResult(seals, result, input.remember)
-    const saved = result.account
-    accounts.update((current) => ({
-      ...current,
-      accounts: current.accounts.map((item) => (item.id === saved.id ? saved : item)),
-    }))
-    // What was checked belonged to the old address and login.
-    checks.delete(saved.id)
+    if (target) {
+      const result = await api.update(target.id, toUpdateBody(input))
+      const kept = keepResult(seals, result, input.remember)
+      const saved = result.account
+      accounts.update((current) => ({
+        ...current,
+        accounts: current.accounts.map((item) => (item.id === saved.id ? saved : item)),
+      }))
+      // What was checked belonged to the old address and login.
+      checks.delete(saved.id)
+      notify.done(
+        t('Account “{name}” saved.', { name: saved.name }) +
+          rememberNote(input.remember && seals.has(saved.id), kept),
+      )
+    } else {
+      const result = await api.create(toCreateBody(input))
+      const kept = keepResult(seals, result, input.remember)
+      accounts.update((current) => ({
+        ...current,
+        accounts: [...current.accounts, result.account],
+      }))
+      notify.done(
+        t('Account “{name}” added.', { name: result.account.name }) +
+          rememberNote(input.remember && seals.has(result.account.id), kept),
+      )
+    }
     sourcesChanged()
-    notice.value =
-      t('Account “{name}” saved.', { name: saved.name }) +
-      rememberNote(input.remember && seals.has(saved.id), kept)
+    formOpen.value = false
     editTarget.value = null
   } catch (cause) {
-    const failure = describeExternalSaveError(cause, N_('save the account'))
-    editErrors.value = failure.byField
-    editAlert.value = failure.alert ?? null
+    // Not logged: the error holds the request, and the request holds the password.
+    const failure = describeExternalSaveError(
+      cause,
+      target ? N_('save the account') : N_('add the account'),
+    )
+    formErrors.value = failure.byField
+    formAlert.value = failure.alert ?? null
+    const summary = failure.alert ?? Object.values(failure.byField)[0]
+    if (summary) notify.failed(summary)
   } finally {
     saving.value = false
   }
@@ -421,6 +443,7 @@ async function deleteAccount() {
     // Already gone is what the person wanted.
     if (parseApiError(cause).kind !== 'not-found') {
       deleteError.value = describeError(cause, N_('delete the account'))
+      notify.failed(deleteError.value)
       deleting.value = false
       return
     }
@@ -432,7 +455,7 @@ async function deleteAccount() {
   }))
   checks.delete(target.id)
   sourcesChanged()
-  notice.value = t('Account “{name}” deleted.', { name: target.name })
+  notify.done(t('Account “{name}” deleted.', { name: target.name }))
   deleteTarget.value = null
   deleting.value = false
 }
@@ -467,13 +490,15 @@ async function savePassword(input: { password: string; remember: boolean }) {
   savingPassword.value = false
   if (!outcome.ok) {
     passwordError.value = outcome.message
+    notify.failed(outcome.message)
     return
   }
   checks.delete(target.id)
   sourcesChanged()
-  notice.value =
+  notify.done(
     t('Password of “{name}” saved.', { name: target.name }) +
-    rememberNote(input.remember, outcome.remembered)
+      rememberNote(input.remember, outcome.remembered),
+  )
   passwordTarget.value = null
 }
 

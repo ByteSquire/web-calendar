@@ -109,11 +109,12 @@ test('alice makes a calendar of the organization, in its own home in Radicale', 
 
 test('shared with bob, it reaches his home', async () => {
   const dialog = alice.getByRole('dialog', { name: NAME })
-  await dialog.getByRole('radio', { name: 'A person' }).check({ force: true })
-  await dialog.getByRole('button', { name: /^Person/ }).click()
+  const add = dialog.getByRole('form', { name: 'Add access' })
+  await add.getByRole('button', { name: /^Who/ }).click()
   await alice.getByRole('option', { name: /\(bob\)/ }).click()
-  await dialog.getByRole('radio', { name: /^Can view/ }).check({ force: true })
-  await dialog.getByRole('button', { name: 'Add access' }).click()
+  // "Can view" is the level at first
+  await expect(add.getByRole('combobox', { name: 'Level' })).toContainText('Can view')
+  await add.getByRole('button', { name: 'Add', exact: true }).click()
   await expect(dialog.locator('[data-access-rule]')).toHaveCount(1)
   await expect
     .poll(() => pathInHome(subOf('bob'), NAME), { timeout: 30_000 })

@@ -1,6 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
-import { TODAY, expectOpenFocus, isTouch, press } from './helpers'
+import { TODAY, expectOpenFocus, isTouch, press, toast } from './helpers'
 
 // The settings screen (FR-31 app tokens, FR-7 iCal subscriptions, account). The app runs in demo
 // mode here, which serves the SPA without a login, and every `/api/**` call except the settings
@@ -281,6 +281,25 @@ const accountSection = (page: Page) => main(page).getByRole('region', { name: 'A
 const tokensSection = (page: Page) => main(page).getByRole('region', { name: 'App tokens' })
 const subscriptionsSection = (page: Page) =>
   main(page).getByRole('region', { name: 'iCal subscriptions' })
+
+/** "New token" beside the heading; returns its dialog, with the focus in the label (not on touch). */
+async function openNewToken(page: Page) {
+  await press(tokensSection(page).getByRole('button', { name: 'New token' }))
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await expectOpenFocus(dialog, dialog.getByLabel('Label', { exact: true }))
+  return dialog
+}
+
+/** "Add subscription" beside the heading; returns its dialog. */
+async function openAddSubscription(page: Page) {
+  await press(subscriptionsSection(page).getByRole('button', { name: 'Add subscription' }))
+  const dialog = page.getByRole('dialog', { name: 'Add subscription' })
+  await expect(dialog).toBeVisible()
+  await expectOpenFocus(dialog, dialog.getByLabel('Name', { exact: true }))
+  return dialog
+}
+
 const tokenRow = (page: Page, label: string) =>
   page.getByRole('list', { name: 'Your app tokens' }).getByRole('listitem').filter({
     hasText: label,
@@ -292,6 +311,8 @@ const subscriptionRow = (page: Page, name: string) =>
 
 // WCAG 2.1 A and AA (NFR-3), as far as an automated scan can tell. The same helper as a11y.spec.ts.
 async function scan(page: Page) {
+  // The pointer that pressed a button would leave it in its lighter hover colour.
+  await page.mouse.move(0, 0)
   // Dialogs fade in; axe would measure the colours of a half-transparent dialog. Endless animations
   // (spinners) are skipped, they never finish.
   await page.evaluate(() =>
@@ -351,36 +372,53 @@ test.describe('settings: app tokens', () => {
     await expect(tokenRow(page, 'Thunderbird')).toContainText('Never')
   })
 
-  test('creates a token: the secret is shown once and is gone after Done', async ({ page }) => {
+  test('creates a token in a dialog: the secret is shown once and is gone after Done', async ({
+    page,
+  }) => {
     const api = await mockApi(page)
     const { errors } = await openSettings(page)
     const section = tokensSection(page)
+    const opener = section.getByRole('button', { name: 'New token' })
 
-    await section.getByLabel('Label', { exact: true }).fill('iOS Calendar')
-    await press(section.getByRole('button', { name: 'Create token' }))
+    const dialog = await openNewToken(page)
+    await dialog.getByLabel('Label', { exact: true }).fill('iOS Calendar')
+    await press(dialog.getByRole('button', { name: 'Create token' }))
 
-    const secret = section.getByLabel('Token', { exact: true })
+    // the same dialog now shows the secret
+    const secret = dialog.getByLabel('Token', { exact: true })
     await expect(secret).toHaveValue(SECRET)
     await expect(secret).toHaveAttribute('readonly', '')
     await expect(secret).toBeFocused()
-    await expect(section).toContainText('shown only once')
+    await expect(dialog).toContainText('shown only once')
+    await expect(page.getByRole('dialog', { name: 'New token for “iOS Calendar”' })).toBeVisible()
     expect(api.callsTo('POST', '/api/app-tokens')[0]!.body).toEqual({ label: 'iOS Calendar' })
-    // the list shows the new token, never its secret
-    await expect(tokenRow(page, 'iOS Calendar')).toBeVisible()
-    await expect(tokenRow(page, 'iOS Calendar')).not.toContainText(SECRET)
+    // the page behind it never shows the secret (the dialog hides it from assistive technology,
+    // so it is found by its CSS here)
+    await expect(page.locator('section[aria-labelledby="settings-tokens"]')).not.toContainText(
+      SECRET,
+    )
 
-    await press(section.getByRole('button', { name: 'Copy' }))
-    await expect(section.getByRole('status').filter({ hasText: 'Copied' })).toHaveText(
+    await press(dialog.getByRole('button', { name: 'Copy' }))
+    await expect(dialog.getByRole('status').filter({ hasText: 'Copied' })).toHaveText(
       'Copied to the clipboard.',
     )
     expect(await copied(page)).toEqual([SECRET])
 
-    await press(section.getByRole('button', { name: 'Done' }))
-    await expect(secret).toHaveCount(0)
+    await press(dialog.getByRole('button', { name: 'Done' }))
+    await expect(dialog).toBeHidden()
     await expect(page.locator('body')).not.toContainText(SECRET)
     expect(await page.content()).not.toContain(SECRET)
-    await expect(section.getByLabel('Label', { exact: true })).toBeFocused()
-    await expect(section.getByLabel('Label', { exact: true })).toHaveValue('')
+    await expect(opener).toBeFocused()
+    // the list shows the new token, never its secret
+    await expect(tokenRow(page, 'iOS Calendar')).toBeVisible()
+    await expect(tokenRow(page, 'iOS Calendar')).not.toContainText(SECRET)
+
+    // opened again, it is empty and has no secret
+    const again = await openNewToken(page)
+    await expect(again.getByLabel('Label', { exact: true })).toHaveValue('')
+    await expect(again.getByLabel('Token', { exact: true })).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(again).toBeHidden()
 
     // after a reload there is no way back to it
     await page.reload()
@@ -390,21 +428,33 @@ test.describe('settings: app tokens', () => {
     expect(errors).toEqual([])
   })
 
+  test('drops the secret when the dialog is closed with Escape', async ({ page }) => {
+    await mockApi(page)
+    await openSettings(page)
+    const dialog = await openNewToken(page)
+    await dialog.getByLabel('Label', { exact: true }).fill('DAVx5 on the tablet')
+    await press(dialog.getByRole('button', { name: 'Create token' }))
+    await expect(dialog.getByLabel('Token', { exact: true })).toHaveValue(SECRET)
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    expect(await page.content()).not.toContain(SECRET)
+  })
+
   test('refuses an empty or a too long label before asking the server', async ({ page }) => {
     const api = await mockApi(page)
     await openSettings(page)
-    const section = tokensSection(page)
-    const label = section.getByLabel('Label', { exact: true })
+    const dialog = await openNewToken(page)
+    const label = dialog.getByLabel('Label', { exact: true })
 
-    await press(section.getByRole('button', { name: 'Create token' }))
-    await expect(section.getByText('Enter a label, for example the name of the app.')).toBeVisible()
+    await press(dialog.getByRole('button', { name: 'Create token' }))
+    await expect(dialog.getByText('Enter a label, for example the name of the app.')).toBeVisible()
     await expect(label).toHaveAttribute('aria-invalid', 'true')
     await expect(label).toBeFocused()
 
     await label.fill('x'.repeat(65))
-    await expect(section.getByText('The label can have at most 64 characters.')).toBeVisible()
+    await expect(dialog.getByText('The label can have at most 64 characters.')).toBeVisible()
     await label.fill('x'.repeat(64))
-    await expect(section.getByText('at most 64 characters')).toHaveCount(0)
+    await expect(dialog.getByText('at most 64 characters')).toHaveCount(0)
     expect(api.callsTo('POST', '/api/app-tokens')).toHaveLength(0)
   })
 
@@ -414,10 +464,13 @@ test.describe('settings: app tokens', () => {
     })
     await openSettings(page)
     const section = tokensSection(page)
-    await expect(section.getByRole('button', { name: 'Create token' })).toBeDisabled()
-    await expect(section.getByLabel('Label', { exact: true })).toBeDisabled()
+    const create = section.getByRole('button', { name: 'New token' })
+    await expect(create).toBeDisabled()
+    // the reason is next to the button and describes it
+    await expect(create).toHaveAccessibleDescription(
+      'You have 10 of 10 app tokens, which is the limit. Revoke a token to create another one.',
+    )
     await expect(section).toContainText('You have 10 of 10 app tokens, which is the limit.')
-    await expect(section).toContainText('Revoke a token to create another one.')
   })
 
   test('does not count expired tokens against the limit and marks them', async ({ page }) => {
@@ -429,7 +482,10 @@ test.describe('settings: app tokens', () => {
     })
     await openSettings(page)
     const section = tokensSection(page)
-    await expect(section.getByRole('button', { name: 'Create token' })).toBeEnabled()
+    await expect(section.getByRole('button', { name: 'New token' })).toBeEnabled()
+    await expect(section.getByRole('button', { name: 'New token' })).toHaveAccessibleDescription(
+      '9 of 10 app tokens in use. Expired tokens do not count.',
+    )
     await expect(tokenRow(page, 'Old laptop').getByText('Expired')).toBeVisible()
   })
 
@@ -450,9 +506,7 @@ test.describe('settings: app tokens', () => {
     await press(dialog.getByRole('button', { name: 'Revoke token', exact: true }))
     await expect(dialog).toBeHidden()
     await expect(tokenRow(page, 'Thunderbird')).toHaveCount(0)
-    await expect(tokensSection(page).getByRole('status').filter({ hasText: 'revoked' })).toHaveText(
-      'Token “Thunderbird” revoked.',
-    )
+    await expect(toast(page, 'Token “Thunderbird” revoked.')).toBeVisible()
     expect(api.callsTo('DELETE', '/api/app-tokens/1')).toHaveLength(1)
     expect(errors).toEqual([])
   })
@@ -476,9 +530,7 @@ test.describe('settings: app tokens', () => {
     await press(dialog.getByRole('button', { name: 'Revoke all', exact: true }))
     await expect(dialog).toBeHidden()
     await expect(section.getByRole('list', { name: 'Your app tokens' })).toHaveCount(0)
-    await expect(section.getByRole('status').filter({ hasText: 'revoked' })).toHaveText(
-      'All app tokens revoked.',
-    )
+    await expect(toast(page, 'All app tokens revoked.')).toBeVisible()
     // nothing is left to revoke, so the button is gone
     await expect(section.getByRole('button', { name: 'Revoke all' })).toHaveCount(0)
     expect(api.callsTo('DELETE', '/api/app-tokens')).toHaveLength(1)
@@ -497,8 +549,10 @@ test.describe('settings: app tokens', () => {
     await press(section.getByRole('button', { name: 'Revoke all' }))
     const dialog = page.getByRole('dialog', { name: 'Revoke all app tokens?' })
     await press(dialog.getByRole('button', { name: 'Revoke all', exact: true }))
+    // in the dialog, which stays open, and in a toast
     await expect(dialog.getByRole('alert')).toContainText('Could not revoke your app tokens.')
     await expect(dialog).toBeVisible()
+    await expect(toast(page, 'Could not revoke your app tokens.')).toBeVisible()
     expect(api.callsTo('DELETE', '/api/app-tokens')).toHaveLength(1)
 
     // cancelling shows that nothing was revoked
@@ -522,7 +576,7 @@ test.describe('settings: app tokens', () => {
       mock.tokens = []
     })
     await openSettings(page)
-    await expect(tokensSection(page).getByRole('button', { name: 'Create token' })).toBeVisible()
+    await expect(tokensSection(page).getByRole('button', { name: 'New token' })).toBeVisible()
     await expect(tokensSection(page).getByRole('button', { name: 'Revoke all' })).toHaveCount(0)
   })
 
@@ -600,34 +654,40 @@ test.describe('settings: iCal subscriptions', () => {
     await expect(shared.getByRole('button', { name: /^(Edit|Delete)/ })).toHaveCount(0)
   })
 
-  test('adds a subscription, checks it and deletes it', async ({ page }) => {
+  test('adds a subscription in a dialog, checks it and deletes it', async ({ page }) => {
     const api = await mockApi(page)
     const { errors } = await openSettings(page)
     const section = subscriptionsSection(page)
+    // the section has no form of its own
+    await expect(section.locator('form')).toHaveCount(0)
 
-    await section.getByLabel('Name', { exact: true }).fill('Public holidays')
-    await section
+    const add = await openAddSubscription(page)
+    await add.getByLabel('Name', { exact: true }).fill('Public holidays')
+    await add
       .getByLabel('Address of the .ics file', { exact: true })
       .fill('webcal://example.org/de.ics')
     // the colour group is a radio group with named choices; Blue is chosen at first
-    const colours = section.getByRole('group', { name: 'Colour' })
+    const colours = add.getByRole('group', { name: 'Colour' })
     await expect(colours.getByRole('radio', { name: 'Blue' })).toBeChecked()
     await press(colours.locator('label', { hasText: 'Green' }))
     await expect(colours.getByRole('radio', { name: 'Green' })).toBeChecked()
-    await press(section.getByRole('button', { name: 'Add subscription' }))
+    await press(add.getByRole('button', { name: 'Add subscription' }))
 
+    await expect(add).toBeHidden()
     const row = subscriptionRow(page, 'Public holidays')
     await expect(row).toBeVisible()
-    await expect(section.getByRole('status').filter({ hasText: 'added' })).toHaveText(
-      'Subscription “Public holidays” added.',
-    )
+    await expect(toast(page, 'Subscription “Public holidays” added.')).toBeVisible()
     expect(api.callsTo('POST', '/api/ical-subscriptions')[0]!.body).toEqual({
       name: 'Public holidays',
       url: 'webcal://example.org/de.ics',
       color: '#047857',
     })
-    // the form is empty again
-    await expect(section.getByLabel('Name', { exact: true })).toHaveValue('')
+    await expect(section.getByRole('button', { name: 'Add subscription' })).toBeFocused()
+    // opened again, the form is empty
+    const again = await openAddSubscription(page)
+    await expect(again.getByLabel('Name', { exact: true })).toHaveValue('')
+    await page.keyboard.press('Escape')
+    await expect(again).toBeHidden()
 
     await press(row.getByRole('button', { name: 'Check Public holidays' }))
     await expect(row.getByRole('status')).toContainText(/Works: 2 events, \d+ bytes\./)
@@ -646,20 +706,22 @@ test.describe('settings: iCal subscriptions', () => {
   test('checks the form before asking the server', async ({ page }) => {
     const api = await mockApi(page)
     await openSettings(page)
-    const section = subscriptionsSection(page)
-    await press(section.getByRole('button', { name: 'Add subscription' }))
-    await expect(section.getByText('Enter a name for the calendar.')).toBeVisible()
-    await expect(section.getByText('Enter the address of the calendar.')).toBeVisible()
-    await expect(section.getByLabel('Name', { exact: true })).toBeFocused()
+    const dialog = await openAddSubscription(page)
+    await press(dialog.getByRole('button', { name: 'Add subscription' }))
+    await expect(dialog.getByText('Enter a name for the calendar.')).toBeVisible()
+    await expect(dialog.getByText('Enter the address of the calendar.')).toBeVisible()
+    await expect(dialog.getByLabel('Name', { exact: true })).toBeFocused()
 
-    await section.getByLabel('Name', { exact: true }).fill('Odd')
-    await section
+    await dialog.getByLabel('Name', { exact: true }).fill('Odd')
+    await dialog
       .getByLabel('Address of the .ics file', { exact: true })
       .fill('ftp://example.org/a.ics')
     await expect(
-      section.getByText('The address must start with http://, https:// or webcal://.'),
+      dialog.getByText('The address must start with http://, https:// or webcal://.'),
     ).toBeVisible()
     expect(api.callsTo('POST', '/api/ical-subscriptions')).toHaveLength(0)
+    // a check of the input is told at the input only
+    await expect(toast(page, /./)).toHaveCount(0)
   })
 
   test('shows what the server rejects next to the input and the rest in an alert', async ({
@@ -672,21 +734,21 @@ test.describe('settings: iCal subscriptions', () => {
       )
     })
     await openSettings(page)
-    const section = subscriptionsSection(page)
-    await section.getByLabel('Name', { exact: true }).fill('Intranet')
-    await section
+    const dialog = await openAddSubscription(page)
+    await dialog.getByLabel('Name', { exact: true }).fill('Intranet')
+    await dialog
       .getByLabel('Address of the .ics file', { exact: true })
       .fill('https://192.168.1.5/a.ics')
-    await press(section.getByRole('button', { name: 'Add subscription' }))
+    await press(dialog.getByRole('button', { name: 'Add subscription' }))
 
-    const url = section.getByLabel('Address of the .ics file', { exact: true })
-    await expect(
-      section.getByText(
-        'This address points to a private or reserved network, which is not allowed.',
-      ),
-    ).toBeVisible()
+    const url = dialog.getByLabel('Address of the .ics file', { exact: true })
+    const rejected = 'This address points to a private or reserved network, which is not allowed.'
+    await expect(dialog.getByText(rejected)).toBeVisible()
     await expect(url).toHaveAttribute('aria-invalid', 'true')
     await expect(url).toBeFocused()
+    // the dialog stays open; the toast says it too
+    await expect(dialog).toBeVisible()
+    await expect(toast(page, rejected)).toBeVisible()
     await expect(subscriptionRow(page, 'Intranet')).toHaveCount(0)
 
     // a duplicate is also about the address
@@ -695,8 +757,8 @@ test.describe('settings: iCal subscriptions', () => {
       failure(409, 'You already subscribed to this address', { code: 'duplicate' }),
     )
     await url.fill('https://example.org/holidays.ics')
-    await press(section.getByRole('button', { name: 'Add subscription' }))
-    await expect(section.getByText('You already subscribed to this address.')).toBeVisible()
+    await press(dialog.getByRole('button', { name: 'Add subscription' }))
+    await expect(dialog.getByText('You already subscribed to this address.')).toBeVisible()
 
     // the limit and other failures are not about an input
     api.forced.set(
@@ -705,8 +767,8 @@ test.describe('settings: iCal subscriptions', () => {
         code: 'limit_reached',
       }),
     )
-    await press(section.getByRole('button', { name: 'Add subscription' }))
-    await expect(section.getByRole('alert')).toContainText('At most 50 calendar subscriptions')
+    await press(dialog.getByRole('button', { name: 'Add subscription' }))
+    await expect(dialog.getByRole('alert')).toContainText('At most 50 calendar subscriptions')
   })
 
   test('the Check button reports why a calendar cannot be fetched', async ({ page }) => {
@@ -791,7 +853,8 @@ test.describe('settings: iCal subscriptions', () => {
     test.skip(browserName === 'webkit', 'WebKit does not Tab to radio buttons by default')
     await mockApi(page)
     await openSettings(page)
-    const colours = subscriptionsSection(page).getByRole('group', { name: 'Colour' })
+    const dialog = await openAddSubscription(page)
+    const colours = dialog.getByRole('group', { name: 'Colour' })
     await colours.getByRole('radio', { name: 'Blue' }).focus()
     await page.keyboard.press('ArrowRight')
     await expect(colours.getByRole('radio', { name: 'Green' })).toBeChecked()
@@ -818,7 +881,7 @@ test.describe('settings: when the API is not there', () => {
     // language one needs no data.
     await expect(main(page).getByRole('heading', { level: 2 })).toHaveCount(5)
     await expect(page.getByText('Nothing is saved in demo mode')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Create token' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'New token' })).toBeEnabled()
     expect(withoutRefusedRequests(errors)).toEqual([])
 
     api.forced.clear()
@@ -921,19 +984,29 @@ test.describe('settings: layout and accessibility', () => {
       )
     })
     await openSettings(page)
-    const section = subscriptionsSection(page)
-    await press(section.getByRole('button', { name: 'Add subscription' }))
-    await section.getByLabel('Name', { exact: true }).fill('Nowhere')
-    await section
+    // a refusal of the server, in the dialog and in a toast
+    const add = await openAddSubscription(page)
+    await add.getByLabel('Name', { exact: true }).fill('Nowhere')
+    await add
       .getByLabel('Address of the .ics file', { exact: true })
       .fill('https://nowhere.invalid/a.ics')
-    await press(section.getByRole('button', { name: 'Add subscription' }))
-    await expect(section.getByText('cannot be found')).toBeVisible()
-    await expect(tokensSection(page).getByRole('alert')).toBeVisible()
+    await press(add.getByRole('button', { name: 'Add subscription' }))
+    await expect(add.getByText('cannot be found')).toBeVisible()
+    await expect(toast(page, /cannot be found/)).toBeVisible()
+    expect(await scan(page)).toEqual([])
+    await page.keyboard.press('Escape')
+    await expect(add).toBeHidden()
+
     // the other kind of message: client side checks under the label
-    await press(tokensSection(page).getByRole('button', { name: 'Create token' }))
-    await expect(tokensSection(page).getByText('Enter a label')).toBeVisible()
-    // and a result of the Check button, green and red
+    const create = await openNewToken(page)
+    await press(create.getByRole('button', { name: 'Create token' }))
+    await expect(create.getByText('Enter a label')).toBeVisible()
+    expect(await scan(page)).toEqual([])
+    await page.keyboard.press('Escape')
+    await expect(create).toBeHidden()
+
+    // a load error, and a result of the Check button
+    await expect(tokensSection(page).getByRole('alert')).toBeVisible()
     await press(subscriptionRow(page, 'Holidays').getByRole('button', { name: 'Check Holidays' }))
     await expect(subscriptionRow(page, 'Holidays').getByRole('status')).toContainText('Works')
     expect(await scan(page)).toEqual([])
@@ -954,12 +1027,12 @@ test.describe('settings: layout and accessibility', () => {
   test('has none with the new token showing', async ({ page }) => {
     await mockApi(page)
     await openSettings(page)
-    const section = tokensSection(page)
-    await section.getByLabel('Label', { exact: true }).fill('Thunderbird on the laptop')
-    await press(section.getByRole('button', { name: 'Create token' }))
-    await expect(section.getByLabel('Token', { exact: true })).toHaveValue(SECRET)
-    await press(section.getByRole('button', { name: 'Copy' }))
-    await expect(section.getByText('Copied to the clipboard.')).toBeVisible()
+    const dialog = await openNewToken(page)
+    await dialog.getByLabel('Label', { exact: true }).fill('Thunderbird on the laptop')
+    await press(dialog.getByRole('button', { name: 'Create token' }))
+    await expect(dialog.getByLabel('Token', { exact: true })).toHaveValue(SECRET)
+    await press(dialog.getByRole('button', { name: 'Copy' }))
+    await expect(dialog.getByText('Copied to the clipboard.')).toBeVisible()
     expect(await scan(page)).toEqual([])
   })
 

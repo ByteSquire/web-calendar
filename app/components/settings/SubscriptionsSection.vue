@@ -1,15 +1,26 @@
 <!--
   iCal subscriptions (FR-7, the address half; the file half is ImportSection.vue): read-only
-  calendars from an .ics address. The server fetches the file (browsers cannot read arbitrary
-  addresses), so "Check" asks it to try and reports the outcome. Shared subscriptions (offered to
-  everybody) are listed read-only. Every change bumps `calendar-sources-version`, which the
-  calendar view watches to load its sources again.
+  calendars from an .ics address. "Add subscription", beside the heading, and "Edit" on a row open
+  the same dialog with SubscriptionForm; it closes when the server has taken the change and stays
+  open with the reason when not. What happened is told in a toast and a failed request also in the
+  dialog, so the list never moves. The server fetches the file (browsers cannot read arbitrary
+  addresses), so "Check" asks it to try and reports the outcome in the row, on a line that is there
+  from the start. Shared subscriptions (offered to everybody) are listed read-only. Every change
+  bumps `calendar-sources-version`, which the calendar view watches to load its sources again.
 -->
 <template>
   <section aria-labelledby="settings-subscriptions" class="flex flex-col gap-4">
-    <h2 id="settings-subscriptions" ref="heading" tabindex="-1" class="text-lg font-semibold">
-      {{ t('iCal subscriptions') }}
-    </h2>
+    <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <h2 id="settings-subscriptions" ref="heading" tabindex="-1" class="text-lg font-semibold">
+        {{ t('iCal subscriptions') }}
+      </h2>
+      <UButton
+        :label="t('Add subscription')"
+        icon="i-lucide-plus"
+        aria-haspopup="dialog"
+        @click="askAdd"
+      />
+    </div>
     <p>
       <template
         v-for="(part, i) in tparts(
@@ -21,20 +32,6 @@
         <template v-else>{{ part.text }}</template>
       </template>
     </p>
-
-    <div class="flex flex-col gap-3 rounded-lg border border-default p-4">
-      <h3 class="font-semibold">{{ t('Add a subscription') }}</h3>
-      <SettingsErrorAlert v-if="addAlert" :message="addAlert" />
-      <SettingsSubscriptionForm
-        ref="addForm"
-        :submit-label="t('Add subscription')"
-        :busy="adding"
-        :server-errors="addErrors"
-        @submit="addSubscription"
-      />
-    </div>
-
-    <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
 
     <SettingsErrorAlert
       v-if="subscriptions.error.value"
@@ -88,7 +85,7 @@
           <p
             role="status"
             aria-live="polite"
-            class="flex items-start gap-1.5 text-sm"
+            class="flex min-h-5 items-start gap-1.5 text-sm"
             :class="checkClass(subscription.id)"
           >
             <template v-if="checks.has(subscription.id)">
@@ -146,29 +143,30 @@
       <USkeleton v-for="row in 2" :key="row" class="h-28 w-full" aria-hidden="true" />
     </div>
 
+    <!-- Adding (no subscription) and changing one. -->
     <UModal
-      :open="editTarget !== null"
-      :title="t('Edit subscription')"
-      :description="t('Change the name, address or colour of {name}', { name: shownEditName })"
-      :content="{ onOpenAutoFocus: focusEditForm, onCloseAutoFocus: editFocus.restore }"
+      :open="formOpen"
+      :title="shownForm.title"
+      :description="shownForm.description"
+      :content="{ onOpenAutoFocus: focusForm, onCloseAutoFocus: formFocus.restore }"
       :ui="{ title: 'wrap-anywhere', description: 'wrap-anywhere' }"
-      @update:open="closeEdit"
+      @update:open="closeForm"
     >
       <template #body>
         <div class="flex flex-col gap-4">
-          <SettingsErrorAlert v-if="editAlert" :message="editAlert" />
-          <!-- Keyed: each subscription gets a fresh form, with its own values. -->
+          <SettingsErrorAlert v-if="formAlert" :message="formAlert" />
+          <!-- Keyed: each opening gets a fresh form, with its own values. -->
           <SettingsSubscriptionForm
-            v-if="editTarget"
-            :key="editTarget.id"
-            ref="editForm"
-            :submit-label="t('Save changes')"
+            v-if="formOpen"
+            :key="formKey"
+            ref="form"
+            :submit-label="editTarget ? t('Save changes') : t('Add subscription')"
             cancelable
-            :subscription="editTarget"
+            :subscription="editTarget ?? undefined"
             :busy="saving"
-            :server-errors="editErrors"
+            :server-errors="formErrors"
             @submit="saveSubscription"
-            @cancel="closeEdit(false)"
+            @cancel="closeForm(false)"
           />
         </div>
       </template>
@@ -217,10 +215,10 @@ interface CheckResult {
 }
 interface FormHandle {
   focusFirst: () => void
-  reset: () => void
 }
 
 const api = useAuthFetch()
+const notify = useNotify()
 // The calendar view reloads its sources when this changes (the live data loader watches it).
 const sourcesVersion = useState<number>('calendar-sources-version', () => 0)
 
@@ -232,45 +230,10 @@ const list = subscriptions.data
 onMounted(() => subscriptions.reload())
 
 const heading = useTemplateRef<HTMLElement>('heading')
-const addForm = useTemplateRef<FormHandle>('addForm')
-const editForm = useTemplateRef<FormHandle>('editForm')
-const notice = ref('')
+const form = useTemplateRef<FormHandle>('form')
 
 function sourcesChanged() {
   sourcesVersion.value++
-}
-
-// ---- Adding ----------------------------------------------------------------------------------
-
-const adding = ref(false)
-const addErrors = ref<Record<string, string>>()
-const addAlert = ref<string | null>(null)
-
-async function addSubscription(input: SubscriptionInput) {
-  if (adding.value) return
-  adding.value = true
-  addErrors.value = undefined
-  addAlert.value = null
-  notice.value = ''
-  try {
-    const created = await api<Subscription>('/api/ical-subscriptions', {
-      method: 'POST',
-      body: toBody(input),
-    })
-    subscriptions.update((current) => ({
-      ...current,
-      subscriptions: [...current.subscriptions, created],
-    }))
-    sourcesChanged()
-    addForm.value?.reset()
-    notice.value = t('Subscription “{name}” added.', { name: created.name })
-  } catch (cause) {
-    const failure = describeSubscriptionSaveError(cause, N_('add the subscription'))
-    addErrors.value = failure.byField
-    addAlert.value = failure.alert ?? null
-  } finally {
-    adding.value = false
-  }
 }
 
 /** '' (the form's "default colour") is stored as no colour. */
@@ -278,59 +241,100 @@ function toBody(input: SubscriptionInput) {
   return { name: input.name, url: input.url, color: input.color || null }
 }
 
-// ---- Changing --------------------------------------------------------------------------------
+// ---- Adding and changing ---------------------------------------------------------------------
 
+const formOpen = ref(false)
+/** The subscription being changed; null while adding. */
 const editTarget = ref<Subscription | null>(null)
-// Keeps the name while the dialog fades out.
-const shownEditName = ref('')
+/** Each opening gets a fresh form. */
+const formKey = ref(0)
 const saving = ref(false)
-const editErrors = ref<Record<string, string>>()
-const editAlert = ref<string | null>(null)
-const editFocus = createFocusReturn(() => heading.value)
+const formErrors = ref<Record<string, string>>()
+const formAlert = ref<string | null>(null)
+const formFocus = createFocusReturn(() => heading.value)
+// Kept while the dialog fades out.
+const shownForm = ref({ title: '', description: '' })
 
-function askEdit(subscription: Subscription) {
-  editFocus.remember()
-  editErrors.value = undefined
-  editAlert.value = null
-  shownEditName.value = subscription.name
+function openForm(subscription: Subscription | null) {
+  formFocus.remember()
+  formErrors.value = undefined
+  formAlert.value = null
   editTarget.value = subscription
+  formKey.value++
+  shownForm.value = subscription
+    ? {
+        title: t('Edit subscription'),
+        description: t('Change the name, address or colour of {name}', { name: subscription.name }),
+      }
+    : {
+        title: t('Add subscription'),
+        description: t('Enter the address of a calendar file and a name for it.'),
+      }
+  formOpen.value = true
 }
 
-function closeEdit(open: boolean) {
+function askAdd() {
+  openForm(null)
+}
+
+function askEdit(subscription: Subscription) {
+  openForm(subscription)
+}
+
+function closeForm(open: boolean) {
   if (open || saving.value) return
+  formOpen.value = false
   editTarget.value = null
 }
 
-function focusEditForm(event: Event) {
+function focusForm(event: Event) {
   if (keepFocusOffControlsOnTouch(event)) return
   event.preventDefault()
-  editForm.value?.focusFirst()
+  form.value?.focusFirst()
 }
 
 async function saveSubscription(input: SubscriptionInput) {
+  if (saving.value) return
   const target = editTarget.value
-  if (!target || saving.value) return
   saving.value = true
-  editErrors.value = undefined
-  editAlert.value = null
+  formErrors.value = undefined
+  formAlert.value = null
   try {
-    const saved = await api<Subscription>(`/api/ical-subscriptions/${target.id}`, {
-      method: 'PUT',
-      body: toBody(input),
-    })
-    subscriptions.update((current) => ({
-      ...current,
-      subscriptions: current.subscriptions.map((item) => (item.id === saved.id ? saved : item)),
-    }))
-    // What was checked belonged to the old address.
-    if (saved.url !== target.url) checks.delete(saved.id)
+    if (target) {
+      const saved = await api<Subscription>(`/api/ical-subscriptions/${target.id}`, {
+        method: 'PUT',
+        body: toBody(input),
+      })
+      subscriptions.update((current) => ({
+        ...current,
+        subscriptions: current.subscriptions.map((item) => (item.id === saved.id ? saved : item)),
+      }))
+      // What was checked belonged to the old address.
+      if (saved.url !== target.url) checks.delete(saved.id)
+      notify.done(t('Subscription “{name}” saved.', { name: saved.name }))
+    } else {
+      const created = await api<Subscription>('/api/ical-subscriptions', {
+        method: 'POST',
+        body: toBody(input),
+      })
+      subscriptions.update((current) => ({
+        ...current,
+        subscriptions: [...current.subscriptions, created],
+      }))
+      notify.done(t('Subscription “{name}” added.', { name: created.name }))
+    }
     sourcesChanged()
-    notice.value = t('Subscription “{name}” saved.', { name: saved.name })
+    formOpen.value = false
     editTarget.value = null
   } catch (cause) {
-    const failure = describeSubscriptionSaveError(cause, N_('save the subscription'))
-    editErrors.value = failure.byField
-    editAlert.value = failure.alert ?? null
+    const failure = describeSubscriptionSaveError(
+      cause,
+      target ? N_('save the subscription') : N_('add the subscription'),
+    )
+    formErrors.value = failure.byField
+    formAlert.value = failure.alert ?? null
+    const summary = failure.alert ?? Object.values(failure.byField)[0]
+    if (summary) notify.failed(summary)
   } finally {
     saving.value = false
   }
@@ -364,6 +368,7 @@ async function deleteSubscription() {
     // Already gone is what the person wanted.
     if (parseApiError(cause).kind !== 'not-found') {
       deleteError.value = describeError(cause, N_('delete the subscription'))
+      notify.failed(deleteError.value)
       deleting.value = false
       return
     }
@@ -374,7 +379,7 @@ async function deleteSubscription() {
   }))
   checks.delete(target.id)
   sourcesChanged()
-  notice.value = t('Subscription “{name}” deleted.', { name: target.name })
+  notify.done(t('Subscription “{name}” deleted.', { name: target.name }))
   deleteTarget.value = null
   deleting.value = false
 }

@@ -1,6 +1,7 @@
 // @vitest-environment nuxt
-// Deleting a resource on Admin › Resources: it asks first, a confirmed delete removes the row,
-// and a resource with bookings stays and the dialog says to deactivate it instead.
+// Deleting a resource on Admin › Resources, from the "Resource" tab of its dialog: it asks first, a
+// confirmed delete removes the row and closes the dialog, and a resource with bookings stays and the
+// question says to deactivate it instead (and a toast says it too).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { clearNuxtState } from '#app'
@@ -18,6 +19,8 @@ vi.mock('~/composables/useAuthFetch', () => ({
 vi.mock('~/composables/useLiveCalendar', () => ({
   useLiveStatus: () => ({ refresh: api.refresh }),
 }))
+const notes = vi.hoisted(() => ({ done: vi.fn(), failed: vi.fn() }))
+vi.mock('~/composables/useNotify', () => ({ useNotify: () => notes }))
 
 const Shell = defineComponent({ render: () => h(UApp, null, { default: () => h(ResourcesPage) }) })
 
@@ -53,6 +56,8 @@ beforeEach(() => {
   failure = null
   resources = start()
   api.refresh.mockReset()
+  notes.done.mockReset()
+  notes.failed.mockReset()
   const replace = vi.fn(async () => undefined)
   vi.spyOn(useRouter(), 'replace').mockImplementation(replace as never)
   api.handler = async (path, options) => {
@@ -85,7 +90,9 @@ const button = (name: RegExp, within: ParentNode = document) =>
   [...within.querySelectorAll<HTMLButtonElement>('button')].find((item) =>
     name.test(item.getAttribute('aria-label') ?? item.textContent ?? ''),
   )
-const dialog = () => document.querySelector('[role="dialog"]')
+const dialogs = () => [...document.querySelectorAll('[role="dialog"]')]
+// The question, over the dialog of the resource.
+const dialog = () => dialogs().find((item) => text(item)?.includes('Delete "'))
 const deletes = () => calls.filter((call) => call.method === 'DELETE')
 
 async function mountPage() {
@@ -93,27 +100,43 @@ async function mountPage() {
   await vi.waitFor(() => expect(rows()).toHaveLength(2))
 }
 
+/** Opens the dialog of a resource and asks to delete it there. */
+async function askDelete(name: string) {
+  button(new RegExp(`^Edit ${name}$`))!.focus()
+  button(new RegExp(`^Edit ${name}$`))!.click()
+  await vi.waitFor(() => expect(button(/^Delete resource$/)).toBeDefined())
+  expect(text(dialogs()[0])).toContain('A resource with bookings cannot be deleted')
+  button(/^Delete resource$/)!.click()
+  await vi.waitFor(() => expect(text(dialog())).toContain(`Delete "${name}"?`))
+}
+
 describe('deleting a resource', () => {
   it('asks first and sends nothing until it is confirmed', async () => {
     await mountPage()
-    button(/^Delete Board room$/)!.click()
-    await vi.waitFor(() => expect(text(dialog())).toContain('Delete "Board room"?'))
+    // a row has no Delete of its own
+    expect(button(/^Delete Board room$/)).toBeUndefined()
+    await askDelete('Board room')
     expect(deletes()).toHaveLength(0)
     button(/^Cancel$/, dialog()!)!.click()
-    await vi.waitFor(() => expect(dialog()).toBeNull())
+    await vi.waitFor(() => expect(dialog()).toBeUndefined())
+    // back in the dialog of the resource
+    expect(dialogs()).toHaveLength(1)
     expect(deletes()).toHaveLength(0)
     expect(rows()).toHaveLength(2)
   })
 
-  it('removes the row when confirmed', async () => {
+  it('removes the row and closes the dialog when confirmed', async () => {
     await mountPage()
-    button(/^Delete Old van$/)!.click()
-    await vi.waitFor(() => expect(text(dialog())).toContain('Delete "Old van"?'))
+    await askDelete('Old van')
     button(/^Delete$/, dialog()!)!.click()
     await vi.waitFor(() => expect(rows()).toHaveLength(1))
     expect(deletes()).toEqual([{ path: '/api/admin/resources/2', method: 'DELETE' }])
     expect(rows()[0]).toContain('Board room')
-    await vi.waitFor(() => expect(dialog()).toBeNull())
+    await vi.waitFor(() => expect(dialogs()).toHaveLength(0))
+    expect(notes.done.mock.calls).toEqual([['Old van was deleted.']])
+    expect(api.refresh).toHaveBeenCalledTimes(1)
+    // the row that opened it is gone: focus goes to "New resource"
+    await vi.waitFor(() => expect(document.activeElement).toBe(button(/^New resource$/)))
   })
 
   it('keeps a resource with bookings and says to deactivate it instead', async () => {
@@ -126,14 +149,13 @@ describe('deleting a resource', () => {
       },
     }
     await mountPage()
-    button(/^Delete Board room$/)!.click()
-    await vi.waitFor(() => expect(text(dialog())).toContain('Delete "Board room"?'))
+    await askDelete('Board room')
     button(/^Delete$/, dialog()!)!.click()
-    await vi.waitFor(() =>
-      expect(text(dialog())).toContain(
-        'The resource has bookings, so it cannot be deleted. Deactivate it instead.',
-      ),
-    )
+    const why = 'The resource has bookings, so it cannot be deleted. Deactivate it instead.'
+    await vi.waitFor(() => expect(text(dialog())).toContain(why))
+    expect(notes.failed.mock.calls).toEqual([[why]])
+    // told in the question only, not again behind it
+    expect(dialogs()[0]!.querySelector('[role="alert"]')).toBeNull()
     expect(rows()).toHaveLength(2)
     expect(deletes()).toHaveLength(1)
   })

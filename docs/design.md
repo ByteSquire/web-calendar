@@ -430,6 +430,13 @@ status, blocked, mine`, and an event without a calendar counts as blocked. `GET
   rule has `manage`, because administrators are not managers by default and nobody could accept a
   request. After each change the calendar data is reloaded. A page was needed because resources
   could only be created through the API; it is one menu item, with no new control elsewhere.
+  "New resource" at the top opens a dialog with the form; a refusal keeps it open with the field
+  messages, the reason and a toast, and a new resource opens in its dialog on Access, since
+  choosing who manages it comes next. A row has Edit, Access and the "Inactive" badge only:
+  Deactivate/Reactivate (with what it means) and "Delete resource" (after asking) are in the
+  Resource tab of the dialog, the one the sidebar's "Edit resource" opens too, so both places
+  offer the same and the rows stay short on a phone. Deactivating keeps the dialog open. The
+  dialog toasts what it did; the page and the sidebar follow its `saved` and `deleted`.
   The booking body carries the event's calendar by its path (`eventCalendarPath`, required, only
   for the built-in service; an event on another server is not booked). The server stores the path
   as given if it is in the booker's own home (`/<sub>/...`, else 400 `invalid_event`) and the
@@ -1157,12 +1164,23 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   to (a person, the organization, a group, a resource), a filter by that and a search; a calendar
   opens in one dialog with the tabs "Details" (its own name and colour, written to Radicale as the
   principal that owns it and to its row, and Delete) and "Who has access" (its links and rules).
+  One row above the list holds the search, "Show" (a select: All, People, Organization, Groups,
+  Resources) and "New calendar"; it wraps on a phone. The dialog toasts what a change came to
+  itself, so it comes once, on the page or over the calendar; a failure is told where it happened
+  (the form, the delete question, below the rules) and in a toast.
   Routes, all `defineAdminHandler`: `GET /api/admin/access/calendars` (calendars with rules,
   `applied` taken from `applied_at`, and the owning `group`), `PUT
 /api/admin/access/calendars/:id` (the whole rule list, one `replaceCalendarAcl` transaction),
   `POST /api/admin/access/calendars` (a calendar of the organization), `PATCH
 /api/admin/access/calendars/:id` (name and colour), `DELETE /api/admin/access/calendars/:id`
   (not a resource's: `409 resource`), `GET /api/admin/access/users` (`sub`, name, username).
+  - _The access form_ (calendars and resources) is one row: "Who", a searchable list of everyone
+    signed in, the groups of the Groups page ("Group …") and the people who signed in once, each
+    with an icon of its kind; "Level", a select of the levels of that place, with the explanation
+    of the chosen level always under it (only its words change); and "Add". It wraps on a phone.
+    Adding someone who has a rule changes their level; "Who" is cleared after a save worked, the
+    level stays for the next one. It replaced two groups of radio buttons that made the access
+    tab longer than the screen.
   - _Calendars of the organization_ belong to no person and no group. They live in the home of the
     app's own principal **`_organization`** (`/_organization/<uuid>/`, reserved like `_resources`
     and `_group-`, so no person can have that id), kind `shared` with no owner and no group;
@@ -1378,6 +1396,18 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     is still reached from the existing app menu, not from a new button. A third: "Make manager" on
     the row of a group member (admins only), because a member's role has no menu, and the row is
     where the member already is.
+  - **Settings and admin pages keep still.** What is on the screen does not move because of what
+    the person just did, and nothing stays changed after its task is over. What a change came to
+    ("… was saved") is a toast (`useNotify`), never a line above a list that pushes it down and
+    stays. A failed change is told where it was made (in its dialog, at its field or in its row)
+    and as a toast too; failing to load stays at the top of the part that did not load, with
+    Retry. Adding something is a button ("New …", beside the heading of its list) that opens a
+    dialog with the form; the page shows lists, not forms that are always open or that unfold in
+    place. A dialog starts fresh each time it opens and returns the focus to its button. A line
+    whose text arrives later (the result of "Check") has its room from the start. Something with
+    much to show gets a page of its own (a group, `/groups/[id]`) rather than a section that opens
+    further down. Found in a pass over these pages (2026-11): messages that stayed under the
+    heading, forms that opened at the end of the page, a group that opened below the list.
   - Every row of the sidebar's calendars, resources, categories and filters ends in a `⋯` menu (at
     least 44 px, named after the item: "Actions for calendar Team") with what the viewer may do
     there: every calendar its colour for the viewer; a calendar of their own, or of a group they
@@ -1436,9 +1466,13 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   secrets. Admins see and make the links of a calendar on the access page, at the top of "Who has
   access to …" (`LinksCalendarLinks`, the same list and form as in Settings): a link is one more way
   to see the calendar, so it belongs where the page lists who sees it, and the page exists already;
-  the rules below it get the heading "People and groups". A link opens to its address and its
-  password; the password stays hidden (dots) until "Show the password of …" (`aria-pressed`) is
-  pressed, is asked of the server then and kept in the component only until it is hidden again. The phone shows the shown period instead of the calendar's
+  the rules below it get the heading "People and groups". A row shows the colour, label, summary
+  and "Details", and nothing of the password. Details opens a dialog with the address (Copy), the
+  password (hidden until "Show the password of …", `aria-pressed`, asked of the server then and
+  kept in the component only until it is hidden again or the dialog closes; Copy), the dates and
+  "Remove link" (asked first). "Create link" opens the form in the same dialog, which turns into
+  the new link's details; the typed password is kept, so Show and Copy need no call. On the access
+  page these dialogs open over the calendar's dialog. The phone shows the shown period instead of the calendar's
   name in the top bar, as it does for the app's name; the browser tab names the calendar.
 - **Left sidebar** (default order, top → bottom): **views** (icon + `⋯` menu), **calendars**
   (visibility toggle), **resources** (visibility toggle), **categories** (add
@@ -1591,21 +1625,34 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   prints, the page switches to the light scheme (the stored choice does not change) and the
   calendar to its wide layout, since paper cannot pan sideways (`composables/usePrinting.ts`).
 - **Groups page (FR-15a)** — `/groups`, the overflow-menu entry "Groups" for everybody signed in (not
-  in demo mode). It is one page and not an admin screen because the work is the members': they
-  manage their group's calendars, and an admin-only page would have left them without a place.
-  Admin extras sit inside it, per AGENTS.md (no new admin-only control): the "Create group" form
-  above the list, "Delete group" on a row, and the member editor in an open group; the server
-  checks all of them again. The list shows the groups of the person (an admin sees all), each
-  with its source ("Created in this app", "From your identity provider" or "Built in"); opening one
-  shows its members and its calendars below the list, with focus moved there. The built-in group of
-  everyone has no member list: its detail says everyone whose last sign-in was at most N days ago
-  (the window, §6) is in it, with a count. Calendars: create (name and a colour from the
-  palette, named so colour is never the only information), edit, delete (confirm dialog) and
-  share. The share dialog adds people from `/api/people` and groups from `/api/groups` with "Can
-  view" or "Can edit"; the owning group's own access is shown and cannot be removed; one "Save
-  sharing" sends the complete list. Imported groups are read-only and say so. Each part loads and
-  reports its own errors, with Retry. Small and large screens offer the same things; the rows
-  and buttons wrap, and every control keeps a 44 px tap target.
+  in demo mode). It is not an admin screen because the work is the members': they manage their
+  group's calendars, and an admin-only page would have left them without a place. The list shows
+  the groups of the person (an admin sees all), each with its source ("Created in this app", "From
+  your identity provider" or "Built in"), its member count, "You manage this group" or "You are a
+  member", and "Open", a link to the group's own page `/groups/<id>` (it used to open below the
+  list, far from the row on a long list). Admin extras sit inside the existing pages, per
+  AGENTS.md: "New group" beside the heading (a small dialog with the name), Delete on a custom
+  group's row (after asking; only on the list, beside the other groups), and the member and manager
+  controls on a group's page; the server checks all of them again. The group page has "Back to
+  groups", the group's name as its focused heading, the source and member count, then Members and
+  Calendars. A group the server does not show the person (403, 404) says so; any other failed load
+  has Retry. The built-in group of everyone has no member list: its page says everyone whose last
+  sign-in was at most N days ago (the window, §6) is in it, with the count.
+  - _Members_ of a custom group change one at a time and save at once (`PUT` members with the saved
+    list plus or minus the person): a person picker with Add under the list, and Remove after a
+    confirmation. There is no draft to save or undo. Admins name managers on a member's row; only
+    an admin removes a manager. Imported groups are read-only and say so.
+  - _Calendars_: "New calendar" beside the heading opens a dialog (name, and a colour from the
+    palette, named so colour is never the only information). A row has Edit, which opens the dialog
+    of a group calendar the sidebar opens too (name, colour, "Change sharing", Delete after
+    asking), and Share, the share dialog: it adds people from `/api/people` and groups from
+    `/api/groups` with "Can view" or "Can edit"; the owning group's own access is shown and cannot
+    be removed; one "Save sharing" sends the complete list. Where the people offered are not
+    everybody, the Add row and the share dialog say so.
+  - Changes follow the rule of the settings pages (above): a toast, a failure also where it
+    happened (the dialog, the Add row, the member's or provider group's row). Small and large
+    screens offer the same things; rows and buttons wrap, and every control keeps a 44 px tap
+    target.
   - _Groups from your identity provider (admins only)._ At the bottom of the page, shown to admins
     only (the server checks each route again; the page of everybody else is complete without it, with
     no disabled copy). It lists what the provider's claim has shown at sign-ins (component
@@ -1653,7 +1700,20 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
 - **Accounts and tokens** — Settings shows the **built-in calendar service** (preconfigured, same
   origin), **external CalDAV accounts** (URL plus OIDC, basic or no auth; their tokens stay in
   the browser), **app tokens** for Thunderbird and phones (FR-31) and, for admins, **calendars
-  and access rules** (Phase 3).
+  and access rules** (Phase 3). Settings stays one page; each section is text and a list, with
+  its one add button in the heading row ("New token", "Create link", "Add account", "Add
+  subscription", "Choose file…"), which opens a dialog (rule above: "Settings and admin pages keep
+  still"). Adding and Edit of an account or a subscription share one dialog. Where there is a
+  limit (tokens, accounts) the sentence that says how many are in use, or that the limit is
+  reached, is beside the button from the start and is its description; at the limit the button is
+  disabled. A row's "Check" result has its line from the start.
+  - _App tokens_: the dialog of "New token" asks for the label and then shows the secret once (a
+    warning, the read-only token with Copy, the expiry) until Done, Escape or the cross, which drop
+    it. No toast for it: the dialog shows the result.
+  - _Import_: "Choose file…" opens the browser's file picker (the native input is out of sight and
+    out of the tab order); the chosen file opens one dialog with the preview, the target calendar
+    (or "New calendar…"), the progress and the result with "Import again" and Done. A run can be
+    cancelled, but the dialog cannot be closed while it runs; closing it resets everything.
 - **SPA** — the logged-in app runs with `ssr: false`: no hydration mismatches, and
   no server/browser difference in what "today" is. FullCalendar needs no
   `<ClientOnly>` on SPA routes.

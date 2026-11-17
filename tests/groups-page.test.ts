@@ -1,13 +1,16 @@
 // @vitest-environment nuxt
-// The groups page inside a real Nuxt UI app, with a fake API behind `useAuthFetch`: what a member
-// and an admin see, what a calendar change sends, the imported group that is read-only, and the
-// retry after a failed list.
+// The groups pages inside a real Nuxt UI app, with a fake API behind `useAuthFetch`: the list
+// (/groups) with what a member and an admin see, the "New group" dialog and the groups of the
+// identity provider; the page of one group (/groups/<id>) with its members, saved at once, and its
+// calendars, created in a dialog and edited in the dialog of a group calendar; a group the person
+// may not see, and the retry after a failed load. What a change came to is a toast.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { clearNuxtState } from '#app'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import { UApp } from '#components'
-import GroupsPage from '~/pages/groups.vue'
+import GroupsPage from '~/pages/groups/index.vue'
+import GroupPage from '~/pages/groups/[id].vue'
 import type { GroupDetail, GroupSummary, OidcCandidate } from '~/utils/groups/model'
 
 type Handler = (path: string, options?: { method?: string; body?: unknown }) => Promise<unknown>
@@ -17,7 +20,12 @@ vi.mock('~/composables/useAuthFetch', () => ({
     api.handler!(path, options),
 }))
 
-const Shell = defineComponent({ render: () => h(UApp, null, { default: () => h(GroupsPage) }) })
+const ListShell = defineComponent({
+  render: () => h(UApp, null, { default: () => h(GroupsPage) }),
+})
+const GroupShell = defineComponent({
+  render: () => h(UApp, null, { default: () => h(GroupPage) }),
+})
 
 const ME = { id: 1, sub: 'sub-me', username: 'me', name: 'Me', email: null, timeZone: null }
 const PEOPLE = [
@@ -29,8 +37,12 @@ let admin = false
 let groups: GroupSummary[]
 let details: Record<number, GroupDetail>
 let failGroups = false
+let failGroup = 0
 let candidateList: OidcCandidate[]
 let stopFailure: unknown = null
+let importFailure: unknown = null
+let createFailure: unknown = null
+let membersFailure: unknown = null
 const calls: { path: string; method: string; body: unknown }[] = []
 let app: Awaited<ReturnType<typeof mountSuspended>>
 
@@ -72,11 +84,21 @@ function detailOf(id: number): GroupDetail {
   }
 }
 
+const httpError = (statusCode: number, message: string, code?: string) =>
+  Object.assign(new Error(message), {
+    statusCode,
+    data: { statusCode, message, ...(code ? { code } : {}) },
+  })
+
 beforeEach(() => {
   admin = false
   manages = true
   failGroups = false
+  failGroup = 0
   stopFailure = null
+  importFailure = null
+  createFailure = null
+  membersFailure = null
   candidateList = [
     {
       id: 'k-ops',
@@ -130,10 +152,18 @@ beforeEach(() => {
       }
       return { groups }
     }
+    if (path === '/api/groups' && method === 'POST') {
+      if (createFailure) throw createFailure
+      const { name } = options?.body as { name: string }
+      return {
+        group: { id: 5, name, source: 'app', memberCount: 0, member: false, manager: false },
+      }
+    }
     if (path === '/api/groups/oidc' && method === 'GET') {
       return { candidates: candidateList, truncated: false }
     }
     if (path === '/api/groups/oidc' && method === 'POST') {
+      if (importFailure) throw importFailure
       const { externalId } = options?.body as { externalId: string }
       const candidate = candidateList.find((item) => item.id === externalId)!
       return {
@@ -153,12 +183,29 @@ beforeEach(() => {
       return { removed: { calendarRules: 1, resourceRules: 0 } }
     }
     const group = /^\/api\/groups\/(\d+)$/.exec(path)
-    if (group && method === 'GET') return details[Number(group[1])]
+    if (group && method === 'GET') {
+      if (failGroup > 0) {
+        failGroup -= 1
+        throw Object.assign(new Error('boom'), { statusCode: 500 })
+      }
+      const found = details[Number(group[1])]
+      if (!found) throw httpError(403, 'Forbidden')
+      return found
+    }
+    if (group && method === 'DELETE') {
+      return {}
+    }
     if (path === '/api/groups/1/calendars' && method === 'POST') {
       const body = options?.body as { name: string; color?: string }
       const created = { id: 11, name: body.name, color: body.color ?? null, shares: [] }
       details[1]!.calendars.push(created)
       return { calendar: created }
+    }
+    if (path === '/api/groups/1/calendars/10' && method === 'PATCH') {
+      const body = options?.body as { name: string; color: string | null }
+      const saved = { ...details[1]!.calendars[0]!, ...body }
+      details[1]!.calendars[0] = saved
+      return { calendar: saved }
     }
     const shares = /^\/api\/groups\/1\/calendars\/10\/shares$/.exec(path)
     if (shares && method === 'PUT') {
@@ -177,11 +224,15 @@ beforeEach(() => {
       return { calendar: saved }
     }
     if (path === '/api/groups/1/members' && method === 'PUT') {
+      if (membersFailure) throw membersFailure
       const body = options?.body as { members: string[] }
-      const members = body.members.map((sub) => ({
-        ...PEOPLE.find((person) => person.sub === sub)!,
-        manager: false,
-      }))
+      const members = body.members.map(
+        (sub) =>
+          details[1]!.members.find((member) => member.sub === sub) ?? {
+            ...PEOPLE.find((person) => person.sub === sub)!,
+            manager: false,
+          },
+      )
       details[1]!.members = members
       return { members }
     }
@@ -201,151 +252,79 @@ beforeEach(() => {
 afterEach(() => {
   app.unmount()
   api.handler = null
+  document.body.innerHTML = ''
   clearNuxtState()
   vi.restoreAllMocks()
 })
 
-async function mountPage() {
-  app = await mountSuspended(Shell, { attachTo: document.body })
+async function mountList() {
+  // The route guard lets the address through only with a session.
+  useState('auth-status').value = 'authenticated'
+  app = await mountSuspended(ListShell, { attachTo: document.body, route: '/groups' })
+}
+
+/** The page of one group; it is there once its heading is. */
+async function mountGroup(id: number | string, heading = id === 1 ? 'staff' : 'it') {
+  // The route guard lets the address through only with a session.
+  useState('auth-status').value = 'authenticated'
+  app = await mountSuspended(GroupShell, { attachTo: document.body, route: `/groups/${id}` })
+  await vi.waitFor(() => expect(text(document.querySelector('h1'))).toBe(heading))
 }
 
 const text = (el: Element | null | undefined) => el?.textContent?.replace(/\s+/g, ' ').trim()
 const rows = () => [...document.querySelectorAll('[data-group]')].map((li) => text(li))
 const button = (name: RegExp) =>
   [...document.querySelectorAll<HTMLButtonElement>('button')].find((item) =>
-    name.test(item.getAttribute('aria-label') ?? item.textContent ?? ''),
+    name.test(item.getAttribute('aria-label') ?? item.textContent?.trim() ?? ''),
+  )
+const dialog = () => document.querySelector('[role="dialog"]')
+const dialogButton = (name: string) =>
+  [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+    (item) => text(item) === name,
   )
 const sent = (method: string) => calls.filter((call) => call.method === method)
 const field = (label: string) =>
   [...document.querySelectorAll('label')].find((item) => text(item)?.startsWith(label))
+const inputOf = (label: string) =>
+  document.getElementById(field(label)!.getAttribute('for')!) as HTMLInputElement
 
-async function openGroup(name: string) {
-  button(new RegExp(`^Open ${name}$`))!.click()
-  await vi.waitFor(() => expect(document.querySelector('[data-group-calendar]')).not.toBeNull())
+function type(input: HTMLInputElement, value: string) {
+  input.value = value
+  input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-describe('for a member', () => {
-  it('lists only the groups the person is in, and offers all of them to share with', async () => {
-    groups = [...start(), { id: 3, name: 'board', source: 'app', memberCount: 4, member: false }]
-    await mountPage()
+describe('the list of groups', () => {
+  it('lists only the groups the person is in, each with a link to its page', async () => {
+    groups = [
+      ...start(),
+      { id: 3, name: 'board', source: 'app', memberCount: 4, member: false, manager: false },
+    ]
+    await mountList()
     await vi.waitFor(() => expect(rows()).toHaveLength(2))
     expect(rows().join(' ')).not.toContain('board')
-    expect(button(/^Open board$/)).toBeUndefined()
-    // The share dialog is built from the full list.
-    await openGroup('staff')
-    button(/^Share Team calendar$/)!.click()
-    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
-    const radio = [...document.querySelectorAll<HTMLElement>('[role="radio"], input[type="radio"]')]
-    expect(radio.length).toBeGreaterThan(0)
+    const open = document.querySelector<HTMLAnchorElement>('a[aria-label="Open staff"]')
+    expect(open?.getAttribute('href')).toBe('/groups/1')
+    expect(document.querySelector('a[aria-label="Open board"]')).toBeNull()
   })
 
-  it('shows a member who does not manage the group its calendars, without changing them', async () => {
-    manages = false
-    groups = start().map((group) => ({ ...group, manager: false }))
-    details = { 1: detailOf(1), 2: detailOf(2) }
-    await mountPage()
-    await vi.waitFor(() => expect(rows()).toHaveLength(2))
-    expect(rows()[0]).toContain('You are a member')
-    await openGroup('staff')
-    expect(document.querySelector('[data-group-calendar]')?.textContent).toContain('Team calendar')
-    for (const name of [
-      /^Edit Team calendar$/,
-      /^Share Team calendar$/,
-      /^Delete Team calendar$/,
-    ]) {
-      expect(button(name)).toBeUndefined()
-    }
-    expect(button(/^Add calendar$/)).toBeUndefined()
-    expect(button(/^Remove /)).toBeUndefined()
-    expect(button(/^Make /)).toBeUndefined()
-  })
-
-  it('shows a manager as such, and gives them no way to remove a manager or name one', async () => {
-    await mountPage()
-    await vi.waitFor(() => expect(rows()).toHaveLength(2))
-    expect(rows()[0]).toContain('You manage this group')
-    await openGroup('staff')
-    expect(text(document.querySelector('[data-group-member]'))).toContain('Manager')
-    expect(button(/^Remove Me \(me\) from staff$/)).toBeUndefined()
-    expect(button(/^Make /)).toBeUndefined()
-    expect(button(/^Add calendar$/)).toBeDefined()
-  })
-
-  it('says when the people offered are not everybody, and not otherwise', async () => {
-    await mountPage()
-    await vi.waitFor(() => expect(rows()).toHaveLength(2))
-    await openGroup('staff')
-    expect(document.body.textContent).not.toContain('Not everybody is offered')
-
-    app.unmount()
-    document.body.innerHTML = ''
-    const handler = api.handler
-    api.handler = (async (path: string, options?: { method?: string; body?: unknown }) =>
-      path === '/api/people'
-        ? { people: PEOPLE, truncated: true }
-        : handler(path, options)) as Handler
-    await mountPage()
-    await vi.waitFor(() => expect(rows()).toHaveLength(2))
-    await openGroup('staff')
-    expect(document.body.textContent).toContain(
-      `Not everybody is offered when you add members or share: the list shows the first ${PEOPLE.length} people`,
-    )
-  })
-
-  it('lists the groups with their source and member count', async () => {
-    await mountPage()
+  it('lists the groups with their source, member count and the person’s role', async () => {
+    groups = start().map((group) => (group.id === 2 ? group : { ...group, manager: true }))
+    await mountList()
     await vi.waitFor(() => expect(rows()).toHaveLength(2))
     expect(rows()[0]).toContain('staff')
     expect(rows()[0]).toContain('Created in this app')
+    expect(rows()[0]).toContain('You manage this group')
     expect(rows()[1]).toContain('From your identity provider')
     expect(rows()[1]).toContain('2 members')
-    // Only admins get the create form and the delete buttons.
-    expect(document.querySelector('#group-create-heading')).toBeNull()
+    expect(rows()[1]).toContain('You are a member')
+    // Only admins get "New group" and the delete buttons.
+    expect(button(/^New group$/)).toBeUndefined()
     expect(button(/^Delete group staff$/)).toBeUndefined()
   })
 
-  it('opens a group with its calendars and creates one with a colour', async () => {
-    await mountPage()
-    await vi.waitFor(() => expect(rows()).toHaveLength(2))
-    await openGroup('staff')
-    expect(document.querySelector('[data-group-calendar]')?.textContent).toContain('Team calendar')
-    // A member of a custom group who is not an admin does not manage the member list.
-    expect(button(/^Remove /)).toBeUndefined()
-    const nameInput = document.querySelector<HTMLInputElement>('[data-group-calendar]')
-    expect(nameInput).not.toBeNull()
-    const create = [...document.querySelectorAll('form')].find((form) =>
-      text(form.querySelector('h4'))?.startsWith('New calendar'),
-    )!
-    const input = create.querySelector('input')!
-    input.value = '  Kitchen plan '
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-    ;(create.querySelector('button[type="submit"]') as HTMLButtonElement).click()
-    await vi.waitFor(() => expect(sent('POST')).toHaveLength(1))
-    expect(sent('POST')[0]!.body).toEqual({ name: 'Kitchen plan', color: '#1d4ed8' })
-  })
-
-  it('shares a calendar with a read share and sends the complete list without the owner', async () => {
-    await mountPage()
-    await vi.waitFor(() => expect(rows()).toHaveLength(2))
-    await openGroup('staff')
-    button(/^Share Team calendar$/)!.click()
-    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
-    // The owning group is listed as fixed: no remove button for it.
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-      'cannot be changed here',
-    )
-    expect(button(/^Stop sharing with staff$/)).toBeUndefined()
-    const save = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
-      (item) => /Save sharing/.test(item.textContent ?? ''),
-    )!
-    save.click()
-    await vi.waitFor(() => expect(sent('PUT')).toHaveLength(1))
-    expect(sent('PUT')[0]!.body).toEqual({ shares: [] })
-  })
-
-  it('shows the error of a list with a retry that loads it again', async () => {
+  it('shows the error of the list with a retry that loads it again', async () => {
     failGroups = true
-    await mountPage()
+    await mountList()
     await vi.waitFor(() =>
       expect(document.querySelector('[role="alert"]')?.textContent).toContain(
         'Could not load the groups',
@@ -355,130 +334,307 @@ describe('for a member', () => {
     button(/^Retry$/)!.click()
     await vi.waitFor(() => expect(rows()).toHaveLength(2))
   })
+
+  describe('for an admin', () => {
+    beforeEach(() => {
+      admin = true
+    })
+
+    async function openNewGroup() {
+      await mountList()
+      await vi.waitFor(() => expect(rows()).toHaveLength(2))
+      button(/^New group$/)!.click()
+      await vi.waitFor(() => expect(field('Group name')).toBeDefined())
+    }
+
+    it('creates a group in a dialog that closes, says so and lists it', async () => {
+      await openNewGroup()
+      type(inputOf('Group name'), 'kitchen')
+      dialogButton('Create group')!.click()
+      await vi.waitFor(() => expect(sent('POST')).toHaveLength(1))
+      expect(sent('POST')[0]).toMatchObject({ path: '/api/groups', body: { name: 'kitchen' } })
+      await vi.waitFor(() => expect(dialog()).toBeNull())
+      expect(rows().join(' ')).toContain('kitchen')
+      expect(document.body.textContent).toContain('kitchen was created.')
+    })
+
+    it('keeps the dialog open with the server’s words when the name is taken', async () => {
+      createFailure = httpError(409, 'A group with this name already exists.')
+      await openNewGroup()
+      type(inputOf('Group name'), 'staff')
+      dialogButton('Create group')!.click()
+      await vi.waitFor(() =>
+        expect(text(dialog()?.querySelector('[role="alert"]'))).toContain(
+          'A group with this name already exists.',
+        ),
+      )
+      expect(dialog()).not.toBeNull()
+    })
+
+    it('refuses a bad group name before sending anything', async () => {
+      await openNewGroup()
+      type(inputOf('Group name'), '-bad')
+      dialogButton('Create group')!.click()
+      await vi.waitFor(() => expect(text(dialog())).toContain('Start with a letter or a digit'))
+      expect(sent('POST')).toHaveLength(0)
+    })
+
+    it('starts the dialog afresh after it was cancelled', async () => {
+      await openNewGroup()
+      type(inputOf('Group name'), 'half-typed')
+      dialogButton('Cancel')!.click()
+      await vi.waitFor(() => expect(dialog()).toBeNull())
+      button(/^New group$/)!.click()
+      await vi.waitFor(() => expect(field('Group name')).toBeDefined())
+      expect(inputOf('Group name').value).toBe('')
+    })
+
+    it('deletes a custom group after asking', async () => {
+      await mountList()
+      await vi.waitFor(() => expect(rows()).toHaveLength(2))
+      expect(button(/^Delete group it$/)).toBeUndefined()
+      button(/^Delete group staff$/)!.click()
+      await vi.waitFor(() => expect(text(dialog())).toContain('Delete staff?'))
+      dialogButton('Delete')!.click()
+      await vi.waitFor(() => expect(rows()).toHaveLength(1))
+      expect(sent('DELETE')[0]!.path).toBe('/api/groups/1')
+      expect(document.body.textContent).toContain('staff was deleted.')
+    })
+  })
 })
 
-describe('for an admin', () => {
-  beforeEach(() => {
-    admin = true
-    details = { 1: detailOf(1), 2: detailOf(2) }
-  })
-
-  it('creates a custom group and shows the server message when the name is taken', async () => {
-    api.handler = (async (path: string, options?: { method?: string; body?: unknown }) => {
-      const method = options?.method ?? 'GET'
-      if (path === '/api/me') return { ...ME, isAdmin: true }
-      if (path === '/api/people') return { people: PEOPLE }
-      if (path === '/api/groups' && method === 'GET') return { groups }
-      if (path === '/api/groups' && method === 'POST') {
-        throw Object.assign(new Error('x'), {
-          statusCode: 409,
-          data: { statusCode: 409, message: 'A group with this name already exists.' },
-        })
-      }
-      throw new Error(`unexpected ${method} ${path}`)
-    }) as Handler
-    await mountPage()
-    await vi.waitFor(() => expect(rows()).toHaveLength(2))
-    const input = field('Group name')
-    expect(input).toBeDefined()
-    const el = document.getElementById(input!.getAttribute('for')!) as HTMLInputElement
-    el.value = 'staff'
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-    button(/^Create group$/)!.click()
-    await vi.waitFor(() =>
-      expect(document.body.textContent).toContain('A group with this name already exists.'),
+describe('the page of a group', () => {
+  it('shows its name as the focused heading, its source and member count', async () => {
+    await mountGroup(1)
+    expect(document.activeElement?.tagName).toBe('H1')
+    expect(text(document.querySelector('[data-group-summary]'))).toBe(
+      'Created in this app · 1 member',
     )
+    expect(document.querySelector('a[href="/groups"]')?.textContent).toContain('Back to groups')
   })
 
-  it('refuses a bad group name before sending anything', async () => {
-    await mountPage()
-    await vi.waitFor(() => expect(rows()).toHaveLength(2))
-    const el = document.getElementById(
-      field('Group name')!.getAttribute('for')!,
-    ) as HTMLInputElement
-    el.value = '-bad'
-    el.dispatchEvent(new Event('input', { bubbles: true }))
-    button(/^Create group$/)!.click()
-    await vi.waitFor(() =>
-      expect(document.body.textContent).toContain('Start with a letter or a digit'),
-    )
-    expect(sent('POST')).toHaveLength(0)
+  it('says so when the group is not there for the person, with the way back', async () => {
+    await mountGroup(9, 'Group not found')
+    expect(document.querySelector('[data-group-missing]')).not.toBeNull()
+    expect(document.querySelector('a[href="/groups"]')).not.toBeNull()
+    expect(document.querySelector('[data-group-calendar]')).toBeNull()
   })
 
-  it('names and removes a manager at once, from the row of a saved member', async () => {
+  it('shows a failed load with a retry that loads it again', async () => {
+    failGroup = 1
+    await mountGroup(1, 'Group')
+    expect(text(document.querySelector('[role="alert"]'))).toContain('Could not load the group')
+    button(/^Retry$/)!.click()
+    await vi.waitFor(() => expect(text(document.querySelector('h1'))).toBe('staff'))
+    expect(document.querySelector('[data-group-calendar]')).not.toBeNull()
+  })
+
+  it('offers all groups to share with', async () => {
+    groups = [
+      ...start(),
+      { id: 3, name: 'board', source: 'app', memberCount: 4, member: false, manager: false },
+    ]
+    await mountGroup(1)
+    button(/^Share Team calendar$/)!.click()
+    await vi.waitFor(() => expect(dialog()).not.toBeNull())
+    const radio = [...document.querySelectorAll<HTMLElement>('[role="radio"], input[type="radio"]')]
+    expect(radio.length).toBeGreaterThan(0)
+  })
+
+  it('shows a member who does not manage the group its calendars, without changing them', async () => {
     manages = false
     details = { 1: detailOf(1), 2: detailOf(2) }
-    await mountPage()
-    await vi.waitFor(() => expect(rows()).toHaveLength(2))
-    await openGroup('staff')
-    button(/^Make manager of staff: Me \(me\)$/)!.click()
-    await vi.waitFor(() => expect(sent('PUT')).toHaveLength(1))
-    expect(sent('PUT')[0]).toMatchObject({
-      path: '/api/groups/1/managers',
-      body: { managers: ['sub-me'] },
-    })
-    await vi.waitFor(() => expect(button(/^Remove as manager of staff: Me \(me\)$/)).toBeDefined())
-    expect(text(document.querySelector('[data-group-member]'))).toContain('Manager')
-    button(/^Remove as manager of staff: Me \(me\)$/)!.click()
-    await vi.waitFor(() => expect(sent('PUT')).toHaveLength(2))
-    expect(sent('PUT')[1]).toMatchObject({ body: { managers: [] } })
-    await vi.waitFor(() =>
-      expect(button(/^Make manager of staff: Me \(me\)$/)?.disabled).toBe(false),
-    )
-    // While the member list has unsaved changes, the managers wait for it.
-    button(/^Remove Me \(me\) from staff$/)!.click()
-    await vi.waitFor(() => expect(button(/^Save members$/)).toBeDefined())
-    expect(document.body.textContent).toContain('Save or undo the changes to the members')
-  })
-
-  it('edits the members of a custom group as one complete list', async () => {
-    await mountPage()
-    await vi.waitFor(() => expect(rows()).toHaveLength(2))
-    await openGroup('staff')
-    button(/^Remove Me \(me\) from staff$/)!.click()
-    await vi.waitFor(() => expect(button(/^Save members$/)).toBeDefined())
-    button(/^Undo changes$/)!.click()
-    await vi.waitFor(() => expect(button(/^Save members$/)).toBeUndefined())
-    expect(button(/^Remove Me \(me\) from staff$/)).toBeDefined()
-    expect(sent('PUT')).toHaveLength(0)
-
-    button(/^Remove Me \(me\) from staff$/)!.click()
-    await vi.waitFor(() => expect(button(/^Save members$/)).toBeDefined())
-    button(/^Save members$/)!.click()
-    await vi.waitFor(() => expect(sent('PUT')).toHaveLength(1))
-    expect(sent('PUT')[0]).toMatchObject({ path: '/api/groups/1/members', body: { members: [] } })
-  })
-
-  it('shows imported groups as read-only, with the marker', async () => {
-    await mountPage()
-    await vi.waitFor(() => expect(rows()).toHaveLength(2))
-    await openGroup('it')
-    expect(document.querySelector('[data-imported-note]')).not.toBeNull()
+    await mountGroup(1)
+    expect(document.querySelector('[data-group-calendar]')?.textContent).toContain('Team calendar')
+    for (const name of [/^Edit Team calendar$/, /^Share Team calendar$/, /^New calendar$/]) {
+      expect(button(name)).toBeUndefined()
+    }
     expect(button(/^Remove /)).toBeUndefined()
-    expect(button(/^Save members$/)).toBeUndefined()
+    expect(button(/^Make /)).toBeUndefined()
+    expect(button(/^Add$/)).toBeUndefined()
   })
 
-  it('shows the group of everyone with a note, no member list and no way to change it', async () => {
-    groups.push({
-      id: 3,
-      name: 'web_calendar_users',
-      source: 'everyone',
-      memberCount: 5,
-      member: true,
+  it('shows a manager as such, and gives them no way to remove a manager or name one', async () => {
+    await mountGroup(1)
+    expect(text(document.querySelector('[data-group-member]'))).toContain('Manager')
+    expect(button(/^Remove Me \(me\) from staff$/)).toBeUndefined()
+    expect(button(/^Make /)).toBeUndefined()
+    expect(button(/^New calendar$/)).toBeDefined()
+  })
+
+  it('says under the Add row when the people offered are not everybody, and not otherwise', async () => {
+    await mountGroup(1)
+    expect(document.body.textContent).not.toContain('Not everybody is offered')
+
+    app.unmount()
+    document.body.innerHTML = ''
+    const handler = api.handler!
+    api.handler = (async (path: string, options?: { method?: string; body?: unknown }) =>
+      path === '/api/people'
+        ? { people: PEOPLE, truncated: true }
+        : handler(path, options)) as Handler
+    await mountGroup(1)
+    const form = document.querySelector('form[aria-labelledby="group-members-add-heading"]')
+    expect(text(form)).toContain(
+      `Not everybody is offered when you add members or share: the list shows the first ${PEOPLE.length} people`,
+    )
+  })
+
+  it('creates a calendar with a colour in a dialog that closes and says so', async () => {
+    await mountGroup(1)
+    // No form until it is asked for.
+    expect(document.querySelectorAll('form').length).toBe(1)
+    button(/^New calendar$/)!.click()
+    await vi.waitFor(() => expect(dialog()).not.toBeNull())
+    type(dialog()!.querySelector('input')!, '  Kitchen plan ')
+    dialogButton('Add calendar')!.click()
+    await vi.waitFor(() => expect(sent('POST')).toHaveLength(1))
+    expect(sent('POST')[0]!.body).toEqual({ name: 'Kitchen plan', color: '#1d4ed8' })
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(document.querySelectorAll('[data-group-calendar]')).toHaveLength(2)
+    expect(document.body.textContent).toContain('Kitchen plan was added.')
+  })
+
+  it('edits a calendar in its dialog, and the row follows what was saved', async () => {
+    await mountGroup(1)
+    expect(button(/^Delete Team calendar$/)).toBeUndefined()
+    button(/^Edit Team calendar$/)!.click()
+    await vi.waitFor(() => expect(text(dialog())).toContain('A calendar of the group staff.'))
+    expect(button(/^Delete calendar$/)).toBeDefined()
+    const name = dialog()!.querySelector<HTMLInputElement>('input[autocomplete="off"]')!
+    type(name, 'Rota')
+    button(/^Save changes$/)!.click()
+    await vi.waitFor(() => expect(sent('PATCH')).toHaveLength(1))
+    expect(sent('PATCH')[0]).toMatchObject({ path: '/api/groups/1/calendars/10' })
+    await vi.waitFor(() =>
+      expect(text(document.querySelector('[data-group-calendar]'))).toContain('Rota'),
+    )
+    expect(document.body.textContent).toContain('Rota was saved.')
+  })
+
+  it('shares a calendar and sends the complete list without the owner', async () => {
+    await mountGroup(1)
+    button(/^Share Team calendar$/)!.click()
+    await vi.waitFor(() => expect(dialog()).not.toBeNull())
+    // The owning group is listed as fixed: no remove button for it.
+    expect(text(dialog())).toContain('cannot be changed here')
+    expect(button(/^Stop sharing with staff$/)).toBeUndefined()
+    dialogButton('Save sharing')!.click()
+    await vi.waitFor(() => expect(sent('PUT')).toHaveLength(1))
+    expect(sent('PUT')[0]!.body).toEqual({ shares: [] })
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('Sharing of Team calendar was saved.'),
+    )
+  })
+
+  describe('for an admin', () => {
+    beforeEach(() => {
+      admin = true
+      details = { 1: detailOf(1), 2: detailOf(2) }
     })
-    details[3] = detailOf(3)
-    await mountPage()
-    await vi.waitFor(() => expect(rows()).toHaveLength(3))
-    expect(rows()[2]).toContain('Built in')
-    expect(rows()[2]).toContain('5 members')
-    // It owns no calendars, so wait for its note instead of a calendar (as `openGroup` does).
-    button(/^Open web_calendar_users$/)!.click()
-    await vi.waitFor(() => expect(document.querySelector('[data-everyone-note]')).not.toBeNull())
-    expect(document.querySelector('[data-imported-note]')).toBeNull()
-    expect(document.querySelector('[data-members-none]')).toBeNull()
-    expect(document.querySelector('[data-group-member]')).toBeNull()
-    expect(button(/^Save members$/)).toBeUndefined()
-    expect(button(/^Add$/)).toBeUndefined()
+
+    it('names and removes a manager at once, from the row of a member', async () => {
+      manages = false
+      details = { 1: detailOf(1), 2: detailOf(2) }
+      await mountGroup(1)
+      button(/^Make manager of staff: Me \(me\)$/)!.click()
+      await vi.waitFor(() => expect(sent('PUT')).toHaveLength(1))
+      expect(sent('PUT')[0]).toMatchObject({
+        path: '/api/groups/1/managers',
+        body: { managers: ['sub-me'] },
+      })
+      await vi.waitFor(() =>
+        expect(button(/^Remove as manager of staff: Me \(me\)$/)).toBeDefined(),
+      )
+      expect(text(document.querySelector('[data-group-member]'))).toContain('Manager')
+      expect(document.body.textContent).toContain('Me (me) manages staff now.')
+      button(/^Remove as manager of staff: Me \(me\)$/)!.click()
+      await vi.waitFor(() => expect(sent('PUT')).toHaveLength(2))
+      expect(sent('PUT')[1]).toMatchObject({ body: { managers: [] } })
+      await vi.waitFor(() =>
+        expect(button(/^Make manager of staff: Me \(me\)$/)?.disabled).toBe(false),
+      )
+    })
+
+    it('adds a member at once, with the saved list and the one person', async () => {
+      await mountGroup(1)
+      expect(button(/^Save members$/)).toBeUndefined()
+      document.querySelector<HTMLElement>('form button[aria-haspopup="listbox"]')!.click()
+      await vi.waitFor(() => expect(document.querySelector('[role="option"]')).not.toBeNull())
+      const anna = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find((item) =>
+        text(item)?.startsWith('Anna'),
+      )!
+      anna.click()
+      await vi.waitFor(() => expect(button(/^Add$/)?.disabled).toBe(false))
+      button(/^Add$/)!.click()
+      await vi.waitFor(() => expect(sent('PUT')).toHaveLength(1))
+      expect(sent('PUT')[0]).toMatchObject({
+        path: '/api/groups/1/members',
+        body: { members: ['sub-me', 'sub-anna'] },
+      })
+      await vi.waitFor(() =>
+        expect(document.querySelectorAll('[data-group-member]')).toHaveLength(2),
+      )
+      expect(document.body.textContent).toContain('Anna (anna) was added to staff.')
+      expect(text(document.querySelector('[data-group-summary]'))).toContain('2 members')
+    })
+
+    it('removes a member only after asking, and keeps them when it is cancelled', async () => {
+      await mountGroup(1)
+      button(/^Remove Me \(me\) from staff$/)!.click()
+      await vi.waitFor(() => expect(text(dialog())).toContain('Remove Me (me) from staff?'))
+      dialogButton('Cancel')!.click()
+      await vi.waitFor(() => expect(dialog()).toBeNull())
+      expect(sent('PUT')).toHaveLength(0)
+
+      button(/^Remove Me \(me\) from staff$/)!.click()
+      await vi.waitFor(() => expect(dialog()).not.toBeNull())
+      dialogButton('Remove')!.click()
+      await vi.waitFor(() => expect(sent('PUT')).toHaveLength(1))
+      expect(sent('PUT')[0]).toMatchObject({ path: '/api/groups/1/members', body: { members: [] } })
+      await vi.waitFor(() => expect(document.querySelector('[data-members-none]')).not.toBeNull())
+      expect(document.body.textContent).toContain('Me (me) was removed from staff.')
+    })
+
+    it('keeps the dialog open with the reason when the removal is refused', async () => {
+      membersFailure = httpError(409, 'Only an admin may do that.', 'manager')
+      await mountGroup(1)
+      button(/^Remove Me \(me\) from staff$/)!.click()
+      await vi.waitFor(() => expect(dialog()).not.toBeNull())
+      dialogButton('Remove')!.click()
+      await vi.waitFor(() =>
+        expect(text(dialog()?.querySelector('[role="alert"]'))).toContain(
+          'Only an administrator can remove a manager of the group.',
+        ),
+      )
+      expect(document.querySelectorAll('[data-group-member]')).toHaveLength(1)
+    })
+
+    it('shows imported groups as read-only, with the marker', async () => {
+      await mountGroup(2)
+      expect(document.querySelector('[data-imported-note]')).not.toBeNull()
+      expect(button(/^Remove /)).toBeUndefined()
+      expect(button(/^Add$/)).toBeUndefined()
+    })
+
+    it('shows the group of everyone with a note, its count, no member list and no way to change it', async () => {
+      groups.push({
+        id: 3,
+        name: 'web_calendar_users',
+        source: 'everyone',
+        memberCount: 5,
+        member: true,
+        manager: false,
+      })
+      details[3] = detailOf(3)
+      await mountGroup(3, 'web_calendar_users')
+      expect(text(document.querySelector('[data-group-summary]'))).toBe('Built in · 5 members')
+      expect(document.querySelector('[data-everyone-note]')).not.toBeNull()
+      expect(document.querySelector('[data-imported-note]')).toBeNull()
+      expect(document.querySelector('[data-members-none]')).toBeNull()
+      expect(document.querySelector('[data-group-member]')).toBeNull()
+      expect(button(/^Add$/)).toBeUndefined()
+    })
   })
 })
 
@@ -488,7 +644,7 @@ describe('groups from the identity provider', () => {
     [...document.querySelectorAll('[data-oidc-group]')].map((li) => text(li))
 
   it('is not on the page for a member, and the list is never asked for', async () => {
-    await mountPage()
+    await mountList()
     await vi.waitFor(() => expect(rows()).toHaveLength(2))
     expect(section()).toBeNull()
     expect(calls.some((call) => call.path.startsWith('/api/groups/oidc'))).toBe(false)
@@ -500,7 +656,7 @@ describe('groups from the identity provider', () => {
     })
 
     it('lists the candidates with their state, and why one cannot be imported', async () => {
-      await mountPage()
+      await mountList()
       await vi.waitFor(() => expect(candidateRows()).toHaveLength(4))
       const list = candidateRows()
       expect(list[0]).toContain('ops')
@@ -517,12 +673,12 @@ describe('groups from the identity provider', () => {
 
     it('says when nothing has been seen yet', async () => {
       candidateList = []
-      await mountPage()
+      await mountList()
       await vi.waitFor(() => expect(document.querySelector('[data-oidc-none]')).not.toBeNull())
     })
 
     it('imports a group: sends the key, adds it to the groups and marks it imported', async () => {
-      await mountPage()
+      await mountList()
       await vi.waitFor(() => expect(candidateRows()).toHaveLength(4))
       button(/^Import ops$/)!.click()
       await vi.waitFor(() => expect(sent('POST')).toHaveLength(1))
@@ -532,30 +688,46 @@ describe('groups from the identity provider', () => {
       })
       await vi.waitFor(() => expect(candidateRows()[0]).toContain('Imported · 0 members'))
       expect(rows().join(' ')).toContain('ops')
-      expect(document.querySelector('[role="status"]')?.textContent).toContain('ops was imported')
+      expect(document.body.textContent).toContain('ops was imported')
       expect(button(/^Stop importing ops$/)).toBeDefined()
     })
 
+    it('shows a failed import at its row, not above the list', async () => {
+      importFailure = httpError(409, 'A group with this name already exists.')
+      await mountList()
+      await vi.waitFor(() => expect(candidateRows()).toHaveLength(4))
+      button(/^Import ops$/)!.click()
+      await vi.waitFor(() =>
+        expect(text(document.querySelector('[data-oidc-group] [role="alert"]'))).toContain(
+          'A group with this name already exists.',
+        ),
+      )
+      expect(candidateRows()[0]).toContain('Not imported')
+      // Nothing above the list of groups.
+      const list = document.querySelector('ul[aria-label="Groups"]')!
+      const before = [...document.querySelectorAll('[role="alert"]')].filter(
+        (alert) => list.compareDocumentPosition(alert) & Node.DOCUMENT_POSITION_PRECEDING,
+      )
+      expect(before).toHaveLength(0)
+    })
+
     it('asks before it stops importing, and sends nothing when cancelled', async () => {
-      await mountPage()
+      await mountList()
       await vi.waitFor(() => expect(candidateRows()).toHaveLength(4))
       button(/^Stop importing it$/)!.click()
-      await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
-      expect(text(document.querySelector('[role="dialog"]'))).toContain('Stop importing it?')
+      await vi.waitFor(() => expect(dialog()).not.toBeNull())
+      expect(text(dialog())).toContain('Stop importing it?')
       button(/^Cancel$/)!.click()
-      await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull())
+      await vi.waitFor(() => expect(dialog()).toBeNull())
       expect(sent('DELETE')).toHaveLength(0)
     })
 
     it('stops importing after the confirmation: the group goes, the candidate stays', async () => {
-      await mountPage()
+      await mountList()
       await vi.waitFor(() => expect(rows()).toHaveLength(2))
       button(/^Stop importing it$/)!.click()
-      await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
-      const confirm = [
-        ...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'),
-      ].find((item) => text(item) === 'Stop importing')!
-      confirm.click()
+      await vi.waitFor(() => expect(dialog()).not.toBeNull())
+      dialogButton('Stop importing')!.click()
       await vi.waitFor(() => expect(sent('DELETE')).toHaveLength(1))
       expect(sent('DELETE')[0]!.path).toBe('/api/groups/oidc/2')
       await vi.waitFor(() => expect(rows()).toHaveLength(1))
@@ -571,16 +743,12 @@ describe('groups from the identity provider', () => {
           message: 'The group still owns calendars; delete them first',
         },
       })
-      await mountPage()
+      await mountList()
       await vi.waitFor(() => expect(rows()).toHaveLength(2))
       button(/^Stop importing it$/)!.click()
-      await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
-      ;[...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')]
-        .find((item) => text(item) === 'Stop importing')!
-        .click()
-      await vi.waitFor(() =>
-        expect(text(document.querySelector('[role="dialog"]'))).toContain('still owns calendars'),
-      )
+      await vi.waitFor(() => expect(dialog()).not.toBeNull())
+      dialogButton('Stop importing')!.click()
+      await vi.waitFor(() => expect(text(dialog())).toContain('still owns calendars'))
       expect(rows()).toHaveLength(2)
       expect(candidateRows()[1]).toContain('Imported')
     })

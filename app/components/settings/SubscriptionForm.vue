@@ -1,8 +1,9 @@
 <!--
-  The form of an iCal subscription (FR-7), for adding and for changing one. It checks the input
-  itself first (utils/settings/validation.ts) and shows what the server rejected next to the
-  input it is about; a server message disappears as soon as that input is edited, because the
-  message is about the value that was sent. The parent does the request.
+  The form of an iCal subscription (FR-7), for adding and for changing one, in the dialog of
+  SubscriptionsSection; each opening gets a fresh form. It checks the input itself first
+  (utils/settings/validation.ts) and shows what the server rejected next to the input it is about;
+  a server message disappears as soon as that input is edited, because the message is about the
+  value that was sent. The parent does the request.
 -->
 <template>
   <form novalidate class="flex flex-col gap-4" @submit.prevent="onSubmit">
@@ -109,16 +110,7 @@ function focusFirst() {
   nameInput.value?.inputRef?.focus()
 }
 
-/** Back to an empty form for the next subscription. */
-function reset() {
-  name.value = ''
-  url.value = ''
-  color.value = initialColor(undefined, false)
-  submitted.value = false
-  judged.value = null
-}
-
-defineExpose({ focusFirst, reset })
+defineExpose({ focusFirst })
 
 async function onSubmit() {
   if (props.busy) return

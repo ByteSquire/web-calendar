@@ -1,12 +1,14 @@
 <!--
   One calendar of a group, in a dialog, for the group's managers and for admins: its name and
-  colour (the same form as on the Groups page), who else it is shared with (a sentence, and "Change
-  sharing", which opens the share dialog of the Groups page over this one), and Delete (after
-  asking). Opened from "Edit calendar" in the sidebar's menu of a group calendar, so a manager
-  changes it where they are, without the Groups page. It loads the group when it opens (the
-  calendar with its shares, and whether the person may still change it) and the people and groups
-  the share dialog offers; after each change the calendar view is reloaded. The group routes check
-  the caller themselves.
+  colour, who else it is shared with (a sentence, and "Change sharing", which opens the share
+  dialog over this one), and Delete (after asking). Opened from "Edit calendar" in the sidebar's
+  menu of a group calendar, so a manager changes it where they are, and from "Edit" on the row of
+  the calendar on a group's page. It loads the group when it opens (the calendar with its shares,
+  and whether the person may still change it) and the people and groups the share dialog offers,
+  so it starts afresh each time; after each change the calendar view is reloaded and `saved` tells
+  the parent. A saved change is a toast; a failure is a toast too and stays in the dialog. After a
+  deletion the dialog closes and the parent tells it (`deleted`). Focus returns to what opened it,
+  else to `fallback`. The group routes check the caller themselves.
 -->
 <template>
   <UModal
@@ -14,6 +16,7 @@
     :title="calendar?.name ?? shownName"
     :description="detail ? t('A calendar of the group {group}.', { group: detail.name }) : ''"
     :ui="{ title: 'wrap-anywhere' }"
+    :content="{ onCloseAutoFocus: focusReturn.restore }"
     @update:open="(open) => (open ? undefined : close())"
   >
     <template #body>
@@ -23,7 +26,6 @@
           <USkeleton class="h-11 w-full" aria-hidden="true" />
         </div>
         <SettingsErrorAlert v-if="loadError" :message="loadError" />
-        <p role="status" aria-live="polite" class="min-h-5 text-sm">{{ notice }}</p>
 
         <template v-if="calendar && detail">
           <p v-if="!detail.canManageCalendars" class="text-toned" data-group-calendar-read-only>
@@ -99,6 +101,7 @@
     :group-name="detail?.name ?? ''"
     :groups="api.groups.data.value ?? []"
     :people="api.people.data.value?.people ?? []"
+    :people-truncated="api.people.data.value?.truncated === true"
     :busy="busy"
     :save="saveShares"
     @update:open="(open) => (sharing = open)"
@@ -119,19 +122,24 @@
 <script setup lang="ts">
 import { useGroups, type CalendarBody } from '~/composables/useGroups'
 import { useLiveStatus } from '~/composables/useLiveCalendar'
-import type { CalendarShare, GroupDetail } from '~/utils/groups/model'
+import type { CalendarShare, GroupCalendar, GroupDetail } from '~/utils/groups/model'
 import { shareSummary, toShareInput } from '~/utils/groups/shares'
 import { N_, t } from '~/utils/i18n'
 import { describeError } from '~/utils/settings/api-errors'
+import { createFocusReturn } from '~/utils/settings/focus-return'
 
 const props = defineProps<{
   /** The calendar to edit: its group and its id on the server; null when the dialog is closed. */
   target: { groupId: number; calendarId: number; name: string } | null
+  /** Where focus goes when the element that opened the dialog is gone. */
+  fallback?: HTMLElement | null
 }>()
 const emit = defineEmits<{
   close: []
   /** The calendar was deleted; the words for it, for whoever shows them now. */
   deleted: [message: string]
+  /** The name, colour or sharing was saved: the calendar as the server has it now. */
+  saved: [calendar: GroupCalendar]
 }>()
 
 const api = useGroups()
@@ -140,7 +148,8 @@ const detail = ref<GroupDetail | null>(null)
 const loading = ref(false)
 const loadError = ref<string | null>(null)
 const busy = ref(false)
-const notice = ref('')
+const notify = useNotify()
+const focusReturn = createFocusReturn(() => props.fallback)
 const sharing = ref(false)
 const deleting = ref(false)
 const deleteError = ref('')
@@ -155,6 +164,7 @@ watch(
   () => props.target,
   (target) => {
     if (!target) return
+    focusReturn.remember()
     shownName.value = target.name
     void load(target.groupId)
   },
@@ -164,7 +174,6 @@ watch(
 async function load(groupId: number) {
   detail.value = null
   loadError.value = null
-  notice.value = ''
   sharing.value = false
   deleting.value = false
   loading.value = true
@@ -189,29 +198,36 @@ async function load(groupId: number) {
   }
 }
 
-/** Runs one change; the group is shown as the server saved it, and the calendar view reloads. */
-async function run(job: () => Promise<string>, action: string): Promise<true | string> {
+/**
+ * Runs one change; the group is shown as the server saved it, and the calendar view reloads. The
+ * job returns the words for a toast, or null when the parent tells it; a failure is a toast and
+ * comes back for the dialog to show.
+ */
+async function run(job: () => Promise<string | null>, action: string): Promise<true | string> {
   if (busy.value) return t('Another change is still being saved. Try again in a moment.')
   busy.value = true
-  notice.value = ''
   try {
-    notice.value = await job()
+    const done = await job()
+    if (done) notify.done(done)
     void status.refresh({ external: false })
     return true
   } catch (cause) {
-    return describeError(cause, action)
+    const message = describeError(cause, action)
+    notify.failed(message)
+    return message
   } finally {
     busy.value = false
   }
 }
 
-function replaceCalendar(saved: NonNullable<typeof calendar.value>) {
+function replaceCalendar(saved: GroupCalendar) {
   const current = detail.value
   if (!current) return
   detail.value = {
     ...current,
     calendars: current.calendars.map((item) => (item.id === saved.id ? saved : item)),
   }
+  emit('saved', saved)
 }
 
 function saveDetails(body: CalendarBody): Promise<true | string> {
@@ -249,7 +265,7 @@ async function confirmDelete() {
   const message = t('{name} was deleted.', { name: calendar.value?.name ?? target.name })
   const answer = await run(async () => {
     await api.deleteCalendar(target.groupId, target.calendarId)
-    return message
+    return null
   }, N_('delete the calendar'))
   if (answer === true) {
     deleting.value = false

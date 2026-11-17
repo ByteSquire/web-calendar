@@ -19,6 +19,7 @@ import {
   rows,
   statusText,
   stubClipboard,
+  toasts,
   token,
   type,
 } from './settings-helpers'
@@ -28,8 +29,8 @@ vi.mock('~/composables/useAuthFetch', async () =>
   (await import('./settings-helpers')).authFetchModule(state)(),
 )
 
-// The token section inside a real Nuxt UI app: the explanation, the list, the one-time secret and
-// the revoke dialog.
+// The token section inside a real Nuxt UI app: the explanation, the list, the dialog that creates a
+// token and then shows its secret once, and the revoke dialogs.
 const Shell = defineComponent({
   props: { username: { type: String, default: 'alice' } },
   setup: (props) => () =>
@@ -46,9 +47,18 @@ async function mountSection(setup?: (backend: FakeBackend) => void) {
   await vi.waitFor(() => expect(document.querySelector('[role="status"] .sr-only')).toBeNull())
 }
 
-const labelInput = () => field('Label')
-const submit = () => requireButton(/^(Create token|Creating…)$/)
+const newButton = () => requireButton('New token')
+const labelInput = () => field('Label', dialog()!)
+const submit = () => requireButton(/^(Create token|Creating…)$/, dialog()!)
 const secretInput = () => document.querySelector<HTMLInputElement>('input[readonly]')
+
+/** "New token", from the keyboard: the dialog opens with the focus in the label. */
+async function openNew() {
+  newButton().focus()
+  newButton().click()
+  await vi.waitFor(() => expect(dialog()?.querySelector('form')).toBeTruthy())
+  await vi.waitFor(() => expect(document.activeElement).toBe(labelInput()))
+}
 
 beforeEach(() => {
   backend = new FakeBackend()
@@ -164,9 +174,9 @@ describe('the list', () => {
     expect(alerts()[0]!.textContent).toContain(
       'Could not load your app tokens. The server answered with an error (HTTP 500).',
     )
-    // no skeleton stays behind, and the form still works
+    // no skeleton stays behind, and a token can still be created
     expect(document.querySelector('.animate-pulse')).toBeNull()
-    expect(submit().disabled).toBe(false)
+    expect(newButton().disabled).toBe(false)
 
     failing = false
     requireButton('Retry').click()
@@ -176,8 +186,25 @@ describe('the list', () => {
 })
 
 describe('creating a token', () => {
-  it('shows the secret once, read-only and selected, and removes it with Done', async () => {
+  it('opens a dialog from "New token" and leaves the page as it was', async () => {
     await mountSection()
+    const before = document.querySelector('section')!.textContent
+    await openNew()
+    expect(dialog()!.textContent).toContain('New token')
+    expect(newButton().getAttribute('aria-haspopup')).toBe('dialog')
+    // nothing was added to the section itself
+    expect(document.querySelector('section')!.textContent).toBe(before)
+    expect(document.querySelector('section form')).toBeNull()
+
+    keydown(document.activeElement, 'Escape')
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(document.activeElement).toBe(newButton())
+    expect(backend.callsTo('POST', '/api/app-tokens')).toHaveLength(0)
+  })
+
+  it('shows the secret once, read-only and selected, in the same dialog, and drops it with Done', async () => {
+    await mountSection()
+    await openNew()
     type(labelInput(), '  Thunderbird  ')
     submit().click()
 
@@ -191,10 +218,11 @@ describe('creating a token', () => {
     expect(secret.selectionEnd).toBe(secret.value.length)
     // named, and the warning is in the text
     expect(field('Token')).toBe(secret)
-    expect(document.body.textContent).toContain('shown only once')
-    expect(document.body.textContent).toContain('New token for “Thunderbird”')
+    expect(dialog()!.textContent).toContain('shown only once')
+    expect(dialog()!.textContent).toContain('New token for “Thunderbird”')
+    expect(dialog()!.textContent).toContain('Expires on')
     // the form is replaced, so a second token cannot push the first secret off the screen
-    expect(document.querySelector('form')).toBeNull()
+    expect(dialog()!.querySelector('form')).toBeNull()
     // the list has the new token (without the secret)
     await vi.waitFor(() => expect(rows('Your app tokens')).toHaveLength(1))
     expect(rows('Your app tokens')[0]!.textContent).not.toContain(backend.nextSecret)
@@ -203,16 +231,34 @@ describe('creating a token', () => {
     expect(JSON.stringify(useNuxtApp().payload.state)).not.toContain(backend.nextSecret)
 
     requireButton('Done').click()
-    await vi.waitFor(() => expect(secretInput()).toBeNull())
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(secretInput()).toBeNull()
     expect(document.body.textContent).not.toContain(backend.nextSecret)
     expect(document.body.textContent).not.toContain('shown only once')
-    // the form is back, empty, with focus
+    // back on the button that opened it
+    expect(document.activeElement).toBe(newButton())
+
+    // opened again, it starts empty, without the secret
+    await openNew()
     expect(labelInput().value).toBe('')
-    expect(document.activeElement).toBe(labelInput())
+    expect(secretInput()).toBeNull()
+  })
+
+  it('drops the secret when the dialog is closed with Escape', async () => {
+    await mountSection()
+    await openNew()
+    type(labelInput(), 'DAVx5')
+    submit().click()
+    await vi.waitFor(() => expect(secretInput()).not.toBeNull())
+    keydown(document.activeElement, 'Escape')
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(document.body.textContent).not.toContain(backend.nextSecret)
+    expect(document.activeElement).toBe(newButton())
   })
 
   it('drops the secret when the section goes away', async () => {
     await mountSection()
+    await openNew()
     type(labelInput(), 'DAVx5')
     submit().click()
     await vi.waitFor(() => expect(secretInput()).not.toBeNull())
@@ -227,6 +273,7 @@ describe('creating a token', () => {
     const restore = stubClipboard(async (text) => void written.push(text))
     try {
       await mountSection()
+      await openNew()
       type(labelInput(), 'DAVx5')
       submit().click()
       await vi.waitFor(() => expect(secretInput()).not.toBeNull())
@@ -249,6 +296,7 @@ describe('creating a token', () => {
     const consoleError = vi.spyOn(console, 'error')
     try {
       await mountSection()
+      await openNew()
       type(labelInput(), 'DAVx5')
       submit().click()
       await vi.waitFor(() => expect(secretInput()).not.toBeNull())
@@ -264,6 +312,7 @@ describe('creating a token', () => {
 
   it('checks the label before asking the server, and follows the input afterwards', async () => {
     await mountSection()
+    await openNew()
     submit().click()
     await vi.waitFor(() =>
       expect(errorTexts()).toEqual(['Enter a label, for example the name of the app.']),
@@ -280,6 +329,8 @@ describe('creating a token', () => {
 
     type(labelInput(), 'x'.repeat(64))
     await vi.waitFor(() => expect(errorTexts()).toEqual([]))
+    // a check of the input is told at the input only, not in a toast
+    expect(toasts()).toEqual([])
     submit().click()
     await vi.waitFor(() => expect(secretInput()).not.toBeNull())
   })
@@ -291,6 +342,7 @@ describe('creating a token', () => {
           ? reply.invalid({ field: 'label', message: 'must have at most 64 characters' })
           : undefined
     })
+    await openNew()
     type(labelInput(), 'fine')
     submit().click()
     await vi.waitFor(() =>
@@ -306,12 +358,14 @@ describe('creating a token', () => {
     await mountSection((api) => {
       api.override = (call) => (call.method === 'POST' ? reply.error(500, 'boom') : undefined)
     })
+    await openNew()
     type(labelInput(), 'DAVx5')
     submit().click()
     await vi.waitFor(() => expect(alerts()).toHaveLength(1))
-    expect(alerts()[0]!.textContent).toContain(
-      'Could not create the token. The server answered with an error (HTTP 500).',
-    )
+    const message = 'Could not create the token. The server answered with an error (HTTP 500).'
+    // in the dialog, which stays open, and in a toast
+    expect(dialog()!.querySelector('[role="alert"]')!.textContent).toContain(message)
+    await vi.waitFor(() => expect(toasts()).toContain(message))
     expect(labelInput().value).toBe('DAVx5')
     expect(secretInput()).toBeNull()
   })
@@ -322,11 +376,18 @@ describe('the limit', () => {
     await mountSection((api) => {
       api.tokens = Array.from({ length: 10 }, (_, index) => token(index + 1))
     })
-    expect(submit().disabled).toBe(true)
-    expect(labelInput().disabled).toBe(true)
-    const reason = document.getElementById(submit().getAttribute('aria-describedby')!)
+    expect(newButton().disabled).toBe(true)
+    const reason = document.getElementById(newButton().getAttribute('aria-describedby')!)
     expect(reason?.textContent).toContain('You have 10 of 10 app tokens')
     expect(reason?.textContent).toContain('Revoke a token to create another one.')
+  })
+
+  it('says how many are in use beside the button from the start', async () => {
+    await mountSection((api) => {
+      api.tokens = [token(1)]
+    })
+    const reason = document.getElementById(newButton().getAttribute('aria-describedby')!)
+    expect(reason?.textContent).toContain('1 of 10 app tokens in use')
   })
 
   it('counts only unexpired tokens', async () => {
@@ -337,18 +398,18 @@ describe('the limit', () => {
         token(21, { expired: true }),
       ]
     })
-    expect(submit().disabled).toBe(false)
+    expect(newButton().disabled).toBe(false)
   })
 
   it('enables creating again after a revoke', async () => {
     await mountSection((api) => {
       api.tokens = Array.from({ length: 10 }, (_, index) => token(index + 1))
     })
-    expect(submit().disabled).toBe(true)
+    expect(newButton().disabled).toBe(true)
     requireButton('Revoke token Token 1').click()
     await vi.waitFor(() => expect(dialog()).not.toBeNull())
     requireButton('Revoke token').click()
-    await vi.waitFor(() => expect(submit().disabled).toBe(false))
+    await vi.waitFor(() => expect(newButton().disabled).toBe(false))
   })
 
   it('blocks the form when the server says the limit is reached, whatever the list said', async () => {
@@ -360,11 +421,13 @@ describe('the limit', () => {
             })
           : undefined
     })
+    await openNew()
     type(labelInput(), 'one too many')
     submit().click()
     await vi.waitFor(() =>
       expect(alerts()[0]?.textContent).toContain('At most 10 app tokens are allowed per user'),
     )
+    expect(dialog()).not.toBeNull()
     // the list is loaded again, so the form follows the real state
     await vi.waitFor(() => expect(backend.callsTo('GET', '/api/app-tokens')).toHaveLength(2))
   })
@@ -418,7 +481,7 @@ describe('revoking a token', () => {
     expect(rows('Your app tokens').map((row) => row.textContent)).toEqual([
       expect.stringContaining('DAVx5'),
     ])
-    expect(statusText()).toContain('Token “Thunderbird” revoked.')
+    await vi.waitFor(() => expect(toasts()).toContain('Token “Thunderbird” revoked.'))
     // the button that opened the dialog is gone: focus must not fall back to the page body
     expect(opener.isConnected).toBe(false)
     expect(document.activeElement?.tagName).toBe('H2')
@@ -432,6 +495,7 @@ describe('revoking a token', () => {
     button('Revoke token', dialog()!)!.click()
     await vi.waitFor(() => expect(dialog()!.querySelector('[role="alert"]')).not.toBeNull())
     expect(dialog()!.textContent).toContain('Could not revoke the token.')
+    await vi.waitFor(() => expect(toasts()[0]).toContain('Could not revoke the token.'))
     expect(rows('Your app tokens')).toHaveLength(2)
   })
 
@@ -479,7 +543,7 @@ describe('revoking every token (security review 2026-11-01, finding 3)', () => {
     expect(backend.callsTo('DELETE', '/api/app-tokens')).toHaveLength(1)
     expect(backend.tokens).toEqual([])
     expect(document.body.textContent).toContain('You have no app tokens yet.')
-    expect(statusText()).toContain('All app tokens revoked.')
+    await vi.waitFor(() => expect(toasts()).toContain('All app tokens revoked.'))
     expect(button('Revoke all')).toBeUndefined()
     expect(document.activeElement?.textContent?.trim()).toBe('App tokens')
   })

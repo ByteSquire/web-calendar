@@ -1,7 +1,10 @@
 <!--
-  Adds a resource or changes one (name, type, place, capacity, description). The parent sends it
-  and says whether it worked, with the server's messages per field in `errors`; only then is the
-  form closed or cleared. Every field has a visible label.
+  Adds a resource or changes one (name, type, place, capacity, description), in the dialog of a new
+  resource or on the "Resource" tab of a resource's dialog. The parent sends it and says whether it
+  worked, with the server's messages per field in `errors`; only then is the form closed or
+  cleared. Every field has a visible label; the heading names the form for assistive technology
+  only, since the dialog's title already says what it is. `focusFirst` puts the focus in the name
+  field.
 -->
 <template>
   <form
@@ -11,10 +14,10 @@
     :aria-busy="busy"
     @submit.prevent="submit"
   >
-    <h2 :id="headingId" class="text-lg font-semibold">{{ heading }}</h2>
+    <h2 :id="headingId" class="sr-only">{{ heading }}</h2>
 
     <UFormField :label="t('Name')" :error="problem ?? errors.name" required>
-      <UInput v-model="draft.name" autocomplete="off" class="w-full max-w-md" />
+      <UInput ref="nameInput" v-model="draft.name" autocomplete="off" class="w-full max-w-md" />
     </UFormField>
 
     <URadioGroup
@@ -75,11 +78,12 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ cancel: [] }>()
 
-// Two of these forms can be on the page at once (the dialog and the one that adds).
+// Two of these forms can be on the page at once (a resource's dialog and the one that adds).
 const headingId = useId()
 const typeItems = computed(() =>
   RESOURCE_TYPES.map((type) => ({ value: type.value, label: tv(type.label) })),
 )
+const nameInput = useTemplateRef<{ inputRef: HTMLInputElement | null }>('nameInput')
 const draft = reactive<ResourceDraft>({ ...(props.initial ?? emptyDraft()) })
 const problem = ref<string | undefined>(undefined)
 const capacityProblem = ref<string | undefined>(undefined)
@@ -103,4 +107,10 @@ async function submit() {
   }
   if ((await props.save(body)) && !editing.value) Object.assign(draft, emptyDraft())
 }
+
+function focusFirst() {
+  nameInput.value?.inputRef?.focus()
+}
+
+defineExpose({ focusFirst })
 </script>

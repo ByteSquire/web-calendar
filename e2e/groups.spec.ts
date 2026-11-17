@@ -1,10 +1,11 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
-import { TODAY, press } from './helpers'
+import { TODAY, press, toast } from './helpers'
 
-// The groups page (/groups). The app runs in demo mode here, which serves the SPA without a login;
-// `/api/**` is answered by a small stateful stand-in for the routes of server/api/groups/** and
-// `/api/people`. The menu entry is hidden in demo mode, so the page is opened by its address.
+// The groups pages: the list (/groups) and the page of one group (/groups/<id>). The app runs in
+// demo mode here, which serves the SPA without a login; `/api/**` is answered by a small stateful
+// stand-in for the routes of server/api/groups/** and `/api/people`. The menu entry is hidden in
+// demo mode, so the page is opened by its address. What a change came to is a toast.
 
 interface MockShare {
   principalType: 'user' | 'group'
@@ -199,6 +200,10 @@ class MockGroups {
     if (!match || !group)
       return route.fulfill({ status: 404, json: { statusCode: 404, message: 'Not found' } })
     const rest = match[2] ?? ''
+    // As the server: a group is shown to its members and to admins.
+    if (!this.admin && !group.members.some((member) => member.sub === 'sub-me')) {
+      return route.fulfill({ status: 403, json: { statusCode: 403, message: 'Forbidden' } })
+    }
     if (rest === '' && method === 'GET') {
       return route.fulfill({
         json: {
@@ -287,12 +292,12 @@ class MockGroups {
   }
 }
 
-async function openPage(page: Page, admin: boolean, failFirstList = false) {
+async function openPage(page: Page, admin: boolean, failFirstList = false, path = '/groups') {
   const api = new MockGroups(admin)
   api.failListRequests = failFirstList ? 2 : 0
   await page.route('**/api/**', (route) => api.handle(route))
   await page.clock.setFixedTime(TODAY)
-  await page.goto('/groups')
+  await page.goto(path)
   // The title is German for a German browser: wait for the heading whatever the language.
   await expect(page.locator('h1')).toBeVisible()
   return api
@@ -301,9 +306,11 @@ async function openPage(page: Page, admin: boolean, failFirstList = false) {
 const groupRow = (page: Page, name: string) =>
   page.locator('[data-group]').filter({ has: page.getByText(name, { exact: true }) })
 
+/** Follows "Open" of a group on the list to the group's page, whose heading is its name. */
 async function openGroup(page: Page, name: string) {
-  await press(page.getByRole('button', { name: `Open ${name}` }))
-  await expect(page.getByRole('heading', { name, level: 2, exact: true })).toBeVisible()
+  await press(page.getByRole('link', { name: `Open ${name}` }))
+  await expect(page).toHaveURL(/\/groups\/\d+$/)
+  await expect(page.getByRole('heading', { name, level: 1, exact: true })).toBeVisible()
 }
 
 /** Chooses an option of a select menu: its trigger is a button named after the label. */
@@ -318,18 +325,23 @@ test.describe('groups for a member who manages one', () => {
     // The server lists "it" too (the share dialog offers it), but the member is not in it.
     await expect(page.locator('[data-group]')).toHaveCount(1)
     await expect(groupRow(page, 'staff')).toContainText('Created in this app')
-    await expect(page.getByRole('button', { name: 'Open it' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'Open it' })).toHaveCount(0)
     // Members do not see the admin controls.
-    await expect(page.getByRole('button', { name: 'Create group' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'New group' })).toHaveCount(0)
 
     await openGroup(page, 'staff')
     const calendars = page.locator('[data-group-calendar]')
     await expect(calendars).toHaveCount(1)
 
-    const create = page.locator('form').filter({ hasText: 'New calendar' })
+    // A new calendar is made in a dialog; no form is on the page until then.
+    await expect(page.locator('main form').filter({ hasText: 'Add calendar' })).toHaveCount(0)
+    await press(page.getByRole('button', { name: 'New calendar' }))
+    const create = page.getByRole('dialog', { name: 'New calendar' })
     await create.getByLabel('Name').fill('Kitchen')
-    await page.getByRole('button', { name: 'Add calendar' }).click()
+    await create.getByRole('button', { name: 'Add calendar' }).click()
+    await expect(create).toBeHidden()
     await expect(calendars).toHaveCount(2)
+    await expect(toast(page, 'Kitchen was added.')).toBeVisible()
     expect(
       api.calls.find((call) => call.method === 'POST' && call.path.endsWith('/calendars'))?.body,
     ).toEqual({
@@ -337,21 +349,25 @@ test.describe('groups for a member who manages one', () => {
       color: '#1d4ed8',
     })
 
+    // Edit opens the dialog of the calendar, and the row follows what was saved there.
     await press(page.getByRole('button', { name: 'Edit Kitchen' }))
-    await page
-      .locator('form')
-      .filter({ hasText: 'Edit calendar' })
-      .getByLabel('Name')
-      .fill('Kitchen plan')
-    await page.getByRole('button', { name: 'Save changes' }).click()
-    await expect(page.getByText('Kitchen plan', { exact: true })).toBeVisible()
+    const editor = page.getByRole('dialog', { name: 'Kitchen' })
+    await expect(editor).toContainText('A calendar of the group staff.')
+    await editor.getByLabel('Name').fill('Kitchen plan')
+    await editor.getByRole('button', { name: 'Save changes' }).click()
+    await expect(toast(page, 'Kitchen plan was saved.')).toBeVisible()
+    await expect(calendars.filter({ hasText: 'Kitchen plan' })).toHaveCount(1)
 
-    await press(page.getByRole('button', { name: 'Delete Kitchen plan' }))
-    await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
+    // Delete is in that dialog, not on the row.
+    await expect(page.getByRole('button', { name: 'Delete Kitchen plan' })).toHaveCount(0)
+    await page.getByRole('dialog').getByRole('button', { name: 'Delete calendar' }).click()
+    await page
+      .getByRole('dialog', { name: 'Delete "Kitchen plan"?' })
+      .getByRole('button', { name: 'Delete' })
+      .click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
     await expect(calendars).toHaveCount(1)
-    await expect(page.getByRole('status').filter({ hasText: 'deleted' }).first()).toContainText(
-      'Kitchen plan was deleted.',
-    )
+    await expect(toast(page, 'Kitchen plan was deleted.')).toBeVisible()
   })
 
   test('shares a calendar with a person to read and with a group to edit', async ({ page }) => {
@@ -370,6 +386,7 @@ test.describe('groups for a member who manages one', () => {
     await dialog.getByRole('button', { name: 'Add', exact: true }).click()
     await dialog.getByRole('button', { name: 'Save sharing' }).click()
     await expect(dialog).toBeHidden()
+    await expect(toast(page, 'Sharing of Team was saved.')).toBeVisible()
     const put = api.calls.find((call) => call.method === 'PUT')
     expect(put?.body).toEqual({
       shares: [
@@ -387,29 +404,63 @@ test.describe('groups for a member who manages one', () => {
     await press(page.getByRole('button', { name: 'Retry' }))
     await expect(page.locator('[data-group]')).toHaveCount(1)
   })
+
+  test('says so for a group that is not theirs, with the way back to the list', async ({
+    page,
+  }) => {
+    await openPage(page, false, false, '/groups/2')
+    await expect(page.getByRole('heading', { name: 'Group not found', level: 1 })).toBeVisible()
+    await expect(page.locator('[data-group-missing]')).toBeVisible()
+    await press(page.getByRole('link', { name: 'Back to groups' }))
+    await expect(page).toHaveURL(/\/groups$/)
+    await expect(page.locator('[data-group]')).toHaveCount(1)
+  })
 })
 
 test.describe('groups for an admin', () => {
-  test('creates a group and edits its members as one list', async ({ page }) => {
+  test('creates a group in a dialog and adds a member at once', async ({ page }) => {
     const api = await openPage(page, true)
-    await page.getByLabel('Group name').fill('kitchen-crew')
-    await page.getByRole('button', { name: 'Create group' }).click()
+    await press(page.getByRole('button', { name: 'New group' }))
+    const create = page.getByRole('dialog', { name: 'New group' })
+    await create.getByLabel('Group name').fill('kitchen-crew')
+    await create.getByRole('button', { name: 'Create group' }).click()
+    await expect(create).toBeHidden()
     await expect(groupRow(page, 'kitchen-crew')).toBeVisible()
+    await expect(toast(page, 'kitchen-crew was created.')).toBeVisible()
 
     await openGroup(page, 'kitchen-crew')
     const members = page.locator('form').filter({ hasText: 'Add a member' })
     await choose(page, 'Person', 'Bob Builder (bob)')
     await members.getByRole('button', { name: 'Add', exact: true }).click()
-    await page.getByRole('button', { name: 'Save members' }).click()
-    await expect(page.getByRole('button', { name: 'Save members' })).toHaveCount(0)
+    await expect(page.locator('[data-group-member]')).toHaveCount(1)
+    await expect(toast(page, 'Bob Builder (bob) was added to kitchen-crew.')).toBeVisible()
     expect(api.calls.find((call) => call.method === 'PUT')?.body).toEqual({ members: ['sub-bob'] })
+    await expect(page.getByRole('button', { name: 'Save members' })).toHaveCount(0)
+  })
+
+  test('removes a member only after asking', async ({ page }) => {
+    const api = await openPage(page, true)
+    await openGroup(page, 'staff')
+    await press(page.getByRole('button', { name: 'Remove Alice Example (alice) from staff' }))
+    const dialog = page.getByRole('dialog', { name: 'Remove Alice Example (alice) from staff?' })
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).toBeHidden()
+    expect(api.calls.filter((call) => call.method === 'PUT')).toHaveLength(0)
+
+    await press(page.getByRole('button', { name: 'Remove Alice Example (alice) from staff' }))
+    await dialog.getByRole('button', { name: 'Remove' }).click()
+    await expect(dialog).toBeHidden()
+    await expect(page.locator('[data-members-none]')).toBeVisible()
+    expect(api.calls.find((call) => call.method === 'PUT')?.body).toEqual({ members: [] })
   })
 
   test('refuses a name that breaks the rules before sending it', async ({ page }) => {
     const api = await openPage(page, true)
-    await page.getByLabel('Group name').fill('-kitchen')
-    await page.getByRole('button', { name: 'Create group' }).click()
-    await expect(page.getByText('Start with a letter or a digit.')).toBeVisible()
+    await press(page.getByRole('button', { name: 'New group' }))
+    const create = page.getByRole('dialog', { name: 'New group' })
+    await create.getByLabel('Group name').fill('-kitchen')
+    await create.getByRole('button', { name: 'Create group' }).click()
+    await expect(create.getByText('Start with a letter or a digit.')).toBeVisible()
     expect(api.calls.filter((call) => call.method === 'POST')).toHaveLength(0)
   })
 
@@ -419,8 +470,10 @@ test.describe('groups for an admin', () => {
     await expect(
       page.getByText('This group is imported from your identity provider.'),
     ).toBeVisible()
-    await expect(page.getByRole('button', { name: /^Remove / })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Save members' })).toHaveCount(0)
+    const members = page.getByRole('region', { name: 'Members' })
+    await expect(members.getByRole('button', { name: /^Remove / })).toHaveCount(0)
+    await expect(members.getByRole('button', { name: 'Add', exact: true })).toHaveCount(0)
+    await expect(members.getByRole('combobox')).toHaveCount(0)
   })
 
   test('imports a group of the identity provider and stops importing it', async ({ page }) => {
@@ -466,9 +519,11 @@ test.describe('keyboard and German', () => {
     page,
   }) => {
     await openPage(page, false)
-    await page.getByRole('button', { name: 'Open staff' }).focus()
+    await page.getByRole('link', { name: 'Open staff' }).focus()
     await page.keyboard.press('Enter')
-    await expect(page.getByRole('heading', { name: 'staff', level: 2 })).toBeVisible()
+    const heading = page.getByRole('heading', { name: 'staff', level: 1 })
+    await expect(heading).toBeVisible()
+    await expect(heading).toBeFocused()
     await page.getByRole('button', { name: 'Share Team' }).focus()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('dialog')).toBeVisible()
@@ -477,14 +532,24 @@ test.describe('keyboard and German', () => {
     await expect(page.getByRole('button', { name: 'Share Team' })).toBeFocused()
   })
 
+  test('returns focus to "New group" when its dialog is closed', async ({ page }) => {
+    await openPage(page, true)
+    await page.getByRole('button', { name: 'New group' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog', { name: 'New group' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toBeHidden()
+    await expect(page.getByRole('button', { name: 'New group' })).toBeFocused()
+  })
+
   test.describe('in German', () => {
     test.use({ locale: 'de-DE' })
 
     test('shows the page in German', async ({ page }) => {
       await openPage(page, true)
       await expect(page.getByRole('heading', { name: 'Gruppen', level: 1 })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Gruppe anlegen' })).toBeVisible()
-      await expect(page.getByText('Create group')).toHaveCount(0)
+      await expect(page.getByRole('button', { name: 'Neue Gruppe' })).toBeVisible()
+      await expect(page.getByText('New group')).toHaveCount(0)
     })
   })
 
@@ -499,7 +564,7 @@ test.describe('keyboard and German', () => {
     expect(violations.map((violation) => violation.id)).toEqual([])
   })
 
-  test('has no accessibility violations on the open group', async ({ page }) => {
+  test('has no accessibility violations on the page of a group', async ({ page }) => {
     await openPage(page, true)
     await openGroup(page, 'staff')
     const { violations } = await new AxeBuilder({ page })

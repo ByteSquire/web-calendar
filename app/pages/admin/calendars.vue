@@ -1,15 +1,21 @@
 <!--
   Admin › Calendars (FR-14), admins only: every calendar of the app, people's, the organization's,
-  the groups' and the resources', with a filter by whom they belong to and a search. A calendar
-  opens in one dialog with two tabs, as a resource does: "Details" renames it, changes its own colour
-  (everybody sees it who has not picked their own) and deletes it; "Who has access" shows the links
-  to it (FR-26a) and its access rules, whether the calendar server has each rule yet, and adds and
-  removes them (every change sends the complete rule list). "New calendar" makes a calendar of the
-  organization, which belongs to nobody, so nobody sees it until a rule shares it: the dialog then
-  opens on "Who has access". A resource's calendar is deleted with its resource, on Admin ›
-  Resources, and a person's default calendar is not deleted at all (they always keep one).
-  `?open=<id>` or `?path=<collection path>` (from "Edit calendar" in the sidebar) opens a calendar. The page checks `/api/me` and sends everybody else back to the calendar; that is only
-  tidiness, the admin routes refuse non-admins themselves. The old address /admin/access opens it.
+  the groups' and the resources'. One row above the list holds the search, "Show" (whom they belong
+  to) and "New calendar"; it wraps on a phone. A calendar opens in one dialog with two tabs, as a
+  resource does: "Details" renames it, changes its own colour (everybody sees it who has not picked
+  their own) and deletes it; "Who has access" shows the links to it (FR-26a) and its access rules,
+  whether the calendar server has each rule yet, and adds and removes them (every change sends the
+  complete rule list). "New calendar" makes a calendar of the organization in a dialog; it belongs
+  to nobody, so nobody sees it until a rule shares it: a toast says so and its dialog opens on "Who
+  has access". Focus returns to what opened a dialog; when that is gone (the form of a new calendar,
+  a deleted row) it goes to the Edit button of the calendar that was open, else to "New calendar".
+  What a change came to is a toast, so nothing above the list comes and goes; a failed change is
+  told in its dialog as well. Only a failed load is told at the top, with Retry. A resource's
+  calendar is deleted with its resource, on Admin › Resources, and a person's default calendar is
+  not deleted at all (they always keep one). `?open=<id>` or `?path=<collection path>` (from "Edit
+  calendar" in the sidebar) opens a calendar. The page checks `/api/me` and sends everybody else
+  back to the calendar; that is only tidiness, the admin routes refuse non-admins themselves. The
+  old address /admin/access opens it.
 -->
 <template>
   <div class="mx-auto flex w-full max-w-3xl flex-col gap-6 p-4 sm:p-6">
@@ -50,29 +56,22 @@
       />
       <SettingsErrorAlert v-if="access.users.error.value" :message="access.users.error.value" />
       <SettingsErrorAlert v-if="access.groups.error.value" :message="access.groups.error.value" />
-      <p v-if="openId === null" role="status" aria-live="polite" class="min-h-5 text-sm">
-        {{ notice }}
-      </p>
 
       <div class="flex flex-wrap items-end gap-3">
         <UFormField :label="t('Search calendars')" class="min-w-0 flex-1 basis-56">
           <UInput v-model="query" type="search" autocomplete="off" class="w-full" />
         </UFormField>
+        <UFormField :label="t('Show')" class="min-w-0 basis-40">
+          <USelect v-model="kind" :items="kindItems" class="w-full" :ui="SELECT_UI" />
+        </UFormField>
         <UButton
+          ref="newButton"
           :label="t('New calendar')"
           icon="i-lucide-plus"
           :disabled="!loaded"
-          @click="createOpen = true"
+          @click="openCreate"
         />
       </div>
-
-      <URadioGroup
-        v-model="kind"
-        :legend="t('Show')"
-        :items="kindItems"
-        orientation="horizontal"
-        :ui="{ fieldset: 'flex-wrap gap-x-4 gap-y-1', item: 'min-h-11 items-center' }"
-      />
 
       <p v-if="loaded && calendars.length === 0" data-access-none class="text-toned">
         {{ t('There are no calendars to manage yet.') }}
@@ -101,6 +100,7 @@
           <div class="flex flex-wrap gap-2">
             <UButton
               :aria-label="t('Edit {name}', { name: calendarLabel(calendar) })"
+              :data-edit-calendar="calendar.id"
               icon="i-lucide-pencil"
               :label="t('Edit')"
               color="neutral"
@@ -122,9 +122,9 @@
       <!-- One dialog for a calendar and for who may use it, as for a resource: the tabs switch. -->
       <AdminCalendarDialog
         v-model:tab="tab"
-        v-model:notice="notice"
         :access="access"
         :calendar-id="openId"
+        :focus-fallback="focusAfterDialog"
         @close="openId = null"
       />
 
@@ -136,10 +136,12 @@
             'A calendar of the organization: it belongs to nobody, and nobody sees it until you give people or groups access.',
           )
         "
+        :content="{ onOpenAutoFocus: focusCreateForm, onCloseAutoFocus: restoreAfterCreate }"
         @update:open="(open) => (open ? undefined : saving ? undefined : (createOpen = false))"
       >
         <template #body>
           <GroupsCalendarForm
+            ref="createForm"
             :busy="saving"
             cancellable
             :save="create"
@@ -157,8 +159,10 @@ import { useLiveStatus } from '~/composables/useLiveCalendar'
 import type { CalendarFormBody } from '~/components/groups/CalendarForm.vue'
 import type { AccessCalendar, CalendarOwnerKind } from '~/utils/admin/access'
 import { calendarLabel, linkedCalendar, ownerKindOf } from '~/utils/admin/access'
+import { keepFocusOffControlsOnTouch } from '~/utils/focus'
 import { N_, t, tc } from '~/utils/i18n'
 import { describeError } from '~/utils/settings/api-errors'
+import { createFocusReturn } from '~/utils/settings/focus-return'
 
 definePageMeta({ alias: ['/admin/access'] })
 useHead({ title: () => t('Calendars') })
@@ -168,10 +172,10 @@ const route = useRoute()
 const { admin, ensure } = useAdminFlag()
 const access = useAdminAccess()
 const status = useLiveStatus()
+const notify = useNotify()
 const checking = ref(true)
 const loaded = ref(false)
 const saving = ref(false)
-const notice = ref('')
 // Admin › People links here with the name of a calendar to look for.
 const query = ref(typeof route.query.q === 'string' ? route.query.q : '')
 const kind = ref<'all' | CalendarOwnerKind>('all')
@@ -179,8 +183,17 @@ const createOpen = ref(false)
 // The calendar that is open in the dialog (by id, so it follows the list), and its tab.
 const openId = ref<number | null>(null)
 const tab = ref<'details' | 'access'>('details')
+const newButton = useTemplateRef<{ $el: HTMLElement }>('newButton')
+const createForm = useTemplateRef<{ focusFirst: () => void }>('createForm')
+// The dialog of "New calendar" gives focus back to its button, unless a new calendar's dialog took
+// over; the calendar whose dialog was open last, for where focus goes after it.
+const createFocus = createFocusReturn(() => newButton.value?.$el)
+let handedOver = false
+let lastOpenId: number | null = null
+// 44 px for the select and its options (design §9).
+const SELECT_UI = { base: 'min-h-11', item: 'min-h-11 items-center' }
 
-const kindItems = computed(() => [
+const kindItems = computed<{ label: string; value: 'all' | CalendarOwnerKind }[]>(() => [
   { label: t('All'), value: 'all' },
   { label: t('People'), value: 'people' },
   { label: t('Organization'), value: 'organization' },
@@ -231,23 +244,57 @@ async function start() {
 
 onMounted(start)
 
+watch(openId, (id) => {
+  if (id !== null) lastOpenId = id
+})
+
+/** After a calendar's dialog, when what opened it is gone: its Edit button, else "New calendar". */
+function focusAfterDialog(): HTMLElement | null | undefined {
+  const edit =
+    lastOpenId === null
+      ? null
+      : document.querySelector<HTMLElement>(`[data-edit-calendar="${lastOpenId}"]`)
+  return edit ?? newButton.value?.$el
+}
+
+function openCreate() {
+  createFocus.remember()
+  handedOver = false
+  createOpen.value = true
+}
+
+function focusCreateForm(event: Event) {
+  if (keepFocusOffControlsOnTouch(event)) return
+  event.preventDefault()
+  createForm.value?.focusFirst()
+}
+
+function restoreAfterCreate(event: Event) {
+  // The new calendar's dialog has the focus now; it hands it on when it closes.
+  if (handedOver) event.preventDefault()
+  else createFocus.restore(event)
+}
+
 function openDialog(calendar: AccessCalendar, which: 'details' | 'access') {
-  notice.value = ''
   openId.value = calendar.id
   tab.value = which
 }
 
-/** Runs one change of the calendar; the calendar view is reloaded when it worked. */
+/**
+ * Runs one change of the calendar and toasts what it came to; the calendar view is reloaded when it
+ * worked. A failure is returned too, for the form that asked.
+ */
 async function run(job: () => Promise<string>, action: string): Promise<true | string> {
   if (saving.value) return t('Another change is still being saved. Try again in a moment.')
   saving.value = true
-  notice.value = ''
   try {
-    notice.value = await job()
+    notify.done(await job())
     void status.refresh({ external: false })
     return true
   } catch (cause) {
-    return describeError(cause, action)
+    const message = describeError(cause, action)
+    notify.failed(message)
+    return message
   } finally {
     saving.value = false
   }
@@ -259,6 +306,7 @@ function create(body: CalendarFormBody): Promise<true | string> {
       name: body.name,
       ...(body.color ? { color: body.color } : {}),
     })
+    handedOver = true
     createOpen.value = false
     // Nobody sees it yet: who may is what comes next.
     openId.value = saved.id

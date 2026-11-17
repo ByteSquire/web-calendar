@@ -18,14 +18,16 @@ export const admin: Readonly<Record<string, string>> = {
 
   // Add access form and rule lists
   'Add access': 'Zugriff hinzufügen',
-  'Give access to': 'Zugriff geben für',
+  Who: 'Wer',
+  Level: 'Stufe',
+  'Choose a person or group': 'Person oder Gruppe auswählen',
+  'Search people and groups': 'Personen und Gruppen suchen',
+  'Choose who gets access.': 'Wähle aus, wer Zugriff bekommt.',
   Person: 'Person',
   'Choose a person': 'Person auswählen',
   'Nobody matches. People appear here after they signed in once.':
     'Niemand passt. Personen erscheinen hier, nachdem sie sich einmal angemeldet haben.',
   'Group name': 'Gruppenname',
-  'Everyone who can sign in to this calendar app gets this access.':
-    'Alle, die sich in dieser Kalender-App anmelden können, erhalten diesen Zugriff.',
   'Access level': 'Zugriffsstufe',
   'Search people': 'Personen suchen',
   'Choose a person.': 'Wähle eine Person aus.',
@@ -78,8 +80,18 @@ export const admin: Readonly<Record<string, string>> = {
   'You are not allowed to manage resources.': 'Du darfst Ressourcen nicht verwalten.',
   'Could not check whether you may manage resources. Try again.':
     'Es konnte nicht geprüft werden, ob du Ressourcen verwalten darfst. Versuche es erneut.',
-  'Rooms, cars and equipment that people can book. Deactivated resources take no new bookings; existing bookings stay.':
-    'Räume, Autos und Ausstattung, die man buchen kann. Deaktivierte Ressourcen nehmen keine neuen Buchungen an; bestehende bleiben.',
+  'Rooms, cars and equipment that people can book.':
+    'Räume, Autos und Ausstattung, die man buchen kann.',
+  'New resource': 'Neue Ressource',
+  'Everyone signed in can book a new resource. Next, choose who manages it.':
+    'Alle Angemeldeten können eine neue Ressource buchen. Lege danach fest, wer sie verwaltet.',
+  'Deactivate resource': 'Ressource deaktivieren',
+  'Reactivate resource': 'Ressource reaktivieren',
+  'Deactivated resources take no new bookings; existing bookings stay.':
+    'Deaktivierte Ressourcen nehmen keine neuen Buchungen an; bestehende bleiben.',
+  'This resource is deactivated: it takes no new bookings; existing bookings stay.':
+    'Diese Ressource ist deaktiviert: Sie nimmt keine neuen Buchungen an; bestehende bleiben.',
+  'Delete resource': 'Ressource löschen',
   'There are no resources yet.': 'Es gibt noch keine Ressourcen.',
   Inactive: 'Inaktiv',
   Access: 'Zugriff',

@@ -241,10 +241,20 @@ export function keydown(target: Element | null, key: string) {
   target?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
 }
 
-/** The alerts on the page; Nuxt UI's skeletons carry `role="alert"` too (hidden), so they are left out. */
+/**
+ * The alerts on the page. Left out: Nuxt UI's skeletons, which carry `role="alert"` too (hidden),
+ * and the hidden copy of a toast that Reka UI keeps for screen readers (`toasts()` has those).
+ */
 export const alerts = () =>
   [...document.querySelectorAll('[role="alert"]')].filter(
-    (item) => !item.classList.contains('animate-pulse'),
+    (item) =>
+      !item.classList.contains('animate-pulse') && item.getAttribute('aria-hidden') !== 'true',
+  )
+
+/** The titles of the toasts on screen (`useNotify`), oldest first. */
+export const toasts = () =>
+  [...document.querySelectorAll('[role="region"] li [data-slot="title"]')].map(
+    (item) => item.textContent?.trim() ?? '',
   )
 
 export const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]')

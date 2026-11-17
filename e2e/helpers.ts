@@ -31,6 +31,14 @@ export async function openApp(page: Page, now: Date = TODAY, path = '/'): Promis
   return { errors }
 }
 
+/**
+ * A toast (`useNotify`) with this text, by its title. Not by the role of its region: while a dialog
+ * is open everything outside it, the toasts too, is hidden from assistive technology.
+ */
+export function toast(page: Page, text: string | RegExp): Locator {
+  return page.locator('ol li [data-slot="title"]').filter({ hasText: text }).first()
+}
+
 export function isTouch(): boolean {
   return Boolean(test.info().project.use.hasTouch)
 }

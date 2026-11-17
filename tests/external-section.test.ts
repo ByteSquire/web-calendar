@@ -19,7 +19,7 @@ import {
   reply,
   requireButton,
   rows,
-  statusText,
+  toasts,
   type,
 } from './settings-helpers'
 
@@ -68,7 +68,18 @@ const nameInput = (root: ParentNode = document) => byLabel('Name', root)
 const urlInput = (root: ParentNode = document) => byLabel('Address of the CalDAV server', root)
 const userInput = (root: ParentNode = document) => byLabel('User name', root)
 const passwordInput = (root: ParentNode = document) => byLabel('Password', root)
-const addButton = () => requireButton(/^(Add account|Saving…)$/)
+/** "Add account" beside the heading. */
+const addButton = () => requireButton('Add account', document.querySelector('section')!)
+/** The submit button of the dialog. */
+const submitButton = () => requireButton(/^(Add account|Saving…)$/, dialog()!)
+
+/** "Add account", from the keyboard: the dialog opens with the focus in the name. */
+async function openAdd() {
+  addButton().focus()
+  addButton().click()
+  await vi.waitFor(() => expect(dialog()?.querySelector('form')).toBeTruthy())
+  await vi.waitFor(() => expect(document.activeElement).toBe(nameInput(dialog()!)))
+}
 const rowOf = (name: string) =>
   rows('Your external accounts').find((row) => row.textContent?.includes(name))!
 
@@ -146,8 +157,10 @@ describe('the list', () => {
     expect(heading.tagName).toBe('H2')
     expect(heading.textContent?.trim()).toBe('External CalDAV accounts')
     expect(heading.getAttribute('tabindex')).toBe('-1')
-    expect(rowOf('Company').querySelector('[role="status"][aria-live="polite"]')).not.toBeNull()
-    expect(document.querySelector('p[role="status"][aria-live="polite"]')).not.toBeNull()
+    // the status line is there from the start, so a check's result does not move the row
+    const line = rowOf('Company').querySelector('[role="status"][aria-live="polite"]')!
+    expect(line.textContent).toContain('Not checked yet.')
+    expect(line.className).toContain('min-h-5')
   })
 
   it('says the accounts are read-only, that the server passes requests on, and that a login needs https', async () => {
@@ -160,13 +173,13 @@ describe('the list', () => {
     expect(text).toContain('You have no external accounts yet.')
   })
 
-  it('shows an alert with Retry when the list cannot be loaded, and the form stays usable', async () => {
+  it('shows an alert with Retry when the list cannot be loaded, and adding stays possible', async () => {
     backend.override = (call) => (call.method === 'GET' ? reply.error(500, 'boom') : undefined)
     state.access = newAccess(backend, storage)
     app = await mountSuspended(Shell, { attachTo: document.body })
     await vi.waitFor(() => expect(alerts()).toHaveLength(1))
     expect(alerts()[0]!.textContent).toContain('Could not load your external accounts.')
-    expect(addButton()).toBeDefined()
+    expect(addButton().disabled).toBe(false)
 
     backend.override = null
     requireButton('Retry').click()
@@ -204,13 +217,26 @@ describe('the list', () => {
 })
 
 describe('adding an account', () => {
-  beforeEach(() => mountSection())
+  beforeEach(async () => {
+    await mountSection()
+    await openAdd()
+  })
 
-  it('adds an account without a login: sends name, address and the server’s colour, resets, tells the calendar', async () => {
+  it('opens a dialog from the button beside the heading; the section has no form', async () => {
+    expect(addButton().getAttribute('aria-haspopup')).toBe('dialog')
+    expect(document.querySelector('section form')).toBeNull()
+    expect(dialog()!.textContent).toContain('Add account')
+    requireButton('Cancel', dialog()!).click()
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(document.activeElement).toBe(addButton())
+    expect(backend.callsTo('POST', '/api/external-accounts')).toHaveLength(0)
+  })
+
+  it('adds an account without a login: sends name, address and the server’s colour, closes, tells the calendar', async () => {
     expect(sourcesVersion()).toBe(0)
     type(nameInput(), '  Holidays  ')
     type(urlInput(), ' http://dav.example.org/dav/ ')
-    addButton().click()
+    submitButton().click()
 
     await vi.waitFor(() => expect(rows('Your external accounts')).toHaveLength(1))
     expect(backend.callsTo('POST', '/api/external-accounts')[0]!.body).toEqual({
@@ -220,11 +246,15 @@ describe('adding an account', () => {
       color: null,
     })
     expect(sourcesVersion()).toBe(1)
-    expect(statusText()).toContain('Account “Holidays” added.')
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(toasts()).toContain('Account “Holidays” added.')
+    expect(document.activeElement).toBe(addButton())
+    expect(seals().has(100)).toBe(false)
+    // opened again, the form is empty
+    await openAdd()
     expect(nameInput().value).toBe('')
     expect(urlInput().value).toBe('')
     expect(errorTexts()).toEqual([])
-    expect(seals().has(100)).toBe(false)
   })
 
   it('offers the login fields only for a login, with Remember on this device off', async () => {
@@ -247,7 +277,7 @@ describe('adding an account', () => {
     await chooseLogin()
     type(userInput(), ' me ')
     type(passwordInput(), 'hunter2-secret')
-    addButton().click()
+    submitButton().click()
 
     await vi.waitFor(() => expect(rows('Your external accounts')).toHaveLength(1))
     expect(backend.callsTo('POST', '/api/external-accounts')[0]!.body).toEqual({
@@ -278,10 +308,10 @@ describe('adding an account', () => {
     type(userInput(), 'me')
     type(passwordInput(), 'pw')
     control('checkbox', 'Remember on this device').click()
-    addButton().click()
+    submitButton().click()
     await vi.waitFor(() => expect(rows('Your external accounts')).toHaveLength(1))
-    expect(statusText()).toContain('Account “Private” added.')
-    expect(statusText()).toContain('did not allow keeping it on this device')
+    await vi.waitFor(() => expect(toasts().join(' ')).toContain('Account “Private” added.'))
+    expect(toasts().join(' ')).toContain('did not allow keeping it on this device')
     // still usable in this session
     expect(seals().get(100)).toBe(SEALED)
     expect(seals().isRemembered(100)).toBe(false)
@@ -294,14 +324,14 @@ describe('adding an account', () => {
     type(userInput(), 'me')
     type(passwordInput(), 'pw')
     control('checkbox', 'Remember on this device').click()
-    addButton().click()
+    submitButton().click()
     await vi.waitFor(() => expect(rows('Your external accounts')).toHaveLength(1))
     expect(seals().isRemembered(100)).toBe(true)
     expect([...storage.data.entries()]).toEqual([['web-calendar:external-seal:sub-1:100', SEALED]])
   })
 
   it('checks the input before asking the server', async () => {
-    addButton().click()
+    submitButton().click()
     await vi.waitFor(() =>
       expect(errorTexts()).toEqual([
         'Enter a name for the account.',
@@ -310,11 +340,13 @@ describe('adding an account', () => {
     )
     expect(backend.callsTo('POST', '/api/external-accounts')).toHaveLength(0)
     expect(document.activeElement).toBe(nameInput())
+    // a check of the input is told at the input only, not in a toast
+    expect(toasts()).toEqual([])
 
     type(nameInput(), 'Private')
     type(urlInput(), 'http://cal.example.net/')
     await chooseLogin()
-    addButton().click()
+    submitButton().click()
     await vi.waitFor(() =>
       expect(errorTexts()).toEqual([
         'An account with a login needs an https:// address, so that the password is encrypted.',
@@ -333,7 +365,7 @@ describe('adding an account', () => {
         : undefined
     type(nameInput(), 'Private')
     type(urlInput(), 'https://internal.example.org/')
-    addButton().click()
+    submitButton().click()
     await vi.waitFor(() =>
       expect(errorTexts()).toEqual([
         'The administrator has not allowed this server. Ask them to add its host name to the list of allowed hosts.',
@@ -341,6 +373,9 @@ describe('adding an account', () => {
     )
     expect(document.activeElement).toBe(urlInput())
     expect(nameInput().value).toBe('Private')
+    // in the dialog, which stays open, and in a toast
+    expect(dialog()).not.toBeNull()
+    await vi.waitFor(() => expect(toasts()[0]).toContain('The administrator has not allowed'))
     type(urlInput(), 'https://internal2.example.org/')
     await vi.waitFor(() => expect(errorTexts()).toEqual([]))
   })
@@ -350,9 +385,11 @@ describe('adding an account', () => {
       call.method === 'POST' ? reply.error(409, 'At most 10', { code: 'limit_reached' }) : undefined
     type(nameInput(), 'Private')
     type(urlInput(), 'https://cal.example.net/')
-    addButton().click()
+    submitButton().click()
     await vi.waitFor(() => expect(alerts()).toHaveLength(1))
-    expect(alerts()[0]!.textContent).toContain('limit of 10 external accounts')
+    expect(dialog()!.querySelector('[role="alert"]')!.textContent).toContain(
+      'limit of 10 external accounts',
+    )
   })
 
   it('does not put the password into the page or the console when the server fails', async () => {
@@ -362,21 +399,23 @@ describe('adding an account', () => {
     await chooseLogin()
     type(userInput(), 'me')
     type(passwordInput(), 'hunter2-secret')
-    addButton().click()
+    submitButton().click()
     await vi.waitFor(() => expect(alerts()).toHaveLength(1))
     expect(alerts()[0]!.textContent).toContain('HTTP 500')
     expect(document.body.innerHTML).not.toContain('hunter2-secret')
     expect(anyFieldHolds('hunter2-secret')).toBe(false)
+    expect(toasts().join(' ')).not.toContain('hunter2-secret')
     expect(seals().has(100)).toBe(false)
   })
 })
 
 describe('when logins are not enabled', () => {
-  beforeEach(() =>
-    mountSection((api) => {
+  beforeEach(async () => {
+    await mountSection((api) => {
       api.loginsEnabled = false
-    }),
-  )
+    })
+    await openAdd()
+  })
 
   it('offers only accounts without a login and says why', () => {
     const login = control('radio', 'User name and password')
@@ -461,7 +500,7 @@ describe('when the administrator switches logins off meanwhile', () => {
     await vi.waitFor(() =>
       expect(document.body.textContent).toContain('The administrator has not enabled logins'),
     )
-    addButton().click()
+    requireButton('Add account').click()
     await vi.waitFor(() =>
       expect(document.getElementById('external-logins-disabled')!.className).toContain('red'),
     )
@@ -470,14 +509,22 @@ describe('when the administrator switches logins off meanwhile', () => {
 })
 
 describe('the limit of accounts', () => {
-  it('replaces the form with the reason once 10 accounts exist', async () => {
+  it('disables adding once 10 accounts exist, with the reason next to the button', async () => {
     await mountSection((api) => {
       api.accounts = Array.from({ length: 10 }, (_, index) => account(index + 1))
     })
-    expect(button('Add account')).toBeUndefined()
-    expect(document.body.textContent).toContain(
-      'You have reached the limit of 10 external accounts',
-    )
+    expect(addButton().disabled).toBe(true)
+    const reason = document.getElementById(addButton().getAttribute('aria-describedby')!)
+    expect(reason?.textContent).toContain('You have reached the limit of 10 external accounts')
+  })
+
+  it('says how many there are from the start', async () => {
+    await mountSection((api) => {
+      api.accounts = [account(1)]
+    })
+    expect(addButton().disabled).toBe(false)
+    const reason = document.getElementById(addButton().getAttribute('aria-describedby')!)
+    expect(reason?.textContent).toContain('1 of 10 external accounts.')
   })
 })
 
@@ -519,7 +566,7 @@ describe('changing an account', () => {
     })
     expect(rowOf('Company calendar')).toBeDefined()
     expect(sourcesVersion()).toBe(1)
-    expect(statusText()).toContain('Account “Company calendar” saved.')
+    await vi.waitFor(() => expect(toasts()).toContain('Account “Company calendar” saved.'))
     expect(document.activeElement).toBe(requireButton('Edit Company calendar'))
   })
 
@@ -615,7 +662,7 @@ describe('deleting an account', () => {
     expect(seals().has(1)).toBe(false)
     expect(storage.length).toBe(0)
     expect(sourcesVersion()).toBe(1)
-    expect(statusText()).toContain('Account “Company” deleted.')
+    await vi.waitFor(() => expect(toasts()).toContain('Account “Company” deleted.'))
   })
 
   it('keeps the account and shows why when it cannot be deleted', async () => {
@@ -739,7 +786,7 @@ describe('entering the password again', () => {
     expect(seals().get(2)).toBe(SEALED)
     expect(storage.length).toBe(0)
     expect(sourcesVersion()).toBe(1)
-    expect(statusText()).toContain('Password of “Private” saved.')
+    await vi.waitFor(() => expect(toasts()).toContain('Password of “Private” saved.'))
     expect(document.body.innerHTML).not.toContain('hunter2-secret')
     expect(button('Enter the password of Private')).toBeUndefined()
   })

@@ -129,6 +129,8 @@ export const settings: Readonly<Record<string, string>> = {
     'Für welche App ist dieses Token? Bis zu 64 Zeichen.',
   'Creating…': 'Wird erstellt …',
   'Create token': 'Token erstellen',
+  'New token': 'Neues Token',
+  'Create one token for each calendar app.': 'Erstelle für jede Kalender-App ein eigenes Token.',
   'Revoke all': 'Alle widerrufen',
   'Your app tokens': 'Deine App-Tokens',
   Expired: 'Abgelaufen',
@@ -179,8 +181,9 @@ export const settings: Readonly<Record<string, string>> = {
   'The address needs a valid host name.': 'Die Adresse braucht einen gültigen Hostnamen.',
   'Show a calendar from a web address (an {ics} file) next to your own calendars. It is read-only: changes have to be made at its source. If you have a file instead of an address, you can import its events into one of your calendars.':
     'Zeige einen Kalender von einer Webadresse (eine {ics}-Datei) neben deinen eigenen Kalendern. Er ist schreibgeschützt: Änderungen müssen an der Quelle erfolgen. Hast du statt einer Adresse eine Datei, kannst du ihre Termine in einen deiner Kalender importieren.',
-  'Add a subscription': 'Abonnement hinzufügen',
   'Add subscription': 'Abonnement hinzufügen',
+  'Enter the address of a calendar file and a name for it.':
+    'Gib die Adresse einer Kalenderdatei und einen Namen dafür ein.',
   'Your calendar subscriptions': 'Deine Kalender-Abonnements',
   'Address: ': 'Adresse: ',
   'Shared with everyone. Only an administrator can change it.':
@@ -216,8 +219,10 @@ export const settings: Readonly<Record<string, string>> = {
     'Zeige die Kalender eines anderen CalDAV-Servers neben deinen eigenen, zum Beispiel von deiner Firma oder einem Hosting-Anbieter. Sie sind schreibgeschützt: Änderungen müssen auf ihrem Server erfolgen.',
   "Your browser cannot talk to other servers directly, so this app's server passes each request on. It does not keep your password. An account with a login needs an {https} address.":
     'Dein Browser kann nicht direkt mit anderen Servern sprechen, darum leitet der Server dieser App jede Anfrage weiter. Dein Passwort behält er nicht. Ein Konto mit Login braucht eine {https}-Adresse.',
-  'Add an account': 'Konto hinzufügen',
   'Add account': 'Konto hinzufügen',
+  '{used} of {max} external accounts.': '{used} von {max} externen Konten.',
+  'Enter the address of the server and, if it asks for one, the login.':
+    'Gib die Adresse des Servers ein und, falls er einen verlangt, den Login.',
   'You have reached the limit of {max} external accounts. Delete one to add another.':
     'Du hast die Höchstzahl von {max} externen Konten erreicht. Lösche eines, um ein neues hinzuzufügen.',
   'Your external accounts': 'Deine externen Konten',
@@ -334,6 +339,10 @@ export const settings: Readonly<Record<string, string>> = {
 
   // ---- Import
   'Import a calendar file': 'Kalenderdatei importieren',
+  'Choose file…': 'Datei wählen …',
+  'Choose another file…': 'Andere Datei wählen …',
+  'See what the file holds, then choose the calendar for its events.':
+    'Sieh dir an, was die Datei enthält, und wähle dann den Kalender für ihre Termine.',
   'Add the events of an {ics} file to one of your calendars. The file is read in your browser. Events the calendar already has are left as they are, so importing a file twice does not make copies. To follow a calendar that keeps changing, add an iCal subscription instead.':
     'Füge die Termine einer {ics}-Datei zu einem deiner Kalender hinzu. Die Datei wird in deinem Browser gelesen. Termine, die der Kalender schon hat, bleiben unverändert, ein doppelter Import erzeugt also keine Kopien. Um einem Kalender zu folgen, der sich ändert, füge stattdessen ein iCal-Abonnement hinzu.',
   'Events that could not be imported': 'Termine, die nicht importiert werden konnten',
@@ -446,6 +455,8 @@ export const settings: Readonly<Record<string, string>> = {
     'Er zeigt nie mehr, als du sehen kannst, und funktioniert nicht mehr, wenn du den Zugriff auf den Kalender verlierst oder dich {days} lang nicht in dieser App anmeldest.',
   'Create link': 'Link erstellen',
   'New link': 'Neuer Link',
+  'Visitors open the link with the password you choose here.':
+    'Besucher öffnen den Link mit dem Passwort, das du hier wählst.',
   'Details of {label}': 'Details zu {label}',
   'Remove link {label}': 'Link {label} entfernen',
   'Address of {label}': 'Adresse von {label}',
@@ -480,7 +491,6 @@ export const settings: Readonly<Record<string, string>> = {
   'At least {min} characters. Visitors need it to open the link.':
     'Mindestens {min} Zeichen. Besucher brauchen es, um den Link zu öffnen.',
   'Show password': 'Passwort anzeigen',
-  'Your calendar links': 'Deine Kalenderlinks',
   'Last opened': 'Zuletzt geöffnet',
   'You have no calendar links yet.': 'Du hast noch keine Kalenderlinks.',
   'Loading calendar links': 'Kalenderlinks werden geladen',

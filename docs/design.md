@@ -987,21 +987,42 @@ enforcement point. The mechanics below were **tested in spike S5** (Radicale 3.9
   - _Audit._ Actor `system:sharing-writer`; actions `sharing.removed_unknown`, `sharing.replaced`,
     `sharing.mismatch` (once per distinct set of differences), `sharing.failing` (five failed runs),
     `sharing.recovered`, `sharing.audit_mismatch`.
-- **"Busy times only" in calendar apps (decided 2026-11-17, not built yet).** A `free_busy` share is
-  listed by calendar apps but cannot be synced: `f` allows only a `free-busy-query`, and no common
-  app sends one for a calendar it shows. The gateway will answer the read requests on such a share
-  (listing, `calendar-query`, `calendar-multiget`, `sync-collection`, `GET`) itself, for a share
-  the pre-check granted: it reads the owner's events and returns a **stripped copy** of each,
-  built from an allow-list only (`UID`, `DTSTART`, `DTEND` or `DURATION`, `RRULE`, `RDATE`,
-  `EXDATE`, `RECURRENCE-ID`, `STATUS`, and the `VTIMEZONE`s they use) with `SUMMARY:Busy`;
-  transparent and cancelled events are left out, as free/busy leaves them out. It syncs like any
-  calendar (everything once, then changes; no time range; repeats stay rules; each event its own
-  block; tentative stays tentative). It shows a little more than free/busy (where events start and
-  end separately, and the repeat pattern) and nothing outside the allow-list: tests must prove that
-  no title, description, location, attendee, organizer, alarm, category, attachment, URL or `X-`
-  property gets through. Writes stay refused. The web app keeps its free/busy reading. Chosen over
-  building entries from the free/busy answer, which needs a time range and merges overlapping
-  events.
+- **"Busy times only" in calendar apps (built 2026-11-17).** A `free_busy` share is listed by
+  calendar apps but Radicale lets it answer only a `free-busy-query`, which no common app sends for
+  a calendar it shows. So the gateway answers the reads of calendar apps on such a share itself
+  (`server/utils/sharing/busy-view.ts`), after authentication and the pre-check: PROPFIND (Depth 0
+  and 1, and of an entry), `calendar-query`, `calendar-multiget`, `sync-collection`, and GET/HEAD of
+  an entry. Everything else goes to Radicale as the caller, where the `f` share keeps deciding: the
+  web app's `free-busy-query`, OPTIONS, unknown reports and every write (refused by the pre-check
+  anyway). A gap can therefore break a client but never leak.
+  - _Which shares._ The share the requested name is (`shared-<id>` or `shared-<id>-<group>`), as
+    `computeDesiredShares` makes it from that calendar's rules, must be the caller's (their own, a
+    group they are in, or everyone signed in) and have `f`; a person who also has `read` through
+    another name keeps getting Radicale's answer there.
+  - _Reading._ As the calendar's owner, at `calendars.collection_path` (never a path from the
+    request), through `createStoreSend` (principal and path checks, 10 s timeout, 4 MiB cap); a read
+    that fails answers `502`, never passes the request on. The copies are cached per calendar (64)
+    and read again when Radicale's ctag or sync-token changes.
+  - _The copy_ (`busy-copy.ts`) is built from nothing, from an allow-list: `DTSTART`, `DTEND` or
+    `DURATION`, `RECURRENCE-ID`, `RRULE` (known parts only), `RDATE`, `EXDATE`, `STATUS` only when
+    `TENTATIVE`, with the parameters `TZID`, `VALUE` and `RANGE`, each value checked for its shape;
+    `SUMMARY:Busy`; the `UID` replaced by a hash of the calendar id and the UID (UIDs carry
+    addresses and host names), which also names the entry; a fixed `DTSTAMP`; and only the
+    `VTIMEZONE`s the kept dates name, from their own allow-list. A cancelled or free series is left
+    out, a cancelled or free occurrence becomes an `EXDATE` of the series, tasks and journals are
+    left out. Beyond free/busy it shows where events start and end separately, and the repeat
+    pattern.
+  - _Sync._ The ETag is a hash of the copy, so an edit of something hidden changes nothing; one
+    token, from the names and ETags, is both `getctag` and `sync-token`. `sync-collection` answers
+    everything without a token, nothing for the current one, and `403` `DAV:valid-sync-token` for
+    any other, so a client starts over and no removed event stays behind. A `calendar-query` with a
+    time range gets every copy (not filtered by time).
+  - _Tests:_ `tests/server/sharing-busy-copy.test.ts` (an event with every property, parameter,
+    alarm and `X-` property; repeats; time zones; ETags), `sharing-busy-view.test.ts` (share names,
+    the reads, sync tokens, pass-through, `502`), `e2e/live/busy-share.spec.ts`. Not tried with the
+    real Thunderbird and DAVx5: how they take the `403` for an old token, and a share whose home
+    listing still says free/busy while the collection says read, is known from their documentation
+    only.
 - **Groups** — the app keeps the groups, writes Radicale's group file from them, and learns what the
   identity provider says about a person only from that person's own sign-in. It holds no service
   account at the provider and polls nothing. Three kinds of group exist (`groups.source`, §5): `app`

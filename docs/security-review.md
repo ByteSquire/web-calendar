@@ -340,6 +340,18 @@ caller write access to calendar 5 …`) with the method, the calendar's id and t
   `tests/server/admin-access.test.ts`, `tests/validate-config.test.ts` (sharing settings). The
   end-to-end bob and alice case against a real Radicale is **not covered**.
 
+- **Busy view of "Busy times only" shares (2026-11-17, design §8).** The gateway answers the reads
+  of calendar apps on a `free_busy` share itself and, for that, reads the owner's events as the
+  owner: a privileged read the gateway did not make before. Bounds: only after authentication and
+  the pre-check; only for a share name whose share (computed like the reconcile's) is the caller's
+  and has `f`; only at `calendars.collection_path`, through `createStoreSend` (principal and path
+  checks, timeout, size cap); a failed read answers `502` and is never passed on; everything the
+  view does not answer goes to Radicale as the caller. What leaves is built from an allow-list
+  (`busy-copy.ts`): no title, description, place, people, alarm, category, attachment, URL, `X-`
+  property, original UID or stamp. It reveals a little more than free/busy (separate event
+  boundaries, the repeat pattern). _Tests:_ `sharing-busy-copy.test.ts`, `sharing-busy-view.test.ts`,
+  `e2e/live/busy-share.spec.ts`.
+
 ### 7.2 Groups from the sign-in claim, the sign-in window, and the group file
 
 Replaced on 2026-11-05: the pull-based sync with its Kanidm service account (`idm_group_admins`,

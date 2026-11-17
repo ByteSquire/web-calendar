@@ -8,6 +8,7 @@ import {
   filterResponseHeaders,
   isAllowedMethod,
 } from './headers'
+import type { BusyView } from '../sharing/busy-view'
 import type { PathPrecheck } from '../sharing/precheck'
 import { GATEWAY_PREFIX, PathRejection, resolvePublicPath, rewriteDestination } from './paths'
 import {
@@ -48,6 +49,11 @@ export interface GatewayOptions {
    * 403 without saying whether the path exists. Absent means no check (tests of the plain proxy).
    */
   precheck?: PathPrecheck
+  /**
+   * Answers the reads of calendar apps on a calendar shared at "Busy times only" with busy copies
+   * (design §8), after the pre-check; everything it does not answer goes to Radicale as usual.
+   */
+  busyView?: BusyView
   fetch?: typeof globalThis.fetch
   log?: (message: string, cause?: unknown) => void
   /**
@@ -66,6 +72,9 @@ export interface GatewayOptions {
 }
 
 export const DEFAULT_UPSTREAM_TIMEOUT_MS = 30_000
+
+/** The methods the busy view may answer itself; it hands the rest of them back too. */
+const BUSY_VIEW_METHODS = new Set(['PROPFIND', 'REPORT', 'GET', 'HEAD'])
 
 function text(status: number, body: string, headers: Record<string, string> = {}): Response {
   return new Response(body, {
@@ -211,6 +220,31 @@ export function createGateway(
       }
     }
 
+    // A calendar shared at "Busy times only": calendar apps' reads get busy copies. Its body is read
+    // here first, and handed on below when Radicale answers after all (a free/busy query).
+    let buffered: Uint8Array | undefined
+    if (options.busyView && BUSY_VIEW_METHODS.has(method)) {
+      const share = await options.busyView.shareOf(identity.sub, upstreamPath)
+      if (share) {
+        if (request.body && method !== 'GET' && method !== 'HEAD') {
+          try {
+            buffered = await readLimited(request.body, maxBodyBytes)
+          } catch (error) {
+            if (error instanceof BodyTooLargeError) return payloadTooLarge()
+            throw error
+          }
+        }
+        const answer = await options.busyView.answer({
+          sub: identity.sub,
+          share,
+          method,
+          depth: headers.get('depth'),
+          body: buffered ? new TextDecoder().decode(buffered) : '',
+        })
+        if (answer !== 'pass') return answer
+      }
+    }
+
     const lengthHeader = headers.get('content-length')
     let declared: number | null = null
     if (lengthHeader !== null) {
@@ -224,7 +258,10 @@ export function createGateway(
     let body: ReadableStream<Uint8Array> | Uint8Array | undefined
     let contentLength: number | undefined
     let exceeded = false
-    if (request.body && method !== 'GET' && method !== 'HEAD' && declared !== 0) {
+    if (buffered !== undefined) {
+      body = buffered
+      contentLength = buffered.byteLength
+    } else if (request.body && method !== 'GET' && method !== 'HEAD' && declared !== 0) {
       if (declared !== null) {
         body = limitStream(request.body, maxBodyBytes, () => (exceeded = true))
         contentLength = declared

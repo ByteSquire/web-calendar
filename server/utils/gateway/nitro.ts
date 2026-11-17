@@ -8,6 +8,8 @@ import { getDb } from '../db'
 import { noteBearerSighting } from '../groups/sighting-service'
 import { groupFilePath } from '../groups/config'
 import { createFileMembership } from '../sharing/membership'
+import { createStoreSend } from '../resources/reconcile-reader'
+import { createBusyView, type BusyView } from '../sharing/busy-view'
 import { createPathPrecheck, refusalLogger, type PathPrecheck } from '../sharing/precheck'
 import { createGateway, type GatewayRequest } from './gateway'
 
@@ -15,6 +17,7 @@ import { createGateway, type GatewayRequest } from './gateway'
 
 let gateway: ReturnType<typeof createGateway> | undefined
 let precheck: PathPrecheck | undefined
+let busyView: BusyView | undefined
 let trustForwardedFor = false
 let warnedSharedAddress = false
 
@@ -67,8 +70,24 @@ function getGateway() {
               })
               return precheck(sub, request)
             },
+      // Calendars shared at "Busy times only" sync as busy copies in calendar apps (design §8).
+      busyView:
+        String(demo) === 'true'
+          ? undefined
+          : {
+              shareOf: (sub, path) => lazyBusyView().shareOf(sub, path),
+              answer: (request) => lazyBusyView().answer(request),
+            },
       log: (message, cause) => console.warn(`[gateway] ${message}`, cause ?? ''),
     })
+    // Built on first use, like the pre-check: the database opens after the plugins start.
+    const lazyBusyView = (): BusyView =>
+      (busyView ??= createBusyView({
+        db: getDb(),
+        membership: precheckMembership,
+        send: createStoreSend({ baseUrl: radicale.url }),
+        log: (message) => console.warn(message),
+      }))
   }
   return gateway
 }

@@ -47,14 +47,14 @@
 
     <USelect
       v-if="available.length > 0"
-      :model-value="undefined"
+      v-model="picked"
       :items="available"
       :placeholder="t('Add a resource')"
       :aria-label="t('Add a resource')"
       class="w-full"
       :disabled="disabled"
       :ui="{ base: 'min-h-11', item: 'min-h-11 items-center' }"
-      @update:model-value="add(String($event))"
+      @update:model-value="pick"
     />
 
     <p v-if="note" data-resource-note class="text-sm text-toned">{{ note }}</p>
@@ -99,6 +99,19 @@ const available = computed(() =>
     .filter((item) => !props.modelValue.includes(item.id))
     .map((item) => ({ label: item.name, value: item.id })),
 )
+
+// The select only adds: once a resource is chosen it goes into the list above, and the select is
+// back at its placeholder for the next one. A fixed `undefined` as its value would not do, as it
+// never changes, so the select would keep showing the last choice.
+const picked = ref<string | undefined>(undefined)
+
+function pick(value: unknown) {
+  if (value === undefined || value === null || value === '') return
+  add(String(value))
+  void nextTick(() => {
+    picked.value = undefined
+  })
+}
 
 function add(id: string) {
   if (!props.modelValue.includes(id)) emit('update:modelValue', [...props.modelValue, id])

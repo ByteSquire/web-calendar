@@ -80,6 +80,10 @@ test.describe('add event', () => {
     await dialog.getByLabel('Add a resource').click()
     await page.getByRole('option', { name: 'Room A' }).click()
     await expect(dialog.locator('[data-chosen-resources]')).toContainText('Room A')
+    // the select is back at its placeholder, ready for the next resource
+    const select = dialog.getByLabel('Add a resource')
+    await expect(select).toContainText('Add a resource')
+    await expect(select).not.toContainText('Room A')
     await expect(dialog.getByRole('checkbox', { name: 'Book right away' })).toBeChecked()
 
     await press(dialog.getByRole('button', { name: 'Add event' }))

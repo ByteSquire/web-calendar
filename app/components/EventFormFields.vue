@@ -5,7 +5,8 @@
   region that folds away with the location and the description. The parent owns the form (v-model) and the validation messages; the model and
   its rules are in app/utils/writes/event-form.ts.
 
-  Without `extended` (the in-memory demo) only the five fields of the Phase 1 dialog are drawn.
+  Without `extended` (the in-memory demo) there is no repeat rule, status or categories: the five
+  fields of the Phase 1 dialog and the details (the demo keeps a location and a description).
   A region that holds an error is opened by `revealErrors`, which the parent calls on a failed
   submit before it moves the focus to the first invalid field.
 -->
@@ -186,48 +187,46 @@
       </template>
     </template>
 
-    <template v-if="extended">
-      <FormRegion v-model:open="detailsOpen" :title="t('Details')" :summary="detailsSummary">
-        <UFormField :label="t('Location')" name="location">
-          <UInput
-            :model-value="form.location"
-            class="w-full"
-            @update:model-value="patch({ location: text($event) })"
-          />
-        </UFormField>
-
-        <UFormField :label="t('Description')" name="description">
-          <UTextarea
-            :model-value="form.description"
-            :rows="3"
-            autoresize
-            :maxrows="8"
-            class="w-full"
-            @update:model-value="patch({ description: text($event) })"
-          />
-        </UFormField>
-      </FormRegion>
-
-      <template v-if="mode === 'edit'">
-        <UFormField :label="t('Status')" name="status">
-          <USelect
-            :model-value="form.status"
-            :items="statusItems"
-            class="w-full"
-            :ui="SELECT_UI"
-            @update:model-value="patch({ status: $event as EventStatus })"
-          />
-        </UFormField>
-
-        <UCheckboxGroup
-          v-if="categoryOptions.length > 0"
-          :model-value="form.categoryNames"
-          :items="categoryOptions"
-          :legend="t('Categories')"
-          :ui="CHECKBOX_UI"
-          @update:model-value="patch({ categoryNames: toNames($event) })"
+    <FormRegion v-model:open="detailsOpen" :title="t('Details')" :summary="detailsSummary">
+      <UFormField :label="t('Location')" name="location">
+        <UInput
+          :model-value="form.location"
+          class="w-full"
+          @update:model-value="patch({ location: text($event) })"
         />
-      </template>
+      </UFormField>
+
+      <UFormField :label="t('Description')" name="description">
+        <UTextarea
+          :model-value="form.description"
+          :rows="3"
+          autoresize
+          :maxrows="8"
+          class="w-full"
+          @update:model-value="patch({ description: text($event) })"
+        />
+      </UFormField>
+    </FormRegion>
+
+    <template v-if="extended && mode === 'edit'">
+      <UFormField :label="t('Status')" name="status">
+        <USelect
+          :model-value="form.status"
+          :items="statusItems"
+          class="w-full"
+          :ui="SELECT_UI"
+          @update:model-value="patch({ status: $event as EventStatus })"
+        />
+      </UFormField>
+
+      <UCheckboxGroup
+        v-if="categoryOptions.length > 0"
+        :model-value="form.categoryNames"
+        :items="categoryOptions"
+        :legend="t('Categories')"
+        :ui="CHECKBOX_UI"
+        @update:model-value="patch({ categoryNames: toNames($event) })"
+      />
     </template>
   </div>
 </template>
@@ -253,7 +252,7 @@ const props = withDefaults(
   defineProps<{
     mode?: 'create' | 'edit'
     errors?: EventFormErrors
-    /** Draw repeat (new), status and categories (existing), and the details (live data). */
+    /** Draw repeat (new), status and categories (existing): live data. */
     extended?: boolean
     /** The calendars a new event can go to. */
     calendars?: readonly { id: string; name: string; color: string }[]

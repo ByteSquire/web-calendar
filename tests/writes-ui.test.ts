@@ -394,7 +394,7 @@ describe('add event on live data', () => {
     expect(server.callsOf('PUT')).toEqual([])
   })
 
-  it('still adds to the in-memory store in demo mode, without the live fields', async () => {
+  it('still adds to the in-memory store in demo mode, with the details but no repeat rule', async () => {
     useConfig(true)
     await mountApp()
     seedState([])
@@ -402,12 +402,14 @@ describe('add event on live data', () => {
     useCalendarState().visibleCalendarIds.value = ['cal-demo']
     useCalendarState().openAddEvent()
     await vi.waitFor(() => expect(top()).not.toBeNull())
-    expect(labelled(top(), 'Location')).toBeNull()
     expect(text(top())).not.toContain('Repeat')
     type(labelled<HTMLInputElement>(top(), 'Title')!, 'Demo event')
+    type(labelled<HTMLInputElement>(top(), 'Location')!, ' Room 42 ')
     buttonIn(top(), 'Add event')!.click()
     await vi.waitFor(() => expect(top()).toBeNull())
-    expect(useCalendarState().events.value.map((event) => event.title)).toEqual(['Demo event'])
+    expect(
+      useCalendarState().events.value.map((event) => [event.title, event.location ?? null]),
+    ).toEqual([['Demo event', 'Room 42']])
     expect(server.calls).toEqual([])
   })
 })

@@ -502,7 +502,8 @@ function focusWhenMenuCloses(selectors: string[]) {
         .map((selector) => root.value?.querySelector<HTMLElement>(selector))
         .find((element) => element && element.getClientRects().length > 0)
       if (target) {
-        target.focus()
+        // The sidebar stays where it is: the item only moved, nothing asked to be looked at.
+        target.focus({ preventScroll: true })
         return
       }
     }
@@ -539,7 +540,7 @@ function unhideInSidebar(kind: SidebarHiddenKind, id: string) {
           `[data-hidden-item="${CSS.escape(next.key)}"] button`,
         )
       : null
-    ;(visible(back) ?? visible(nextEye) ?? arrangeButton.value?.$el)?.focus()
+    ;(visible(back) ?? visible(nextEye) ?? arrangeButton.value?.$el)?.focus({ preventScroll: true })
   })
 }
 

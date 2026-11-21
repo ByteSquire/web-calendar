@@ -357,7 +357,12 @@ async function onSubmit() {
     await submitLive()
     return
   }
-  const event = addEvent(toNewEventInput(form.value))
+  // The in-memory store keeps the details too (no repeat rule: there is nothing to expand it).
+  const event = addEvent({
+    ...toNewEventInput(form.value),
+    description: form.value.description.trim(),
+    location: form.value.location.trim(),
+  })
   const summary = bookChosenInDemo(form.value)
   closeAddEvent()
   announceAdded(event, summary)

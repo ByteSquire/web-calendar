@@ -105,6 +105,58 @@ test('the eye puts an item back in its section, switched off, and it can be swit
   ).toBeFocused()
 })
 
+/** The scroll position of the sidebar's list (the column, or the drawer on a small screen). */
+function scrollTopOf(page: Page): Promise<number> {
+  // By its markup: while a menu is open, the rest of the page is hidden from the roles.
+  return page.locator('[data-section-id="calendars"]').evaluate((start) => {
+    for (let element = start.parentElement; element; element = element.parentElement) {
+      const { overflowY } = getComputedStyle(element)
+      if (/(auto|scroll)/.test(overflowY) && element.scrollHeight > element.clientHeight) {
+        return element.scrollTop
+      }
+    }
+    return -1
+  })
+}
+
+async function scrollSidebar(page: Page, to: 'top' | 'bottom'): Promise<void> {
+  await page.locator('[data-section-id="calendars"]').evaluate((start, where) => {
+    for (let element = start.parentElement; element; element = element.parentElement) {
+      const { overflowY } = getComputedStyle(element)
+      if (/(auto|scroll)/.test(overflowY) && element.scrollHeight > element.clientHeight) {
+        element.scrollTop = where === 'top' ? 0 : element.scrollHeight
+        return
+      }
+    }
+  }, to)
+}
+
+test('hiding and putting back do not scroll the sidebar to the item', async ({ page }) => {
+  await openApp(page)
+  await showSidebar(page)
+  // the list is longer than the screen: there is somewhere to scroll to
+  expect(await scrollTopOf(page)).toBeGreaterThanOrEqual(0)
+
+  // Team is near the top, its eye at the bottom of the list. The press on the menu may bring the
+  // row into view first; from there on nothing moves but the row that leaves (a row is 44 px).
+  await scrollSidebar(page, 'top')
+  await press(sidebar(page).getByRole('button', { name: 'Actions for calendar Team', exact: true }))
+  const opened = await scrollTopOf(page)
+  await press(page.getByRole('menuitem', { name: 'Hide', exact: true }))
+  const eye = sidebar(page).getByRole('button', { name: 'Unhide calendar Team', exact: true })
+  await expect(eye).toBeFocused()
+  expect(Math.abs((await scrollTopOf(page)) - opened)).toBeLessThanOrEqual(48)
+
+  // from the bottom it goes back near the top; the list stays at the bottom (less one row)
+  await scrollSidebar(page, 'bottom')
+  const before = await scrollTopOf(page)
+  await press(eye)
+  await expect(
+    sidebar(page).getByRole('button', { name: 'Actions for calendar Team', exact: true }),
+  ).toBeFocused()
+  expect(await scrollTopOf(page)).toBeGreaterThan(before - 150)
+})
+
 test('a hidden calendar stays off when a view that holds it is chosen', async ({ page }) => {
   await openApp(page)
   await showSidebar(page)

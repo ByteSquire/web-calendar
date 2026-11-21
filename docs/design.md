@@ -1661,8 +1661,9 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     `{ hidden: string[] }`: keys `<kind>:<id>` of a known kind, at most 600 characters, each once,
     at most 500), with the same rules as the order: one save after the other, a toast when one
     fails, the list of this page kept over an older `/api/me`. In demo mode it lives in the page.
-    The focus follows the item: after Hide to its eye (or the Hidden heading when that section is
-    folded), after the eye to the item's menu in its section. Why a new element: an item that is
+    The focus follows the item without scrolling the sidebar: after Hide to its eye (or the Hidden
+    heading when that section is folded), after the eye to the item's menu in its section; the
+    place in the list stays where the person was. Why a new element: an item that is
     rarely used (a colleague's calendar, an old filter) otherwise stays in its section forever,
     and deleting is not an option for what is shared or not one's own. A section of its own keeps
     the others short while every hidden item stays one press away; a toggle "show hidden" per
@@ -1687,8 +1688,9 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
 - **Date navigation** (FR-23): previous / **today** / next.
 - **Add** (FR-24) and **overflow (`⋮`) menu** (FR-25). "Add" and a click on a date open the
   "Add event" dialog: title, calendar, start and end (with "All day"), on live data the repeat
-  rule and the folding **Details** (location, description), and the **resources** to book with the
-  event (a dropdown of the resources the person may book). A separate, leaner "Quick add" was
+  rule, the folding **Details** (location, description; the demo keeps them too), and the
+  **resources** to book with the event (a dropdown of the resources the person may book; it goes
+  back to its placeholder after each choice, the chosen ones are listed above it). A separate, leaner "Quick add" was
   dropped after v0.5.0: two buttons for adding cost the top bar room, and the folded Details keep the
   one dialog short. The edit dialog has the same two regions. **Start and end** and
   **Details** are regions that fold away: a button with the chevron of the sidebar, and while closed

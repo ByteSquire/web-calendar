@@ -24,7 +24,7 @@ test.describe('event writes in the demo', () => {
     await expect(sheet.getByRole('button', { name: 'Edit' })).toBeEnabled()
   })
 
-  test('in the demo, Add keeps the five fields, without repeat, location or description', async ({
+  test('in the demo, Add has the five fields and the details, without a repeat rule', async ({
     page,
   }) => {
     await openApp(page)
@@ -35,9 +35,33 @@ test.describe('event writes in the demo', () => {
       await expect(dialog.getByLabel(label, { exact: true })).toBeVisible()
     }
     await expect(dialog.getByRole('switch', { name: 'All day' })).toBeVisible()
-    for (const label of ['Repeat', 'Location', 'Description']) {
-      await expect(dialog.getByLabel(label)).toHaveCount(0)
-    }
+    await expect(dialog.getByLabel('Repeat')).toHaveCount(0)
+    // the details are folded away, with the location and the description in them
+    const details = dialog.getByRole('button', { name: /^Details/ })
+    await expect(details).toHaveAttribute('aria-expanded', 'false')
+    await press(details)
+    await expect(dialog.getByLabel('Location')).toBeVisible()
+    await expect(dialog.getByLabel('Description')).toBeVisible()
+  })
+
+  test('in the demo, the description and the place are kept and shown in the sheet', async ({
+    page,
+  }) => {
+    await openApp(page)
+    await switchView(page, 'Week')
+    await press(page.getByRole('button', { name: 'Add', exact: true }))
+    const dialog = page.getByRole('dialog', { name: 'Add event' })
+    await dialog.getByLabel('Title').fill('Demo with details')
+    await press(dialog.getByRole('button', { name: /^Details/ }))
+    await dialog.getByLabel('Location').fill('Room 42')
+    await dialog.getByLabel('Description').fill('Bring the slides')
+    await press(dialog.getByRole('button', { name: 'Add event' }))
+    await expect(dialog).toBeHidden()
+
+    await press(page.locator('[data-calendar-main]').getByText('Demo with details').first())
+    const sheet = page.getByRole('dialog', { name: 'Demo with details' })
+    await expect(sheet).toContainText('Room 42')
+    await expect(sheet).toContainText('Bring the slides')
   })
 
   test('in the demo, Add still adds to the shown calendar without asking the network', async ({

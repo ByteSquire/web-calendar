@@ -462,7 +462,6 @@ export const settings: Readonly<Record<string, string>> = {
   'Address of {label}': 'Adresse von {label}',
   'Copy the address of {label}': 'Adresse von {label} kopieren',
   'Password of {label}': 'Passwort von {label}',
-  Hidden: 'Verborgen',
   'Show the password of {label}': 'Passwort von {label} anzeigen',
   'Copy the password of {label}': 'Passwort von {label} kopieren',
   'The address and the password of this link cannot be shown. Remove it and create a new one if you need them.':

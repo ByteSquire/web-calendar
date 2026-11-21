@@ -80,6 +80,7 @@ describe('resolveMe', () => {
       isAdmin: true,
       timeZone: null,
       sidebarOrder: null,
+      sidebarHidden: [],
     })
     expect(findUserBySub(db, ALICE_SUB)).toMatchObject({
       username: 'alice',
@@ -118,7 +119,17 @@ describe('resolveMe', () => {
       ALICE_TOKEN,
     )
     expect(Object.keys(me).sort()).toEqual(
-      ['email', 'id', 'isAdmin', 'name', 'sidebarOrder', 'sub', 'timeZone', 'username'].sort(),
+      [
+        'email',
+        'id',
+        'isAdmin',
+        'name',
+        'sidebarHidden',
+        'sidebarOrder',
+        'sub',
+        'timeZone',
+        'username',
+      ].sort(),
     )
   })
 
@@ -224,6 +235,7 @@ describe('resolveMe', () => {
         isAdmin: false,
         timeZone: null,
         sidebarOrder: null,
+        sidebarHidden: [],
       })
       expect(JSON.stringify(findUserBySub(db, ALICE_SUB))).toBe(before)
       expect(warn).toHaveBeenCalledTimes(1)

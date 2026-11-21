@@ -102,6 +102,18 @@ export type LiveStore = Pick<
 > & {
   /** Where the resources of the API go; a store without it (tests, demo) gets none. */
   resources?: Ref<CalendarResource[]>
+  /**
+   * Leaves out the calendars hidden from the sidebar (FR-21): a calendar seen for the first time
+   * takes its saved visibility, which a hidden one must not override. Without it, nothing is hidden.
+   */
+  withoutHiddenCalendars?: (ids: readonly string[]) => string[]
+}
+
+/** The visible calendars without the hidden ones, once the calendars and resources are known. */
+function keepHiddenOff(store: Pick<LiveStore, 'visibleCalendarIds' | 'withoutHiddenCalendars'>) {
+  if (!store.withoutHiddenCalendars) return
+  const kept = store.withoutHiddenCalendars(store.visibleCalendarIds.value)
+  if (kept.length !== store.visibleCalendarIds.value.length) store.visibleCalendarIds.value = kept
 }
 
 /** Resources in live mode (FR-16..FR-18); without it the loader knows none. */
@@ -131,6 +143,8 @@ export interface LiveDeps {
   setUserTimeZone?: (zone: string | null) => void
   /** Receives the saved order of the sidebar's sections (FR-21), or null for the default. */
   setSidebarOrder?: (order: string[] | null) => void
+  /** Receives the keys of the items hidden from the sidebar (FR-21). */
+  setSidebarHidden?: (hidden: string[]) => void
   /** Bumped by the settings screen when sources change; see `useState('calendar-sources-version')`. */
   sourcesVersion: Ref<number>
   /** Called with the keys of problems that were not there before. */
@@ -344,6 +358,7 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
         store.currentUser.value = toUser(me.value)
         deps.setUserTimeZone?.(me.value.timeZone)
         deps.setSidebarOrder?.(me.value.sidebarOrder ?? null)
+        deps.setSidebarHidden?.(me.value.sidebarHidden ?? [])
       } else fail(SOURCE_KEYS.me, me)
 
       if (prefs.status === 'rejected') fail(SOURCE_KEYS.prefs, prefs)
@@ -415,6 +430,7 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
       }
 
       if (resourceList) applyResources(resourceList, problems)
+      keepHiddenOff(store)
 
       // Keep the messages of calendars that still exist; the source messages are replaced, except
       // those of the external accounts, which their own track keeps.
@@ -453,6 +469,7 @@ export function createLiveLoader(deps: LiveDeps): LiveLoader {
     })
     store.calendars.value = next
     if (store.resources) store.resources.value = toCalendarResources(list)
+    keepHiddenOff(store)
     deps.resources?.onList?.(list)
   }
 

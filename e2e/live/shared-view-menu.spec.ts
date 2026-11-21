@@ -60,6 +60,7 @@ test('alice makes a view and shares it with everybody from its menu', async () =
     'Update from selection',
     'Duplicate',
     'Share with everybody',
+    'Hide',
     'Delete',
   ])
   await alice.getByRole('menuitem', { name: 'Share with everybody', exact: true }).click()
@@ -85,7 +86,7 @@ test('bob sees it with the badge and a menu with one item', async () => {
   await expect(bob.getByLabel('New shared view name', { exact: true })).toHaveCount(0)
 
   await actions(bob, SHARED).click()
-  await expect(bob.getByRole('menuitem')).toHaveText(['Copy to my views'])
+  await expect(bob.getByRole('menuitem')).toHaveText(['Copy to my views', 'Hide'])
   await bob.keyboard.press('Escape')
   await expect(bob.getByRole('menuitem')).toHaveCount(0)
 })
@@ -105,6 +106,7 @@ test('bob copies it to his own views, and the copy is still there after a reload
     'Edit',
     'Update from selection',
     'Duplicate',
+    'Hide',
     'Delete',
   ])
   await bob.keyboard.press('Escape')

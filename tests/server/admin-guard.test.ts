@@ -125,6 +125,7 @@ describe('the admin guard', () => {
         'id',
         'lastSeenAt',
         'name',
+        'sidebarHidden',
         'sidebarOrder',
         'sub',
         'timeZone',

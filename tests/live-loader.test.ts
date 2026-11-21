@@ -312,6 +312,20 @@ describe('first load', () => {
     expect(h.status.errors.value).toEqual({})
   })
 
+  it('keeps a calendar hidden from the sidebar off, although its saved visibility is on', async () => {
+    const h = harness({
+      prefs: [
+        { ref: idA, color: null, visible: true },
+        { ref: idB, color: null, visible: true },
+      ],
+    })
+    // the hidden list came first; the calendars are new to the page when they arrive
+    h.store.applySidebarHidden([`calendar:${idA}`])
+    await h.loader.start()
+    expect(h.store.calendars.value.map((c) => c.id)).toEqual([idA, idB])
+    expect(h.store.visibleCalendarIds.value).toEqual([idB])
+  })
+
   it('asks the reader for the padded range in the display zone, the objects as stored', async () => {
     const h = harness()
     await h.loader.start()

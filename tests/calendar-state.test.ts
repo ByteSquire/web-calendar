@@ -856,3 +856,81 @@ describe('calendarIdsForView (FR-15: a view omits calendars the viewer cannot ac
     expect(calendarIdsForView(view([]), data.calendars)).toEqual([])
   })
 })
+
+describe('items hidden from the sidebar', () => {
+  /** A view and one of its calendars, which the mock data switches on by default. */
+  function setup() {
+    const state = makeStore()
+    const view = state.views.value.find((item) => item.calendarIds.length > 0)!
+    const calendarId = view.calendarIds[0]!
+    return { state, view, calendarId }
+  }
+
+  it('switches a hidden calendar off and keeps it off, also in a view that holds it', () => {
+    const { state, view, calendarId } = setup()
+    state.setCalendarVisible(calendarId, true)
+    state.hideSidebarItem('calendar', calendarId)
+    expect(state.sidebarHidden.value).toEqual([`calendar:${calendarId}`])
+    expect(state.visibleCalendarIds.value).not.toContain(calendarId)
+
+    state.selectView(view.id)
+    expect(state.visibleCalendarIds.value).not.toContain(calendarId)
+    // clearing the view brings back the defaults, without the hidden calendar
+    state.selectView(null)
+    expect(state.visibleCalendarIds.value).not.toContain(calendarId)
+    state.setCalendarVisible(calendarId, true)
+    expect(state.visibleCalendarIds.value).not.toContain(calendarId)
+  })
+
+  it('shows it again switched off, and then it can be switched on', () => {
+    const { state, calendarId } = setup()
+    state.hideSidebarItem('calendar', calendarId)
+    state.showSidebarItem('calendar', calendarId)
+    expect(state.sidebarHidden.value).toEqual([])
+    expect(state.visibleCalendarIds.value).not.toContain(calendarId)
+    state.setCalendarVisible(calendarId, true)
+    expect(state.visibleCalendarIds.value).toContain(calendarId)
+  })
+
+  it('switches off the calendar of a hidden resource', () => {
+    const state = makeStore()
+    const resource = state.resources.value[0]!
+    state.setResourceVisible(resource.id, true)
+    state.hideSidebarItem('resource', resource.id)
+    expect(state.visibleCalendarIds.value).not.toContain(resource.calendarId)
+    state.setResourceVisible(resource.id, true)
+    expect(state.visibleResourceIds.value).not.toContain(resource.id)
+  })
+
+  it('stops a hidden filter and a hidden category, and clears a hidden view that was chosen', () => {
+    const { state, view } = setup()
+    const filter = state.filters.value[0]!
+    const category = state.categories.value[0]!
+    state.setFilterActive(filter.id, true)
+    state.setCategorySelected(category.id, true)
+    state.selectView(view.id)
+
+    state.hideSidebarItem('filter', filter.id)
+    state.hideSidebarItem('category', category.id)
+    state.hideSidebarItem('view', view.id)
+    expect(state.activeFilterIds.value).not.toContain(filter.id)
+    expect(state.selectedCategoryIds.value).not.toContain(category.id)
+    expect(state.selectedViewId.value).toBeNull()
+
+    state.setFilterActive(filter.id, true)
+    state.setCategorySelected(category.id, true)
+    state.selectView(view.id)
+    expect(state.activeFilterIds.value).not.toContain(filter.id)
+    expect(state.selectedCategoryIds.value).not.toContain(category.id)
+    expect(state.selectedViewId.value).toBeNull()
+  })
+
+  it('switches off what a list from the server hides', () => {
+    const { state, calendarId } = setup()
+    state.setCalendarVisible(calendarId, true)
+    state.applySidebarHidden([`calendar:${calendarId}`, 'view:gone'])
+    expect(state.visibleCalendarIds.value).not.toContain(calendarId)
+    expect(state.isSidebarHidden('calendar', calendarId)).toBe(true)
+    expect(state.isSidebarHidden('view', 'gone')).toBe(true)
+  })
+})

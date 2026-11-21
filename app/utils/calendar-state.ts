@@ -7,6 +7,11 @@ import type { MockData } from '../data/mock'
 import { monthLong, monthShort, weekdayShort } from './date-names'
 import { cleanFilterDraft, isEmptyFilterValue, passesFilters, type FilterDraft } from './filters'
 import { N_, t } from './i18n'
+import {
+  sidebarHiddenKey,
+  withSidebarHidden,
+  type SidebarHiddenKind,
+} from '../../shared/utils/sidebar-hidden'
 import { isAutoCategory } from './live/categories'
 import type {
   Calendar,
@@ -503,6 +508,9 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   )
   const activeFilterIds = state<string[]>('cal-active-filters', () => [])
   const selectedCategoryIds = state<string[]>('cal-selected-categories', () => [])
+  // The keys of the items hidden from the sidebar (FR-21, shared/utils/sidebar-hidden.ts). A hidden
+  // item is switched off and stays off until it is shown again.
+  const sidebarHidden = state<string[]>('cal-sidebar-hidden', () => [])
 
   // UI
   const selectedEventId = state<string | null>('cal-selected-event', () => null)
@@ -525,6 +533,23 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   const calendarById = computed(() => new Map(calendars.value.map((item) => [item.id, item])))
   const categoryById = computed(() => new Map(categories.value.map((item) => [item.id, item])))
   const resourceById = computed(() => new Map(resources.value.map((item) => [item.id, item])))
+  const hiddenKeys = computed(() => new Set(sidebarHidden.value))
+  function isSidebarHidden(kind: SidebarHiddenKind, id: string): boolean {
+    return hiddenKeys.value.has(sidebarHiddenKey(kind, id))
+  }
+  /** The calendars that stay switched off: hidden ones, and those of hidden resources. */
+  const hiddenCalendarIds = computed(() => {
+    const ids = new Set<string>()
+    for (const key of hiddenKeys.value) {
+      if (key.startsWith('calendar:')) ids.add(key.slice('calendar:'.length))
+    }
+    for (const resource of resources.value) {
+      if (isSidebarHidden('resource', resource.id)) ids.add(resource.calendarId)
+    }
+    return ids
+  })
+  const withoutHiddenCalendars = (ids: readonly string[]) =>
+    ids.filter((id) => !hiddenCalendarIds.value.has(id))
   /** Calendars for the sidebar's calendar list; resource calendars are listed as resources. */
   const regularCalendars = computed(() =>
     calendars.value.filter((calendar) => calendar.type !== 'resource'),
@@ -605,16 +630,18 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   function selectView(id: string | null) {
     if (id === null) {
       selectedViewId.value = null
-      visibleCalendarIds.value = defaultVisibleCalendarIds(calendars.value)
+      visibleCalendarIds.value = withoutHiddenCalendars(defaultVisibleCalendarIds(calendars.value))
       return
     }
     const view = views.value.find((item) => item.id === id)
-    if (!view) return
+    if (!view || isSidebarHidden('view', id)) return
     selectedViewId.value = id
-    visibleCalendarIds.value = calendarIdsForView(view, calendars.value)
+    // A hidden calendar stays off, also in a view that holds it.
+    visibleCalendarIds.value = withoutHiddenCalendars(calendarIdsForView(view, calendars.value))
   }
 
   function setCalendarVisible(id: string, visible: boolean) {
+    if (visible && hiddenCalendarIds.value.has(id)) return
     visibleCalendarIds.value = withIdPresent(visibleCalendarIds.value, id, visible)
     const onVisibility = options.hooks?.onCalendarVisibility
     if (onVisibility) {
@@ -675,11 +702,50 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
   }
 
   function setFilterActive(id: string, active: boolean) {
+    if (active && isSidebarHidden('filter', id)) return
     activeFilterIds.value = withIdPresent(activeFilterIds.value, id, active)
   }
 
   function setCategorySelected(id: string, selected: boolean) {
+    if (selected && isSidebarHidden('category', id)) return
     selectedCategoryIds.value = withIdPresent(selectedCategoryIds.value, id, selected)
+  }
+
+  /**
+   * Takes `keys` as the hidden items (from the server, or after a change here) and switches off
+   * what they hide: the calendars, the resources, the filters, the categories and a selected view.
+   */
+  function applySidebarHidden(keys: readonly string[]) {
+    sidebarHidden.value = [...keys]
+    if (selectedViewId.value !== null && isSidebarHidden('view', selectedViewId.value)) {
+      selectView(null)
+    }
+    visibleCalendarIds.value = withoutHiddenCalendars(visibleCalendarIds.value)
+    activeFilterIds.value = activeFilterIds.value.filter((id) => !isSidebarHidden('filter', id))
+    selectedCategoryIds.value = selectedCategoryIds.value.filter(
+      (id) => !isSidebarHidden('category', id),
+    )
+  }
+
+  /**
+   * Hides an item from the sidebar and switches it off. A calendar's or a resource's "off" is saved
+   * as the viewer's preference first (`setCalendarVisible`), so it is off after a reload as well.
+   */
+  function hideSidebarItem(kind: SidebarHiddenKind, id: string) {
+    if (kind === 'calendar') setCalendarVisible(id, false)
+    if (kind === 'resource') setResourceVisible(id, false)
+    applySidebarHidden(withSidebarHidden(sidebarHidden.value, sidebarHiddenKey(kind, id), true))
+  }
+
+  /**
+   * Shows a hidden item in its section again, switched off. A calendar's or a resource's "off" is
+   * saved again: a save of it that was still waiting when the page closed is made up for, and a
+   * reload does not switch it on.
+   */
+  function showSidebarItem(kind: SidebarHiddenKind, id: string) {
+    applySidebarHidden(withSidebarHidden(sidebarHidden.value, sidebarHiddenKey(kind, id), false))
+    if (kind === 'calendar') setCalendarVisible(id, false)
+    if (kind === 'resource') setResourceVisible(id, false)
   }
 
   /** `from` -> `to` in a list of ids (the local id gives way to the server's). */
@@ -903,6 +969,12 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     renameCalendar,
     deleteCalendar,
     setResourceVisible,
+    sidebarHidden,
+    isSidebarHidden,
+    withoutHiddenCalendars,
+    applySidebarHidden,
+    hideSidebarItem,
+    showSidebarItem,
     activeFilterIds,
     activeFilters,
     setFilterActive,

@@ -191,7 +191,9 @@ erDiagram
 - **users** — `id` (PK), `oidc_sub` (unique), `username`, `name`, `email`,
   `is_admin` (a note, never authorization), `last_seen_at`, `time_zone` (an override of the browser's
   zone, FR-32; NULL means the browser's), `sidebar_order` (the order the user keeps the sidebar's
-  sections in, FR-21: a JSON list of section ids; NULL means the default order). Created on first use. `oidc_sub` is the provider's user id,
+  sections in, FR-21: a JSON list of section ids; NULL means the default order), `sidebar_hidden` (the
+  items the user hid from the sidebar, FR-21: a JSON list of keys such as `calendar:<id>`; NULL
+  means none, migration 015). Created on first use. `oidc_sub` is the provider's user id,
   any id Radicale accepts as a user name, case-sensitive (§6). `last_seen_at` is the **sign-in
   window** (§6): it is renewed by a bearer call to `/api/**` and by an OIDC bearer call to `/caldav/`,
   never by an app token. There is no roles table: admin comes from the identity provider's groups
@@ -1642,6 +1644,29 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     dragging is not enough on its own (WCAG 2.5.7 asks for a way without dragging, and a keyboard
     or a screen reader cannot drag). It is the one new permanent element of this change; the
     alternatives (arrows on every heading, a hidden shortcut) cost more room or cannot be found.
+  - _Hidden items (FR-21)_: every item of the sidebar (view, calendar, resource, category, filter)
+    has **Hide** (closed eye) in its `⋯` menu; rows that had no menu (a resource whose calendar is
+    not loaded, a shared category for a non-admin) now have one with Hide alone. A hidden item is
+    **switched off** and moves into a **Hidden** section, always the last one and not part of the
+    arranged order (it is never dragged). There each row shows the icon of its kind instead of its
+    colour (a calendar has days on it, a view its own icon, a resource its room, car or tool, a
+    category a bookmark, a filter its kind's icon) and an **open eye** at the end, named after the
+    kind and the item ("Unhide calendar Team"), that puts it back in its section, still off. The
+    section disappears when nothing is hidden. Off means off everywhere: the store refuses to
+    switch a hidden calendar, filter or category on, choosing a view leaves its hidden calendars
+    out, a hidden view cannot be chosen, and the live loader leaves hidden calendars off when they
+    arrive with a saved visibility of on (`withoutHiddenCalendars`). Hiding and unhiding also save
+    the calendar's visibility as off, so a reload agrees. The list is **saved for the account**
+    (`users.sidebar_hidden`, `/api/me` returns `sidebarHidden`, `PUT /api/me/sidebar-hidden` takes
+    `{ hidden: string[] }`: keys `<kind>:<id>` of a known kind, at most 600 characters, each once,
+    at most 500), with the same rules as the order: one save after the other, a toast when one
+    fails, the list of this page kept over an older `/api/me`. In demo mode it lives in the page.
+    The focus follows the item: after Hide to its eye (or the Hidden heading when that section is
+    folded), after the eye to the item's menu in its section. Why a new element: an item that is
+    rarely used (a colleague's calendar, an old filter) otherwise stays in its section forever,
+    and deleting is not an option for what is shared or not one's own. A section of its own keeps
+    the others short while every hidden item stays one press away; a toggle "show hidden" per
+    section would have added a control to every heading.
 - **View-type switcher** (FR-22): **day, 5-day, week, month, year, split, list**. The split view
   and the list view have period buttons above them (`PeriodSwitcher.vue`): Day, 5 days, Week and
   Month for split, Week, Month and Year for the list (FullCalendar `listWeek`, `listMonth`,

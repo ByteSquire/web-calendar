@@ -191,7 +191,9 @@ minimum:
   icon and a `⋯` menu), **calendars** (each with a visibility toggle),
   **resources** (each with a visibility toggle), **categories** (with an add
   control), and **filters** (with an add control and a chooser). Each section can be folded,
-  and each person can put the sections in the order they like (saved for their account).
+  and each person can put the sections in the order they like (saved for their account). Each
+  item can be hidden from its section (it is switched off and listed under **Hidden** at the
+  bottom, from where it can be put back; saved for their account).
 - **FR-22** A **view-type switcher** offering at least **day, 5-day, week,
   month, year, split, and list** views.
 - **FR-23** **Date navigation** — previous, **today**, and next.

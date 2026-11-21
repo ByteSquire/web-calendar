@@ -39,6 +39,7 @@ test.describe('shared views', () => {
       'Update from selection',
       'Duplicate',
       'Share with everybody',
+      'Hide',
       'Delete',
     ])
     await page.getByRole('menuitem', { name: 'Share with everybody', exact: true }).click()
@@ -52,6 +53,7 @@ test.describe('shared views', () => {
       'Update from selection',
       'Copy to my views',
       'Unshare',
+      'Hide',
       'Delete',
     ])
     await page.keyboard.press('Escape')
@@ -68,6 +70,7 @@ test.describe('shared views', () => {
       'Update from selection',
       'Duplicate',
       'Share with everybody',
+      'Hide',
       'Delete',
     ])
   })

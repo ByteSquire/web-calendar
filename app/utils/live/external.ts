@@ -38,7 +38,12 @@ const LISTING_CONCURRENCY = 4
 
 export interface ExternalTrackDeps {
   source: ExternalSource
-  store: { calendars: Ref<Calendar[]>; visibleCalendarIds: Ref<string[]> }
+  store: {
+    calendars: Ref<Calendar[]>
+    visibleCalendarIds: Ref<string[]>
+    /** Leaves out the calendars hidden from the sidebar (loader.ts, `LiveStore`). */
+    withoutHiddenCalendars?: (ids: readonly string[]) => string[]
+  }
   status: LiveStatusState
   /** The viewer's calendar preferences as the last load of the sources read them. */
   prefs: () => readonly ApiCalendarPref[]
@@ -141,11 +146,12 @@ export function createExternalTrack(deps: ExternalTrackDeps): ExternalTrack {
       paletteOffset: kept.length,
     })
     const next = [...kept, ...external]
-    store.visibleCalendarIds.value = reconcileVisibleCalendars({
+    const visible = reconcileVisibleCalendars({
       visibleIds: store.visibleCalendarIds.value,
       previous,
       next,
     })
+    store.visibleCalendarIds.value = store.withoutHiddenCalendars?.(visible) ?? visible
     store.calendars.value = next
     return external.map((calendar) => calendar.id)
   }

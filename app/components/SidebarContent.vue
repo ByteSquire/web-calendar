@@ -4,6 +4,9 @@
   come in the order the person keeps them in (saved for the account). They are dragged by their
   headings (a long press first on a touch screen); the list with arrow buttons that arranges them
   without dragging replaces the sections until it is closed.
+  "Hide" in an item's menu switches it off and moves it into the "Hidden" section, always the last
+  (useSidebarHidden.ts, saved for the account): there it shows the icon of its kind instead of its
+  colour, and an open eye that puts it back in its section, still off.
 -->
 <template>
   <div
@@ -27,7 +30,7 @@
           @add="startAddView"
         >
           <ul>
-            <li v-for="view in views" :key="view.id">
+            <li v-for="view in shownViews" :key="view.id" :data-sidebar-item="`view:${view.id}`">
               <SidebarViewItem
                 :view="view"
                 :selected="view.id === selectedViewId"
@@ -39,6 +42,7 @@
                 @copy="copyView(view)"
                 @share="shareView(view)"
                 @unshare="unshareSharedView(view)"
+                @hide="hideFromSidebar('view', view.id)"
               />
             </li>
           </ul>
@@ -53,8 +57,9 @@
         >
           <ul>
             <li
-              v-for="calendar in regularCalendars"
+              v-for="calendar in shownCalendars"
               :key="calendar.id"
+              :data-sidebar-item="`calendar:${calendar.id}`"
               class="flex items-center gap-1"
             >
               <SidebarToggleRow
@@ -78,7 +83,12 @@
           :title="SECTION_TITLES.resources"
         >
           <ul>
-            <li v-for="resource in resources" :key="resource.id" class="flex items-center gap-1">
+            <li
+              v-for="resource in shownResources"
+              :key="resource.id"
+              :data-sidebar-item="`resource:${resource.id}`"
+              class="flex items-center gap-1"
+            >
               <SidebarToggleRow
                 class="min-w-0 flex-1"
                 :label="resource.name"
@@ -88,7 +98,6 @@
                 @update:model-value="setResourceVisible(resource.id, $event)"
               />
               <SidebarRowMenu
-                v-if="calendarById.has(resource.calendarId)"
                 :label="t('Actions for resource {name}', { name: resource.name })"
                 :items="resourceItems(resource)"
               />
@@ -111,7 +120,12 @@
           :add-submit="submitCategory"
         >
           <ul>
-            <li v-for="category in categories" :key="category.id" class="flex items-center gap-1">
+            <li
+              v-for="category in shownCategories"
+              :key="category.id"
+              :data-sidebar-item="`category:${category.id}`"
+              class="flex items-center gap-1"
+            >
               <SidebarToggleRow
                 class="min-w-0 flex-1"
                 :label="category.name"
@@ -120,7 +134,6 @@
                 @update:model-value="setCategorySelected(category.id, $event)"
               />
               <SidebarRowMenu
-                v-if="mayChangeCategory(category)"
                 :label="t('Actions for category {name}', { name: category.name })"
                 :items="categoryItems(category)"
               />
@@ -137,7 +150,12 @@
           @add="startAddFilter"
         >
           <ul>
-            <li v-for="filter in filters" :key="filter.id" class="flex items-center gap-1">
+            <li
+              v-for="filter in shownFilters"
+              :key="filter.id"
+              :data-sidebar-item="`filter:${filter.id}`"
+              class="flex items-center gap-1"
+            >
               <SidebarToggleRow
                 class="min-w-0 flex-1"
                 :label="filter.name"
@@ -153,6 +171,36 @@
           </ul>
         </SidebarSection>
       </template>
+
+      <!-- Not one of the arranged sections: no data-section-id, so it is never dragged. -->
+      <SidebarSection
+        v-if="hiddenRows.length > 0"
+        :title="HIDDEN_SECTION_TITLE"
+        fixed
+        data-hidden-section
+      >
+        <ul>
+          <li
+            v-for="row in hiddenRows"
+            :key="row.key"
+            :data-hidden-item="row.key"
+            class="flex min-h-11 items-center gap-2 ps-2"
+          >
+            <UIcon :name="row.icon" class="size-4 shrink-0 text-muted" aria-hidden="true" />
+            <span class="min-w-0 flex-1 truncate text-muted">{{ row.name }}</span>
+            <UButton
+              icon="i-lucide-eye"
+              color="neutral"
+              variant="ghost"
+              square
+              class="min-h-11 min-w-11 shrink-0 justify-center"
+              :aria-label="row.unhideLabel"
+              :title="row.unhideLabel"
+              @click="unhideInSidebar(row.kind, row.id)"
+            />
+          </li>
+        </ul>
+      </SidebarSection>
 
       <UButton
         ref="arrangeButton"
@@ -279,8 +327,11 @@ import {
   type AdminViewsApi,
 } from '~/utils/live/admin-views'
 import { filterIcon, knownPeople, type FilterDraft } from '~/utils/filters'
-import { N_, t } from '~/utils/i18n'
-import { SECTION_TITLES } from '~/utils/sidebar-sections'
+import { N_, t, tv } from '~/utils/i18n'
+import { HIDDEN_SECTION_TITLE, SECTION_TITLES } from '~/utils/sidebar-sections'
+import { useSidebarHidden } from '~/composables/useSidebarHidden'
+import type { SidebarHiddenKind } from '../../shared/utils/sidebar-hidden'
+import type { SidebarSectionId } from '../../shared/utils/sidebar-sections'
 import {
   chosenViewCalendarIds,
   hiddenViewCalendarCount,
@@ -352,6 +403,145 @@ const {
 
 /** The calendar whose colour dialog is open. */
 const colorTarget = ref<Calendar | null>(null)
+
+// ---- Hidden items (useSidebarHidden.ts) --------------------------------------------------------
+// A hidden item leaves its section for "Hidden", where it has the icon of its kind (its colour does
+// not matter there) and an open eye that puts it back. The icons differ from the ones a view may
+// choose and from the filters' (a calendar has days on it, a category is a bookmark); a view keeps
+// its own icon, a resource its room, car or tool. The eye is named after the kind and the name,
+// so a screen reader tells a calendar from a filter of the same name.
+
+const sidebarHidden = useSidebarHidden()
+const shownViews = computed(() => views.value.filter((v) => !sidebarHidden.isHidden('view', v.id)))
+const shownCalendars = computed(() =>
+  regularCalendars.value.filter((c) => !sidebarHidden.isHidden('calendar', c.id)),
+)
+const shownResources = computed(() =>
+  resources.value.filter((r) => !sidebarHidden.isHidden('resource', r.id)),
+)
+const shownCategories = computed(() =>
+  categories.value.filter((c) => !sidebarHidden.isHidden('category', c.id)),
+)
+const shownFilters = computed(() =>
+  filters.value.filter((f) => !sidebarHidden.isHidden('filter', f.id)),
+)
+
+const UNHIDE_LABELS: Record<SidebarHiddenKind, string> = {
+  view: N_('Unhide view {name}'),
+  calendar: N_('Unhide calendar {name}'),
+  resource: N_('Unhide resource {name}'),
+  category: N_('Unhide category {name}'),
+  filter: N_('Unhide filter {name}'),
+}
+
+interface HiddenRow {
+  key: string
+  kind: SidebarHiddenKind
+  id: string
+  name: string
+  icon: string
+  unhideLabel: string
+}
+
+/** The hidden items, in the order of the sections they come from, each section in its own order. */
+const hiddenRows = computed<HiddenRow[]>(() => {
+  const row = (kind: SidebarHiddenKind, id: string, name: string, icon: string): HiddenRow => ({
+    key: `${kind}:${id}`,
+    kind,
+    id,
+    name,
+    icon,
+    unhideLabel: tv(UNHIDE_LABELS[kind], { name }),
+  })
+  const of: Record<SidebarSectionId, () => HiddenRow[]> = {
+    views: () =>
+      views.value
+        .filter((v) => sidebarHidden.isHidden('view', v.id))
+        .map((v) => row('view', v.id, v.name, viewIconName(v.icon))),
+    calendars: () =>
+      regularCalendars.value
+        .filter((c) => sidebarHidden.isHidden('calendar', c.id))
+        .map((c) => row('calendar', c.id, c.name, 'i-lucide-calendar-days')),
+    resources: () =>
+      resources.value
+        .filter((r) => sidebarHidden.isHidden('resource', r.id))
+        .map((r) => row('resource', r.id, r.name, resourceIconName(r.type))),
+    categories: () =>
+      categories.value
+        .filter((c) => sidebarHidden.isHidden('category', c.id))
+        .map((c) => row('category', c.id, c.name, 'i-lucide-bookmark')),
+    filters: () =>
+      filters.value
+        .filter((f) => sidebarHidden.isHidden('filter', f.id))
+        .map((f) => row('filter', f.id, f.name, filterIcon(f.kind))),
+  }
+  return order.value.flatMap((id) => of[id]())
+})
+
+/** "Hide" in the menu of an item. */
+function hideItem(kind: SidebarHiddenKind, id: string, disabled = false): DropdownMenuItem {
+  return {
+    label: t('Hide'),
+    icon: 'i-lucide-eye-off',
+    disabled,
+    onSelect: () => hideFromSidebar(kind, id),
+  }
+}
+
+/**
+ * Focuses what `selector` finds once the menu that chose an item has closed. The menu would give
+ * the focus back to its button, and the row with that button is gone: the focus goes where the
+ * item went instead.
+ */
+function focusWhenMenuCloses(selectors: string[]) {
+  let frames = 0
+  const attempt = () => {
+    frames += 1
+    if (document.querySelector('[role="menu"]') === null) {
+      const target = selectors
+        .map((selector) => root.value?.querySelector<HTMLElement>(selector))
+        .find((element) => element && element.getClientRects().length > 0)
+      if (target) {
+        target.focus()
+        return
+      }
+    }
+    if (frames < 60) requestAnimationFrame(attempt)
+  }
+  void nextTick(() => requestAnimationFrame(attempt))
+}
+
+function hideFromSidebar(kind: SidebarHiddenKind, id: string) {
+  sidebarHidden.hide(kind, id)
+  // To its eye in "Hidden", so that it can be put back at once; with "Hidden" folded, its heading.
+  focusWhenMenuCloses([
+    `[data-hidden-item="${CSS.escape(`${kind}:${id}`)}"] button`,
+    '[data-hidden-section] h2 button',
+  ])
+}
+
+function unhideInSidebar(kind: SidebarHiddenKind, id: string) {
+  const key = `${kind}:${id}`
+  const next = hiddenRows.value[hiddenRows.value.findIndex((row) => row.key === key) + 1]
+  sidebarHidden.show(kind, id)
+  // To the item's menu, back in its section; where that section is folded away, to the next hidden
+  // item's eye, and when none is left, to "Arrange sections".
+  void nextTick(() => {
+    const visible = (element: HTMLElement | null | undefined) =>
+      element && element.getClientRects().length > 0 ? element : null
+    const back = [
+      ...(root.value?.querySelectorAll<HTMLElement>(
+        `[data-sidebar-item="${CSS.escape(key)}"] button`,
+      ) ?? []),
+    ].at(-1)
+    const nextEye = next
+      ? root.value?.querySelector<HTMLElement>(
+          `[data-hidden-item="${CSS.escape(next.key)}"] button`,
+        )
+      : null
+    ;(visible(back) ?? visible(nextEye) ?? arrangeButton.value?.$el)?.focus()
+  })
+}
 
 // Shared views are changed through `/api/admin/views` in live mode, a user's own views through
 // `/api/views`. The shared-view controls show for admins only (the server checks again); without a
@@ -861,12 +1051,13 @@ function calendarItems(calendar: Calendar): DropdownMenuItem[][] {
     },
   }
   const edit = editCalendarItem(calendar)
-  if (!calendar.manage) return [[colour, ...edit]]
+  const hide = hideItem('calendar', calendar.id)
+  if (!calendar.manage) return [[colour, ...edit, hide]]
   const { rename, remove } = renameAndDelete({ kind: 'calendar', item: calendar })
   if (calendar.manage.kind === 'own' && calendar.manage.default) {
-    return [[rename, colour, ...edit]]
+    return [[rename, colour, ...edit, hide]]
   }
-  return [[rename, colour, ...edit], [remove]]
+  return [[rename, colour, ...edit, hide], [remove]]
 }
 
 /**
@@ -970,6 +1161,10 @@ async function openResourceEditor(id: string) {
 
 function categoryItems(category: Category): DropdownMenuItem[][] {
   const disabled = savingIds.value.includes(category.id)
+  // Not while a new category is saved: its id is about to change, and the hidden key with it.
+  const hide = hideItem('category', category.id, disabled)
+  // Everybody may hide a category; changing a shared one is for administrators.
+  if (!mayChangeCategory(category)) return [[hide]]
   const { rename, remove } = renameAndDelete({ kind: 'category', item: category }, disabled)
   const colour: DropdownMenuItem = {
     label: t('Colour'),
@@ -1002,9 +1197,9 @@ function categoryItems(category: Category): DropdownMenuItem[][] {
     },
   }
   if (isAutoCategory(category)) {
-    return canCreateCalendars ? [[colour, ...toStatus], [removeFromEvents]] : [[colour]]
+    return canCreateCalendars ? [[colour, ...toStatus, hide], [removeFromEvents]] : [[colour, hide]]
   }
-  return [[rename, colour, ...toStatus], [canCreateCalendars ? removeFromEvents : remove]]
+  return [[rename, colour, ...toStatus, hide], [canCreateCalendars ? removeFromEvents : remove]]
 }
 
 /**
@@ -1013,15 +1208,18 @@ function categoryItems(category: Category): DropdownMenuItem[][] {
  */
 function resourceItems(resource: CalendarResource): DropdownMenuItem[][] {
   const calendar = calendarById.value.get(resource.calendarId)
-  const items: DropdownMenuItem[] = [
-    {
-      label: t('Colour'),
-      icon: 'i-lucide-palette',
-      onSelect: () => {
-        if (calendar) colorTarget.value = calendar
-      },
-    },
-  ]
+  // A resource whose calendar is not loaded (yet) has no colour to change, only "Hide".
+  const items: DropdownMenuItem[] = calendar
+    ? [
+        {
+          label: t('Colour'),
+          icon: 'i-lucide-palette',
+          onSelect: () => {
+            colorTarget.value = calendar
+          },
+        },
+      ]
+    : []
   if (live && isAdmin.value) {
     items.push({
       label: t('Edit resource'),
@@ -1029,6 +1227,7 @@ function resourceItems(resource: CalendarResource): DropdownMenuItem[][] {
       onSelect: () => void openResourceEditor(resource.id),
     })
   }
+  items.push(hideItem('resource', resource.id))
   return [items]
 }
 
@@ -1039,7 +1238,7 @@ function filterItems(filter: CalendarFilter): DropdownMenuItem[][] {
     icon: 'i-lucide-pencil',
     onSelect: () => startEditFilter(filter),
   }
-  return [[edit], [remove]]
+  return [[edit, hideItem('filter', filter.id)], [remove]]
 }
 
 const renameTitle = computed(() => {

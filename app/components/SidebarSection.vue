@@ -29,7 +29,8 @@
       >
         <button
           type="button"
-          class="flex min-h-11 w-full cursor-grab items-center gap-1 rounded-lg px-2 text-start uppercase select-none [-webkit-touch-callout:none] hover:bg-elevated"
+          class="flex min-h-11 w-full items-center gap-1 rounded-lg px-2 text-start uppercase select-none [-webkit-touch-callout:none] hover:bg-elevated"
+          :class="fixed ? 'cursor-pointer' : 'cursor-grab'"
           :aria-expanded="open"
           :aria-controls="bodyId"
           @click="toggle"
@@ -114,6 +115,8 @@ const props = defineProps<{
   addSubmit?: (value: string) => string | undefined | Promise<string | undefined>
   /** The plus opens the caller's dialog (`add`) instead of a field for a name. */
   addDialog?: boolean
+  /** Not one of the sections that are dragged into an order ("Hidden", always at the bottom). */
+  fixed?: boolean
 }>()
 const emit = defineEmits<{ add: [plus: HTMLElement] }>()
 

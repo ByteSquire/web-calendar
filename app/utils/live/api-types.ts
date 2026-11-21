@@ -11,6 +11,8 @@ export interface ApiMe {
   timeZone: string | null
   /** The order of the sidebar's sections (FR-21); null means the default. */
   sidebarOrder: string[] | null
+  /** The keys of the items hidden from the sidebar (FR-21); absent from an older server. */
+  sidebarHidden?: string[]
 }
 
 export interface ApiViewCalendar {

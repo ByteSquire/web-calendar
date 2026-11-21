@@ -50,6 +50,7 @@ function toApiUser(user: User): ApiUser {
     lastSeenAt: user.lastSeenAt,
     timeZone: user.timeZone,
     sidebarOrder: user.sidebarOrder,
+    sidebarHidden: user.sidebarHidden,
   }
 }
 

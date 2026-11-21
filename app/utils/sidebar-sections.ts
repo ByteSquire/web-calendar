@@ -45,6 +45,12 @@ export const SECTION_TITLES: Record<SidebarSectionId, string> = {
   filters: N_('Filters'),
 }
 
+/**
+ * The section of the items hidden from the others (FR-21). It is always the last one and is not
+ * part of the order the person arranges; its title is the key of its folded state, like the others.
+ */
+export const HIDDEN_SECTION_TITLE = N_('Hidden')
+
 /** What a section's plus adds. */
 export type AddNoun = 'view' | 'calendar' | 'category' | 'filter'
 

@@ -38,18 +38,18 @@ test('a calendar of the person’s own is renamed and deleted, somebody else’s
   expect(box!.height).toBeGreaterThanOrEqual(44)
   expect(box!.width).toBeGreaterThanOrEqual(44)
   await press(others)
-  await expect(page.getByRole('menuitem')).toHaveText(['Colour'])
+  await expect(page.getByRole('menuitem')).toHaveText(['Colour', 'Hide'])
   await page.keyboard.press('Escape')
 
   // the person's default calendar is renamed and coloured, never deleted
   await press(
     sidebar(page).getByRole('button', { name: 'Actions for calendar Personal', exact: true }),
   )
-  await expect(page.getByRole('menuitem')).toHaveText(['Rename', 'Colour'])
+  await expect(page.getByRole('menuitem')).toHaveText(['Rename', 'Colour', 'Hide'])
   await page.keyboard.press('Escape')
 
   await press(sidebar(page).getByRole('button', { name: 'Actions for calendar Team', exact: true }))
-  await expect(page.getByRole('menuitem')).toHaveText(['Rename', 'Colour', 'Delete'])
+  await expect(page.getByRole('menuitem')).toHaveText(['Rename', 'Colour', 'Hide', 'Delete'])
   await press(page.getByRole('menuitem', { name: 'Rename' }))
   const rename = page.getByRole('dialog', { name: 'Rename calendar Team' })
   await rename.getByRole('textbox', { name: 'Name' }).fill('Personal')
@@ -210,7 +210,7 @@ test('a resource gets a colour of the person’s own from its menu', async ({ pa
     sidebar(page).getByRole('button', { name: 'Actions for resource Room A', exact: true }),
   )
   // in demo mode nobody is an admin of the server, so "Edit resource" is not offered
-  await expect(page.getByRole('menuitem')).toHaveText(['Colour'])
+  await expect(page.getByRole('menuitem')).toHaveText(['Colour', 'Hide'])
   await press(page.getByRole('menuitem', { name: 'Colour' }))
   const dialog = page.getByRole('dialog', { name: 'Colour of Room A' })
   await expect(dialog.getByRole('radio', { name: 'Default' })).toBeChecked()

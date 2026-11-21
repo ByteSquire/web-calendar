@@ -19,6 +19,8 @@ export const common: Readonly<Record<string, string>> = {
     'Die Sprache der App auf diesem Gerät. Standardmäßig folgt sie deinem Browser.',
   'Go to {date}': 'Gehe zu {date}',
   // Used in more than one area.
+  // A section of the sidebar, and a password that is not shown (CalendarLinks).
+  Hidden: 'Ausgeblendet',
   Settings: 'Einstellungen',
   'Resource bookings': 'Ressourcenbuchungen',
   Shared: 'Geteilt',

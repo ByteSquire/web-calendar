@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3'
+import { readSidebarHidden } from '../../shared/utils/sidebar-hidden'
 import { completeSidebarOrder, type SidebarSectionId } from '../../shared/utils/sidebar-sections'
 import { found } from '../utils/api/errors'
 import type { User, UserRow } from './types'
@@ -24,6 +25,17 @@ function toUser(row: UserRow): User {
     lastSeenAt: row.last_seen_at,
     timeZone: row.time_zone,
     sidebarOrder: readSidebarOrder(row.sidebar_order),
+    sidebarHidden: readStoredHidden(row.sidebar_hidden),
+  }
+}
+
+/** The stored hidden keys; none when nothing was stored or the column holds something else. */
+function readStoredHidden(stored: string | null | undefined): string[] {
+  if (stored === null || stored === undefined) return []
+  try {
+    return readSidebarHidden(JSON.parse(stored))
+  } catch {
+    return []
   }
 }
 
@@ -115,6 +127,23 @@ export function setUserSidebarOrder(
     )
     .get(JSON.stringify(order), userId)
   return readSidebarOrder(found(row).sidebar_order) ?? completeSidebarOrder(null)
+}
+
+/**
+ * Stores the items the user has hidden from the sidebar (FR-21). The keys are checked by the
+ * caller (server/utils/api/sidebar-hidden.ts). Returns the stored list.
+ */
+export function setUserSidebarHidden(
+  db: Database,
+  userId: number,
+  hidden: readonly string[],
+): string[] {
+  const row = db
+    .prepare<[string, number], Pick<UserRow, 'sidebar_hidden'>>(
+      'UPDATE users SET sidebar_hidden = ? WHERE id = ? RETURNING sidebar_hidden',
+    )
+    .get(JSON.stringify(hidden), userId)
+  return readStoredHidden(found(row).sidebar_hidden)
 }
 
 export function findUserBySub(db: Database, sub: string): User | null {

@@ -10,7 +10,7 @@ import { createFilter, listFilters } from '../../server/db/filters'
 import { openDatabase } from '../../server/db/connection'
 import { isGroupManager, listGroupMembers } from '../../server/db/groups'
 import { loadMigrationsFromDir, runMigrations, type Migration } from '../../server/db/migrate'
-import { findUserBySub, setUserSidebarOrder } from '../../server/db/users'
+import { findUserBySub, setUserSidebarHidden, setUserSidebarOrder } from '../../server/db/users'
 import { appliedMigrations, upgradeDatabase } from '../../server/db/upgrade'
 
 // The update of a production container: the database that an earlier release left is opened by the
@@ -134,6 +134,7 @@ describe('updating from v0.1.0 (001 to 008)', () => {
       '012_calendar_link_levels.sql',
       '013_group_managers.sql',
       '014_filter_modes.sql',
+      '015_sidebar_hidden.sql',
     ])
     expect(result.backup).toBe(`${path}.pre-009.bak`)
     expectKept(before, db)
@@ -208,6 +209,7 @@ describe('updating from v0.2.0 (001 to 009)', () => {
       '012_calendar_link_levels.sql',
       '013_group_managers.sql',
       '014_filter_modes.sql',
+      '015_sidebar_hidden.sql',
     ])
     expect(result.backup).toBe(`${path}.pre-010.bak`)
     expectKept(before, db)
@@ -225,7 +227,11 @@ describe('updating from v0.2.1 (001 to 012)', () => {
     expect(appliedMigrations(db)).toHaveLength(11)
 
     const result = upgradeDatabase(db, path, current())
-    expect(result.applied).toEqual(['013_group_managers.sql', '014_filter_modes.sql'])
+    expect(result.applied).toEqual([
+      '013_group_managers.sql',
+      '014_filter_modes.sql',
+      '015_sidebar_hidden.sql',
+    ])
     expect(result.backup).toBe(`${path}.pre-013.bak`)
     expectKept(before, db)
     expectHealthy(db)
@@ -271,7 +277,7 @@ describe('updating from v0.3.0 (001 to 013)', () => {
 
     // A later release adds its migrations here, like the tests above.
     expect(upgradeDatabase(db, path, current())).toEqual({
-      applied: ['014_filter_modes.sql'],
+      applied: ['014_filter_modes.sql', '015_sidebar_hidden.sql'],
       backup: `${path}.pre-014.bak`,
     })
     expectKept(before, db)
@@ -301,16 +307,29 @@ describe('updating from v0.3.0 (001 to 013)', () => {
 })
 
 describe('updating from v0.4.0 (001 to 014)', () => {
-  it('finds nothing to do, keeps every row, and the code reads the filter modes', () => {
+  it('adds the hidden sidebar items, keeps every row, and the code reads the filter modes', () => {
     leftBy('v0.1.0', 'v0.2.0', 'v0.2.1', 'v0.3.0', 'v0.4.0')
     db = openDatabase(path)
     const before = snapshot(db)
     expect(appliedMigrations(db)).toHaveLength(13)
 
     // A later release adds its migrations here, like the tests above.
-    expect(upgradeDatabase(db, path, current())).toEqual({ applied: [], backup: null })
+    expect(upgradeDatabase(db, path, current())).toEqual({
+      applied: ['015_sidebar_hidden.sql'],
+      backup: `${path}.pre-015.bak`,
+    })
     expectKept(before, db)
     expectHealthy(db)
+    // nothing is hidden until somebody hides it
+    const alice = findUserBySub(db, 'sub-alice')!
+    expect(alice.sidebarHidden).toEqual([])
+    expect(setUserSidebarHidden(db, alice.id, ['calendar:ics:1', 'view:2'])).toEqual([
+      'calendar:ics:1',
+      'view:2',
+    ])
+    expect(() =>
+      db.prepare('UPDATE users SET sidebar_hidden = \'"x"\' WHERE id = ?').run(alice.id),
+    ).toThrow(/CHECK/)
 
     // alice hides Sam's entries; bob shows only what mentions offsites
     expect(listFilters(db, 1).map((filter) => [filter.name, filter.kind, filter.mode])).toEqual([

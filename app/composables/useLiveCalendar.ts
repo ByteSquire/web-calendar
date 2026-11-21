@@ -8,6 +8,7 @@ import { useCalDav } from '~/composables/useCalDav'
 import { useCalendarState, useLiveHooks } from '~/composables/useCalendarState'
 import { useExternalAccess } from '~/composables/useExternalAccess'
 import { useResourceUpdates } from '~/composables/useResourceUpdates'
+import { useSavedSidebarHidden } from '~/composables/useSidebarHidden'
 import { useSavedSidebarOrder } from '~/composables/useSidebarOrder'
 import { useServerConfigState } from '~/composables/useServerConfigState'
 import { t } from '~/utils/i18n'
@@ -68,6 +69,7 @@ export function useLiveCalendar(): void {
   const orgTimeZone = useOrgTimeZone()
   const userTimeZone = useUserTimeZone()
   const acceptSidebarOrder = useSavedSidebarOrder()
+  const acceptSidebarHidden = useSavedSidebarHidden()
   const toast = useToast()
   const updates = useResourceUpdates()
   const rights = useState<Record<string, ResourceRight>>('resource-rights', () => ({}))
@@ -93,6 +95,7 @@ export function useLiveCalendar(): void {
       userTimeZone.value = zone
     },
     setSidebarOrder: acceptSidebarOrder,
+    setSidebarHidden: acceptSidebarHidden,
     sourcesVersion: useCalendarSourcesVersion(),
     notifyProblems: (keys) => {
       // The problems list lives in the sidebar, which is closed on small screens: say so.

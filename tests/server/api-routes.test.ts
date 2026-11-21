@@ -211,6 +211,7 @@ describe('GET /api/me', () => {
         isAdmin: false,
         timeZone: null,
         sidebarOrder: null,
+        sidebarHidden: [],
       },
     })
   })
@@ -365,6 +366,7 @@ describe('the admin check (requireAdmin)', () => {
       'id',
       'lastSeenAt',
       'name',
+      'sidebarHidden',
       'sidebarOrder',
       'sub',
       'timeZone',

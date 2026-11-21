@@ -25,6 +25,8 @@ export interface Me {
   timeZone: string | null
   /** The order the user keeps the sidebar's sections in (FR-21), complete; null means the default. */
   sidebarOrder: SidebarSectionId[] | null
+  /** The keys of the items the user has hidden from the sidebar (FR-21). */
+  sidebarHidden: string[]
 }
 
 export interface ResolveMeOptions {
@@ -57,6 +59,7 @@ function toMe(user: Omit<User, 'isAdmin'>, isAdmin: boolean): Me {
     isAdmin,
     timeZone: user.timeZone,
     sidebarOrder: user.sidebarOrder,
+    sidebarHidden: user.sidebarHidden,
   }
 }
 

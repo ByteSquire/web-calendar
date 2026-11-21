@@ -85,7 +85,12 @@ test('the name the event carries is listed, and its only action is Colour', asyn
   await expect(page.locator('[data-calendar-main]')).toContainText('Tagged lunch')
   await expect(sidebar().getByText(TAG, { exact: true })).toBeVisible()
   await tagMenu().click()
-  await expect(page.getByRole('menuitem')).toHaveText(['Colour', 'Turn into a status…', 'Delete'])
+  await expect(page.getByRole('menuitem')).toHaveText([
+    'Colour',
+    'Turn into a status…',
+    'Hide',
+    'Delete',
+  ])
   expect(storedCategory()).toBeUndefined()
 })
 
@@ -105,6 +110,7 @@ test('Colour saves it as her category, kept after a reload', async () => {
     'Rename',
     'Colour',
     'Turn into a status…',
+    'Hide',
     'Delete',
   ])
   await page.keyboard.press('Escape')

@@ -195,7 +195,7 @@ test('her default calendar is renamed but not deleted, and the server refuses it
     .getByRole('button', { name: `Actions for calendar ${name}`, exact: true })
     .click()
   // alice is an admin: "Edit calendar" opens it on Admin › Calendars
-  await expect(page.getByRole('menuitem')).toHaveText(['Rename', 'Colour', 'Edit calendar'])
+  await expect(page.getByRole('menuitem')).toHaveText(['Rename', 'Colour', 'Edit calendar', 'Hide'])
   await page.getByRole('menuitem', { name: 'Edit calendar' }).click()
   // the dialog of Admin › Calendars opens over the calendar, which stays where it is
   const editor = page.getByRole('dialog', { name })

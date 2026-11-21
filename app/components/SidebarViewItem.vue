@@ -34,8 +34,9 @@ import type { CalendarView } from '../../shared/types/calendar'
 // user's own view, and a shared one for an administrator (`canManage`; a convenience, the server
 // enforces). A shared view offers "Copy to my views" to everyone, and to an administrator Unshare
 // and Delete too. A user's own view offers Duplicate and Delete, and an administrator may also
-// share it with everybody. An item runs once per click or tap, and the rest of the tap is
-// swallowed (utils/menu-select.ts): the dialogs of Edit and Delete would otherwise take its click.
+// share it with everybody. Every view can be hidden from the sidebar (Hide). An item runs once per
+// click or tap, and the rest of the tap is swallowed (utils/menu-select.ts): the dialogs of Edit
+// and Delete would otherwise take its click.
 const props = defineProps<{ view: CalendarView; selected: boolean; canManage?: boolean }>()
 const emit = defineEmits<{
   select: []
@@ -45,6 +46,7 @@ const emit = defineEmits<{
   copy: []
   share: []
   unshare: []
+  hide: []
 }>()
 
 const items = computed<DropdownMenuItem[][]>(() => settledMenuItems(menu()))
@@ -72,6 +74,12 @@ function menu(): DropdownMenuItem[][] {
     color: 'error',
     onSelect: () => emit('delete'),
   }
+  // Everybody may hide a view from their own sidebar, a shared one included.
+  const hide: DropdownMenuItem = {
+    label: t('Hide'),
+    icon: 'i-lucide-eye-off',
+    onSelect: () => emit('hide'),
+  }
   if (props.view.isAdmin) {
     return props.canManage
       ? [
@@ -80,10 +88,11 @@ function menu(): DropdownMenuItem[][] {
             update,
             copy,
             { label: t('Unshare'), icon: 'i-lucide-lock', onSelect: () => emit('unshare') },
+            hide,
           ],
           [remove],
         ]
-      : [[copy]]
+      : [[copy, hide]]
   }
   const own: DropdownMenuItem[] = [
     edit,
@@ -97,6 +106,7 @@ function menu(): DropdownMenuItem[][] {
       onSelect: () => emit('share'),
     })
   }
+  own.push(hide)
   return [own, [remove]]
 }
 </script>

@@ -35,6 +35,8 @@ export interface UserRow extends Timestamps {
   time_zone: string | null
   /** The order of the sidebar's sections (FR-21), a JSON list of ids; null means the default. */
   sidebar_order: string | null
+  /** The items hidden from the sidebar (FR-21), a JSON list of keys; null means none. */
+  sidebar_hidden: string | null
 }
 
 export interface AppTokenRow extends Timestamps {
@@ -208,4 +210,6 @@ export interface User {
   timeZone: string | null
   /** The order the user keeps the sidebar's sections in (FR-21), complete; null means the default. */
   sidebarOrder: SidebarSectionId[] | null
+  /** The keys of the items hidden from the sidebar (FR-21, shared/utils/sidebar-hidden.ts). */
+  sidebarHidden: string[]
 }

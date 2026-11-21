@@ -13,5 +13,6 @@ When you make a release whose migrations no earlier release had:
 2. Add the tag to the list in the first `describe` and a `describe('updating from <tag>')` in the
    test, with the migrations that upgrade it (`leftBy('v0.1.0', 'v0.2.0', '<tag>')`).
 
-Pending now: nothing. Every migration up to `014_filter_modes.sql` is released (`v0.4.0` froze
-014). A new migration may be edited until the release that carries it, and is frozen here then.
+Pending now: nothing. Every migration up to `015_sidebar_hidden.sql` is released (`v0.4.0` froze
+014, `v0.6.0` 015; `v0.5.0` added none). A new migration may be edited until the release that
+carries it, and is frozen here then.

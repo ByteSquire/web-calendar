@@ -2,7 +2,7 @@
   Standard views (day, 5 days, week, month, year, list) on FullCalendar v7. The shared state is
   authoritative: `viewType` and `anchorDate` drive the calendar through its API, and the calendar
   only writes back where it navigates by itself (a click on a day number). Editing is off in
-  Phase 1; events open the sheet (`selectEvent`), date cells open quick-add.
+  Phase 1; events open the sheet (`selectEvent`), date cells open "Add event".
   Mapping and options live in utils/fullcalendar.ts; the colours of the theme in assets/css/main.css.
   With "Category colours on events" an entry shows a dot per category before its title.
   For printing, the Premium adaptive plugin lays the calendar out for paper (composables/usePrinting.ts).
@@ -57,7 +57,7 @@ import {
   fullCalendarViewName,
   isCompactWidth,
   plainDateInCalendarZone,
-  quickAddPresetForClick,
+  addEventPresetForClick,
   toFullCalendarEvents,
   type ColorScheme,
   type EventExtendedProps,
@@ -87,7 +87,7 @@ const {
   calendarById,
   categoryById,
   selectEvent,
-  openQuickAdd,
+  openAddEvent,
 } = useCalendarState()
 
 const timeZone = useDisplayTimeZone()
@@ -97,7 +97,7 @@ const scheme = computed<ColorScheme>(() => (colorMode.value === 'dark' ? 'dark' 
 
 const rootElement = ref<HTMLElement | null>(null)
 const calendar = ref<InstanceType<typeof FullCalendar> | null>(null)
-const dateTap = useDateClickGesture<ReturnType<typeof quickAddPresetForClick>>(openQuickAdd)
+const dateTap = useDateClickGesture<ReturnType<typeof addEventPresetForClick>>(openAddEvent)
 
 // The calendar sizes itself from its container (ResizeObserver); options that cannot be expressed
 // that way follow the container width. The first guess uses the window until the observer reports.
@@ -217,6 +217,6 @@ function onEventClick(info: EventClickInfo) {
 function onDateClick(info: DateClickInfo) {
   // The page of a calendar link is read-only: a click on a date adds nothing.
   if (linkView.value) return
-  dateTap.hit(quickAddPresetForClick(info.dateStr, info.allDay))
+  dateTap.hit(addEventPresetForClick(info.dateStr, info.allDay))
 }
 </script>

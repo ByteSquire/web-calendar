@@ -195,7 +195,7 @@ minimum:
 - **FR-22** A **view-type switcher** offering at least **day, 5-day, week,
   month, year, split, and list** views.
 - **FR-23** **Date navigation** — previous, **today**, and next.
-- **FR-24** A **quick-add** control to create an event.
+- **FR-24** An **Add** control to create an event (a click on a date opens it too).
 - **FR-25** An **overflow (`⋮`) menu** for additional options.
 
 ### 4.8 Events

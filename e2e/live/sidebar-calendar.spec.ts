@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import Database from 'better-sqlite3'
 import { APP_ORIGIN, openSignedIn } from './session'
+import { settleAnimations } from '../axe-scan'
 
 // "Add calendar" in the sidebar with the real stack (design S8 setup): a plus in the heading of the
 // section that shows a text field, like the ones for views, categories and filters. The calendar is
@@ -85,6 +86,7 @@ test('the calendars section has a plus that shows a labelled field, and Escape c
   await expect(plus()).toHaveAttribute('aria-expanded', 'true')
   await expect(field()).toBeVisible()
   await expect(field()).toBeFocused()
+  await settleAnimations(page)
   const { violations } = await new AxeBuilder({ page })
     .include('#app-sidebar')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

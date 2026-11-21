@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { TODAY, openApp, press } from './helpers'
+import { settleAnimations } from './axe-scan'
 
 // FR-33: the app speaks English and German. A browser that prefers German gets German; Settings →
 // Language switches at once and the choice stays in the browser. The demo's sample names
@@ -26,7 +27,6 @@ async function openSettings(page: Page): Promise<void> {
 
 // Texts of the app that must not show on a German screen. Only words that differ in German.
 const ENGLISH = [
-  'Quick add',
   'Settings',
   'Cancel',
   'Save',
@@ -70,7 +70,6 @@ test.describe('German browser', () => {
     for (const word of ['Heute', 'Tag', 'Woche', 'Monat', 'Jahr', 'Liste']) {
       await expect(header.getByRole('button', { name: word, exact: true })).toBeVisible()
     }
-    await expect(header.getByRole('button', { name: 'Schnell hinzufügen' })).toBeVisible()
     await expect(header.getByRole('button', { name: 'Hinzufügen', exact: true })).toBeVisible()
     // FullCalendar's own words follow the language too: Thursday is "Do", not "Thu".
     await expect(calendar(page)).toContainText(/\bDo\b/)
@@ -99,14 +98,6 @@ test.describe('German browser', () => {
     await expect(sidebar).toBeVisible()
     await expectNoEnglish(page, await page.locator('body').innerText())
     await page.keyboard.press('Escape')
-
-    await press(page.getByRole('button', { name: 'Schnell hinzufügen' }))
-    const quick = page.getByRole('dialog', { name: 'Schnell hinzufügen' })
-    await expect(quick).toBeVisible()
-    await expectNoEnglish(page, await quick.innerText())
-    await expect(quick.getByLabel('Titel')).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(quick).toBeHidden()
 
     await press(page.getByRole('button', { name: 'Hinzufügen', exact: true }))
     const add = page.getByRole('dialog', { name: 'Termin hinzufügen' })
@@ -144,8 +135,7 @@ test.describe('German browser', () => {
     await press(page.getByRole('button', { name: 'Hinzufügen', exact: true }))
     const add = page.getByRole('dialog', { name: 'Termin hinzufügen' })
     await expect(add).toBeVisible()
-    // The dialog fades in; axe would measure the colours of a half-transparent dialog.
-    await page.waitForTimeout(400)
+    await settleAnimations(page)
     const inDialog = await new AxeBuilder({ page })
       .include('[role="dialog"]')
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -156,6 +146,7 @@ test.describe('German browser', () => {
 
     await page.goto('/settings')
     await expect(page.getByRole('heading', { level: 2, name: 'Sprache' })).toBeVisible()
+    await settleAnimations(page)
     const settings = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze()

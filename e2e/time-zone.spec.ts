@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { openApp, press, switchView } from './helpers'
+import { settleAnimations } from './axe-scan'
 
 // FR-29: the server's time zone (Europe/Berlin here) is the organization's. A viewer sees times in
 // the zone of their own browser. The mock times are organization time: Sprint planning is Mon
@@ -337,6 +338,7 @@ test.describe('a time zone chosen in the settings', () => {
   test('has no accessibility violations (WCAG 2.1 A and AA)', async ({ page }) => {
     await openSettings(page)
     const scan = async () => {
+      await settleAnimations(page)
       const { violations } = await new AxeBuilder({ page })
         .include('section[aria-labelledby="settings-time-zone"]')
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

@@ -105,7 +105,7 @@ and client renders match.
 - **Touch.** v7 uses pointer events with long-press (`longPressDelay`, default
   1000 ms; `eventLongPressDelay` / `selectLongPressDelay` override it).
   Long-press is not discoverable, so provide explicit buttons: tap an event to
-  open the event details/edit sheet, and keep quick-add visible.
+  open the event details/edit sheet, and keep Add visible.
 - **Sizing.** v7 resizes via `ResizeObserver`; `handleWindowResize` no longer
   exists. Use `height`/`contentHeight`, `aspectRatio`, `expandRows`,
   `dayMaxEvents`/`dayMaxEventRows`, `dayNarrowWidth`, `eventMinWidth`,
@@ -131,7 +131,7 @@ and client renders match.
   data. See [Environment](#environment).
 - The design of 2026-10-29 is recorded in `docs/design.md` (v1.3). The deployment files
   (`docker-compose.yml`, `deploy/`, `.env.example`, `server/validate-config.mjs`) follow
-  it. Built: the UI (sidebar, top bar, every view type incl. the split view, quick-add, event
+  it. Built: the UI (sidebar, top bar, every view type incl. the split view, adding events, event
   sheet; mock data in demo mode), the browser login (Kanidm, PKCE), live calendars from Radicale
   with recurrence and time zones (organization zone, the browser's, or a per-user setting),
   creating, editing and deleting events, a settings page (app tokens, password-protected

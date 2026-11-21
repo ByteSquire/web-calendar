@@ -1,6 +1,6 @@
 /**
  * Shared calendar state: the single source of truth for the sidebar, top bar, main area, split
- * view, event sheet and quick-add. Every call returns the same underlying state (Nuxt `useState`),
+ * view, event sheet and the "Add event" dialog. Every call returns the same underlying state (Nuxt `useState`),
  * so any component may call it. Always destructure refs and use them as refs (`viewType.value`,
  * or `v-model="viewType"` in templates); the functions are plain and need no `this`.
  * Logic and tests: app/utils/calendar-state.ts, tests/calendar-state.test.ts.
@@ -85,14 +85,11 @@
  *   calendar that has at least one filtered event inside `visibleRange` (calendar order; events
  *   sorted by start). Calendars without events are omitted, which is the band hiding of FR-6.
  *
- * Quick-add and Add
- * - `quickAddOpen: Ref<boolean>`, `quickAddPreset: Ref<Partial<NewEventInput>|null>`.
- *   Open it with `openQuickAdd(preset?)` (for example a clicked date as `start`/`end`); the
- *   modal reads the preset when it opens and closes with `closeQuickAdd()`. Setting
- *   `quickAddOpen` directly is fine for closing, not for opening with a preset.
- * - `openAddEvent(preset?)` opens the same dialog as the longer "Add" form (`quickAddFull` is
- *   true): also the details (location, description) and the resources to book. `openQuickAdd`
- *   opens the lean one.
+ * Add event
+ * - `addEventOpen: Ref<boolean>`, `addEventPreset: Ref<Partial<NewEventInput>|null>`.
+ *   Open the dialog with `openAddEvent(preset?)` (for example a clicked date as `start`/`end`);
+ *   it reads the preset when it opens and closes with `closeAddEvent()`. Setting `addEventOpen`
+ *   directly is fine for closing, not for opening with a preset.
  *
  * Live mode (signed in; see composables/useLiveCalendar.ts)
  * - The state starts empty and `useLiveCalendar()` (called by the default layout) fills `currentUser`,

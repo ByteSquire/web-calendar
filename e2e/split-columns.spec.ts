@@ -93,7 +93,7 @@ test.describe('split view, calendars as columns', () => {
     const box = await cell.boundingBox()
     if (!box) throw new Error('no cell')
     await pointAt(page, box.x + box.width / 2, box.y + box.height / 2)
-    const dialog = page.getByRole('dialog', { name: 'Quick add' })
+    const dialog = page.getByRole('dialog', { name: 'Add event' })
     await expect(dialog).toBeVisible()
     await expect(dialog).toContainText('Team')
     expect(await settledDialogs(page)).toHaveLength(1)

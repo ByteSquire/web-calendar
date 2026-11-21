@@ -1,5 +1,5 @@
 <!--
-  Event details sheet: a bottom sheet on phones, a centered window (like quick-add) on desktop.
+  Event details sheet: a bottom sheet on phones, a centered window (like "Add event") on desktop.
   Open while `selectedEventId` is set; closing (Escape, the close button, the backdrop) clears it.
   Blocked events show "Busy" and the time only. On live data Edit and Delete open the dialogs of
   EventWriteDialogs (for events the viewer may change; otherwise the buttons are disabled and the

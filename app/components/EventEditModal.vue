@@ -1,5 +1,5 @@
 <!--
-  Edit dialog (FR-9): the form of "Quick add" filled with an existing event. The calendar is shown
+  Edit dialog (FR-9): the form of "Add event" filled with an existing event. The calendar is shown
   but cannot be changed (moving an event between calendars is not offered). It reports only the
   fields the person changed (`submit`), and shows `error` when saving failed; the caller does the
   writing and closes the dialog. The caller has already asked which events of a series are meant
@@ -32,7 +32,6 @@
           mode="edit"
           :errors="errors"
           extended
-          details
           :calendars="calendarList"
           :calendar-name="calendar?.name ?? ''"
           :category-names="categoryNames"

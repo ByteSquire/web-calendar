@@ -1,10 +1,9 @@
 <!--
-  Quick-add and Add dialog (FR-24, FR-9). The layout always mounts it; it is open while
-  `quickAddOpen` is set in useCalendarState(). It is one dialog in two sizes, told apart by
-  `quickAddFull`: "Quick add" (the top bar, a click on a date) is lean, title, calendar, start and
-  end and a repeat rule; "Add" (the top bar) adds the folding "Details" (location, description)
+  "Add event" dialog (FR-24, FR-9): opened by "Add" in the top bar and by a click on a date. The
+  layout always mounts it; it is open while `addEventOpen` is set in useCalendarState(). It has
+  title, calendar, start and end, a repeat rule, the folding "Details" (location, description)
   and the resources to book with the event. Each time it opens, the form starts from
-  `quickAddPreset` (or from the anchor date, 09:00 to 10:00) and validates on submit; after a
+  `addEventPreset` (or from the anchor date, 09:00 to 10:00) and validates on submit; after a
   failed submit the messages follow the input live. Form model, defaults and validation:
   app/utils/quick-add.ts and app/utils/writes/event-form.ts.
 
@@ -14,15 +13,15 @@
 -->
 <template>
   <UModal
-    :open="quickAddOpen"
-    :title="quickAddFull ? t('Add event') : t('Quick add')"
+    :open="addEventOpen"
+    :title="t('Add event')"
     :description="t('Create an event')"
     :content="{ onOpenAutoFocus: focusTitle, onCloseAutoFocus: restoreFocus }"
     @update:open="onOpenChange"
   >
     <template #body>
       <form
-        id="quick-add-form"
+        id="add-event-form"
         ref="formElement"
         novalidate
         class="flex flex-col gap-4"
@@ -46,12 +45,10 @@
           mode="create"
           :errors="errors"
           :extended="live"
-          :details="quickAddFull"
           :calendars="choosableCalendars"
           :time-zone="timeZone"
         />
         <ResourceBookingFields
-          v-if="quickAddFull"
           v-model="chosenResources"
           :offered="bookable"
           :note="isSeries && chosenResources.length > 0 ? tv(SERIES_NOTE) : ''"
@@ -62,7 +59,7 @@
 
     <template #footer>
       <div v-if="saved" class="flex w-full justify-end gap-2">
-        <UButton :label="t('Close')" @click="closeQuickAdd()" />
+        <UButton :label="t('Close')" @click="closeAddEvent()" />
       </div>
       <div v-else class="flex w-full flex-wrap items-center justify-end gap-2">
         <BookRightAwayCheckbox
@@ -71,10 +68,10 @@
           :disabled="pending"
           class="me-auto"
         />
-        <UButton :label="t('Cancel')" color="neutral" variant="outline" @click="closeQuickAdd()" />
+        <UButton :label="t('Cancel')" color="neutral" variant="outline" @click="closeAddEvent()" />
         <UButton
           type="submit"
-          form="quick-add-form"
+          form="add-event-form"
           :label="t('Add event')"
           :loading="pending"
           :disabled="noWritableCalendar"
@@ -103,10 +100,9 @@ import { SUCCESS_TITLES } from '~/utils/writes/messages'
 import { writableCalendars } from '~/utils/writes/rules'
 
 const {
-  quickAddOpen,
-  quickAddPreset,
-  quickAddFull,
-  closeQuickAdd,
+  addEventOpen,
+  addEventPreset,
+  closeAddEvent,
   calendars,
   calendarById,
   visibleCalendarIds,
@@ -114,7 +110,7 @@ const {
   visibleRange,
   addEvent,
 } = useCalendarState()
-useBackDismiss(quickAddOpen, closeQuickAdd)
+useBackDismiss(addEventOpen, closeAddEvent)
 const toast = useToast()
 const timeZone = useDisplayTimeZone()
 const { live, create } = useEventWrites()
@@ -142,7 +138,7 @@ const noWritableCalendar = computed(
 
 function createForm(): EventForm {
   return initialEventForm({
-    preset: quickAddPreset.value,
+    preset: addEventPreset.value,
     anchor: anchorDate.value,
     calendars: choosableCalendars.value,
     visibleCalendarIds: visibleCalendarIds.value,
@@ -163,13 +159,13 @@ const errors = computed(() =>
 )
 
 // The dialog has no trigger element, so Reka UI cannot restore focus by itself. Remember the
-// element that opened it, for example the quick-add button or a date cell.
+// element that opened it, for example the Add button or a date cell.
 let opener: HTMLElement | null = null
 // Counts the openings: an answer that arrives after the dialog was closed must not touch the
 // form of a later opening.
 let session = 0
 
-watch(quickAddOpen, (open) => {
+watch(addEventOpen, (open) => {
   if (!open) return
   session += 1
   form.value = createForm()
@@ -185,12 +181,12 @@ watch(quickAddOpen, (open) => {
 // The calendars can arrive after the dialog opened (a slow server, or a first visit): the form was
 // made without one, so the choice is made when they do, unless the person has chosen already.
 watch(choosableCalendars, () => {
-  if (!quickAddOpen.value || form.value.calendarId !== '') return
+  if (!addEventOpen.value || form.value.calendarId !== '') return
   form.value = { ...form.value, calendarId: createForm().calendarId }
 })
 
 function onOpenChange(open: boolean) {
-  if (!open) closeQuickAdd()
+  if (!open) closeAddEvent()
 }
 
 function focusTitle(event: Event) {
@@ -318,11 +314,11 @@ async function submitLive() {
       calendarHref: calendar.href,
       input: toWriterNewEvent(values),
     })
-    const stale = mine !== session || !quickAddOpen.value
+    const stale = mine !== session || !addEventOpen.value
     if (!outcome.ok) {
       // The form closed meanwhile: there is no form to put the message in.
       if (stale || outcome.failure.closeForm) {
-        if (!stale) closeQuickAdd()
+        if (!stale) closeAddEvent()
         toast.add({
           title: t('The event could not be added'),
           description: outcome.failure.message,
@@ -340,7 +336,7 @@ async function submitLive() {
         reasons: booking.failures.join(' '),
       })
       saved.value = true
-    } else if (!stale) closeQuickAdd()
+    } else if (!stale) closeAddEvent()
     announceAdded(previewOf(values), booking.summary)
   } finally {
     if (mine === session) pending.value = false
@@ -363,7 +359,7 @@ async function onSubmit() {
   }
   const event = addEvent(toNewEventInput(form.value))
   const summary = bookChosenInDemo(form.value)
-  closeQuickAdd()
+  closeAddEvent()
   announceAdded(event, summary)
 }
 </script>

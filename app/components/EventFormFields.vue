@@ -1,9 +1,8 @@
 <!--
-  The fields of the event dialogs, shared by "Quick add" and "Add" (create) and "Edit": title,
-  calendar, then the start and end with "All day" in a region that folds away, then, on live data,
-  for a new event the repeat rule, for an existing one the status and the categories. `details`
-  adds a second region that folds away with the location and the description (not in "Quick add",
-  which stays lean). The parent owns the form (v-model) and the validation messages; the model and
+  The fields of the event dialogs, shared by "Add event" (create) and "Edit": title, calendar,
+  then the start and end with "All day" in a region that folds away, then, on live data, for a
+  new event the repeat rule, for an existing one the status and the categories, and a second
+  region that folds away with the location and the description. The parent owns the form (v-model) and the validation messages; the model and
   its rules are in app/utils/writes/event-form.ts.
 
   Without `extended` (the in-memory demo) only the five fields of the Phase 1 dialog are drawn.
@@ -188,12 +187,7 @@
     </template>
 
     <template v-if="extended">
-      <FormRegion
-        v-if="details"
-        v-model:open="detailsOpen"
-        :title="t('Details')"
-        :summary="detailsSummary"
-      >
+      <FormRegion v-model:open="detailsOpen" :title="t('Details')" :summary="detailsSummary">
         <UFormField :label="t('Location')" name="location">
           <UInput
             :model-value="form.location"
@@ -259,10 +253,8 @@ const props = withDefaults(
   defineProps<{
     mode?: 'create' | 'edit'
     errors?: EventFormErrors
-    /** Draw repeat (new) and status, categories (existing), and the details when asked for. */
+    /** Draw repeat (new), status and categories (existing), and the details (live data). */
     extended?: boolean
-    /** Draw the folding region with the location and the description (on live data). */
-    details?: boolean
     /** The calendars a new event can go to. */
     calendars?: readonly { id: string; name: string; color: string }[]
     /** The calendar of an existing event (shown, not changeable). */
@@ -276,7 +268,6 @@ const props = withDefaults(
     mode: 'create',
     errors: () => ({}),
     extended: false,
-    details: false,
     calendars: () => [],
     calendarName: '',
     categoryNames: () => [],

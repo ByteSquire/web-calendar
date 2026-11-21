@@ -369,11 +369,11 @@ export function toFullCalendarEvents(
 // ---- Date clicks ----
 
 /**
- * Quick-add preset for a click on `dateStr` (FullCalendar's `dateStr`: a date, or a date-time whose
+ * The "Add event" preset for a click on `dateStr` (FullCalendar's `dateStr`: a date, or a date-time whose
  * leading part is the wall-clock time in the display zone). A date cell gives a one-day all-day event; a
  * time slot gives a one-hour event starting there.
  */
-export function quickAddPresetForClick(
+export function addEventPresetForClick(
   dateStr: string,
   allDay: boolean,
 ): Required<Pick<NewEventInput, 'start' | 'end' | 'allDay'>> {

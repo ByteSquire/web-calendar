@@ -2,11 +2,11 @@
 const OWN_CLICK_TARGET = 'a, button, [role="button"], [role="link"]'
 
 /**
- * A tap or click in an empty cell opens quick-add. FullCalendar reports the date hit on its own
+ * A tap or click in an empty cell opens "Add event". FullCalendar reports the date hit on its own
  * schedule: after the click, because it ends its pointer tracking in a timeout, but the order is
  * not guaranteed. An event or a day number is reported from the click itself. On a touch screen the
  * browser sends the click to a clickable element near the tap, such as an event card, while the
- * touch started in the cell, so a date hit alone must not open quick-add: the sheet would open
+ * touch started in the cell, so a date hit alone must not open "Add event": the sheet would open
  * as well. The hit is opened once the click has arrived, in whichever order, and nothing else
  * claimed it. Opening it from the click also keeps the dialog from appearing under the finger
  * before the click arrives and landing on its controls.

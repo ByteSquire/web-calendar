@@ -1,9 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import { TODAY, expectOpenFocus, openApp, press, switchView } from './helpers'
 
-// "Add" next to "Quick add" in the top bar (demo: the mock resources Room A and Van, rights for
-// everything). Quick add stays lean; Add also offers the resources to book with the event. The
-// folding Details (location, description) need live data and are checked in e2e/live and in
+// "Add" in the top bar, the one way to add an event besides a click on a date (demo: the mock
+// resources Room A and Van, rights for everything): it adds, refuses what it cannot add, returns
+// the focus, and offers the resources to book with the event. The folding Details (location, description) need live data and are checked in e2e/live and in
 // tests/writes-ui.test.ts.
 // A frozen Date.now() makes Vue skip the pointerdown handler that opens a select (see
 // e2e/dark-mode-switch.spec.ts): the specs that open the list of resources let the time run.
@@ -14,20 +14,54 @@ async function openWithRunningClock(page: Page) {
 }
 
 test.describe('add event', () => {
-  test('the top bar has Quick add and Add, and they open different dialogs', async ({ page }) => {
+  test('adds an event that shows in the current view, and returns focus', async ({ page }) => {
     await openApp(page)
-    await expect(page.getByRole('button', { name: 'Quick add' })).toBeVisible()
+    await switchView(page, 'Week')
+    const opener = page.getByRole('button', { name: 'Add', exact: true })
+    await press(opener)
+
+    const dialog = page.getByRole('dialog', { name: 'Add event' })
+    await expect(dialog).toBeVisible()
+    await expectOpenFocus(dialog, dialog.getByLabel('Title'))
+    await dialog.getByLabel('Title').fill('E2E planning')
+    await press(dialog.getByRole('button', { name: 'Add event' }))
+
+    await expect(dialog).toBeHidden()
+    await expect(
+      page.locator('[data-calendar-main]').getByText('E2E planning').first(),
+    ).toBeVisible()
+    await expect(opener).toBeFocused()
+  })
+
+  test('refuses an empty title and keeps the dialog open', async ({ page }) => {
+    await openApp(page)
+    await press(page.getByRole('button', { name: 'Add', exact: true }))
+    const dialog = page.getByRole('dialog', { name: 'Add event' })
+    await press(dialog.getByRole('button', { name: 'Add event' }))
+    await expect(dialog.getByText('Enter a title.')).toBeVisible()
+    await expect(dialog).toBeVisible()
+  })
+
+  test('Escape closes it and focus returns to the button', async ({ page }) => {
+    await openApp(page)
+    const opener = page.getByRole('button', { name: 'Add', exact: true })
+    await press(opener)
+    const dialog = page.getByRole('dialog', { name: 'Add event' })
+    await expect(dialog).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+    await expect(opener).toBeFocused()
+  })
+
+  test('the top bar has one button for adding, and its dialog offers the resources', async ({
+    page,
+  }) => {
+    await openApp(page)
+    await expect(page.getByRole('button', { name: 'Quick add' })).toHaveCount(0)
     await press(page.getByRole('button', { name: 'Add', exact: true }))
     const add = page.getByRole('dialog', { name: 'Add event' })
     await expect(add).toBeVisible()
     await expect(add.getByLabel('Add a resource')).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(add).toBeHidden()
-
-    await press(page.getByRole('button', { name: 'Quick add' }))
-    const quick = page.getByRole('dialog', { name: 'Quick add' })
-    await expect(quick).toBeVisible()
-    await expect(quick.getByLabel('Add a resource')).toHaveCount(0)
   })
 
   test('books a resource with the event, right there in the form', async ({ page }) => {
@@ -73,8 +107,8 @@ test.describe('add event', () => {
 
   test('the start and end fold away and tell what is in them', async ({ page }) => {
     await openApp(page)
-    await press(page.getByRole('button', { name: 'Quick add' }))
-    const dialog = page.getByRole('dialog', { name: 'Quick add' })
+    await press(page.getByRole('button', { name: 'Add', exact: true }))
+    const dialog = page.getByRole('dialog', { name: 'Add event' })
     const region = dialog.getByRole('button', { name: /^Start and end/ })
     await expect(region).toHaveAttribute('aria-expanded', 'true')
     await expect(dialog.getByLabel('Start', { exact: true })).toBeVisible()

@@ -295,11 +295,11 @@ describe('quick-add with the calendar state', () => {
 
   function open(
     store: ReturnType<typeof makeStore>,
-    preset?: Parameters<typeof store.openQuickAdd>[0],
+    preset?: Parameters<typeof store.openAddEvent>[0],
   ) {
-    store.openQuickAdd(preset)
+    store.openAddEvent(preset)
     return initialQuickAddForm({
-      preset: store.quickAddPreset.value,
+      preset: store.addEventPreset.value,
       anchor: store.anchorDate.value,
       calendars: store.calendars.value,
       visibleCalendarIds: store.visibleCalendarIds.value,

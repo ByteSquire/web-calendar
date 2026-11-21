@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 import { openSignedIn } from './session'
+import { settleAnimations } from '../axe-scan'
 
 // NFR-4 with the real stack (design S8 setup): when a calendar cannot be loaded the sidebar lists
 // it under "Problems" with a Retry button, and Retry loads it again once the server answers. The
@@ -37,6 +38,7 @@ test('lists a calendar that cannot be loaded under Problems, with Retry', async 
   const box = await retry.first().boundingBox()
   expect(box!.height).toBeGreaterThanOrEqual(44)
 
+  await settleAnimations(page)
   const { violations } = await new AxeBuilder({ page })
     .include('[data-sidebar-problems]')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

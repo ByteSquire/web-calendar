@@ -357,7 +357,7 @@ function uniqueId(base: string, taken: Iterable<string>): string {
   return candidate
 }
 
-/** Builds the event that quick-add stores. The caller validates title and range. */
+/** Builds the event that "Add event" stores. The caller validates title and range. */
 export function createCalendarEvent(
   input: NewEventInput,
   existing: readonly CalendarEvent[],
@@ -506,10 +506,8 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
 
   // UI
   const selectedEventId = state<string | null>('cal-selected-event', () => null)
-  const quickAddOpen = state<boolean>('cal-quick-add-open', () => false)
-  const quickAddPreset = state<Partial<NewEventInput> | null>('cal-quick-add-preset', () => null)
-  // One dialog in two sizes: 'Quick add' (lean) or 'Add' (details, resources); the last opener decides.
-  const quickAddFull = state<boolean>('cal-quick-add-full', () => false)
+  const addEventOpen = state<boolean>('cal-add-event-open', () => false)
+  const addEventPreset = state<Partial<NewEventInput> | null>('cal-add-event-preset', () => null)
   const sidebarOpen = state<boolean>('cal-sidebar-open', options.sidebarOpen)
 
   const anchorDate = computed({
@@ -854,22 +852,15 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     selectedEventId.value = id
   }
 
-  function openQuickAdd(preset?: Partial<NewEventInput>) {
-    quickAddFull.value = false
-    quickAddPreset.value = preset ?? null
-    quickAddOpen.value = true
-  }
-
-  /** The longer form: also the details and the resources to book. */
+  /** Opens the "Add event" dialog, with `preset` (a clicked date, for example) if given. */
   function openAddEvent(preset?: Partial<NewEventInput>) {
-    quickAddFull.value = true
-    quickAddPreset.value = preset ?? null
-    quickAddOpen.value = true
+    addEventPreset.value = preset ?? null
+    addEventOpen.value = true
   }
 
-  function closeQuickAdd() {
-    quickAddOpen.value = false
-    quickAddPreset.value = null
+  function closeAddEvent() {
+    addEventOpen.value = false
+    addEventPreset.value = null
   }
 
   function toggleSidebar() {
@@ -932,12 +923,10 @@ export function createCalendarState(state: StateFactory, options: CalendarStateO
     selectedEventId,
     selectedEvent,
     selectEvent,
-    quickAddOpen,
-    quickAddPreset,
-    quickAddFull,
-    openQuickAdd,
+    addEventOpen,
+    addEventPreset,
     openAddEvent,
-    closeQuickAdd,
+    closeAddEvent,
     sidebarOpen,
     toggleSidebar,
   }

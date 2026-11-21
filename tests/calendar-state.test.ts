@@ -787,16 +787,16 @@ describe('calendar state', () => {
 
   it('opens quick-add with a preset and clears it on close', () => {
     const state = makeStore()
-    state.openQuickAdd({ start: '2026-10-30', allDay: true })
-    expect(state.quickAddOpen.value).toBe(true)
-    expect(state.quickAddPreset.value).toEqual({ start: '2026-10-30', allDay: true })
+    state.openAddEvent({ start: '2026-10-30', allDay: true })
+    expect(state.addEventOpen.value).toBe(true)
+    expect(state.addEventPreset.value).toEqual({ start: '2026-10-30', allDay: true })
 
-    state.closeQuickAdd()
-    expect(state.quickAddOpen.value).toBe(false)
-    expect(state.quickAddPreset.value).toBeNull()
+    state.closeAddEvent()
+    expect(state.addEventOpen.value).toBe(false)
+    expect(state.addEventPreset.value).toBeNull()
 
-    state.openQuickAdd()
-    expect(state.quickAddPreset.value).toBeNull()
+    state.openAddEvent()
+    expect(state.addEventPreset.value).toBeNull()
   })
 
   it('toggles the sidebar', () => {

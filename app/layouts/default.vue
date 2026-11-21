@@ -48,7 +48,7 @@
       </main>
 
       <EventSheet />
-      <QuickAddModal />
+      <AddEventModal />
       <SignInExpiredDialog v-if="live" />
     </template>
   </div>
@@ -82,7 +82,7 @@ const ready = computed(
 // crosses 768 px, the column and the slideover share it.
 
 // The slideover has no trigger element, so Reka UI cannot return focus to the toggle by itself
-// (same as QuickAddModal): remember what had focus when it opened.
+// (same as AddEventModal): remember what had focus when it opened.
 let opener: HTMLElement | null = null
 watch(sidebarOpen, (open) => {
   if (open && !isDesktop.value) opener = document.activeElement as HTMLElement | null

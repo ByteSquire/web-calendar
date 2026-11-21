@@ -1,9 +1,10 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { openSignedIn } from './session'
+import { settleAnimations } from '../axe-scan'
 
 // FR-9 with the real stack (design S8 setup: the production build with the login ON, Kanidm and
-// Radicale): create a repeating event with the quick-add dialog, change one occurrence, read the
+// Radicale): create a repeating event with the "Add event" dialog, change one occurrence, read the
 // change back, delete the series. It works in alice's first calendar and removes what it made; a
 // run that fails half-way leaves an event titled "E2E write <number>" behind. The tests share one
 // signed-in page, in order, as in login.spec.ts.
@@ -29,14 +30,7 @@ const area = () => page.locator('[data-calendar-main]')
 
 /** WCAG 2.1 A and AA inside the open dialogs; the calendar behind them is not part of the check. */
 async function scanDialogs(): Promise<string[]> {
-  await page.evaluate(() =>
-    Promise.all(
-      document
-        .getAnimations()
-        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
-        .map((animation) => animation.finished.catch(() => undefined)),
-    ),
-  )
+  await settleAnimations(page)
   const { violations } = await new AxeBuilder({ page })
     .include('[role="dialog"]')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

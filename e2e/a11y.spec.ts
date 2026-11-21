@@ -12,10 +12,10 @@ test.describe('accessibility scan', () => {
     })
   }
 
-  test('the quick-add dialog has none', async ({ page }) => {
+  test('the add event dialog has none', async ({ page }) => {
     await openApp(page)
-    await press(page.getByRole('button', { name: 'Quick add' }))
-    await expect(page.getByRole('dialog', { name: 'Quick add' })).toBeVisible()
+    await press(page.getByRole('button', { name: 'Add', exact: true }))
+    await expect(page.getByRole('dialog', { name: 'Add event' })).toBeVisible()
     expect(await scan(page)).toEqual([])
   })
 

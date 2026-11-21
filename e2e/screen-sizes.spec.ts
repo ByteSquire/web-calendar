@@ -72,3 +72,34 @@ test.describe('screen sizes', () => {
     })
   }
 })
+
+// From 1024 px the top bar is one row. A 1280 px wide screen at 125 % zoom (or display scaling)
+// leaves it 1024 CSS px: there "Add" shows only its plus before the date navigation and the view
+// switcher have to scroll, and gets its label back when the window is wide again (TopBar.vue).
+test.describe('the one-row top bar when it runs short', () => {
+  test('"Add" drops its label first, keeps its name, and gets the label back', async ({ page }) => {
+    test.skip(test.info().project.name !== 'desktop', 'sets its own viewport, runs once')
+    await page.setViewportSize({ width: 1280, height: 800 })
+    const app = await openApp(page)
+    const add = page.getByRole('button', { name: 'Add', exact: true })
+    const label = add.getByText('Add', { exact: true })
+    const stripOverflow = () =>
+      page.evaluate(() => {
+        const strip = document.querySelector('.top-bar-strip')!
+        return strip.scrollWidth - strip.clientWidth
+      })
+    await expect(label).toBeVisible()
+    await expect(add).not.toHaveAttribute('title')
+
+    // English needs 1136 px for the strip beside "Add" with its label, 1112 px beside the plus.
+    await page.setViewportSize({ width: 1120, height: 800 })
+    await expect(label).toBeHidden()
+    await expect(add).toHaveAttribute('title', 'Add')
+    expect(await stripOverflow()).toBeLessThanOrEqual(0)
+
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await expect(label).toBeVisible()
+    await expect(add).not.toHaveAttribute('title')
+    expect(app.errors).toEqual([])
+  })
+})

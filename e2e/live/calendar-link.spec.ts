@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import Database from 'better-sqlite3'
-import { scan } from '../axe-scan'
+import { scan, settleAnimations } from '../axe-scan'
 import { APP_ORIGIN, newAppContext, openSignedIn } from './session'
 import { toast } from '../helpers'
 
@@ -227,6 +227,7 @@ test('alice makes a link to her calendar on the Settings page and sees its addre
   address = await field.inputValue()
   expect(address).toMatch(new RegExp(`^${APP_ORIGIN}/link/[A-Za-z0-9_-]{43}$`))
   await expect(toast(alice, `Link “${LABEL}” created.`)).toBeVisible()
+  await settleAnimations(alice)
   const { violations } = await new AxeBuilder({ page: alice })
     .include('[role="dialog"]')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -257,6 +258,7 @@ test('a visitor is asked for the password and refused with a wrong one', async (
   await expect(visitor.getByRole('heading', { name: 'A shared calendar' })).toBeVisible()
   // No sign-in was asked for: the page is the app's own, not the identity provider's.
   expect(new URL(visitor.url()).origin).toBe(APP_ORIGIN)
+  await settleAnimations(visitor)
   const { violations } = await new AxeBuilder({ page: visitor })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()
@@ -278,7 +280,6 @@ test('with the right password the visitor sees the calendar alone, read-only', a
   // nothing of the app around it
   await expect(visitor.locator('#app-sidebar')).toHaveCount(0)
   await expect(visitor.getByRole('button', { name: /sidebar/i })).toHaveCount(0)
-  await expect(visitor.getByRole('button', { name: 'Quick add' })).toHaveCount(0)
   await expect(visitor.getByRole('button', { name: 'Add', exact: true })).toHaveCount(0)
   // the event sheet shows the title, the place and the description, and no Edit
   await main.getByText('Team planning').first().click()
@@ -479,6 +480,7 @@ test.describe('a link to a calendar shared with its maker', () => {
     await expect(details.getByRole('textbox', { name: `Password of ${ADMIN_LABEL}` })).toHaveValue(
       ADMIN_PASSWORD,
     )
+    await settleAnimations(alice)
     const { violations } = await new AxeBuilder({ page: alice })
       .include('[role="dialog"]')
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

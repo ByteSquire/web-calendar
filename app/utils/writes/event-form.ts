@@ -1,5 +1,5 @@
-// The form of the live calendar's dialogs: "Quick add" creates an event, "Edit" changes one. It
-// extends the quick-add form (title, calendar, all day, start, end: app/utils/quick-add.ts) with
+// The form of the live calendar's dialogs: "Add event" creates an event, "Edit" changes one. It
+// extends the base form (title, calendar, all day, start, end: app/utils/quick-add.ts) with
 // description, location, status, categories and a repeat rule, and maps it to the iCalendar
 // writer's input (app/utils/ical/write-types.ts). Pure functions, no Vue.
 //
@@ -83,7 +83,7 @@ const FORM_EXTRAS = {
   repeatCount: '10',
 } as const satisfies Omit<EventForm, keyof QuickAddForm>
 
-/** The form of a freshly opened "Quick add": the quick-add defaults, no description, no repeat. */
+/** The form of a freshly opened "Add event": the base defaults, no description, no repeat. */
 export function initialEventForm(defaults: QuickAddDefaults): EventForm {
   return { ...initialQuickAddForm(defaults), ...FORM_EXTRAS, categoryNames: [] }
 }

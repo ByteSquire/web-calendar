@@ -1,5 +1,6 @@
-// Quick-add form: model, defaults from the preset, validation and the event it produces.
-// Pure functions without Vue or Nuxt, so they run in plain Vitest; QuickAddModal.vue renders them.
+// The base form of "Add event" and "Edit": model, defaults from the preset, validation and the
+// event it produces. (It keeps the name of the "Quick add" dialog it was first written for.)
+// Pure functions without Vue or Nuxt, so they run in plain Vitest; AddEventModal.vue renders them.
 // The form of the live calendar (description, repeat, ...) builds on this one in
 // writes/event-form.ts; the date handling below is shared by both.
 import { Temporal } from 'temporal-polyfill'
@@ -27,7 +28,7 @@ export type QuickAddField = 'title' | 'calendarId' | 'start' | 'end'
 export type QuickAddErrors = Partial<Record<QuickAddField, string>>
 
 export interface QuickAddDefaults {
-  /** The preset `openQuickAdd(preset)` was given, if any. */
+  /** The preset `openAddEvent(preset)` was given, if any. */
   preset: Partial<NewEventInput> | null
   /** Used when the preset has no start date. */
   anchor: Temporal.PlainDate

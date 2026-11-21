@@ -2,6 +2,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import Database from 'better-sqlite3'
 import { openSignedIn } from './session'
+import { settleAnimations } from '../axe-scan'
 
 // FR-7 (the file half) with the real stack (design S8 setup: the production build with the login
 // ON, Kanidm and Radicale): in Settings choose an .ics file, read the preview, import it into
@@ -117,6 +118,7 @@ async function chooseFile(): Promise<void> {
 /** WCAG 2.1 A and AA inside the section, and in the dialog while it is open. */
 async function scanSection(): Promise<string[]> {
   const open = (await dialog().count()) > 0
+  await settleAnimations(page)
   const { violations } = await new AxeBuilder({ page })
     .include(open ? '[role="dialog"]' : 'section[aria-labelledby="settings-import"]')
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -171,7 +173,7 @@ test('shows what the file holds before anything is written, in a dialog', async 
   await expect(dialog().getByText(SERIES, { exact: true })).toBeVisible()
   // The to-do is counted and explained, not imported.
   await expect(dialog().getByText('1 to-do (only events are imported)')).toBeVisible()
-  // The first calendar the person may write to is chosen, as in the quick-add dialog.
+  // The first calendar the person may write to is chosen, as in the "Add event" dialog.
   await expect(dialog().getByLabel('Import into')).toContainText(/\S/)
   await expect(dialog().getByRole('button', { name: 'Import 2 events' })).toBeEnabled()
   // The section itself did not change.

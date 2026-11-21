@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { TODAY, expectOpenFocus, press, settledDialogs, toast } from './helpers'
+import { settleAnimations } from './axe-scan'
 
 // Admin › Calendars (FR-14). The app runs in demo mode here, which serves the SPA without a login;
 // `/api/me` and `/api/admin/access/**` are answered by a small stateful stand-in for the real routes
@@ -528,12 +529,13 @@ test.describe('admin calendars', () => {
   test('has no accessibility violations', async ({ page }) => {
     await openPage(page)
     await expect(rule(page, 'staff')).toBeVisible()
-    const violations = async () =>
-      (
-        await new AxeBuilder({ page })
-          .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
-          .analyze()
-      ).violations.map((violation) => violation.id)
+    const violations = async () => {
+      await settleAnimations(page)
+      const { violations } = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .analyze()
+      return violations.map((violation) => violation.id)
+    }
     // with the details of a link open and its password shown
     await press(page.getByRole('button', { name: 'Details of Front desk' }))
     const details = page.getByRole('dialog', { name: 'Front desk', exact: true })

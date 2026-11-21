@@ -29,7 +29,7 @@ import {
   mixColors,
   parseHexColor,
   plainDateInCalendarZone,
-  quickAddPresetForClick,
+  addEventPresetForClick,
   readableTextColor,
   relativeLuminance,
   toFullCalendarEvent,
@@ -417,23 +417,23 @@ describe('event mapping', () => {
   })
 })
 
-describe('quickAddPresetForClick', () => {
+describe('addEventPresetForClick', () => {
   it('gives a one-day all-day event for a date cell', () => {
-    expect(quickAddPresetForClick('2026-10-28', true)).toEqual({
+    expect(addEventPresetForClick('2026-10-28', true)).toEqual({
       start: '2026-10-28',
       end: '2026-10-29',
       allDay: true,
     })
-    expect(quickAddPresetForClick('2026-12-31', true).end).toBe('2027-01-01')
+    expect(addEventPresetForClick('2026-12-31', true).end).toBe('2027-01-01')
   })
 
   it('gives a one-hour event at the clicked time slot, ignoring the offset', () => {
-    expect(quickAddPresetForClick('2026-10-28T10:30:00+01:00', false)).toEqual({
+    expect(addEventPresetForClick('2026-10-28T10:30:00+01:00', false)).toEqual({
       start: '2026-10-28T10:30',
       end: '2026-10-28T11:30',
       allDay: false,
     })
-    expect(quickAddPresetForClick('2026-10-28T23:30:00', false).end).toBe('2026-10-29T00:30')
+    expect(addEventPresetForClick('2026-10-28T23:30:00', false).end).toBe('2026-10-29T00:30')
   })
 })
 

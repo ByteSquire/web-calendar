@@ -37,7 +37,7 @@
       :today="today"
       :category-by-id="categoryColorsShown ? categoryById : undefined"
       @select="selectEvent"
-      @create="openQuickAdd"
+      @create="openAddEvent"
     />
     <SplitTimeline
       v-else-if="splitBands.length > 0"
@@ -49,7 +49,7 @@
       :time-zone="timeZone"
       :category-by-id="categoryColorsShown ? categoryById : undefined"
       @select="selectEvent"
-      @create="openQuickAdd"
+      @create="openAddEvent"
     />
     <div
       v-else
@@ -77,7 +77,7 @@ const {
   anchorDate,
   categoryById,
   customDays,
-  openQuickAdd,
+  openAddEvent,
   rangeLabel,
   selectEvent,
   splitBands,

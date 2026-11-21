@@ -1,8 +1,11 @@
 <!--
-  Top bar (FR-22..FR-25): sidebar toggle, title, date navigation, view-type switcher, quick-add,
-  add and the overflow menu. Below 1024 px it has two rows (main.css): the toggle, title and the
-  quick-add / add / overflow buttons stay on the first, so they are always visible at 360 px, while the
-  date navigation and the view switcher share a second row that scrolls sideways on its own.
+  Top bar (FR-22..FR-25): sidebar toggle, title, date navigation, view-type switcher, "Add" and
+  the overflow menu. Below 1024 px it has two rows (main.css): the toggle, title and the add and
+  overflow buttons stay on the first, so they are always visible at 360 px, while the date
+  navigation and the view switcher share a second row that scrolls sideways on its own. From
+  1024 px all of it shares one row; when that row runs short (a large zoom or display scaling, a
+  longer language), "Add" shows only its plus, as on a phone, before the strip has to scroll
+  (utils/top-bar-fit.ts).
   On the page of a calendar link (read-only) it has no sidebar toggle, no adding and names the
   calendar instead of the app. The root keeps the `top-bar` class the layout places and sizes. While data loads a thin progress
   line runs along its lower edge; it is positioned absolutely, so nothing moves when it appears.
@@ -24,15 +27,19 @@
       />
     </div>
     <div class="top-bar-title">
-      <!-- The name leads back to the calendar (the base address) from every page that has this bar. -->
+      <!-- The name leads back to the calendar (the base address) from every page that has this bar;
+           outlined like the buttons beside it and with a house, so it reads as the way home. -->
       <!-- The page of a calendar link names its calendar; there is no app to go back to. -->
       <span v-if="linkView" class="hidden truncate lg:inline">{{ linkView.name }}</span>
-      <NuxtLink
+      <UButton
         v-else
         to="/"
-        class="hidden rounded-sm text-inherit no-underline hover:underline focus-visible:underline lg:inline"
-        >Web Calendar</NuxtLink
-      >
+        label="Web Calendar"
+        icon="i-lucide-house"
+        color="neutral"
+        variant="outline"
+        class="hidden font-semibold lg:inline-flex"
+      />
       <!-- Below 1024 px the shown period takes the place of the app name; DateNav hides its label. -->
       <!-- Two action buttons share the row at 360 px: there the label is smaller and may use two lines. -->
       <span
@@ -42,29 +49,22 @@
         >{{ rangeLabel }}</span
       >
     </div>
-    <div class="top-bar-strip scroll-px-2">
+    <div ref="strip" class="top-bar-strip scroll-px-2">
       <DateNav class="shrink-0" />
       <ViewSwitcher class="shrink-0" />
     </div>
     <div class="top-bar-actions">
+      <!-- Named by aria-label also when only the plus shows; the title names it on hover then. -->
       <UButton
         v-if="!linkView"
-        icon="i-lucide-zap"
-        color="primary"
-        :aria-label="t('Quick add')"
-        @click="openQuickAdd()"
-      >
-        <span class="hidden sm:inline">{{ t('Quick add') }}</span>
-      </UButton>
-      <UButton
-        v-if="!linkView"
+        ref="addButton"
         icon="i-lucide-plus"
         color="primary"
-        variant="outline"
         :aria-label="t('Add')"
+        :title="addFit.compact ? t('Add') : undefined"
         @click="openAddEvent()"
       >
-        <span class="hidden sm:inline">{{ t('Add') }}</span>
+        <span :class="addFit.compact ? 'hidden' : 'hidden sm:inline'">{{ t('Add') }}</span>
       </UButton>
       <OverflowMenu />
     </div>
@@ -80,9 +80,10 @@
 
 <script setup lang="ts">
 import { useLiveStatus } from '~/composables/useLiveCalendar'
-import { t } from '~/utils/i18n'
+import { locale, t } from '~/utils/i18n'
+import { ADD_LABEL_SHOWN, contentWidth, fitAddLabel } from '~/utils/top-bar-fit'
 
-const { sidebarOpen, toggleSidebar, openQuickAdd, openAddEvent, rangeLabel } = useCalendarState()
+const { sidebarOpen, toggleSidebar, openAddEvent, rangeLabel } = useCalendarState()
 const { loading } = useLiveStatus()
 const linkView = useCalendarLinkView()
 // The heading on paper (main.css draws it from the attribute, so the page has no second copy of
@@ -90,6 +91,52 @@ const linkView = useCalendarLinkView()
 const printTitle = computed(() =>
   linkView.value ? `${linkView.value.name}\n${rangeLabel.value}` : rangeLabel.value,
 )
+
+// "Add" with or without its label (utils/top-bar-fit.ts). The strip and what is in it are
+// observed: the bar's width, the period label and the view names all change the room there is.
+// The check waits for the next frame, so the change it makes is not reported back to the observer
+// in the same pass.
+const strip = useTemplateRef<HTMLElement>('strip')
+const addButton = useTemplateRef<{ $el?: HTMLElement }>('addButton')
+const addFit = ref(ADD_LABEL_SHOWN)
+let stripObserver: ResizeObserver | undefined
+let frame = 0
+
+function fitAdd() {
+  frame = 0
+  const element = strip.value
+  const button = addButton.value?.$el
+  if (!element || !(button instanceof HTMLElement)) return
+  const actions = button.parentElement?.getBoundingClientRect()
+  addFit.value = fitAddLabel(addFit.value, {
+    // Below 1024 px the strip has a row of its own, under the buttons.
+    oneRow: !!actions && element.getBoundingClientRect().top < actions.bottom,
+    slack: element.clientWidth - contentWidth(element),
+    buttonWidth: button.getBoundingClientRect().width,
+  })
+}
+
+function scheduleFit() {
+  if (frame === 0) frame = requestAnimationFrame(fitAdd)
+}
+
+onMounted(() => {
+  if (!strip.value || typeof ResizeObserver === 'undefined') return
+  stripObserver = new ResizeObserver(scheduleFit)
+  stripObserver.observe(strip.value)
+  for (const child of strip.value.children) stripObserver.observe(child)
+})
+
+onBeforeUnmount(() => {
+  stripObserver?.disconnect()
+  if (frame !== 0) cancelAnimationFrame(frame)
+})
+
+// Another language has another label: measure it again from the full button.
+watch(locale, () => {
+  addFit.value = ADD_LABEL_SHOWN
+  scheduleFit()
+})
 </script>
 
 <style scoped>

@@ -429,7 +429,7 @@ status, blocked, mine`, and an event without a calendar counts as blocked. `GET
   calendar `res:<id>`, hidden by default. For the visible ones the loader asks the availability
   route in pieces of at most 62 days and shows approved and blocked slots as hatched "Busy",
   pending ones as tentative "Busy (pending)", the rest as "Booked by <name>" or the event's title.
-  The "Add" dialog (top bar, beside Quick add, which stays lean and has no resource fields) and the
+  The "Add event" dialog (top bar, a click on a date) and the
   event edit form have the resource fields and the "book right away" checkbox;
   the booking is requested after the save, and a refusal keeps the saved event and says why.
   **Series rule:** a new repeating event, or an edit with a scope other than "This event", is
@@ -803,7 +803,7 @@ and an **iCal reader**. Events are read **live** and no long-lived copy is kept.
     gateway passes them through, so the server converts nothing. The mapper turns each
     event into wall-clock strings in the display zone (`app/utils/time-zone.ts`; an
     ambiguous or missing local time is read as RFC 5545 §3.3.5 says), so
-    `CalendarEvent.start/end`, "today", FullCalendar's `timeZone` and quick-add all work in
+    `CalendarEvent.start/end`, "today", FullCalendar's `timeZone` and "Add event" all work in
     the display zone. **All-day events are dates and do not move.** A weekly 09:00 Berlin
     meeting follows Berlin's daylight saving, not the viewer's; for a viewer in Sydney it
     can fall on another weekday.
@@ -1515,7 +1515,7 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     entries are dots already) and never on a busy time. A dot is ringed in the entry's text colour,
     so it stands out on any fill, and the entry's label names its categories ("categories Work,
     Travel"), so the colour is not the only way to tell.
-- **Calendar links** (§8) — the page of a link has no sidebar, no Quick add or Add, no adding by a
+- **Calendar links** (§8) — the page of a link has no sidebar, no Add, no adding by a
   click on a date and no Edit or Delete in the event sheet; the top bar names the calendar (from
   1024 px) and keeps the date navigation and the view types. Its `⋮` menu holds only the look:
   Dark mode (and back to the system's), the language (the visitor has no Settings page) and Full
@@ -1660,17 +1660,22 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
   view shows one slot per day for it, also for a single day. The fields are part of the period
   buttons, not a new control elsewhere; they are only there while Custom range is chosen.
 - **Date navigation** (FR-23): previous / **today** / next.
-- **Quick-add** (FR-24), **Add** and **overflow (`⋮`) menu** (FR-25). Quick add is lean: title,
-  calendar, start and end (with "All day") and, on live data, the repeat rule. "Add" (the outline
-  button beside it) opens the same dialog, titled "Add event", with the folding **Details**
-  (location, description) and the **resources** to book with the event (a dropdown of the
-  resources the person may book). The edit dialog has the same two regions. **Start and end** and
+- **Add** (FR-24) and **overflow (`⋮`) menu** (FR-25). "Add" and a click on a date open the
+  "Add event" dialog: title, calendar, start and end (with "All day"), on live data the repeat
+  rule and the folding **Details** (location, description), and the **resources** to book with the
+  event (a dropdown of the resources the person may book). A separate, leaner "Quick add" was
+  dropped after v0.5.0: two buttons for adding cost the top bar room, and the folded Details keep the
+  one dialog short. The edit dialog has the same two regions. **Start and end** and
   **Details** are regions that fold away: a button with the chevron of the sidebar, and while closed
   it shows what is inside ("Thu 29 Oct, 09:00–10:00"; "Room 42 · Agenda"). Start and end are open
   to begin with; Details start closed unless the event already has a location or a description.
   A failed save opens the region that holds the error before the focus goes to the field. The
-  closed region is hidden, not removed, so nothing typed is lost. Two buttons because the dialogs
-  differ in what they ask, not in who may use them; both are for everybody.
+  closed region is hidden, not removed, so nothing typed is lost.
+  From 1024 px the top bar is one row; when it runs short (a large zoom or display scaling, a longer
+  language or period label), "Add" shows only its plus, as on a phone, before the date navigation
+  and the view switcher have to scroll, and its label comes back when the room is there
+  (`app/utils/top-bar-fit.ts`). It keeps its name (`aria-label`) and gets a tooltip while it is a
+  plus.
 - **Printing** — the browser's own Print command and "Print" in the `⋮` menu (beside Refresh; on the
   page of a calendar link beside Full screen) print the calendar as it is shown: the view, the
   period and the calendars chosen. The menu item is only there where a calendar is on screen
@@ -1797,8 +1802,8 @@ Built on the **GroupOffice** baseline (FR-21…FR-25), mobile-friendly (FR-20).
     uses shade 600 (5.2:1) through `--ui-primary` in `main.css`; dark keeps the lighter shade.
   - Reka UI restores focus on close only to a `DialogTrigger`. A modal or slideover driven by `:open`
     loses focus to the page, so pass `content.onCloseAutoFocus` and focus the element that opened it
-    (done in `QuickAddModal`, `EventSheet` and the layout's sidebar slideover).
-  - The top bar has two rows below 1024 px: toggle, period title and the quick-add / add / `⋮` buttons
+    (done in `AddEventModal`, `EventSheet` and the layout's sidebar slideover).
+  - The top bar has two rows below 1024 px: toggle, period title and the add / `⋮` buttons
     on top, date navigation and the view switcher below in a strip that scrolls sideways. A single row
     does not fit at 360 px and hid the switcher. At 360 px the three 44 px buttons leave the period
     title about 136 px, so below 640 px it is 14 px and may use two lines ("26 Oct – 1 Nov" over "2026").

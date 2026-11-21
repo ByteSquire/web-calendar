@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Locator, type Page, type Route } from '@playwright/test'
 import { TODAY, settledDialogs, toast } from './helpers'
+import { settleAnimations } from './axe-scan'
 
 // The resources administration page. The app runs in demo mode here, which serves the SPA without
 // a login; `/api/me` and `/api/admin/resources` are answered by a small stateful stand-in for the
@@ -273,7 +274,7 @@ test.describe('resources administration', () => {
       }
       await expect(dialog.getByRole('tabpanel')).toBeVisible()
       // The colours of the tabs change with a short transition; the scan waits for its end.
-      await page.waitForTimeout(500)
+      await settleAnimations(page)
       const { violations } = await new AxeBuilder({ page })
         .include('[role="dialog"]')
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -291,6 +292,7 @@ test.describe('resources administration', () => {
   test('has no accessibility violations', async ({ page }) => {
     await openPage(page)
     await expect(page.locator('[data-resource]')).toHaveCount(2)
+    await settleAnimations(page)
     const { violations } = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze()
@@ -302,6 +304,7 @@ test.describe('resources administration', () => {
     await expect(create.getByLabel('Name')).toBeVisible()
     // scanned once the dialog has faded in
     await settledDialogs(page)
+    await settleAnimations(page)
     const inDialog = await new AxeBuilder({ page })
       .include('[role="dialog"]')
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])

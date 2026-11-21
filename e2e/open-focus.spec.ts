@@ -18,10 +18,10 @@ test.describe('opening a dialog on a touch screen', () => {
     }))
   }
 
-  test('quick-add leaves the title alone', async ({ page }) => {
+  test('Add leaves the title alone', async ({ page }) => {
     await openApp(page)
-    await press(page.getByRole('button', { name: 'Quick add' }))
-    const dialog = page.getByRole('dialog', { name: 'Quick add' })
+    await press(page.getByRole('button', { name: 'Add', exact: true }))
+    const dialog = page.getByRole('dialog', { name: 'Add event' })
     await expect(dialog).toBeVisible()
     await expect(dialog).toBeFocused()
     expect(await focusedElement(page)).toEqual({ tag: 'DIV', role: 'dialog', insideControl: false })

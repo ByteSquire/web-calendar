@@ -24,12 +24,12 @@ test.describe('event writes in the demo', () => {
     await expect(sheet.getByRole('button', { name: 'Edit' })).toBeEnabled()
   })
 
-  test('quick add keeps its five fields, without repeat, location or description', async ({
+  test('in the demo, Add keeps the five fields, without repeat, location or description', async ({
     page,
   }) => {
     await openApp(page)
-    await press(page.getByRole('button', { name: 'Quick add' }))
-    const dialog = page.getByRole('dialog', { name: 'Quick add' })
+    await press(page.getByRole('button', { name: 'Add', exact: true }))
+    const dialog = page.getByRole('dialog', { name: 'Add event' })
     await expect(dialog).toBeVisible()
     for (const label of ['Title', 'Calendar', 'Start', 'End']) {
       await expect(dialog.getByLabel(label, { exact: true })).toBeVisible()
@@ -40,7 +40,7 @@ test.describe('event writes in the demo', () => {
     }
   })
 
-  test('quick add still adds to the shown calendar without asking the network', async ({
+  test('in the demo, Add still adds to the shown calendar without asking the network', async ({
     page,
   }) => {
     const calls: string[] = []
@@ -49,8 +49,8 @@ test.describe('event writes in the demo', () => {
     })
     await openApp(page)
     await switchView(page, 'Week')
-    await press(page.getByRole('button', { name: 'Quick add' }))
-    const dialog = page.getByRole('dialog', { name: 'Quick add' })
+    await press(page.getByRole('button', { name: 'Add', exact: true }))
+    const dialog = page.getByRole('dialog', { name: 'Add event' })
     await dialog.getByLabel('Title').fill('Demo write')
     await press(dialog.getByRole('button', { name: 'Add event' }))
     await expect(dialog).toBeHidden()

@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { TODAY, press, toast, waitOutToasts } from './helpers'
+import { settleAnimations } from './axe-scan'
 
 // The groups pages: the list (/groups) and the page of one group (/groups/<id>). The app runs in
 // demo mode here, which serves the SPA without a login; `/api/**` is answered by a small stateful
@@ -561,6 +562,7 @@ test.describe('keyboard and German', () => {
   }) => {
     await openPage(page, true)
     await expect(page.locator('[data-oidc-group]').first()).toBeVisible()
+    await settleAnimations(page)
     const { violations } = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze()
@@ -570,6 +572,7 @@ test.describe('keyboard and German', () => {
   test('has no accessibility violations on the page of a group', async ({ page }) => {
     await openPage(page, true)
     await openGroup(page, 'staff')
+    await settleAnimations(page)
     const { violations } = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
       .analyze()

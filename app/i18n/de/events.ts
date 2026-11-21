@@ -198,7 +198,7 @@ export const events: Readonly<Record<string, string>> = {
   'This cannot be undone.': 'Das lässt sich nicht rückgängig machen.',
   'Delete "{title}"?': '„{title}“ löschen?',
 
-  // Quick add and Add
+  // Add event
   'Add event': 'Termin hinzufügen',
   'Create an event': 'Einen Termin erstellen',
   'This event repeats, so it is saved without booking. Open one occurrence afterwards and add the resource there.':

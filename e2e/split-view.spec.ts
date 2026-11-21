@@ -85,7 +85,7 @@ test.describe('split view', () => {
     if (x === null) throw new Error('no empty cell in the row')
 
     await pointAt(page, x, y)
-    const dialog = page.getByRole('dialog', { name: 'Quick add' })
+    const dialog = page.getByRole('dialog', { name: 'Add event' })
     await expect(dialog).toBeVisible()
     await expect(dialog).toContainText('Team')
     expect(await settledDialogs(page)).toHaveLength(1)

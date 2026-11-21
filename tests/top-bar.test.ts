@@ -3,22 +3,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { clearNuxtState } from '#app'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
-import { QuickAddModal, TopBar, UApp } from '#components'
+import { AddEventModal, TopBar, UApp } from '#components'
 import { useCalendarState } from '~/composables/useCalendarState'
 import { VIEW_TYPES, VIEW_TYPE_LABELS } from '~/utils/calendar-state'
 
-// The top bar and the quick-add dialog inside a real Nuxt UI app: ARIA, keyboard, focus.
+// The top bar and the "Add event" dialog inside a real Nuxt UI app: ARIA, keyboard, focus.
 const Shell = defineComponent({
-  render: () => h(UApp, null, { default: () => [h(TopBar), h(QuickAddModal)] }),
+  render: () => h(UApp, null, { default: () => [h(TopBar), h(AddEventModal)] }),
 })
 
 const buttons = () => [...document.querySelectorAll('button')]
 const button = (name: string) =>
   buttons().find((item) => (item.getAttribute('aria-label') ?? item.textContent?.trim()) === name)
 const dialog = () => document.querySelector('[role="dialog"]')
-const formInputs = () => [...document.querySelectorAll<HTMLInputElement>('#quick-add-form input')]
+const formInputs = () => [...document.querySelectorAll<HTMLInputElement>('#add-event-form input')]
 const errorTexts = () =>
-  [...document.querySelectorAll('#quick-add-form [id$="-error"]')].map((item) =>
+  [...document.querySelectorAll('#add-event-form [id$="-error"]')].map((item) =>
     item.textContent?.trim(),
   )
 
@@ -111,10 +111,10 @@ describe('overflow menu', () => {
   })
 })
 
-describe('quick-add', () => {
+describe('the add event dialog', () => {
   it('validates, adds an event that shows in the current range and returns focus', async () => {
     const { events, visibleEventsInRange } = useCalendarState()
-    const opener = button('Quick add')!
+    const opener = button('Add')!
     opener.focus()
     opener.click()
     await vi.waitFor(() => expect(dialog()).not.toBeNull())
@@ -140,21 +140,21 @@ describe('quick-add', () => {
   })
 
   it('closes with Escape and returns focus', async () => {
-    const { quickAddOpen } = useCalendarState()
-    const opener = button('Quick add')!
+    const { addEventOpen } = useCalendarState()
+    const opener = button('Add')!
     opener.focus()
     opener.click()
     await vi.waitFor(() => expect(dialog()).not.toBeNull())
 
     keydown(document.activeElement, 'Escape')
     await vi.waitFor(() => expect(dialog()).toBeNull())
-    expect(quickAddOpen.value).toBe(false)
+    expect(addEventOpen.value).toBe(false)
     expect(document.activeElement).toBe(opener)
   })
 
   it('starts from the preset and stores an all-day end as exclusive', async () => {
-    const { events, openQuickAdd } = useCalendarState()
-    openQuickAdd({ allDay: true, start: '2026-11-02', end: '2026-11-05' })
+    const { events, openAddEvent } = useCalendarState()
+    openAddEvent({ allDay: true, start: '2026-11-02', end: '2026-11-05' })
     await vi.waitFor(() => expect(dialog()).not.toBeNull())
     const [title, start, end] = formInputs()
     expect([start!.type, start!.value, end!.value]).toEqual(['date', '2026-11-02', '2026-11-04'])
@@ -170,8 +170,8 @@ describe('quick-add', () => {
   })
 
   it('shows an error for an end before the start', async () => {
-    const { events, openQuickAdd } = useCalendarState()
-    openQuickAdd({ start: '2026-11-02T14:00', end: '2026-11-02T15:00' })
+    const { events, openAddEvent } = useCalendarState()
+    openAddEvent({ start: '2026-11-02T14:00', end: '2026-11-02T15:00' })
     await vi.waitFor(() => expect(dialog()).not.toBeNull())
     const [title, , end] = formInputs()
     type(title!, 'Backwards')

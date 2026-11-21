@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { closeDialogs, openApp, pointAt, settledDialogs, switchView } from './helpers'
 
-// A tap on an empty part of a day opens quick-add, a tap on an event opens its sheet, and a tap
+// A tap on an empty part of a day opens "Add event", a tap on an event opens its sheet, and a tap
 // close to an event opens exactly one of them. The browser may send the click of a tap to an
 // event card near the finger while the touch started in the cell next to it.
 
@@ -28,14 +28,14 @@ test.describe('tapping a day', () => {
     test.skip(browserName !== 'chromium', 'the touch is sent through the Chromium protocol')
   })
 
-  test('an empty part of a day opens quick-add and nothing else', async ({ page }) => {
+  test('an empty part of a day opens "Add event" and nothing else', async ({ page }) => {
     await openApp(page)
     await switchView(page, 'Day')
     const vendor = await boxOf(page, '11:00')
 
     await pointAt(page, vendor.x + vendor.width / 2, vendor.y + vendor.height + 14)
 
-    await expect(page.getByRole('dialog', { name: 'Quick add' })).toBeVisible()
+    await expect(page.getByRole('dialog', { name: 'Add event' })).toBeVisible()
     expect(await settledDialogs(page)).toHaveLength(1)
   })
 
@@ -48,7 +48,7 @@ test.describe('tapping a day', () => {
 
     await expect(page.getByRole('dialog', { name: /^11:00|Vendor/ })).toBeVisible()
     expect(await settledDialogs(page)).toHaveLength(1)
-    await expect(page.getByRole('dialog', { name: 'Quick add' })).toBeHidden()
+    await expect(page.getByRole('dialog', { name: 'Add event' })).toBeHidden()
   })
 
   for (const radius of [1, 20]) {

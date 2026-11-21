@@ -112,8 +112,9 @@
   }
 
   /* Top bar spans the full width (row 1). Below 1024 px it has two rows: the sidebar toggle, title
-   * and the quick-add / overflow buttons on top, and the date navigation with the view switcher
-   * below, which scrolls sideways on its own. From 1024 px everything shares one row. */
+   * and the add / overflow buttons on top, and the date navigation with the view switcher below,
+   * which scrolls sideways on its own. From 1024 px everything shares one row; "Add" drops its
+   * label when that row runs short (TopBar.vue). */
   .top-bar {
     position: relative;
     grid-column: 1 / -1;

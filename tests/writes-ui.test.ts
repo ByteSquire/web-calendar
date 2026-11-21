@@ -1,5 +1,5 @@
 // @vitest-environment nuxt
-// The write flows through the real dialogs: quick add, the event sheet's Edit and Delete, the
+// The write flows through the real dialogs: "Add event", the event sheet's Edit and Delete, the
 // "which events?" question, failures, focus. The calendar service is a fake collection; the
 // iCalendar writer and the orchestration are the real ones.
 import {
@@ -16,7 +16,7 @@ import {
 import { defineComponent, h } from 'vue'
 import { clearNuxtState } from '#app'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
-import { EventSheet, QuickAddModal, UApp } from '#components'
+import { EventSheet, AddEventModal, UApp } from '#components'
 import { useCalendarState } from '~/composables/useCalendarState'
 import { useServerConfigState } from '~/composables/useServerConfigState'
 import type { Calendar, CalendarEvent } from '../shared/types/calendar'
@@ -156,7 +156,7 @@ const Shell = defineComponent({
       default: () => [
         h('button', { id: 'opener', type: 'button' }, 'Opener'),
         h(EventSheet),
-        h(QuickAddModal),
+        h(AddEventModal),
       ],
     }),
 })
@@ -207,30 +207,30 @@ async function mountApp() {
 
 // ---------------------------------------------------------------------------------------------
 
-describe('quick add on live data', () => {
-  async function openQuickAdd(
-    preset?: Parameters<ReturnType<typeof useCalendarState>['openQuickAdd']>[0],
+describe('add event on live data', () => {
+  async function openAddEvent(
+    preset?: Parameters<ReturnType<typeof useCalendarState>['openAddEvent']>[0],
   ) {
     const opener = await mountApp()
     seedState([])
-    useCalendarState().openQuickAdd(
+    useCalendarState().openAddEvent(
       preset ?? { start: '2026-11-05T09:00', end: '2026-11-05T10:00' },
     )
     await vi.waitFor(() => expect(top()).not.toBeNull())
     return { opener, dialog: top()! }
   }
 
-  it('is lean: no location and no description, but the repeat rule', async () => {
-    const { dialog } = await openQuickAdd()
-    expect(labelled(dialog, 'Location')).toBeNull()
-    expect(labelled(dialog, 'Description')).toBeNull()
-    expect(text(dialog)).not.toContain('Details')
-    expect(text(dialog)).toContain('Repeat')
-    expect(text(dialog)).toContain('Start and end')
+  it('has the times open and the repeat rule (the details: see "Add" has the details)', async () => {
+    const { dialog } = await openAddEvent()
+    const times = [...dialog.querySelectorAll('button')].find((item) =>
+      text(item)?.startsWith('Start and end'),
+    )!
+    expect(times.getAttribute('aria-expanded')).toBe('true')
+    expect(labelled(dialog, 'Repeat')).not.toBeNull()
   })
 
   it('creates the event in a writable calendar, closes, reloads and returns the focus', async () => {
-    const { opener, dialog } = await openQuickAdd()
+    const { opener, dialog } = await openAddEvent()
     await vi.waitFor(() => expect(document.activeElement).toBe(labelled(dialog, 'Title')))
 
     type(labelled<HTMLInputElement>(dialog, 'Title')!, 'Lunch with Ana')
@@ -250,7 +250,7 @@ describe('quick add on live data', () => {
   })
 
   it('offers only the calendars that can be written to', async () => {
-    const { dialog } = await openQuickAdd()
+    const { dialog } = await openAddEvent()
     // The only writable calendar is the one the form starts with.
     const select = dialog.querySelector<HTMLElement>('[role="combobox"]')
     expect(text(select)).toContain('Work')
@@ -266,7 +266,7 @@ describe('quick add on live data', () => {
     const state = useCalendarState()
     const all = state.calendars.value
     state.calendars.value = []
-    state.openQuickAdd()
+    state.openAddEvent()
     await vi.waitFor(() => expect(top()).not.toBeNull())
     const select = () => top()!.querySelector<HTMLElement>('[role="combobox"]')
     expect(text(select())).not.toContain('Work')
@@ -284,14 +284,14 @@ describe('quick add on live data', () => {
     await mountApp()
     seedState([])
     useCalendarState().calendars.value = calendars.slice(1)
-    useCalendarState().openQuickAdd()
+    useCalendarState().openAddEvent()
     await vi.waitFor(() => expect(top()).not.toBeNull())
     expect(text(top())).toContain('None of your calendars can take new events.')
     expect(buttonIn(top(), 'Add event')!.disabled).toBe(true)
   })
 
   it('keeps the dialog open with the reason, and works again after a retry', async () => {
-    const { dialog } = await openQuickAdd()
+    const { dialog } = await openAddEvent()
     type(labelled<HTMLInputElement>(dialog, 'Title')!, 'Lunch')
     server.failNext('PUT', 'forbidden')
     buttonIn(dialog, 'Add event')!.click()
@@ -312,7 +312,7 @@ describe('quick add on live data', () => {
   })
 
   it('does not submit twice while the first request runs', async () => {
-    const { dialog } = await openQuickAdd()
+    const { dialog } = await openAddEvent()
     type(labelled<HTMLInputElement>(dialog, 'Title')!, 'Lunch')
     let release!: () => void
     const gate = new Promise<void>((resolve) => (release = resolve))
@@ -360,7 +360,7 @@ describe('quick add on live data', () => {
   it('folds the start and end away and says what is in it', async () => {
     await mountApp()
     seedState([])
-    useCalendarState().openQuickAdd({ start: '2026-11-05T09:00', end: '2026-11-05T10:00' })
+    useCalendarState().openAddEvent({ start: '2026-11-05T09:00', end: '2026-11-05T10:00' })
     await vi.waitFor(() => expect(top()).not.toBeNull())
     const dialog = top()!
     const region = [...dialog.querySelectorAll('button')].find((item) =>
@@ -377,7 +377,7 @@ describe('quick add on live data', () => {
   it('opens the closed start and end when they hold the error, and focuses the field', async () => {
     await mountApp()
     seedState([])
-    useCalendarState().openQuickAdd({ start: '2026-11-05T09:00', end: '2026-11-05T10:00' })
+    useCalendarState().openAddEvent({ start: '2026-11-05T09:00', end: '2026-11-05T10:00' })
     await vi.waitFor(() => expect(top()).not.toBeNull())
     const dialog = top()!
     const region = [...dialog.querySelectorAll('button')].find((item) =>
@@ -400,7 +400,7 @@ describe('quick add on live data', () => {
     seedState([])
     useCalendarState().calendars.value = [{ ...calendars[0]!, id: 'cal-demo', href: undefined }]
     useCalendarState().visibleCalendarIds.value = ['cal-demo']
-    useCalendarState().openQuickAdd()
+    useCalendarState().openAddEvent()
     await vi.waitFor(() => expect(top()).not.toBeNull())
     expect(labelled(top(), 'Location')).toBeNull()
     expect(text(top())).not.toContain('Repeat')

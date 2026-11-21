@@ -1,7 +1,8 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import { contrastRatio, edgeColors, textColor, tokenColor, worstTextContrast } from './contrast'
 import { openApp, press, switchView, TODAY } from './helpers'
+import { settleAnimations } from './axe-scan'
 
 // Contrast beyond what the axe scan in a11y.spec.ts judges (NFR-3, WCAG 2.1 AA): text 4.5:1, the
 // edge of a control 3:1. Colours are read from what the browser painted, in the scheme of the
@@ -66,30 +67,19 @@ test.describe('controls as drawn', () => {
     )
   })
 
-  async function settle(page: Page) {
-    await page.evaluate(() =>
-      Promise.all(
-        document
-          .getAnimations()
-          .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
-          .map((animation) => animation.finished.catch(() => undefined)),
-      ),
-    )
-  }
-
   test('a switch that is off has an edge, and so has a field', async ({ page }) => {
     await openApp(page)
     await page.clock.setSystemTime(TODAY)
     const off = page.locator('#app-sidebar button[role="switch"][data-state="unchecked"]').first()
     await expect(off).toBeVisible()
-    await settle(page)
+    await settleAnimations(page)
     const sidebarSwitch = await edgeColors(page, off)
     expect(contrastRatio(sidebarSwitch.edge, sidebarSwitch.outside)).toBeGreaterThanOrEqual(3)
 
-    await press(page.getByRole('button', { name: 'Quick add' }))
-    const dialog = page.getByRole('dialog', { name: 'Quick add' })
+    await press(page.getByRole('button', { name: 'Add', exact: true }))
+    const dialog = page.getByRole('dialog', { name: 'Add event' })
     await expect(dialog).toBeVisible()
-    await settle(page)
+    await settleAnimations(page)
     const field = dialog.locator('input[type="text"]').first()
     // The dialog focuses the title on a desktop, which draws the focus ring over the edge.
     await field.evaluate((element) => element.blur())
@@ -103,7 +93,7 @@ test.describe('controls as drawn', () => {
     await press(page.getByRole('button', { name: 'More options' }))
     const picture = page.locator('[data-dark-mode-switch]')
     await expect(picture).toBeVisible()
-    await settle(page)
+    await settleAnimations(page)
     const colors = await edgeColors(page, picture)
     expect(contrastRatio(colors.edge, colors.outside)).toBeGreaterThanOrEqual(3)
   })
@@ -114,7 +104,7 @@ test.describe('controls as drawn', () => {
     await press(page.getByRole('button', { name: 'Add category', exact: true }))
     const field = page.locator('#app-sidebar input[placeholder]').first()
     await expect(field).toBeVisible()
-    await settle(page)
+    await settleAnimations(page)
     const colors = await edgeColors(page, field)
     const placeholder = await textColor(field, '::placeholder')
     expect(contrastRatio(placeholder, colors.inside)).toBeGreaterThanOrEqual(4.5)
@@ -129,6 +119,7 @@ test('what axe cannot decide is still readable', async ({ page, browserName }) =
   for (const view of ['Week', 'List'] as const) {
     await switchView(page, view)
     await page.waitForTimeout(400)
+    await settleAnimations(page)
     const { incomplete } = await new AxeBuilder({ page }).withRules(['color-contrast']).analyze()
     const targets = new Map<string, string>()
     for (const rule of incomplete) {

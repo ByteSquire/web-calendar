@@ -44,7 +44,7 @@ import type { Category } from '../../shared/types/calendar'
 import {
   BASE_CALENDAR_OPTIONS,
   SCHEDULER_LICENSE_KEY,
-  quickAddPresetForClick,
+  addEventPresetForClick,
 } from '~/utils/fullcalendar'
 import {
   splitDayWindow,
@@ -165,7 +165,7 @@ onPrintChange((printing) => {
 
 function onDateClick(info: DateClickInfo) {
   dateTap.hit({
-    ...quickAddPresetForClick(info.dateStr, info.allDay),
+    ...addEventPresetForClick(info.dateStr, info.allDay),
     // The row is the calendar: a new event starts in it.
     ...(info.resource ? { calendarId: info.resource.id } : {}),
   })

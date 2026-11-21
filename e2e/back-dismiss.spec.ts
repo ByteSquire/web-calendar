@@ -16,11 +16,11 @@ interface RouterProbeWindow {
   __router: RouterProbe
 }
 
-const quickAdd = (page: Page) => page.getByRole('dialog', { name: 'Quick add' })
+const addDialog = (page: Page) => page.getByRole('dialog', { name: 'Add event' })
 
-async function openQuickAdd(page: Page): Promise<void> {
-  await press(page.getByRole('button', { name: 'Quick add' }))
-  await expect(quickAdd(page)).toBeVisible()
+async function openAddEvent(page: Page): Promise<void> {
+  await press(page.getByRole('button', { name: 'Add', exact: true }))
+  await expect(addDialog(page)).toBeVisible()
 }
 
 /** The history has taken in the closing of a dialog: the page is back on its own entry. */
@@ -31,14 +31,14 @@ async function expectSettled(page: Page): Promise<void> {
 }
 
 test.describe('back gesture', () => {
-  test('closes quick-add and stays on the page', async ({ page }) => {
+  test('closes "Add event" and stays on the page', async ({ page }) => {
     await openApp(page)
     const url = page.url()
-    await openQuickAdd(page)
+    await openAddEvent(page)
 
     await page.goBack()
 
-    await expect(quickAdd(page)).toBeHidden()
+    await expect(addDialog(page)).toBeHidden()
     expect(page.url()).toBe(url)
     await expect(page.locator('[data-calendar-main]')).toBeVisible()
   })
@@ -59,9 +59,9 @@ test.describe('back gesture', () => {
 
   test('a dialog closed another way leaves no step for Back to waste', async ({ page }) => {
     await openApp(page)
-    await openQuickAdd(page)
+    await openAddEvent(page)
     await page.keyboard.press('Escape')
-    await expect(quickAdd(page)).toBeHidden()
+    await expect(addDialog(page)).toBeHidden()
     await expectSettled(page)
 
     // The first Back leaves the app: there is no stale step of the dialog in between.
@@ -72,9 +72,9 @@ test.describe('back gesture', () => {
   test('opening and closing a dialog again and again adds no steps', async ({ page }) => {
     await openApp(page)
     for (let round = 0; round < 3; round += 1) {
-      await openQuickAdd(page)
+      await openAddEvent(page)
       await page.keyboard.press('Escape')
-      await expect(quickAdd(page)).toBeHidden()
+      await expect(addDialog(page)).toBeHidden()
       await expectSettled(page)
     }
     await page.goBack()
@@ -99,9 +99,9 @@ test.describe('back gesture', () => {
       page.evaluate(() => (window as unknown as RouterProbeWindow).__navigations)
 
     for (let round = 0; round < 2; round += 1) {
-      await openQuickAdd(page)
+      await openAddEvent(page)
       await page.keyboard.press('Escape')
-      await expect(quickAdd(page)).toBeHidden()
+      await expect(addDialog(page)).toBeHidden()
       await expectSettled(page)
     }
     expect(await navigations()).toBe(0)

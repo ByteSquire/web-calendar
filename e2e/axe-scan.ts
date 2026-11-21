@@ -22,10 +22,13 @@ export const UPSTREAM: { rule: string; target: RegExp; why: string }[] = [
   },
 ]
 
-// WCAG 2.1 A and AA (NFR-3), as far as an automated scan can tell.
-export async function scan(page: Page, allow: string[] = []) {
-  // Dialogs fade in; axe would measure the colours of a half-transparent dialog. Endless animations
-  // (spinners) are skipped, they never finish.
+/**
+ * Waits until what is moving on the page has come to rest. Dialogs, popovers and toasts fade in:
+ * axe would measure the colours of a half-transparent one (the muted text of a dialog fails
+ * 4.5:1 at a quarter of its opacity). Endless animations (spinners) are skipped, they never
+ * finish. Call it before every axe scan.
+ */
+export async function settleAnimations(page: Page): Promise<void> {
   await page.evaluate(() =>
     Promise.all(
       document
@@ -34,6 +37,11 @@ export async function scan(page: Page, allow: string[] = []) {
         .map((animation) => animation.finished.catch(() => undefined)),
     ),
   )
+}
+
+// WCAG 2.1 A and AA (NFR-3), as far as an automated scan can tell.
+export async function scan(page: Page, allow: string[] = []) {
+  await settleAnimations(page)
   const { violations } = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()

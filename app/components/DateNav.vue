@@ -1,13 +1,13 @@
 <!--
-  Date navigation (FR-23): previous / today / next and the title of the shown period. The title is
-  a polite live region, so a screen reader announces the new period after each step.
+  Date navigation (FR-23): previous / today / next and the title of the shown period. The three
+  buttons are outlined, so they read as buttons beside the title. The title is a polite live region, so a screen reader announces the new period after each step.
 -->
 <template>
   <div role="group" :aria-label="t('Date navigation')" class="flex items-center gap-1">
     <UButton
       icon="i-lucide-chevron-left"
       color="neutral"
-      variant="ghost"
+      variant="outline"
       :aria-label="dateStepLabel('previous', rangeKind, customDays)"
       @click="prev"
     />
@@ -15,7 +15,7 @@
     <UButton
       icon="i-lucide-chevron-right"
       color="neutral"
-      variant="ghost"
+      variant="outline"
       :aria-label="dateStepLabel('next', rangeKind, customDays)"
       @click="next"
     />

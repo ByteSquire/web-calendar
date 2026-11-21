@@ -360,7 +360,7 @@ const dialogFocus = createFocusReturn(() => chooseButton.value?.$el ?? heading.v
 
 // ---- The calendar to import into ---------------------------------------------------------------
 
-// The calendars the quick-add dialog offers: the ones the person may write to.
+// The calendars the "Add event" dialog offers: the ones the person may write to.
 const choosable = computed(() => writableCalendars(calendars.value))
 const calendarItems = computed(() => [
   ...choosable.value.map((calendar) => ({

@@ -109,7 +109,6 @@ test.describe('the page of a calendar link', () => {
     await press(page.getByRole('button', { name: 'Day', exact: true }))
     await expect(main).toContainText('School run')
     await expect(page.getByRole('button', { name: /sidebar/i })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Quick add' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Add', exact: true })).toHaveCount(0)
     expect(await noSidewaysScroll(page)).toBe(true)
     // FullCalendar's own grid has known gaps (e2e/axe-scan.ts); everything else must pass.

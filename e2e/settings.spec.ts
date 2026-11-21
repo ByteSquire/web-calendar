@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
 import { TODAY, expectOpenFocus, isTouch, press, toast, waitOutToasts } from './helpers'
+import { settleAnimations } from './axe-scan'
 
 // The settings screen (FR-31 app tokens, FR-7 iCal subscriptions, account). The app runs in demo
 // mode here, which serves the SPA without a login, and every `/api/**` call except the settings
@@ -313,16 +314,7 @@ const subscriptionRow = (page: Page, name: string) =>
 async function scan(page: Page) {
   // The pointer that pressed a button would leave it in its lighter hover colour.
   await page.mouse.move(0, 0)
-  // Dialogs fade in; axe would measure the colours of a half-transparent dialog. Endless animations
-  // (spinners) are skipped, they never finish.
-  await page.evaluate(() =>
-    Promise.all(
-      document
-        .getAnimations()
-        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
-        .map((animation) => animation.finished.catch(() => undefined)),
-    ),
-  )
+  await settleAnimations(page)
   const { violations } = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
     .analyze()

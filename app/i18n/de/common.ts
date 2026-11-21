@@ -19,7 +19,6 @@ export const common: Readonly<Record<string, string>> = {
     'Die Sprache der App auf diesem Gerät. Standardmäßig folgt sie deinem Browser.',
   'Go to {date}': 'Gehe zu {date}',
   // Used in more than one area.
-  'Quick add': 'Schnell hinzufügen',
   Settings: 'Einstellungen',
   'Resource bookings': 'Ressourcenbuchungen',
   Shared: 'Geteilt',
